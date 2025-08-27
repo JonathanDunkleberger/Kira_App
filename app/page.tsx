@@ -4,19 +4,27 @@ import { useEffect, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
+import { fetchSessionSeconds } from "@/lib/client-api";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [paywalled, setPaywalled] = useState(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    fetchSessionSeconds().then((s) => setSecondsRemaining(s)).catch(() => setSecondsRemaining(null));
+  }, []);
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
       <section className="mx-auto max-w-3xl px-4 py-16 text-center">
         <h1 className="text-3xl font-semibold mb-2">Talk with Kira</h1>
-        <p className="text-gray-400 mb-10">Click the orb to start a conversation. Trial is 20 minutes.</p>
+        <p className="text-gray-400 mb-6">Click the orb to start a conversation. Trial is 20 minutes.</p>
+        {secondsRemaining != null && (
+          <p className="text-xs text-gray-500 mb-8">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
+        )}
 
         {mounted && (
           <div className="flex flex-col items-center gap-8">
@@ -26,6 +34,7 @@ export default function HomePage() {
                 setLastUser(user);
                 setLastReply(reply);
               }}
+              onPaywall={() => setPaywalled(true)}
             />
 
             <div className="text-left max-w-xl">
@@ -33,9 +42,7 @@ export default function HomePage() {
               <Transcript text={lastReply ? `Kira: ${lastReply}` : ''} />
             </div>
 
-            {paywalled && (
-              <Paywall onUnlock={() => (window.location.href = "/api/stripe/create-checkout")} />
-            )}
+            {paywalled && <Paywall />}
           </div>
         )}
       </section>

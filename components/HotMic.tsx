@@ -4,9 +4,11 @@ import { playMp3Base64 } from '@/lib/audio';
 
 export default function HotMic({
   onResult,
+  onPaywall,
   disabled
 }: {
   onResult: (t: { user: string; reply: string; estSeconds?: number }) => void;
+  onPaywall?: () => void;
   disabled?: boolean;
 }) {
   const [active, setActive] = useState(false);
@@ -99,7 +101,8 @@ export default function HotMic({
 
     if (res.status === 402) {
       setBusy(false);
-      return; // paywall handled by parent
+      onPaywall?.();
+      return;
     }
 
     const j = await res.json();

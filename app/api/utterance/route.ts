@@ -1,59 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { transcribeWebmToText } from '@/lib/stt';
-import { chatRespond } from '@/lib/llm';
-import { ttsToMp3Base64 } from '@/lib/tts';
-import { env } from '@/lib/env';
-import { getSupabaseServerAdmin } from '@/lib/supabaseClient';
-import { decrementSeconds, getSecondsRemaining, bumpUsage } from '@/lib/usage';
+import { NextRequest, NextResponse } from "next/server";
+import { generateReply } from "@/lib/llm";
+import { synthesizeSpeech } from "@/lib/tts";
+import { transcribeWebmToText } from "@/lib/stt";
+import { getSupabaseServerAdmin } from "@/lib/supabaseClient";
+import { ensureEntitlements, getSecondsRemaining, decrementSeconds } from "@/lib/usage";
+import { FREE_TRIAL_SECONDS } from "@/lib/env";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const origin = req.headers.get('origin') || '';
-  if (origin && origin !== env.ALLOWED_ORIGIN && !origin.includes(new URL(env.APP_URL).host)) {
-    return new NextResponse('Forbidden origin', { status: 403 });
+  try {
+    // Auth (Supabase access token expected)
+    const auth = req.headers.get("authorization") || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const sb = getSupabaseServerAdmin();
+    const { data: userData, error } = await sb.auth.getUser(token);
+    if (error || !userData?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId = userData.user.id;
+
+    await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
+    const remaining = await getSecondsRemaining(userId);
+    if (!remaining || remaining <= 0) {
+      return NextResponse.json({ paywall: true }, { status: 402 });
+    }
+
+    let transcript = "";
+    const ctype = req.headers.get("content-type") || "";
+    if (ctype.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const audio = form.get("audio");
+      if (!(audio instanceof Blob)) {
+        return NextResponse.json({ error: "Missing audio" }, { status: 400 });
+      }
+      const buf = Buffer.from(await (audio as Blob).arrayBuffer());
+      transcript = await transcribeWebmToText(buf);
+      if (!transcript) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
+    } else {
+      const body = await req.json().catch(() => ({}));
+      if (!body?.text || typeof body.text !== "string") {
+        return NextResponse.json({ error: "Missing text" }, { status: 400 });
+      }
+      transcript = body.text;
+    }
+
+    const reply = await generateReply(transcript);
+    const audioMp3Base64 = await synthesizeSpeech(reply);
+
+    // naive estimate ~15 chars/sec
+    const estSeconds = Math.max(1, Math.ceil(reply.length / 15));
+    await decrementSeconds(userId, estSeconds);
+
+    return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
+  } catch (e: any) {
+    console.error("/api/utterance error:", e);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
-
-  const auth = req.headers.get('authorization') || '';
-  const accessToken = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!accessToken) return new NextResponse('Missing auth', { status: 401 });
-
-  const sb = getSupabaseServerAdmin();
-  const { data: userData, error } = await sb.auth.getUser(accessToken);
-  if (error || !userData.user) return new NextResponse('Invalid auth', { status: 401 });
-  const userId = userData.user.id;
-
-  const form = await req.formData();
-  const sessionToken = form.get('token') as string;
-  const blob = form.get('audio') as File;
-  if (!sessionToken || !blob) return new NextResponse('Bad request', { status: 400 });
-
-  // Enforce remaining minutes before doing anything costly
-  const remaining = await getSecondsRemaining(userId);
-  if (remaining <= 0) {
-    return NextResponse.json({ paywall: true }, { status: 402, headers: { 'Access-Control-Allow-Origin': origin } });
-  }
-
-  // STT
-  const webmBuf = Buffer.from(await blob.arrayBuffer());
-  const sttStart = Date.now();
-  const userText = await transcribeWebmToText(webmBuf);
-  const sttSecs = Math.ceil((Date.now() - sttStart) / 1000);
-
-  // LLM
-  const llmStart = Date.now();
-  const reply = await chatRespond(userText);
-  const llmSecs = Math.ceil((Date.now() - llmStart) / 1000);
-
-  // TTS
-  const { b64, charCount, estSeconds } = await ttsToMp3Base64(reply);
-
-  // Metering + decrement
-  await decrementSeconds(userId, estSeconds);
-  await bumpUsage(userId, sttSecs, estSeconds, 0, 0, charCount);
-
-  return NextResponse.json(
-    { transcript: userText, reply, audioMp3Base64: b64, estSeconds },
-    { headers: { 'Access-Control-Allow-Origin': origin } }
-  );
 }

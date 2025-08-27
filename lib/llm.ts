@@ -1,26 +1,36 @@
-import OpenAI from 'openai';
-import { env } from './env';
-import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from './prompt';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from "./prompt";
 
-const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+const API_KEY = process.env.GOOGLE_GEMINI_API_KEY!;
+if (!API_KEY) throw new Error("Missing GOOGLE_GEMINI_API_KEY");
 
-export async function chatRespond(userText: string): Promise<string> {
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
-    ...FEW_SHOTS.flatMap(s => ([
-      { role: 'user', content: s.user },
-      { role: 'assistant', content: s.assistant }
-    ])),
-    { role: 'user', content: userText }
-  ];
+const genAI = new GoogleGenerativeAI(API_KEY);
+const MODEL_ID = "gemini-1.5-flash";
 
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages,
-    temperature: 0.7,
-    max_tokens: 220
+export async function generateReply(userText: string) {
+  const model = genAI.getGenerativeModel({ model: MODEL_ID });
+
+  const fewShotText = FEW_SHOTS
+    .map((s) => `User: ${s.user}\nKira: ${s.assistant}`)
+    .join("\n\n");
+
+  const prompt = `${CHARACTER_SYSTEM_PROMPT}
+
+${fewShotText}
+
+User: ${userText}
+Kira:`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.7,
+      topP: 0.9,
+      maxOutputTokens: 400,
+    },
   });
 
-  const text = resp.choices[0]?.message?.content ?? '';
-  return text.trim();
+  const text = result.response.text().trim();
+  const clean = text.replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");
+  return clean;
 }

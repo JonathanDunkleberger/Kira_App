@@ -1,28 +1,11 @@
-'use client';
-import { useState } from 'react';
-import { getSupabaseBrowser } from '@/lib/supabaseClient';
+"use client";
 
-export default function Paywall({ userId }: { userId: string }) {
-  const [loading, setLoading] = useState(false);
-
-  async function buy() {
-    setLoading(true);
-    const supabase = getSupabaseBrowser();
-    const token = (await supabase.auth.getSession()).data.session?.access_token;
-    const res = await fetch('/api/stripe/create-checkout', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const j = await res.json();
-    window.location.href = j.url;
-  }
-
+export default function Paywall({ onUnlock }: { onUnlock: () => void }) {
   return (
-    <div className="card">
-      <div className="mb-2 font-semibold">Trial used up</div>
-      <div className="mb-3 text-sm">Get more minutes for <b>$1.99</b>.</div>
-      <button onClick={buy} disabled={loading} className="btn btn-warn">
-        {loading ? 'Redirecting…' : 'Unlock minutes'}
+    <div className="rounded-xl border border-purple-700/40 bg-purple-900/10 p-4 text-gray-100">
+      <p className="mb-3">You’ve used your free minutes.</p>
+      <button onClick={onUnlock} className="px-4 py-2 rounded-md bg-purple-600 text-white">
+        Unlock minutes ($1.99)
       </button>
     </div>
   );

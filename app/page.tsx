@@ -1,75 +1,44 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import MicButton from '@/components/MicButton';
-import Transcript from '@/components/Transcript';
-import Paywall from '@/components/Paywall';
-import EmptyState from '@/components/EmptyState';
-import { getSupabaseBrowser } from '@/lib/supabaseClient';
+import { useEffect, useState } from "react";
+import HotMic from "@/components/HotMic";
+import Transcript from "@/components/Transcript";
+import Paywall from "@/components/Paywall";
 
-export default function Home() {
-  const [items, setItems] = useState<{ user: string; reply: string }[]>([]);
-  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  // sign in anonymously (magic link-less) with Supabase — we’ll use a per-device key
-  useEffect(() => {
-    (async () => {
-      const supabase = getSupabaseBrowser();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        // quick anonymous sign-in: create or reuse a persisted key
-        const email = `guest_${crypto.randomUUID()}@example.local`;
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password: crypto.randomUUID()
-        });
-        // if email verification is enforced, convert project to “email optional” or turn off confirm for dev
-        if (error) console.warn(error);
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      setUserId(user?.id ?? null);
-
-      // create a session token and read remaining seconds
-      const accessToken = (await supabase.auth.getSession()).data.session?.access_token;
-      const res = await fetch('/api/session', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const j = await res.json();
-      setSessionToken(j.token);
-      setSecondsRemaining(j.secondsRemaining);
-      setLoading(false);
-    })();
-  }, []);
-
-  function onResult(t: { user: string; reply: string; estSeconds?: number }) {
-    setItems(prev => [t, ...prev]);
-    if (typeof t.estSeconds === 'number') {
-      setSecondsRemaining(prev => (prev === null ? prev : Math.max(0, prev - t.estSeconds!)));
-    }
-  }
-
-  if (loading) return <main className="container-page"><EmptyState /></main>;
-
-  const outOfTime = secondsRemaining !== null && secondsRemaining <= 0;
+export default function HomePage() {
+  const [mounted, setMounted] = useState(false);
+  const [paywalled, setPaywalled] = useState(false);
+  const [lastUser, setLastUser] = useState("");
+  const [lastReply, setLastReply] = useState("");
+  useEffect(() => setMounted(true), []);
 
   return (
-    <main className="container-page space-y-6">
-      <h1 className="section-title">Kira — your media companion</h1>
-      <p className="subtle text-sm">Hold to talk. She answers in short, smart bursts; no filler.</p>
+    <main className="min-h-screen bg-[#0b0b12] text-white">
+      <section className="mx-auto max-w-3xl px-4 py-16 text-center">
+        <h1 className="text-3xl font-semibold mb-2">Talk with Kira</h1>
+        <p className="text-gray-400 mb-10">Click the orb to start a conversation. Trial is 20 minutes.</p>
 
-      <div className="row">
-        <MicButton onResult={onResult} sessionToken={sessionToken} disabled={outOfTime}/>
-        <span className="pill">
-          {secondsRemaining !== null ? `Minutes left: ${Math.ceil(secondsRemaining/60)}` : '…'}
-        </span>
-      </div>
+        {mounted && (
+          <div className="flex flex-col items-center gap-8">
+            <HotMic
+              disabled={paywalled}
+              onResult={({ user, reply }) => {
+                setLastUser(user);
+                setLastReply(reply);
+              }}
+            />
 
-      {outOfTime && <Paywall userId={userId || 'anon'} />}
+            <div className="text-left max-w-xl">
+              <Transcript text={lastUser ? `You: ${lastUser}` : ''} />
+              <Transcript text={lastReply ? `Kira: ${lastReply}` : ''} />
+            </div>
 
-      <Transcript items={items}/>
+            {paywalled && (
+              <Paywall onUnlock={() => (window.location.href = "/api/stripe/create-checkout")} />
+            )}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

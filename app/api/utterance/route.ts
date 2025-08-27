@@ -4,24 +4,31 @@ import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
 import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
 import { ensureEntitlements, getSecondsRemaining, decrementSeconds } from "@/lib/usage";
-import { FREE_TRIAL_SECONDS } from "@/lib/env";
+import { env, FREE_TRIAL_SECONDS } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth (Supabase access token expected)
+    // Auth (Supabase access token expected) — allow bypass in dev if configured
+    let userId: string | null = null;
     const auth = req.headers.get("authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (token) {
+      const sb = getSupabaseServerAdmin();
+      const { data: userData } = await sb.auth.getUser(token);
+      userId = userData?.user?.id || null;
+    }
+    if (!userId) {
+      if (env.DEV_ALLOW_NOAUTH === '1') {
+        userId = 'dev-user';
+      } else {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
 
-    const sb = getSupabaseServerAdmin();
-    const { data: userData, error } = await sb.auth.getUser(token);
-    if (error || !userData?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = userData.user.id;
-
-    await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
-    const remaining = await getSecondsRemaining(userId);
+  await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
+  const remaining = await getSecondsRemaining(userId);
     if (!remaining || remaining <= 0) {
       return NextResponse.json({ paywall: true }, { status: 402 });
     }

@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/supabaseClient';
+
 export async function sendUtterance(payload: { text: string }) {
   const r = await fetch("/api/utterance", {
     method: "POST",
@@ -22,22 +24,20 @@ export async function sendUtterance(payload: { text: string }) {
 }
 
 export async function fetchSessionSeconds(): Promise<number | null> {
-  const supabase = (await import('@/lib/supabaseClient')).getSupabaseBrowser();
-  const token = (await supabase.auth.getSession()).data.session?.access_token;
-  if (!token) return null;
-  const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${token}` } });
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
   if (!r.ok) return null;
   const j = await r.json();
   return (typeof j?.secondsRemaining === 'number') ? j.secondsRemaining : null;
 }
 
 export async function startCheckout(): Promise<void> {
-  const supabase = (await import('@/lib/supabaseClient')).getSupabaseBrowser();
-  const token = (await supabase.auth.getSession()).data.session?.access_token;
-  if (!token) throw new Error('Not authenticated');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
   const r = await fetch('/api/stripe/create-checkout', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${session.access_token}` }
   });
   if (!r.ok) throw new Error('Failed to start checkout');
   const j = await r.json();
@@ -45,9 +45,8 @@ export async function startCheckout(): Promise<void> {
 }
 
 export async function ensureAnonSession(): Promise<void> {
-  const supabase = (await import('@/lib/supabaseClient')).getSupabaseBrowser();
-  const existing = (await supabase.auth.getSession()).data.session;
-  if (existing) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) return;
   // Anonymous sign-in (Supabase must have anonymous auth enabled)
   // Falls back silently if unsupported
   // @ts-ignore

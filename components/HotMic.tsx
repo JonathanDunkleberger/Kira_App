@@ -2,6 +2,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { playMp3Base64 } from '@/lib/audio';
 import { ensureAnonSession } from '@/lib/client-api';
+import { supabase } from '@/lib/supabaseClient';
+
+// ===================================================================================
+// TUNING & CONFIGURATION
+// ===================================================================================
+const MIN_RECORDING_DURATION_MS = 1500;
+const VAD_SILENCE_THRESHOLD_S = 10.0;
+const VAD_WARMUP_MS = 750;
+const VAD_RMS_SENSITIVITY = 0.06;
+// ===================================================================================
 
 export default function HotMic({
   onResult,
@@ -16,57 +26,66 @@ export default function HotMic({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<'idle'|'listening'|'thinking'|'speaking'>('idle');
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
+  const [micVolume, setMicVolume] = useState(0);
+  
   const mediaRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
-  const vadRef = useRef<{ ctx: AudioContext; src: MediaStreamAudioSourceNode; analyser: AnalyserNode } | null>(null);
+  const vadRef = useRef<{ ctx: AudioContext; src: MediaStreamSourceNode; analyser: AnalyserNode } | null>(null);
+  const recordingStartTime = useRef<number>(0);
 
   useEffect(() => {
-    return () => {
+    if (active && status === 'idle') {
+      beginCapture();
+    } else if (!active) {
       stopAll();
-    };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, status]);
+
+  useEffect(() => {
+    return () => { stopAll(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function toggle() {
+  function toggle() {
     if (disabled || busy) return;
-    if (active) {
-      setActive(false);
-      await stopAll();
-      return;
-    }
-    // start
-  setActive(true);
-  // Ensure we have an auth session for API calls
-  await ensureAnonSession().catch(() => {});
-    await beginCapture();
+    setActive(!active);
   }
 
   async function beginCapture() {
+    if (status !== 'idle') return;
+
+    // --- NEW: Force cleanup of any old resources before starting ---
+    if (recRef.current || mediaRef.current || vadRef.current) {
+        console.warn("Stale media resources found, cleaning up before capture.");
+        forceCleanup();
+    }
+
+    await ensureAnonSession().catch(() => {});
+    
     chunksRef.current = [];
+    recordingStartTime.current = Date.now();
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      alert('Microphone permission is required. Please allow access and try again.');
+      alert('Microphone permission is required.');
       setActive(false);
       return;
     }
     mediaRef.current = stream;
-    let mime = 'audio/webm;codecs=opus';
-    if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(mime)) {
-      mime = 'audio/webm';
-    }
-    const rec = new MediaRecorder(stream, { mimeType: mime });
+
+    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     recRef.current = rec;
     rec.ondataavailable = (e) => chunksRef.current.push(e.data);
     rec.onstop = onStopRecording;
     rec.start();
-  setStatus('listening');
-    await startVad(stream);
+    setStatus('listening');
+    startVad(stream);
   }
 
-  async function startVad(stream: MediaStream) {
+  function startVad(stream: MediaStream) {
     const ctx = new AudioContext();
     const src = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
@@ -75,118 +94,119 @@ export default function HotMic({
     vadRef.current = { ctx, src, analyser };
 
     const buf = new Uint8Array(analyser.frequencyBinCount);
+    const frameDuration = analyser.fftSize / ctx.sampleRate;
+    const maxSilenceFrames = VAD_SILENCE_THRESHOLD_S / frameDuration;
+    const warmupFrames = VAD_WARMUP_MS / (frameDuration * 1000);
+    
     let silenceFrames = 0;
-    const maxSilenceFrames = 60; // ~2s at 30fps loop
+    let frameCount = 0;
 
     const loop = () => {
-      if (!vadRef.current) return;
-      analyser.getByteFrequencyData(buf);
-      const rms = Math.sqrt(buf.reduce((a, b) => a + b * b, 0) / buf.length) / 255;
-      if (rms < 0.05) silenceFrames++;
-      else silenceFrames = 0;
-  if (silenceFrames > maxSilenceFrames) {
-        // stop capture and send
-        recRef.current?.stop();
-        vadRef.current?.ctx.close();
-        vadRef.current = null;
+      if (!recRef.current || recRef.current.state !== 'recording') {
         return;
       }
-      requestAnimationFrame(loop);
+      
+      analyser.getByteFrequencyData(buf);
+      const rms = Math.sqrt(buf.reduce((a, b) => a + b * b, 0) / buf.length) / 255;
+      setMicVolume(rms);
+      
+      frameCount++;
+      if (frameCount > warmupFrames) {
+        if (rms < VAD_RMS_SENSITIVITY) silenceFrames++;
+        else silenceFrames = 0;
+      }
+      
+      if (silenceFrames > maxSilenceFrames) {
+        recRef.current.stop();
+      } else {
+        requestAnimationFrame(loop);
+      }
     };
     requestAnimationFrame(loop);
   }
 
   async function onStopRecording() {
-    const stream = mediaRef.current;
-    mediaRef.current = null;
-    stream?.getTracks().forEach((t) => t.stop());
-
-    if (chunksRef.current.length === 0) return;
-    setBusy(true);
     setStatus('thinking');
-    if (playing) { playing.pause(); setPlaying(null); }
 
-    const supabaseAccessToken = (await (await import('@/lib/supabaseClient')).getSupabaseBrowser()
-      .auth.getSession()).data.session?.access_token;
+    const duration = Date.now() - recordingStartTime.current;
+    if (duration < MIN_RECORDING_DURATION_MS || chunksRef.current.length === 0) {
+      chunksRef.current = [];
+      setStatus('idle');
+      return;
+    }
 
+    setBusy(true);
     const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+    chunksRef.current = []; // Clear chunks immediately
+
+    const { data: { session } } = await supabase.auth.getSession();
     const fd = new FormData();
     fd.append('audio', audioBlob, 'audio.webm');
-
-    const headers: Record<string, string> = supabaseAccessToken ? { Authorization: `Bearer ${supabaseAccessToken}` } : {};
-    const res = await fetch('/api/utterance', {
-      method: 'POST',
-      headers,
-      body: fd
-    });
-
-    if (res.status === 402) {
-      setBusy(false);
-      onPaywall?.();
-      return;
-    }
-
-    if (res.status === 401) {
-      // Try to establish an anonymous session for next attempt
-      await ensureAnonSession().catch(() => {});
-      setBusy(false);
-      alert('Connected. Tap again to talk.');
-      return;
-    }
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => 'Server error');
-      console.error('Utterance error:', msg);
-      setBusy(false);
-      alert('Hmm, I hit a snag. Try again.');
-      return;
-    }
-
-    const j = await res.json();
-    onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
-    if (j.audioMp3Base64) {
-      const a = await playMp3Base64(j.audioMp3Base64, () => setPlaying(null));
-      setPlaying(a);
-      setStatus('speaking');
-    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const u = new SpeechSynthesisUtterance(j.reply);
-      window.speechSynthesis.speak(u);
-      setStatus('speaking');
-    }
-    setBusy(false);
-    chunksRef.current = [];
-    // resume capture for continuous conversation if still active
-    if (active) {
-      setStatus('idle');
-      await beginCapture();
+    const headers: Record<string, string> = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+    
+    try {
+        const res = await fetch('/api/utterance', { method: 'POST', headers, body: fd });
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        
+        const j = await res.json();
+        onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
+        
+        const handlePlaybackEnd = () => { setStatus('idle'); };
+        
+        if (j.audioMp3Base64) {
+            const a = await playMp3Base64(j.audioMp3Base64, handlePlaybackEnd);
+            setPlaying(a);
+            setStatus('speaking');
+        } else {
+            handlePlaybackEnd();
+        }
+    } catch (err) {
+        console.error("Utterance error:", err);
+        setStatus('idle');
+    } finally {
+        setBusy(false);
     }
   }
 
-  async function stopAll() {
-    recRef.current?.state === 'recording' && recRef.current.stop();
-    recRef.current = null;
+  function forceCleanup() {
+    if (playing) { playing.pause(); setPlaying(null); }
+    if (recRef.current) {
+        recRef.current.onstop = null;
+        if (recRef.current.state === 'recording') recRef.current.stop();
+    }
     mediaRef.current?.getTracks().forEach((t) => t.stop());
+    vadRef.current?.ctx.close().catch(() => {});
+    
+    recRef.current = null;
     mediaRef.current = null;
-    if (vadRef.current) { await vadRef.current.ctx.close(); vadRef.current = null; }
+    vadRef.current = null;
   }
+
+  function stopAll() {
+    forceCleanup();
+    if (status !== 'idle') setStatus('idle');
+  }
+
+  const orbScale = 1 + micVolume * 0.5;
 
   return (
     <button
       onClick={toggle}
       disabled={disabled || busy}
-      className="relative inline-flex items-center justify-center h-40 w-40 rounded-full"
+      className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-transform duration-100 ease-out"
       title={disabled ? 'Trial exhausted' : active ? 'Click to stop' : 'Click to talk'}
       style={{
         boxShadow: active ? '0 0 44px #8b5cf6' : '0 0 24px #4c1d95',
-        background: active ? 'radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9)' : 'radial-gradient(circle at 35% 25%, #7c3aed, #1f1033)'
+        background: active ? 'radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9)' : 'radial-gradient(circle at 35% 25%, #7c3aed, #1f1033)',
+        transform: `scale(${orbScale})`
       }}
     >
-    {!active ? (
+      {!active ? (
         <div className="text-gray-100 text-sm select-none">Click to talk</div>
       ) : (
         <div className="flex flex-col items-center gap-2">
           <img src="/logo.png" alt="Kira" className="h-10 w-10 opacity-90" />
-      <div className="text-xs text-gray-300">{status === 'thinking' ? 'Thinking…' : status === 'speaking' ? 'Speaking…' : 'Listening…'}</div>
+          <div className="text-xs text-gray-300">{status === 'thinking' ? 'Thinking…' : status === 'speaking' ? 'Speaking…' : 'Listening…'}</div>
         </div>
       )}
     </button>

@@ -1,36 +1,68 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from "./prompt";
 
-const API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
-if (!API_KEY) throw new Error("Missing GOOGLE_GEMINI_API_KEY or OPENAI_API_KEY");
+const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
+const openaiKey = process.env.OPENAI_API_KEY || '';
+const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
+const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
-const genAI = new GoogleGenerativeAI(API_KEY);
-const MODEL_ID = "gemini-1.5-flash";
-
-export async function generateReply(userText: string) {
-  const model = genAI.getGenerativeModel({ model: MODEL_ID });
-
+function buildPrompt(userText: string) {
   const fewShotText = FEW_SHOTS
     .map((s) => `User: ${s.user}\nKira: ${s.assistant}`)
     .join("\n\n");
-
-  const prompt = `${CHARACTER_SYSTEM_PROMPT}
+  return `${CHARACTER_SYSTEM_PROMPT}
 
 ${fewShotText}
 
 User: ${userText}
 Kira:`;
+}
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.9,
-      maxOutputTokens: 400,
-    },
-  });
+function postProcess(text: string) {
+  return text.trim().replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");
+}
 
-  const text = result.response.text().trim();
-  const clean = text.replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");
-  return clean;
+export async function generateReply(userText: string) {
+  const prompt = buildPrompt(userText);
+
+  // Prefer OpenAI if available or explicitly selected
+  if ((provider === 'openai' || !geminiKey) && openaiKey) {
+    try {
+      const openai = new OpenAI({ apiKey: openaiKey });
+      const resp = await openai.chat.completions.create({
+        model: openaiModel,
+        messages: [
+          { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 400
+      } as any);
+      const text = resp.choices?.[0]?.message?.content || '';
+      if (text) return postProcess(text);
+    } catch (e) {
+      console.warn('OpenAI failed, falling back to Gemini:', e);
+    }
+  }
+
+  // Fallback to Gemini
+  if (geminiKey) {
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({ model: geminiModel });
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 400,
+      },
+    });
+    const text = result.response.text();
+    return postProcess(text);
+  }
+
+  throw new Error('No LLM configured. Set OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY');
 }

@@ -14,6 +14,7 @@ export default function HotMic({
 }) {
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<'idle'|'listening'|'thinking'|'speaking'>('idle');
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
   const mediaRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -35,7 +36,7 @@ export default function HotMic({
       return;
     }
     // start
-    setActive(true);
+  setActive(true);
   // Ensure we have an auth session for API calls
   await ensureAnonSession().catch(() => {});
     await beginCapture();
@@ -61,6 +62,7 @@ export default function HotMic({
     rec.ondataavailable = (e) => chunksRef.current.push(e.data);
     rec.onstop = onStopRecording;
     rec.start();
+  setStatus('listening');
     await startVad(stream);
   }
 
@@ -101,6 +103,7 @@ export default function HotMic({
 
     if (chunksRef.current.length === 0) return;
     setBusy(true);
+    setStatus('thinking');
     if (playing) { playing.pause(); setPlaying(null); }
 
     const supabaseAccessToken = (await (await import('@/lib/supabaseClient')).getSupabaseBrowser()
@@ -144,14 +147,17 @@ export default function HotMic({
     if (j.audioMp3Base64) {
       const a = await playMp3Base64(j.audioMp3Base64, () => setPlaying(null));
       setPlaying(a);
+      setStatus('speaking');
     } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const u = new SpeechSynthesisUtterance(j.reply);
       window.speechSynthesis.speak(u);
+      setStatus('speaking');
     }
     setBusy(false);
     chunksRef.current = [];
     // resume capture for continuous conversation if still active
     if (active) {
+      setStatus('idle');
       await beginCapture();
     }
   }
@@ -175,12 +181,12 @@ export default function HotMic({
         background: active ? 'radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9)' : 'radial-gradient(circle at 35% 25%, #7c3aed, #1f1033)'
       }}
     >
-      {!active ? (
+    {!active ? (
         <div className="text-gray-100 text-sm select-none">Click to talk</div>
       ) : (
         <div className="flex flex-col items-center gap-2">
           <img src="/logo.png" alt="Kira" className="h-10 w-10 opacity-90" />
-          <div className="text-xs text-gray-300">Listening…</div>
+      <div className="text-xs text-gray-300">{status === 'thinking' ? 'Thinking…' : status === 'speaking' ? 'Speaking…' : 'Listening…'}</div>
         </div>
       )}
     </button>

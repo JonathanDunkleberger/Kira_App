@@ -3,6 +3,9 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   GOOGLE_GEMINI_API_KEY: z.string().optional(),
+  LLM_PROVIDER: z.enum(['openai', 'gemini']).optional(),
+  OPENAI_MODEL: z.string().optional(),
+  GEMINI_MODEL: z.string().optional(),
   AZURE_SPEECH_KEY: z.string(),
   AZURE_SPEECH_REGION: z.string(),
   AZURE_TTS_VOICE: z.string().default('en-US-AshleyNeural'),

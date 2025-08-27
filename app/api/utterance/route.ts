@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateReply } from "@/lib/llm";
 import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
-import { getSupabaseServerAdmin } from "@/lib/supabaseClient";
+import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
 import { ensureEntitlements, getSecondsRemaining, decrementSeconds } from "@/lib/usage";
 import { FREE_TRIAL_SECONDS } from "@/lib/env";
 

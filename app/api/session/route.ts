@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { env, FREE_TRIAL_SECONDS } from '@/lib/env';
-import { getSupabaseServerAdmin } from '@/lib/supabaseClient';
+import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 import { ensureEntitlements, getSecondsRemaining } from '@/lib/usage';
 
 export const runtime = 'edge';

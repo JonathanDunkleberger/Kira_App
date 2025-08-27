@@ -1,12 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { env } from './env';
+import { envClient } from './env.client';
 
 export function getSupabaseBrowser() {
-  return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return createClient(envClient.NEXT_PUBLIC_SUPABASE_URL, envClient.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
-export function getSupabaseServerAdmin() {
-  return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
+// server admin client moved to lib/supabaseAdmin.ts

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
-const KEY = process.env.AZURE_TTS_KEY!;
-const REGION = process.env.AZURE_TTS_REGION!;
+const KEY = process.env.AZURE_SPEECH_KEY!;
+const REGION = process.env.AZURE_SPEECH_REGION!;
 const VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
 const RATE = process.env.AZURE_TTS_RATE || "+25%";
 const PITCH = process.env.AZURE_TTS_PITCH || "+25%";

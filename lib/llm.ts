@@ -1,8 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from "./prompt";
 
-const API_KEY = process.env.GOOGLE_GEMINI_API_KEY!;
-if (!API_KEY) throw new Error("Missing GOOGLE_GEMINI_API_KEY");
+const API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
+if (!API_KEY) throw new Error("Missing GOOGLE_GEMINI_API_KEY or OPENAI_API_KEY");
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const MODEL_ID = "gemini-1.5-flash";

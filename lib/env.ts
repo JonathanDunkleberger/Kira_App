@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 const EnvSchema = z.object({
-  OPENAI_API_KEY: z.string(),
+  OPENAI_API_KEY: z.string().optional(),
+  GOOGLE_GEMINI_API_KEY: z.string().optional(),
   AZURE_SPEECH_KEY: z.string(),
   AZURE_SPEECH_REGION: z.string(),
   AZURE_TTS_VOICE: z.string().default('en-US-AshleyNeural'),

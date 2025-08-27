@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
       if (!(audio instanceof Blob)) {
         return NextResponse.json({ error: "Missing audio" }, { status: 400 });
       }
-      const buf = Buffer.from(await (audio as Blob).arrayBuffer());
-      transcript = await transcribeWebmToText(buf);
+  const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
+  transcript = await transcribeWebmToText(arr);
       if (!transcript) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
     } else {
       const body = await req.json().catch(() => ({}));

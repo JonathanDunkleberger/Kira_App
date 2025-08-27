@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { playMp3Base64 } from '@/lib/audio';
+import { ensureAnonSession } from '@/lib/client-api';
 
 export default function HotMic({
   onResult,
@@ -35,14 +36,27 @@ export default function HotMic({
     }
     // start
     setActive(true);
+  // Ensure we have an auth session for API calls
+  await ensureAnonSession().catch(() => {});
     await beginCapture();
   }
 
   async function beginCapture() {
     chunksRef.current = [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      alert('Microphone permission is required. Please allow access and try again.');
+      setActive(false);
+      return;
+    }
     mediaRef.current = stream;
-    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    let mime = 'audio/webm;codecs=opus';
+    if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported(mime)) {
+      mime = 'audio/webm';
+    }
+    const rec = new MediaRecorder(stream, { mimeType: mime });
     recRef.current = rec;
     rec.ondataavailable = (e) => chunksRef.current.push(e.data);
     rec.onstop = onStopRecording;
@@ -96,9 +110,10 @@ export default function HotMic({
     const fd = new FormData();
     fd.append('audio', audioBlob, 'audio.webm');
 
+    const headers: Record<string, string> = supabaseAccessToken ? { Authorization: `Bearer ${supabaseAccessToken}` } : {};
     const res = await fetch('/api/utterance', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${supabaseAccessToken}` },
+      headers,
       body: fd
     });
 
@@ -108,10 +123,31 @@ export default function HotMic({
       return;
     }
 
+    if (res.status === 401) {
+      // Try to establish an anonymous session for next attempt
+      await ensureAnonSession().catch(() => {});
+      setBusy(false);
+      alert('Connected. Tap again to talk.');
+      return;
+    }
+
+    if (!res.ok) {
+      const msg = await res.text().catch(() => 'Server error');
+      console.error('Utterance error:', msg);
+      setBusy(false);
+      alert('Hmm, I hit a snag. Try again.');
+      return;
+    }
+
     const j = await res.json();
     onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
-    const a = await playMp3Base64(j.audioMp3Base64, () => setPlaying(null));
-    setPlaying(a);
+    if (j.audioMp3Base64) {
+      const a = await playMp3Base64(j.audioMp3Base64, () => setPlaying(null));
+      setPlaying(a);
+    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(j.reply);
+      window.speechSynthesis.speak(u);
+    }
     setBusy(false);
     chunksRef.current = [];
     // resume capture for continuous conversation if still active

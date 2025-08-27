@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
-import { fetchSessionSeconds } from "@/lib/client-api";
+import { ensureAnonSession, fetchSessionSeconds } from "@/lib/client-api";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
@@ -14,12 +14,12 @@ export default function HomePage() {
   const [lastReply, setLastReply] = useState("");
   useEffect(() => {
     setMounted(true);
-    fetchSessionSeconds()
-      .then((s) => {
-        setSecondsRemaining(s);
-        if (s <= 0) setPaywalled(true);
-      })
-      .catch(() => setSecondsRemaining(null));
+    (async () => {
+      await ensureAnonSession();
+      const s = await fetchSessionSeconds().catch(() => null);
+      if (s != null) setSecondsRemaining(s);
+      // Do not trigger paywall at load; only on 402 from API
+    })();
   }, []);
 
   return (
@@ -37,12 +37,15 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-8">
             <div className="scale-125">
               <HotMic
-              disabled={paywalled}
-              onResult={({ user, reply }) => {
-                setLastUser(user);
-                setLastReply(reply);
-              }}
-              onPaywall={() => setPaywalled(true)}
+                disabled={paywalled}
+                onResult={({ user, reply, estSeconds }) => {
+                  setLastUser(user);
+                  setLastReply(reply);
+                  if (typeof estSeconds === 'number') {
+                    setSecondsRemaining((prev) => (prev != null ? Math.max(0, prev - estSeconds) : prev));
+                  }
+                }}
+                onPaywall={() => setPaywalled(true)}
               />
             </div>
 

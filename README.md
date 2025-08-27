@@ -1,114 +1,94 @@
-# 🎙️ AI Media Companion — Web App Extension
+# 🎤 Kira AI VTuber — Web App Extension
 
-A production-ready Next.js 14 app that turns your local AI VTuber companion into a push-to-talk, metered, paid web experience. Minimal stack, real auth + billing, and a polished voice UX.
+This repo is the web app extension of the original Kira AI VTuber project. It brings Kira’s voice-first companion experience to the browser with push‑to‑talk, transcripts, real auth, metered usage, and Stripe billing.
 
-
-## 🧱 What you’ll deploy
-
-- A single Next.js 14 (App Router) app on Vercel
-- Server routes:
-  - `GET /api/session` (Edge): auth + grant ephemeral session + report remaining trial seconds
-  - `POST /api/utterance` (Node): mic audio → STT → LLM → Azure TTS → return MP3
-  - `POST /api/stripe/create-checkout` (Node): Stripe Checkout
-  - `POST /api/stripe/webhook` (Node): Stripe webhook → grant plan
-- Data on Supabase:
-  - `user_memories` (optional)
-  - `usage_counters` (track seconds + chars)
-  - `entitlements` (free vs paid)
+- Original project: [Kira_AI](https://github.com/JonathanDunkleberger/Kira_AI)
+- Demo GIF: [VTuber Demo — Kira v3](https://github.com/JonathanDunkleberger/Kira_AI/blob/main/VTuber%20Demo%20-%20Kirav3.gif?raw=true)
 
 
-## 🗺️ Architecture
+## 🧭 Overview
 
-- Client UI
-  - Push-to-talk button (pulsing orb)
-  - Transcript pane
-  - Barge-in: starting to talk cancels current playback
-  - Soft earcon if response prep > 800ms (no filler speech)
-- Server
-  - Auth via Supabase Auth
-  - Session ephemeralization in `/api/session`
-  - ASR in `lib/stt.ts`, LLM in `lib/llm.ts`, TTS in `lib/tts.ts` (Azure Ashley)
-  - Usage metering in `lib/usage.ts`
-  - Stripe Checkout + Webhook for entitlements
+- Next.js 14 (App Router) frontend hosted on Vercel
+- Server routes for STT → LLM → TTS loop, auth/session, and billing
+- Supabase for Auth + Postgres (usage metering, entitlements, memories)
+- Stripe Checkout + Webhook for paid plans
+- Azure Speech (Ashley) for TTS; OpenAI for LLM
+
+This extends the local/desktop Kira by exposing a minimal, production-grade web stack that preserves the identity and UX of the original (voice, personality, barge‑in), while adding web auth and metering.
 
 
-## 🔐 Real Auth + Metering
+## ✨ Features
 
-- Client uses Supabase Auth UI (via `@supabase/auth-helpers-nextjs`).
-- In `/api/session`:
-  - Read `user_id` from Supabase session
-  - `ensureEntitlements(userId, FREE_TRIAL_SECONDS)`
-  - Return `secondsRemaining` for the client
-- In `/api/utterance`:
-  - After `ttsToMp3Base64`, call `decrementSeconds(userId, estSeconds)`
-  - If balance ≤ 0, return `HTTP 402` with `{ paywall: true }`
+- 🎙️ Push‑to‑Talk mic button (pulsing orb)
+- 📝 Transcript pane
+- ⏸️ Barge‑in: talking cancels current playback immediately
+- 🔔 Earcon if response prep >800ms (no filler speech)
+- 🔐 Real auth with Supabase
+- 🧮 Usage metering: tracks seconds and characters
+- 💳 Stripe billing with webhook‑driven entitlements
+- 🚦 Simple per‑IP rate limits
+
+
+## 🧱 Architecture (high level)
+
+- Client (Next.js 14)
+  - Mic capture → POST to /api/utterance
+  - Plays returned MP3, shows transcript, handles barge‑in + earcon
+  - Supabase Auth UI on the client
+- Server (Edge + Node routes)
+  - /api/session (Edge): reads Supabase session, ensures entitlements, returns secondsRemaining
+  - /api/utterance (Node): audio → STT → LLM → Azure TTS (Ashley) → MP3
+  - /api/stripe/create-checkout (Node): creates Stripe Checkout session
+  - /api/stripe/webhook (Node): grants plan on successful events
+- Data (Supabase tables)
+  - entitlements (free vs paid)
+  - usage_counters (seconds + chars)
+  - user_memories (optional)
+
+
+## 🔐 Auth + Metering flow
+
+- Client authenticates with Supabase; session is available to server routes
+- /api/session
+  - ensureEntitlements(userId, FREE_TRIAL_SECONDS)
+  - return secondsRemaining
+- /api/utterance
+  - after ttsToMp3Base64, decrementSeconds(userId, estSeconds)
+  - if balance ≤ 0 → HTTP 402 with { paywall: true }
 
 
 ## 🚦 Rate limits
 
-- Simple per-IP limiter (store counts in Supabase keyed by `ip + hour`)
-- Reject new utterances if exceeding N per minute
+- Per‑IP limiter keyed by ip + hour in Supabase
+- Reject new utterances if exceeding N/minute
 
 
-## 🔔 Earcon
+## 🔔 Earcon and ⏯️ Barge‑in
 
-- If `/api/utterance` takes >800ms to respond, play a subtle chime on the client before the reply arrives — keeps the experience “alive” without filler speech.
-
-
-## ⏯️ Barge-in polish
-
-- If the user presses and holds while a reply is playing, immediately pause audio and discard any queued playback.
+- If /api/utterance >800ms, play a subtle chime so the UX feels “alive”
+- If user holds PTT while audio is playing, pause immediately and discard queued playback
 
 
-## 🔄 Roadmap: Realtime / Gemini
+## 🗂️ API summary
 
-- Replace `lib/stt.ts` and `lib/llm.ts` with a WebRTC Live adapter later.
-- Keep `lib/tts.ts` (Azure Ashley) as-is for voice identity.
-
-
-## 💸 Why this gets you to $1.99 quickly
-
-- The PTT flow is intuitive and unjarring.
-- Voice is yours (Ashley + pitch/rate), preserving your product’s identity.
-- Stack is minimal yet production-grade: Vercel + Supabase + Stripe + Azure + OpenAI.
-- Add avatars/personalities as “skins” later without touching the core loop.
-
-
-## 🧰 Tech stack
-
-- Next.js 14 (App Router), TypeScript, Edge + Node runtimes
-- Supabase (Auth, Postgres, RLS)
-- Stripe (Checkout + Webhooks)
-- Azure Speech (TTS: Ashley)
-- OpenAI (LLM)
-- Vercel (hosting)
-
-
-## 🧪 Local development
-
-Prereqs:
-- Node 18+ and pnpm/yarn/npm
-- Supabase project (URL + anon key)
-- Stripe test keys
-- Azure Speech key + region
-- OpenAI API key
-
-Install and run:
-
-```bash
-# install deps
-pnpm install
-
-# run dev
-pnpm dev
-```
-
-The app should be available at http://localhost:3000.
+- GET /api/session (Edge)
+  - Input: cookie‑based auth (Supabase)
+  - Output: { secondsRemaining: number, ephemeralToken?: string }
+- POST /api/utterance (Node)
+  - Input: audio blob/stream (PCM/WEBM), user_id from session
+  - Steps: STT → LLM → TTS
+  - Output: { audioBase64: string, transcript: string }
+  - Errors: 402 { paywall: true } when out of balance
+- POST /api/stripe/create-checkout (Node)
+  - Input: { priceId }
+  - Output: { url } (redirect)
+- POST /api/stripe/webhook (Node)
+  - Handles checkout completion → grants entitlements
 
 
 ## 🔧 Environment variables
 
-Copy `.env.example` to `.env.local` and fill in values:
+Copy .env.example to .env.local and fill in values:
 
 ```env
 # Supabase
@@ -133,51 +113,44 @@ FREE_TRIAL_SECONDS=120
 ```
 
 
+## 🧪 Local development
+
+Prereqs
+
+- Node 18+ (or newer) and pnpm/yarn/npm
+- Supabase project (URL + anon key)
+- Stripe test keys
+- Azure Speech key + region
+- OpenAI API key
+
+Run
+
+```bash
+pnpm install
+pnpm dev
+```
+
+App will be available at [http://localhost:3000](http://localhost:3000).
+
+
 ## 🚀 Deploy
 
-Vercel
-- Import this repo
-- Add all environment variables from above
-- Set the following route runtimes:
-  - `/api/session` → Edge
-  - `/api/utterance` → Node.js
-  - `/api/stripe/*` → Node.js
-
-Supabase
-- Run `supabase/migrations.sql`
-- Create policies to scope rows by `user_id`
-
-Stripe
-- Create a Price and set `STRIPE_PRICE_ID`
-- Add a webhook endpoint at `/api/stripe/webhook` with the signing secret in `STRIPE_WEBHOOK_SECRET`
-
-Azure Speech
-- Create a Speech resource, set `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION`
+- Vercel: import repo and set all env vars
+  - Route runtimes: /api/session → Edge; /api/utterance and /api/stripe/* → Node.js
+- Supabase: run supabase/migrations.sql and create RLS policies by user_id
+- Stripe: set STRIPE_PRICE_ID and STRIPE_WEBHOOK_SECRET; add webhook to /api/stripe/webhook
+- Azure Speech: set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION
 
 
-## 🧾 API overview
+## 🔄 Roadmap
 
-- `GET /api/session` (Edge)
-  - Input: cookie-based auth (Supabase)
-  - Output: `{ secondsRemaining: number, ephemeralToken?: string }`
-
-- `POST /api/utterance` (Node)
-  - Input: audio blob or stream (PCM/WEBM), user_id from session
-  - Steps: STT → LLM → TTS
-  - Output: `{ audioBase64: string, transcript: string }`
-  - Errors: `402 { paywall: true }` when out of balance
-
-- `POST /api/stripe/create-checkout` (Node)
-  - Input: `{ priceId }`
-  - Output: `{ url }` to redirect
-
-- `POST /api/stripe/webhook` (Node)
-  - Handles checkout completion → grants entitlements
+- Move STT + LLM to a WebRTC Live adapter (Realtime/Gemini)
+- Keep Azure Ashley TTS to preserve voice identity
 
 
-## 📂 Project structure
+## 📁 Project structure
 
-```
+```text
 app/
   api/
     session/route.ts
@@ -206,15 +179,12 @@ supabase/
 ```
 
 
-## ✅ Status and next steps
+## ✅ Status
 
-- Core PTT loop and server routes scaffolded
-- Wire Supabase Auth UI on client
-- Implement `ensureEntitlements`, `decrementSeconds`, and per-IP limiter
-- Add earcon on >800ms response time
-- Polish barge-in: discard queued playback on hold
-- Later: swap STT/LLM to WebRTC Live; keep Azure Ashley voice
-
+- Web app extension scaffolded
+- Core PTT loop in place (client + server)
+- Auth + metering hooks defined
+- Stripe integration wired (Checkout + Webhook)
 
 ---
 

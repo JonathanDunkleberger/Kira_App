@@ -14,28 +14,37 @@ export default function HomePage() {
   const [lastReply, setLastReply] = useState("");
   useEffect(() => {
     setMounted(true);
-    fetchSessionSeconds().then((s) => setSecondsRemaining(s)).catch(() => setSecondsRemaining(null));
+    fetchSessionSeconds()
+      .then((s) => {
+        setSecondsRemaining(s);
+        if (s <= 0) setPaywalled(true);
+      })
+      .catch(() => setSecondsRemaining(null));
   }, []);
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
-      <section className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <h1 className="text-3xl font-semibold mb-2">Talk with Kira</h1>
-        <p className="text-gray-400 mb-6">Click the orb to start a conversation. Trial is 20 minutes.</p>
-        {secondsRemaining != null && (
-          <p className="text-xs text-gray-500 mb-8">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
-        )}
+      <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
+        <div>
+          <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
+          <p className="text-gray-400">Click the orb to start a conversation. Trial is 20 minutes.</p>
+          {secondsRemaining != null && (
+            <p className="text-xs text-gray-500 mt-2">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
+          )}
+        </div>
 
         {mounted && (
           <div className="flex flex-col items-center gap-8">
-            <HotMic
+            <div className="scale-125">
+              <HotMic
               disabled={paywalled}
               onResult={({ user, reply }) => {
                 setLastUser(user);
                 setLastReply(reply);
               }}
               onPaywall={() => setPaywalled(true)}
-            />
+              />
+            </div>
 
             <div className="text-left max-w-xl">
               <Transcript text={lastUser ? `You: ${lastUser}` : ''} />

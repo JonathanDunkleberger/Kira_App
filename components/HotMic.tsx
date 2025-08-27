@@ -35,6 +35,10 @@ export default function HotMic({
     }
     // start
     setActive(true);
+    await beginCapture();
+  }
+
+  async function beginCapture() {
     chunksRef.current = [];
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRef.current = stream;
@@ -43,7 +47,7 @@ export default function HotMic({
     rec.ondataavailable = (e) => chunksRef.current.push(e.data);
     rec.onstop = onStopRecording;
     rec.start();
-    startVad(stream);
+    await startVad(stream);
   }
 
   async function startVad(stream: MediaStream) {
@@ -64,12 +68,11 @@ export default function HotMic({
       const rms = Math.sqrt(buf.reduce((a, b) => a + b * b, 0) / buf.length) / 255;
       if (rms < 0.05) silenceFrames++;
       else silenceFrames = 0;
-      if (silenceFrames > maxSilenceFrames) {
+  if (silenceFrames > maxSilenceFrames) {
         // stop capture and send
         recRef.current?.stop();
         vadRef.current?.ctx.close();
         vadRef.current = null;
-        setActive(false);
         return;
       }
       requestAnimationFrame(loop);
@@ -111,6 +114,10 @@ export default function HotMic({
     setPlaying(a);
     setBusy(false);
     chunksRef.current = [];
+    // resume capture for continuous conversation if still active
+    if (active) {
+      await beginCapture();
+    }
   }
 
   async function stopAll() {

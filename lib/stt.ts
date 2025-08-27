@@ -1,11 +1,14 @@
 import OpenAI from 'openai';
-import { env } from './env';
-
-const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
 export async function transcribeWebmToText(webm: Buffer): Promise<string> {
-  // OpenAI expects a File object in Node >=18 via undici
-  const file = new File([webm], 'audio.webm', { type: 'audio/webm' } as any);
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY missing for STT');
+  }
+  const openai = new OpenAI({ apiKey });
+  // OpenAI expects a File-like object; create via Blob in Node 18
+  const blob = new Blob([webm], { type: 'audio/webm' });
+  const file: any = new File([blob], 'audio.webm', { type: 'audio/webm' } as any);
   const result = await openai.audio.transcriptions.create({
     file,
     model: 'whisper-1'

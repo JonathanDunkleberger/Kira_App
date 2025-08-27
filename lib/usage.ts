@@ -1,4 +1,4 @@
-import { getSupabaseServerAdmin } from './supabaseClient';
+import { getSupabaseServerAdmin } from './supabaseAdmin';
 import { FREE_TRIAL_SECONDS } from './env';
 
 export async function ensureEntitlements(userId: string, initialSeconds: number = FREE_TRIAL_SECONDS) {

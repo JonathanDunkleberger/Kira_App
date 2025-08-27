@@ -1,4 +1,7 @@
-/* Minimal global styles to ensure layout renders */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --bg: #0b0b12;
   --ink: #ffffff;
@@ -10,8 +13,4 @@ body { background: var(--bg); color: var(--ink); margin: 0; font-family: ui-sans
 .container-page { max-width: 1000px; margin: 0 auto; padding: 16px; }
 .subtle { color: #a3a3a3; }
 
-/* Simple orb for MicButton placeholder */
-.orb { height: 100%; width: 100%; border-radius: 9999px; background: radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9); box-shadow: 0 0 24px #6d28d9aa; }
-
-.button, .btn { cursor: pointer; }
-.btn-primary { background: #6d28d9; color: white; }
+.orb { height: 100%; width: 100%; border-radius: 9999px; background: radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9); box-shadow: 0 0 44px #6d28d9aa; }

@@ -12,6 +12,7 @@ export default function HomePage() {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
+
   useEffect(() => {
     setMounted(true);
     (async () => {
@@ -27,7 +28,7 @@ export default function HomePage() {
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
         <div>
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          <p className="text-gray-400">Click the orb to start a conversation. Trial is 20 minutes.</p>
+          <p className="text-gray-400">Click the orb to start a conversation. Trial is 10 minutes.</p>
           {secondsRemaining != null && (
             <p className="text-xs text-gray-500 mt-2">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
           )}

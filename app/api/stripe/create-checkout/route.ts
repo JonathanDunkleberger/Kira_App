@@ -17,11 +17,13 @@ export async function POST(req: NextRequest) {
   const userId = userData.user.id;
 
   const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
+    mode: 'subscription',
     line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
     success_url: `${env.APP_URL}/?success=1`,
     cancel_url: `${env.APP_URL}/?canceled=1`,
-    metadata: { userId }
+    metadata: { userId },
+    // This tells Stripe to create a customer and prompt for an email
+    customer_creation: 'always', 
   });
 
   return NextResponse.json({ url: session.url });

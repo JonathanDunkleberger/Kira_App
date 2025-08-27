@@ -56,11 +56,8 @@ export default function HotMic({
   async function beginCapture() {
     if (status !== 'idle') return;
 
-    // --- NEW: Force cleanup of any old resources before starting ---
-    if (recRef.current || mediaRef.current || vadRef.current) {
-        console.warn("Stale media resources found, cleaning up before capture.");
-        forceCleanup();
-    }
+    // Force cleanup of any old resources before starting
+    forceCleanup();
 
     await ensureAnonSession().catch(() => {});
     
@@ -103,6 +100,7 @@ export default function HotMic({
 
     const loop = () => {
       if (!recRef.current || recRef.current.state !== 'recording') {
+        setMicVolume(0);
         return;
       }
       
@@ -126,6 +124,9 @@ export default function HotMic({
   }
 
   async function onStopRecording() {
+    // If the session was deactivated manually, don't process audio
+    if (!active) return; 
+
     setStatus('thinking');
 
     const duration = Date.now() - recordingStartTime.current;
@@ -137,7 +138,7 @@ export default function HotMic({
 
     setBusy(true);
     const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-    chunksRef.current = []; // Clear chunks immediately
+    chunksRef.current = [];
 
     const { data: { session } } = await supabase.auth.getSession();
     const fd = new FormData();
@@ -146,12 +147,18 @@ export default function HotMic({
     
     try {
         const res = await fetch('/api/utterance', { method: 'POST', headers, body: fd });
+        
+        if (res.status === 402) {
+            onPaywall?.();
+            setActive(false);
+            return;
+        }
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
         
         const j = await res.json();
         onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
         
-        const handlePlaybackEnd = () => { setStatus('idle'); };
+        const handlePlaybackEnd = () => { setPlaying(null); setStatus('idle'); };
         
         if (j.audioMp3Base64) {
             const a = await playMp3Base64(j.audioMp3Base64, handlePlaybackEnd);

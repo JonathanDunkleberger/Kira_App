@@ -21,12 +21,12 @@ export async function decrementSeconds(userId: string, seconds: number) {
   await sb.rpc('decrement_seconds', { p_user_id: userId, p_seconds: seconds });
 }
 
-export async function addSupporter(userId: string, minutes: number = 1000) {
+export async function addSupporter(userId: string) { // Removed 'minutes' argument
   const sb = getSupabaseServerAdmin();
   await sb.from('entitlements').upsert({
     user_id: userId,
     plan: 'supporter',
-    seconds_remaining: minutes * 60
+    seconds_remaining: 999999999 // Grant a huge number for "unlimited"
   });
 }
 

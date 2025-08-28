@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { env, FREE_TRIAL_SECONDS } from '@/lib/env';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 import { ensureEntitlements, getSecondsRemaining } from '@/lib/usage';
+import { randomUUID } from 'crypto';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') || env.APP_URL;
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   const remaining = await getSecondsRemaining(userId);
 
   // short-lived session token (opaque) – for MVP we just UUID
-  const sessionToken = crypto.randomUUID();
+  const sessionToken = randomUUID();
 
   return NextResponse.json({ token: sessionToken, secondsRemaining: remaining }, {
     headers: { 'Access-Control-Allow-Origin': origin }

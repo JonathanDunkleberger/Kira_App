@@ -47,6 +47,16 @@ create policy "usage-own" on public.usage_counters
 create policy "profiles-own" on public.profiles
   for select using (auth.uid() = user_id);
 
+-- Helper RPC: list supporters without a stored Stripe customer id
+create or replace function public.supporters_to_backfill()
+returns table(user_id uuid, email text) as $$
+  select u.id as user_id, u.email
+  from public.entitlements e
+  join auth.users u on u.id = e.user_id
+  left join public.profiles p on p.user_id = e.user_id
+  where e.plan = 'supporter' and (p.stripe_customer_id is null or length(p.stripe_customer_id) = 0);
+$$ language sql stable security definer;
+
 -- Seed entitlements when a new user signs up
 create or replace function public.handle_new_user() returns trigger as $$
 begin

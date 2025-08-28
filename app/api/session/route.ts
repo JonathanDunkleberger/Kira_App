@@ -8,7 +8,8 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') || env.APP_URL;
-  if (origin !== env.ALLOWED_ORIGIN && !origin.includes(new URL(env.APP_URL).host)) {
+  const appHost = new URL(env.APP_URL).host;
+  if (origin !== env.ALLOWED_ORIGIN && !origin.includes(appHost)) {
     return new NextResponse('Forbidden origin', { status: 403 });
   }
 

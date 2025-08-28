@@ -188,5 +188,5 @@ supabase/
 
 ---
 
-Questions or ideas? Open an issue or start a discussion. Let’s ship it. 🚀
+Questions or ideas? Open an issue or start a discussion.
 

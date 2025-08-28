@@ -3,17 +3,17 @@ import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from "./prompt";
 import type { Content } from "@google/generative-ai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 
-const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
-const openaiKey = process.env.OPENAI_API_KEY || '';
-const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
-const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-
 function postProcess(text: string) {
   return text.trim().replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");
 }
 
 export async function generateReply(userText: string): Promise<string> {
+  // Read env at runtime (not module init) to avoid build-time analysis issues
+  const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
+  const openaiKey = process.env.OPENAI_API_KEY || '';
+  const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
+  const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
   // Prefer OpenAI if available or explicitly selected
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {

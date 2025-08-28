@@ -32,3 +32,6 @@ Thumbs.db
 
 # Netlify
 .netlify/
+
+# Workspace artifacts
+project_context.txt

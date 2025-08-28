@@ -5,14 +5,18 @@ import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get('authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return new NextResponse('Missing auth', { status: 401 });
-
-  const sb = getSupabaseServerAdmin();
-  const { data: userData, error } = await sb.auth.getUser(token);
-  if (error || !userData.user) return new NextResponse('Invalid auth', { status: 401 });
-  const userId = userData.user.id;
+  // Accept explicit userId for fresh sign-ups from the CheckoutModal; fallback to auth token
+  const body = await req.json().catch(() => ({} as any));
+  let userId: string | null = typeof body?.userId === 'string' ? body.userId : null;
+  if (!userId) {
+    const auth = req.headers.get('authorization') || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return new NextResponse('Missing auth', { status: 401 });
+    const sb = getSupabaseServerAdmin();
+    const { data: userData, error } = await sb.auth.getUser(token);
+    if (error || !userData.user) return new NextResponse('Invalid auth', { status: 401 });
+    userId = userData.user.id;
+  }
 
   // Lazy load Stripe SDK
   const { default: Stripe } = await import('stripe');
@@ -27,6 +31,7 @@ export async function POST(req: NextRequest) {
   success_url: `${APP_URL}/?success=1`,
   cancel_url: `${APP_URL}/?canceled=1`,
     metadata: { userId },
+    client_reference_id: userId || undefined,
   });
 
   return NextResponse.json({ url: session.url });

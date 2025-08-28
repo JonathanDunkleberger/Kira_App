@@ -1,9 +1,10 @@
 "use client";
-import { startCheckout } from '@/lib/client-api';
 import { useState } from 'react';
+import CheckoutModal from '@/components/CheckoutModal';
 
 export default function Paywall() {
   const [isVisible, setIsVisible] = useState(true);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   if (!isVisible) {
     return null; // The modal is hidden, but the app remains paywalled in the background
@@ -29,12 +30,14 @@ export default function Paywall() {
           To continue the conversation with unlimited access, please subscribe.
         </p>
         <button
-          onClick={() => startCheckout()}
+          onClick={() => setShowCheckout(true)}
           className="px-6 py-3 w-full rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 transition-colors"
         >
           Subscribe for $1.99/mo
         </button>
       </div>
+
+      <CheckoutModal open={showCheckout} onClose={() => setShowCheckout(false)} />
     </div>
   );
 }

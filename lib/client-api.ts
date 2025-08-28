@@ -71,3 +71,15 @@ export async function ensureAnonSession(): Promise<void> {
     await supabase.auth.signInAnonymously();
   }
 }
+
+export async function createPortalSession(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+  const r = await fetch('/api/stripe/create-portal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  if (!r.ok) throw new Error(`Portal error: ${r.status}`);
+  const j = await r.json();
+  if (j?.url) window.location.href = j.url; else throw new Error('Portal URL missing');
+}

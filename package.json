@@ -1,10 +1,14 @@
 {
   "name": "ai-media-companion",
   "private": true,
+  "//": "Pinning Node version for consistency across environments",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
-  "dev": "next dev -p 3000",
-  "//": "Temporarily simplified for Vercel debugging. Original: node scripts/check-env.js && next build",
-  "build": "next build",
+    "dev": "next dev -p 3000",
+    "//": "Restored the environment check script",
+    "build": "node scripts/check-env.js && next build",
   "start": "next start",
   "postinstall": "node -e \"console.log('Ready. Set env vars and run `npm run dev`.')\""
   },

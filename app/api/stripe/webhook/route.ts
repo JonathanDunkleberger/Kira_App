@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.metadata?.userId;
+    const userId = (session.metadata as any)?.userId || session.client_reference_id || undefined;
     const customerEmail = session.customer_details?.email; // Get email from the session
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
 
     // Ensure we have the user ID and the email they entered at checkout
     if (userId && customerEmail) {
@@ -54,6 +55,11 @@ export async function POST(req: NextRequest) {
       } else {
         // If the email update was successful, grant unlimited access
         await addSupporter(userId);
+        // Persist Stripe customer id
+        if (customerId) {
+          const sbAdmin = getSupabaseServerAdmin();
+          await sbAdmin.from('profiles').upsert({ user_id: userId, stripe_customer_id: customerId });
+        }
       }
     }
   }

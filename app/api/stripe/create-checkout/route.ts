@@ -24,6 +24,22 @@ export async function POST(req: NextRequest) {
   const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
   const APP_URL = process.env.APP_URL || '';
   const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+  const sb = getSupabaseServerAdmin();
+
+  // Lookup or create a Stripe customer and persist it
+  let customerId: string | undefined;
+  // Try to read from profiles
+  const { data: profile } = await sb.from('profiles').select('stripe_customer_id').eq('user_id', userId).maybeSingle();
+  if (profile?.stripe_customer_id) {
+    customerId = profile.stripe_customer_id as string;
+  } else {
+    // Fetch user email to create a Stripe customer
+    const { data: userData } = await sb.auth.admin.getUserById(userId);
+    const email = userData?.user?.email || undefined;
+    const customer = await stripe.customers.create({ email });
+    customerId = customer.id;
+    await sb.from('profiles').upsert({ user_id: userId, stripe_customer_id: customerId });
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -32,6 +48,7 @@ export async function POST(req: NextRequest) {
   cancel_url: `${APP_URL}/?canceled=1`,
     metadata: { userId },
     client_reference_id: userId || undefined,
+    customer: customerId,
   });
 
   return NextResponse.json({ url: session.url });

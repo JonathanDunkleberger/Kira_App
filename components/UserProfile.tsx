@@ -34,7 +34,7 @@ export default function UserProfile() {
           <path fillRule="evenodd" d="M12 2a5 5 0 100 10 5 5 0 000-10zM3 20.25a8.25 8.25 0 1118 0V21H3v-.75z" clipRule="evenodd" />
         </svg>
         {active && (
-          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-[#0b0b12]" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-purple-500/90 border-2 border-[#0b0b12] shadow-[0_0_8px_rgba(168,85,247,0.9)]" />
         )}
       </div>
     );

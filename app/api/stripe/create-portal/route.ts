@@ -12,17 +12,31 @@ export async function POST(req: NextRequest) {
     const sb = getSupabaseServerAdmin();
     const { data: userData, error } = await sb.auth.getUser(token);
     if (error || !userData.user) return new NextResponse('Invalid auth', { status: 401 });
-    const email = userData.user.email;
-    if (!email) return new NextResponse('Email required', { status: 400 });
+  const user = userData.user;
+  const email = user.email;
 
     const APP_URL = process.env.APP_URL || '';
     const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
     const { default: Stripe } = await import('stripe');
     const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
-    // Find the Stripe customer by email
-    const customers = await stripe.customers.search({ query: `email:'${email.replace(/'/g, " ")}'` });
-    const customer = customers.data[0];
+    // Prefer stored Stripe customer id
+    let customerId: string | undefined;
+    const { data: profile } = await sb.from('profiles').select('stripe_customer_id').eq('user_id', user.id).maybeSingle();
+    if (profile?.stripe_customer_id) customerId = profile.stripe_customer_id as string;
+
+    let customer: any = null;
+    if (customerId) {
+      customer = await stripe.customers.retrieve(customerId).catch(() => null);
+    }
+    if (!customer) {
+      const safeEmail = (email || '').replace(/'/g, ' ');
+      const customers = await stripe.customers.search({ query: `email:'${safeEmail}'` });
+      customer = customers.data[0];
+      if (customer?.id && !customerId) {
+        await sb.from('profiles').upsert({ user_id: user.id, stripe_customer_id: customer.id });
+      }
+    }
     if (!customer) {
       return NextResponse.json({ error: 'No customer found' }, { status: 404 });
     }

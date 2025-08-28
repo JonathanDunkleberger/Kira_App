@@ -13,6 +13,14 @@ create table if not exists public.entitlements (
   updated_at timestamptz default now()
 );
 
+-- Profiles to store external billing identifiers
+create table if not exists public.profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  stripe_customer_id text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table if not exists public.usage_counters (
   user_id uuid references auth.users(id) on delete cascade,
   period_start date not null default current_date,
@@ -27,12 +35,16 @@ create table if not exists public.usage_counters (
 alter table public.user_memories enable row level security;
 alter table public.entitlements enable row level security;
 alter table public.usage_counters enable row level security;
+alter table public.profiles enable row level security;
 
 create policy "memories-own" on public.user_memories
   for select using (auth.uid() = user_id);
 create policy "entitlements-own" on public.entitlements
   for select using (auth.uid() = user_id);
 create policy "usage-own" on public.usage_counters
+  for select using (auth.uid() = user_id);
+
+create policy "profiles-own" on public.profiles
   for select using (auth.uid() = user_id);
 
 -- Seed entitlements when a new user signs up

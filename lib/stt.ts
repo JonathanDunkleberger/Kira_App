@@ -1,10 +1,10 @@
-import OpenAI from 'openai';
-
 export async function transcribeWebmToText(bytes: Uint8Array): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY || '';
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY missing for STT');
   }
+  // Lazy load OpenAI implementation
+  const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({ apiKey });
   // Use native File in modern Node runtimes; ensure BlobPart typing compatibility by copying into a fresh ArrayBuffer
   const ab = new ArrayBuffer(bytes.byteLength);

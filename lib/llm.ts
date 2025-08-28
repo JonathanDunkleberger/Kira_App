@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI, Content } from "@google/generative-ai";
-import OpenAI from "openai";
 import { CHARACTER_SYSTEM_PROMPT, FEW_SHOTS } from "./prompt";
-import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
+// Use type-only imports so they don't affect bundling
+import type { Content } from "@google/generative-ai";
+import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 
 const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
 const openaiKey = process.env.OPENAI_API_KEY || '';
@@ -17,7 +17,9 @@ export async function generateReply(userText: string): Promise<string> {
   // Prefer OpenAI if available or explicitly selected
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
-      const openai = new OpenAI({ apiKey: openaiKey });
+  // Lazy-load OpenAI SDK
+  const { default: OpenAI } = await import('openai');
+  const openai = new OpenAI({ apiKey: openaiKey });
 
       // Properly structured message history
       const messages: ChatCompletionMessageParam[] = [
@@ -47,7 +49,9 @@ export async function generateReply(userText: string): Promise<string> {
 
   // Fallback to Gemini
   if (geminiKey) {
-      const genAI = new GoogleGenerativeAI(geminiKey);
+  // Lazy-load Gemini SDK
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(geminiKey);
       const model = genAI.getGenerativeModel({ model: geminiModel });
       const history: Content[] = FEW_SHOTS.flatMap(shot => ([
           { role: "user", parts: [{ text: shot.user }] },

@@ -1,4 +1,3 @@
-import crypto from "crypto";
 
 export async function synthesizeSpeech(text: string): Promise<string> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
 import { env } from '@/lib/env';
 import { addSupporter } from '@/lib/usage';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
-
-// Initialize Stripe once
-const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
 export async function POST(req: NextRequest) {
   if (!env.STRIPE_WEBHOOK_SECRET) {
@@ -22,6 +19,10 @@ export async function POST(req: NextRequest) {
 
   // Use raw body
   const rawBody = await req.text();
+
+  // Lazy-load Stripe implementation to reduce initial bundle size
+  const { default: StripeImpl } = await import('stripe');
+  const stripe = new StripeImpl(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
   let event: Stripe.Event;
   try {

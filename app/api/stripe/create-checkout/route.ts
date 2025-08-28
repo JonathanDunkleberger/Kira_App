@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { env } from '@/lib/env';
+// Defer env reads to request-time
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
@@ -16,13 +16,16 @@ export async function POST(req: NextRequest) {
 
   // Lazy load Stripe SDK
   const { default: Stripe } = await import('stripe');
-  const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+  const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
+  const APP_URL = process.env.APP_URL || '';
+  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
-    line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
-    success_url: `${env.APP_URL}/?success=1`,
-    cancel_url: `${env.APP_URL}/?canceled=1`,
+  line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+  success_url: `${APP_URL}/?success=1`,
+  cancel_url: `${APP_URL}/?canceled=1`,
     metadata: { userId },
     // This tells Stripe to create a customer and prompt for an email
     customer_creation: 'always', 

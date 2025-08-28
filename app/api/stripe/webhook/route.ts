@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type Stripe from 'stripe';
-import { env } from '@/lib/env';
+// Defer env reads to request-time
 import { addSupporter } from '@/lib/usage';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
-  if (!env.STRIPE_WEBHOOK_SECRET) {
+  const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+  if (!STRIPE_WEBHOOK_SECRET) {
     console.error('Webhook Error: STRIPE_WEBHOOK_SECRET is not configured.');
     return new NextResponse('Webhook handler not configured', { status: 500 });
   }
@@ -22,11 +24,11 @@ export async function POST(req: NextRequest) {
 
   // Lazy-load Stripe implementation to reduce initial bundle size
   const { default: StripeImpl } = await import('stripe');
-  const stripe = new StripeImpl(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+  const stripe = new StripeImpl(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, env.STRIPE_WEBHOOK_SECRET);
+  event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err: any) {
     console.error(`Webhook Error: ${err.message}`);
     return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });

@@ -4,7 +4,7 @@ import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
 import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
 import { ensureEntitlements, getSecondsRemaining, decrementSeconds } from "@/lib/usage";
-import { env, FREE_TRIAL_SECONDS } from "@/lib/env";
+// Defer env reads to request-time
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       userId = userData?.user?.id || null;
     }
     if (!userId) {
-      if (env.DEV_ALLOW_NOAUTH === '1') {
+      if (process.env.DEV_ALLOW_NOAUTH === '1') {
         userId = 'dev-user';
       } else {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
     }
 
   // userId is guaranteed to be a string now
-  await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
+  const fts = parseInt(process.env.FREE_TRIAL_SECONDS || '600', 10);
+  await ensureEntitlements(userId, fts);
   const remaining = await getSecondsRemaining(userId);
     if (!remaining || remaining <= 0) {
       return NextResponse.json({ paywall: true }, { status: 402 });

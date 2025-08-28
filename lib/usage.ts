@@ -1,11 +1,13 @@
 import { getSupabaseServerAdmin } from './supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from './env';
 
-export async function ensureEntitlements(userId: string, initialSeconds: number = FREE_TRIAL_SECONDS) {
+export async function ensureEntitlements(userId: string, initialSeconds?: number) {
+  const seconds = typeof initialSeconds === 'number'
+    ? initialSeconds
+    : parseInt(process.env.FREE_TRIAL_SECONDS || '600', 10);
   const sb = getSupabaseServerAdmin();
   const { data } = await sb.from('entitlements').select('user_id').eq('user_id', userId).maybeSingle();
   if (!data) {
-    await sb.from('entitlements').insert({ user_id: userId, seconds_remaining: initialSeconds, plan: 'free' });
+    await sb.from('entitlements').insert({ user_id: userId, seconds_remaining: seconds, plan: 'free' });
   }
 }
 

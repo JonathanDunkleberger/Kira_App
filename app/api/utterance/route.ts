@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+  // userId is guaranteed to be a string now
   await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
   const remaining = await getSecondsRemaining(userId);
     if (!remaining || remaining <= 0) {
@@ -41,8 +42,9 @@ export async function POST(req: NextRequest) {
       if (!(audio instanceof Blob)) {
         return NextResponse.json({ error: "Missing audio" }, { status: 400 });
       }
-  const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
-  transcript = await transcribeWebmToText(arr);
+      // FIX: Ensure processing stays inside the multipart branch
+      const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
+      transcript = await transcribeWebmToText(arr);
       if (!transcript) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
     } else {
       const body = await req.json().catch(() => ({}));

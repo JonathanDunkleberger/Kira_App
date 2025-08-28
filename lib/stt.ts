@@ -6,20 +6,10 @@ export async function transcribeWebmToText(bytes: Uint8Array): Promise<string> {
     throw new Error('OPENAI_API_KEY missing for STT');
   }
   const openai = new OpenAI({ apiKey });
-  // OpenAI expects a File-like object in Node; polyfill File if needed
-  let FileCtor: any = (globalThis as any).File;
-  if (!FileCtor) {
-    FileCtor = class NodeFile extends Blob {
-      name: string;
-      lastModified: number;
-      constructor(chunks: any[], name: string, opts?: any) {
-        super(chunks, opts);
-        this.name = name;
-        this.lastModified = opts?.lastModified ?? Date.now();
-      }
-    } as any;
-  }
-  const file: any = new FileCtor([bytes], 'audio.webm', { type: 'audio/webm' });
+  // Use native File in modern Node runtimes; ensure BlobPart typing compatibility by copying into a fresh ArrayBuffer
+  const ab = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(ab).set(bytes);
+  const file: any = new File([ab], 'audio.webm', { type: 'audio/webm' });
   const result = await openai.audio.transcriptions.create({
     file,
     model: 'whisper-1'

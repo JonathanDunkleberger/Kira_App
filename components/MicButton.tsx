@@ -1,6 +1,8 @@
 'use client';
 import { useRef, useState } from 'react';
 import { playMp3Base64 } from '@/lib/audio';
+// FIX: Import the client directly
+import { supabase } from '@/lib/supabaseClient';
 
 export default function MicButton({
   onResult,
@@ -27,20 +29,21 @@ export default function MicButton({
       stream.getTracks().forEach(t => t.stop());
       if (!sessionToken) return;
 
-      setBusy(true);
-      const supabaseAccessToken = (await (await import('@/lib/supabaseClient')).getSupabaseBrowser()
-        .auth.getSession()).data.session?.access_token;
+  setBusy(true);
+  // FIX: Use the imported supabase client correctly.
+  const sessionResponse = await supabase.auth.getSession();
+  const supabaseAccessToken = sessionResponse.data.session?.access_token;
 
       const audioBlob = new Blob(chunks, { type: 'audio/webm' });
       const fd = new FormData();
       fd.append('token', sessionToken);
       fd.append('audio', audioBlob, 'audio.webm');
 
-      const res = await fetch('/api/utterance', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${supabaseAccessToken}` },
-        body: fd
-      });
+      const headers: Record<string, string> = {};
+      if (supabaseAccessToken) {
+        headers['Authorization'] = `Bearer ${supabaseAccessToken}`;
+      }
+      const res = await fetch('/api/utterance', { method: 'POST', headers, body: fd });
 
       if (res.status === 402) {
         setBusy(false);

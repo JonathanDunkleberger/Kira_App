@@ -16,7 +16,8 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string(),
   STRIPE_SECRET_KEY: z.string(),
   STRIPE_PRICE_ID: z.string(),
-  STRIPE_WEBHOOK_SECRET: z.string(),
+  // Made optional to avoid build failures on missing secret in preview
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
   APP_URL: z.string().url(),
   FREE_TRIAL_SECONDS: z.string(),
   ALLOWED_ORIGIN: z.string(),

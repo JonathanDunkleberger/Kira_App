@@ -6,15 +6,28 @@ import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
+// Initialize Stripe once
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+
 export async function POST(req: NextRequest) {
-  const sig = req.headers.get('stripe-signature')!;
-  const buf = Buffer.from(await req.arrayBuffer());
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    console.error('Webhook Error: STRIPE_WEBHOOK_SECRET is not configured.');
+    return new NextResponse('Webhook handler not configured', { status: 500 });
+  }
+
+  const sig = req.headers.get('stripe-signature');
+  if (!sig) {
+    return new NextResponse('Webhook Error: Missing stripe-signature', { status: 400 });
+  }
+
+  // Use raw body
+  const rawBody = await req.text();
 
   let event: Stripe.Event;
   try {
-    event = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
-      .webhooks.constructEvent(buf, sig, env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(rawBody, sig, env.STRIPE_WEBHOOK_SECRET);
   } catch (err: any) {
+    console.error(`Webhook Error: ${err.message}`);
     return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
   }
 

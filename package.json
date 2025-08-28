@@ -2,10 +2,10 @@
   "name": "ai-media-companion",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "next build",
-    "start": "next start",
-    "postinstall": "node -e \"console.log('Ready. Set env vars and run `npm run dev`.')\""
+  "dev": "next dev -p 3000",
+  "build": "node scripts/check-env.js && next build",
+  "start": "next start",
+  "postinstall": "node -e \"console.log('Ready. Set env vars and run `npm run dev`.')\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

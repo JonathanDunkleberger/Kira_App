@@ -1,16 +1,14 @@
 {
   "name": "ai-media-companion",
   "private": true,
-  "//": "Pinning Node version for consistency across environments",
   "engines": {
-    "node": "20.x"
+    "node": "20.x",
+    "npm": ">=9"
   },
   "scripts": {
     "dev": "next dev -p 3000",
-    "//": "Restored the environment check script",
     "build": "node scripts/check-env.js && next build",
-  "start": "next start",
-  "postinstall": "node -e \"console.log('Ready. Set env vars and run `npm run dev`.')\""
+    "start": "next start"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -25,8 +23,7 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
-  "@types/react": "18.3.3",
-  "@types/react-dom": "18.3.0",
+    "@types/react": "19.1.12",
     "autoprefixer": "^10.4.18",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.9",

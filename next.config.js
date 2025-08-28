@@ -5,10 +5,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   // Disable source maps to reduce memory footprint
   productionBrowserSourceMaps: false,
-  // Optimization: Externalize heavy SDKs to speed up build analysis
-  experimental: {
-    serverComponentsExternalPackages: ['openai', '@google/generative-ai', 'stripe'],
-  },
+  // Keep defaults for file tracing to avoid excessive dependency scanning on Vercel
   // Optimization: Avoid installing 'sharp' during build
   images: { unoptimized: true },
 };

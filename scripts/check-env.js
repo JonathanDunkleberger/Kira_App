@@ -22,7 +22,8 @@ const EnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string(),
   APP_URL: z.string().url(),
   FREE_TRIAL_SECONDS: z.string(),
-  ALLOWED_ORIGIN: z.string()
+  ALLOWED_ORIGIN: z.string(),
+  DEV_ALLOW_NOAUTH: z.string().optional()
 });
 
 try {

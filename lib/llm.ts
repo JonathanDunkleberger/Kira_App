@@ -78,3 +78,80 @@ export async function generateReply(userText: string): Promise<string> {
 
   throw new Error('No LLM configured. Set OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY');
 }
+
+/**
+ * Generate a reply using prior conversation messages.
+ * History roles should be 'user' or 'assistant'. We'll always prepend system + few-shots.
+ */
+export async function generateReplyWithHistory(
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  userText: string,
+): Promise<string> {
+  const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
+  const openaiKey = process.env.OPENAI_API_KEY || '';
+  const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
+  const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+
+  // trim to recent context (keep last ~8 turns)
+  const trimmed = history.slice(-8);
+
+  if ((provider === 'openai' || !geminiKey) && openaiKey) {
+    try {
+      const { default: OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey: openaiKey });
+
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
+        ...FEW_SHOTS.flatMap(shot => ([
+          { role: 'user' as const, content: shot.user },
+          { role: 'assistant' as const, content: shot.assistant },
+        ])),
+        ...trimmed.map(m => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
+        { role: 'user', content: userText },
+      ];
+
+      const resp = await openai.chat.completions.create({
+        model: openaiModel,
+        messages,
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 400,
+      });
+      const text = resp.choices?.[0]?.message?.content || '';
+      if (text) return postProcess(text);
+    } catch (e) {
+      console.warn('OpenAI failed, falling back to Gemini:', e);
+    }
+  }
+
+  if (geminiKey) {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({ model: geminiModel });
+
+    const fewShotHistory: Content[] = FEW_SHOTS.flatMap(shot => ([
+      { role: 'user', parts: [{ text: shot.user }] },
+      { role: 'model', parts: [{ text: shot.assistant }] },
+    ]));
+    const prior: Content[] = trimmed.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    const chat = model.startChat({
+      history: [...fewShotHistory, ...prior],
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.9,
+        maxOutputTokens: 400,
+      },
+      systemInstruction: { role: 'system', parts: [{ text: CHARACTER_SYSTEM_PROMPT }] },
+    });
+    const result = await chat.sendMessage(userText);
+    const text = result.response.text();
+    return postProcess(text);
+  }
+
+  throw new Error('No LLM configured. Set OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY');
+}

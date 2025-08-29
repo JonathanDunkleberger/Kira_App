@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateReply } from "@/lib/llm";
+import { generateReply, generateReplyWithHistory } from "@/lib/llm";
 import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
 import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
 
     // Parse input
     let transcript = "";
+    let conversationId: string | null = null;
+    const url = new URL(req.url);
+    conversationId = url.searchParams.get('conversationId');
     const ctype = req.headers.get("content-type") || "";
     if (ctype.includes("multipart/form-data")) {
       const form = await req.formData();
@@ -51,9 +54,35 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Missing text" }, { status: 400 });
       }
       transcript = body.text;
+      if (!conversationId && typeof body.conversationId === 'string') conversationId = body.conversationId;
     }
 
-    const reply = await generateReply(transcript);
+    // With conversations: load recent messages for context and persist both sides
+    const sb = getSupabaseServerAdmin();
+    let reply: string;
+    if (conversationId) {
+      // Verify ownership and fetch history
+      const { data: conv } = await sb.from('conversations').select('id, user_id').eq('id', conversationId).maybeSingle();
+      if (!conv || conv.user_id !== userId) {
+        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+      }
+      const { data: msgs } = await sb
+        .from('messages')
+        .select('role, content')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(20);
+      const history = (msgs ?? []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content as string }));
+      reply = await generateReplyWithHistory(history, transcript);
+      // persist user and assistant messages, touch conversation updated_at
+      await sb.from('messages').insert([
+        { conversation_id: conversationId, role: 'user', content: transcript },
+        { conversation_id: conversationId, role: 'assistant', content: reply },
+      ]);
+      await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+    } else {
+      reply = await generateReply(transcript);
+    }
     const audioMp3Base64 = await synthesizeSpeech(reply);
 
     // naive estimate ~15 chars/sec for daily decrement (skip for Pro)
@@ -64,7 +93,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Pro users: return with estSeconds=0
-    return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds: 0 }, { status: 200 });
+  return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds: 0 }, { status: 200 });
   } catch (e: any) {
     console.error("/api/utterance error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

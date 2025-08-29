@@ -92,3 +92,64 @@ export async function ensureAnonSession(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (session) return;
 }
+
+// --- Conversations API helpers ---
+async function authHeader() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null as null | Record<string, string>;
+  return { Authorization: `Bearer ${session.access_token}` };
+}
+
+export async function listConversations() {
+  const headers = await authHeader();
+  if (!headers) return [] as Array<{id:string; title:string; updated_at:string}>;
+  const r = await fetch('/api/conversations', { headers });
+  const j = await r.json();
+  return j.conversations ?? [];
+}
+
+export async function createConversation(title?: string) {
+  const headers = await authHeader();
+  if (!headers) throw new Error('Not signed in');
+  const r = await fetch('/api/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ title })
+  });
+  if (!r.ok) throw new Error('Failed to create conversation');
+  const j = await r.json();
+  return j.conversation as { id: string; title: string; updated_at: string };
+}
+
+export async function getConversation(conversationId: string) {
+  const headers = await authHeader();
+  if (!headers) throw new Error('Not signed in');
+  const r = await fetch(`/api/conversations/${conversationId}`, { headers });
+  if (!r.ok) throw new Error('Failed to load conversation');
+  return r.json();
+}
+
+export async function deleteConversation(conversationId: string) {
+  const headers = await authHeader();
+  if (!headers) throw new Error('Not signed in');
+  const r = await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE', headers });
+  if (!r.ok) throw new Error('Failed to delete');
+}
+
+export async function clearAllConversations() {
+  const headers = await authHeader();
+  if (!headers) throw new Error('Not signed in');
+  const r = await fetch('/api/conversations', { method: 'DELETE', headers });
+  if (!r.ok) throw new Error('Failed to clear');
+}
+
+export async function appendMessage(conversationId: string, role: 'user'|'assistant', content: string) {
+  const headers = await authHeader();
+  if (!headers) throw new Error('Not signed in');
+  const r = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ conversationId, role, content })
+  });
+  if (!r.ok) throw new Error('Failed to append message');
+}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
-import { fetchEntitlement } from "@/lib/client-api";
+import { createConversation, fetchEntitlement } from "@/lib/client-api";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function HomePage() {
@@ -14,6 +14,7 @@ export default function HomePage() {
   const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
   const success = query.get('success') === '1';
@@ -31,6 +32,21 @@ export default function HomePage() {
   useEffect(() => {
     setMounted(true);
     refreshEnt();
+    const url = new URL(window.location.href);
+    const c = url.searchParams.get('c');
+    if (c) setConversationId(c);
+    (async () => {
+      // If signed in and no conversation, create one to keep context from the first message
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && !c) {
+        const conv = await createConversation().catch(() => null);
+        if (conv?.id) {
+          setConversationId(conv.id);
+          url.searchParams.set('c', conv.id);
+          history.replaceState({}, '', url.toString());
+        }
+      }
+    })();
   }, []);
 
   // After returning from Stripe success, poll until webhook flips to active
@@ -95,6 +111,7 @@ export default function HomePage() {
               <HotMic
                 disabled={paywalled}
                 mode={outOfMinutes ? 'launcher' : 'mic'}
+                conversationId={conversationId}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);

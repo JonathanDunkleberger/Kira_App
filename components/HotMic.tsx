@@ -10,6 +10,7 @@ type HotMicProps = {
   onPaywall?: () => void;
   disabled?: boolean;
   mode?: "mic" | "launcher";
+  conversationId?: string | null;
 };
 
 const MIN_RECORDING_DURATION_MS = 1500;
@@ -17,7 +18,7 @@ const VAD_SILENCE_THRESHOLD_S = 10.0;
 const VAD_WARMUP_MS = 750;
 const VAD_RMS_SENSITIVITY = 0.06;
 
-export default function HotMic({ onResult, onPaywall, disabled, mode = "mic" }: HotMicProps) {
+export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId }: HotMicProps) {
   const isLauncher = mode === "launcher";
 
   const [active, setActive] = useState(false);
@@ -134,7 +135,9 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic" }: 
     const headers: Record<string, string> = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 
     try {
-      const res = await fetch("/api/utterance", { method: "POST", headers, body: fd });
+  const url = new URL('/api/utterance', window.location.origin);
+  if (conversationId) url.searchParams.set('conversationId', conversationId);
+  const res = await fetch(url.toString(), { method: "POST", headers, body: fd });
 
       if (res.status === 402) {
         onPaywall?.();

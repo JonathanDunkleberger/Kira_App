@@ -21,6 +21,23 @@ create table if not exists public.profiles (
   updated_at timestamptz default now()
 );
 
+-- Conversations and messages
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null default 'New chat',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  role text not null check (role in ('user','assistant')),
+  content text not null,
+  created_at timestamptz default now()
+);
+
 create table if not exists public.usage_counters (
   user_id uuid references auth.users(id) on delete cascade,
   period_start date not null default current_date,
@@ -36,6 +53,8 @@ alter table public.user_memories enable row level security;
 alter table public.entitlements enable row level security;
 alter table public.usage_counters enable row level security;
 alter table public.profiles enable row level security;
+alter table public.conversations enable row level security;
+alter table public.messages enable row level security;
 
 create policy "memories-own" on public.user_memories
   for select using (auth.uid() = user_id);
@@ -46,6 +65,24 @@ create policy "usage-own" on public.usage_counters
 
 create policy "profiles-own" on public.profiles
   for select using (auth.uid() = user_id);
+
+-- RLS for conversations: owner can select/modify/delete
+create policy "convos-select-own" on public.conversations
+  for select using (auth.uid() = user_id);
+create policy "convos-insert-own" on public.conversations
+  for insert with check (auth.uid() = user_id);
+create policy "convos-update-own" on public.conversations
+  for update using (auth.uid() = user_id);
+create policy "convos-delete-own" on public.conversations
+  for delete using (auth.uid() = user_id);
+
+-- RLS for messages: join to verify conversation ownership
+create policy "messages-select-own" on public.messages
+  for select using (exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = auth.uid()));
+create policy "messages-insert-own" on public.messages
+  for insert with check (exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = auth.uid()));
+create policy "messages-delete-own" on public.messages
+  for delete using (exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = auth.uid()));
 
 -- Helper RPC: list supporters without a stored Stripe customer id
 create or replace function public.supporters_to_backfill()

@@ -1,5 +1,6 @@
 import './globals.css';
 import Header from '@/components/Header';
+import Sidebar from '@/components/Sidebar';
 import Banner from '@/components/Banner';
 import ProfileProvider from '@/components/ProfileProvider';
 
@@ -11,7 +12,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-[#0b0b12] text-white font-ui antialiased">
         <Banner />
         <Header />
-        {children}
+        <div className="flex gap-0">
+          <Sidebar />
+          <div className="flex-1 min-w-0">{children}</div>
+        </div>
       </body>
     </html>
   );

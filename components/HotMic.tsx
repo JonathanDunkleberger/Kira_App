@@ -31,7 +31,7 @@ export default function HotMic({
   const mediaRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
-  const vadRef = useRef<{ ctx: AudioContext; src: MediaStreamSourceNode; analyser: AnalyserNode } | null>(null);
+  const vadRef = useRef<{ ctx: AudioContext; src: MediaStreamAudioSourceNode; analyser: AnalyserNode } | null>(null);
   const recordingStartTime = useRef<number>(0);
 
   useEffect(() => {

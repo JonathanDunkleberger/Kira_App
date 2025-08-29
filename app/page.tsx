@@ -76,7 +76,11 @@ export default function HomePage() {
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
         <div>
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          {!isPro && <p className="text-gray-400">You get 15 minutes of free chats <span className="whitespace-nowrap">per day.</span></p>}
+          {!isPro && (
+            <p className="text-gray-400">
+              Enjoy 15 minutes of free chats per day.
+            </p>
+          )}
           {secondsRemaining != null && !isPro && (
             <p className="text-xs text-gray-500 mt-2">Remaining today: {Math.ceil(secondsRemaining / 60)} min</p>
           )}
@@ -88,7 +92,10 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-8">
             <div className="scale-125">
               <HotMic
-                disabled={paywalled || (!isPro && (secondsRemaining ?? 0) <= 0)}
+                disabled={
+                  paywalled ||
+                  (!isPro && secondsRemaining !== null && secondsRemaining <= 0)
+                }
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import CheckoutModal from "@/components/CheckoutModal";
 import { supabase } from "@/lib/supabaseClient";
-import { createPortalSession } from "@/lib/client-api";
+import { openBillingPortal } from "@/lib/client-api";
 import { useProfile } from "@/components/ProfileProvider";
 
 type Entitlement = { plan: string };
@@ -40,7 +40,7 @@ export default function UserProfile() {
                 <button
                   onClick={async () => {
                     setOpen(false);
-                    await createPortalSession();
+                    await openBillingPortal();
                   }}
                   className="w-full text-left px-2 py-2 rounded-md hover:bg-white/10"
                 >

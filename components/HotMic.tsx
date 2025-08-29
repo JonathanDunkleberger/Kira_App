@@ -190,7 +190,10 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
         throw new Error(`Server error: ${res.status} - ${errorText}`);
       }
 
-      const j = await res.json();
+  const j = await res.json();
+
+  // Debug log to verify response shape/audio payload
+  console.log('Received from /api/utterance:', j);
       
       // Validate response shape
       if (!j || typeof j.transcript !== 'string' || typeof j.reply !== 'string') {
@@ -206,22 +209,30 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
         if (newUsage.secondsRemaining <= 0) onPaywall?.();
       }
 
-      const done = () => { setPlaying(null); setStatus("idle"); };
+      // Cleanup only when audio completes (or immediately if no audio)
+      const done = () => {
+        setPlaying(null);
+        setStatus("idle");
+        setActive(false);
+      };
       if (j.audioMp3Base64) {
+        setStatus("speaking");
         const a = await playMp3Base64(j.audioMp3Base64, done);
         setPlaying(a);
-        setStatus("speaking");
       } else {
         done();
       }
     } catch (err: any) {
       console.error("Utterance error:", err);
       setStatus("error");
-      // Show error briefly, then revert to idle
-      setTimeout(() => setStatus("idle"), 3000);
+      // Show error briefly, then revert to idle and deactivate
+      setTimeout(() => {
+        setStatus("idle");
+        setActive(false);
+      }, 3000);
     } finally {
+      // Do not deactivate here; defer to audio 'done' or error timeout
       setBusy(false);
-      setActive(false);
     }
   }
 

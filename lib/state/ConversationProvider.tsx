@@ -24,6 +24,7 @@ interface ConversationContextType {
   secondsRemaining: number;
   isPro: boolean;
   error: string | null;
+  micVolume: number; // 0..1 for visual bloom
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -62,6 +63,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const [micVolume, setMicVolume] = useState(0);
+  const lastMicUpdateRef = useRef<number>(0);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -173,8 +176,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
     setTurnStatus('processing_speech');
-
-  const token = session?.access_token;
+    const token = session?.access_token;
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'audio.webm');
@@ -194,27 +196,75 @@ export default function ConversationProvider({ children }: { children: React.Rea
         stopConversation('ended_by_limit');
         return;
       }
+      if (!response.ok || !response.body) throw new Error(`API Error: ${response.status} ${response.statusText}`);
 
-      if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
-
-      const result = await response.json();
-
-      setMessages(prev => [
-        ...prev,
-        { role: 'user', content: result.transcript, id: crypto.randomUUID() },
-        { role: 'assistant', content: result.reply, id: crypto.randomUUID() },
-      ]);
-
-      if (!isPro && typeof result.estSeconds === 'number' && result.estSeconds > 0) {
-        const u = updateUsage(result.estSeconds);
-        setFreeSecondsRemaining(u.secondsRemaining);
+      // Add user transcript immediately (from header)
+      const transcriptHeader = response.headers.get('x-transcript');
+      const userTranscript = transcriptHeader ? decodeURIComponent(transcriptHeader) : '';
+      let assistantId = crypto.randomUUID();
+      if (userTranscript) {
+        setMessages(prev => ([...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }, { role: 'assistant', content: '', id: assistantId }]));
+      } else {
+        setMessages(prev => ([...prev, { role: 'assistant', content: '', id: assistantId }]));
       }
 
-      if (result.audioMp3Base64) {
-        setTurnStatus('assistant_speaking');
-        audioPlayerRef.current = await playMp3Base64(result.audioMp3Base64, () => {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = '';
+      // Parse server-sent events from OpenAI proxy (data: ...)
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const data = trimmed.slice(5).trim();
+          if (!data || data === '[DONE]') continue;
+          try {
+            const j = JSON.parse(data);
+            const delta = j.choices?.[0]?.delta?.content || '';
+            if (delta) {
+              assistantText += delta;
+              const current = assistantText;
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: current } : m));
+            }
+          } catch {}
+        }
+      }
+
+      // After stream complete, synthesize and play
+      if (assistantText.trim().length > 0) {
+        try {
+          const ttsResp = await fetch('/api/synthesize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: assistantText })
+          });
+          if (ttsResp.ok) {
+            const { audioMp3Base64 } = await ttsResp.json();
+            if (audioMp3Base64) {
+              setTurnStatus('assistant_speaking');
+              audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
+                setTurnStatus('user_listening');
+              });
+            } else {
+              setTurnStatus('user_listening');
+            }
+          } else {
+            setTurnStatus('user_listening');
+          }
+        } catch {
           setTurnStatus('user_listening');
-        });
+        }
+
+        // Local usage estimate for free users to keep UI in sync with server decrement
+        if (!isPro) {
+          const estSeconds = Math.max(1, Math.ceil(assistantText.length / 15));
+          const u = updateUsage(estSeconds);
+          setFreeSecondsRemaining(u.secondsRemaining);
+        }
       } else {
         setTurnStatus('user_listening');
       }
@@ -263,6 +313,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
             if (mediaRecorderRef.current?.state !== 'recording') return;
             analyser.getByteFrequencyData(dataArray);
             const sum = dataArray.reduce((acc, val) => acc + val, 0);
+            // mic volume between 0..1
+            const now = performance.now();
+            if (!lastMicUpdateRef.current || now - lastMicUpdateRef.current > 50) {
+              const normalized = Math.min(1, sum / (dataArray.length * 255));
+              setMicVolume(normalized);
+              lastMicUpdateRef.current = now;
+            }
             if (sum < 50) {
               if (performance.now() - silenceStart > 2000) {
                 mediaRecorderRef.current.stop();
@@ -296,6 +353,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   secondsRemaining: isPro ? proConversationTimer : freeSecondsRemaining,
     isPro,
     error,
+  micVolume,
   };
 
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;

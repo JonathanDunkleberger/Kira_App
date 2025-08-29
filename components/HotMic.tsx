@@ -10,7 +10,8 @@ export default function HotMic() {
     startConversation, 
     stopConversation,
     secondsRemaining,
-    isPro
+  isPro,
+  micVolume
   } = useConversation();
 
   const isSessionActive = conversationStatus === 'active';
@@ -62,7 +63,7 @@ export default function HotMic() {
                 ? "radial-gradient(circle, #fcd34d, #b45309)"
                 : "radial-gradient(circle, #d8b4fe, #7e22ce)")
             : "radial-gradient(circle, #6d28d9, #1e1b4b)",
-          transform: `scale(${isSessionActive && (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking') ? 1.05 : 1})`,
+          transform: `scale(${isSessionActive && turnStatus === 'user_listening' ? 1 + Math.min(0.12, micVolume * 0.25) : isSessionActive && turnStatus === 'assistant_speaking' ? 1.05 : 1})`,
         }}
       >
         {orbText}

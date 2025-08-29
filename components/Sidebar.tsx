@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { clearAllConversations, createConversation, deleteConversation, listConversations } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
+import TranscriptsView from './TranscriptsView';
 
 type Convo = { id: string; title: string; updated_at: string };
 
@@ -14,6 +15,7 @@ export default function Sidebar() {
   const [convos, setConvos] = useState<Convo[]>([]);
   const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [viewingTranscript, setViewingTranscript] = useState<string | null>(null);
 
   async function refresh() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -29,7 +31,8 @@ export default function Sidebar() {
   if (!signedIn) return null;
 
   return (
-    <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-white/10 min-h-[calc(100vh-56px)] sticky top-14 bg-[#0b0b12]">
+    <>
+      <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-white/10 min-h-[calc(100vh-56px)] sticky top-14 bg-[#0b0b12]">
       <div className="p-3 flex items-center gap-2 border-b border-white/10">
         <button
           className="px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 text-sm"
@@ -76,28 +79,44 @@ export default function Sidebar() {
                     router.replace(url.toString());
                   }}
               >
-                <div className="truncate">{c.title || 'Untitled'}</div>
-                <button
-                  className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-rose-400"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await deleteConversation(c.id).catch(() => {});
-                    setConvos((prev) => prev.filter((x) => x.id !== c.id));
-                    if (activeId === c.id) {
-                      const url = new URL(window.location.href);
-                      url.searchParams.delete('c');
-                      router.replace(url.toString());
-                    }
-                  }}
-                  title="Delete"
-                >
-                  ×
-                </button>
+                <div className="truncate flex-1">{c.title || 'Untitled'}</div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    className="text-xs text-gray-400 hover:text-blue-400 p-1"
+                    title="View transcript"
+                    onClick={(e) => { e.stopPropagation(); setViewingTranscript(c.id); }}
+                  >
+                    📄
+                  </button>
+                  <button
+                    className="text-xs text-gray-400 hover:text-rose-400 p-1"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await deleteConversation(c.id).catch(() => {});
+                      setConvos((prev) => prev.filter((x) => x.id !== c.id));
+                      if (activeId === c.id) {
+                        const url = new URL(window.location.href);
+                        url.searchParams.delete('c');
+                        router.replace(url.toString());
+                      }
+                    }}
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
     </aside>
+
+    <TranscriptsView
+      conversationId={viewingTranscript}
+      isOpen={!!viewingTranscript}
+      onClose={() => setViewingTranscript(null)}
+    />
+    </>
   );
 }

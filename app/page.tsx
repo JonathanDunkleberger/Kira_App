@@ -94,7 +94,7 @@ export default function HomePage() {
             <div className="scale-125">
               <HotMic
                 disabled={paywalled}
-                forcePaywall={outOfMinutes}
+                mode={outOfMinutes ? 'launcher' : 'mic'}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);

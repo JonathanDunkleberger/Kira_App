@@ -51,9 +51,16 @@ export default function HotMic() {
         onClick={handleClick}
         className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-all duration-300 ease-out text-white text-lg font-semibold text-center leading-snug select-none"
         style={{
-          boxShadow: isSessionActive ? "0 0 50px #a855f7, 0 0 20px #a855f7 inset" : "0 0 24px #4c1d95",
+          // Enhanced Visuals
+          boxShadow: isSessionActive 
+            ? (turnStatus === 'processing_speech' 
+                ? "0 0 60px #fbbf24, 0 0 25px #fbbf24 inset" // Thinking state - amber glow
+                : "0 0 50px #a855f7, 0 0 20px #a855f7 inset") // Active state - purple glow
+            : "0 0 24px #4c1d95", // Idle state
           background: isSessionActive
-            ? "radial-gradient(circle, #d8b4fe, #7e22ce)"
+            ? (turnStatus === 'processing_speech' 
+                ? "radial-gradient(circle, #fcd34d, #b45309)"
+                : "radial-gradient(circle, #d8b4fe, #7e22ce)")
             : "radial-gradient(circle, #6d28d9, #1e1b4b)",
           transform: `scale(${isSessionActive && (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking') ? 1.05 : 1})`,
         }}

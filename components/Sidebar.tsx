@@ -1,130 +1,88 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { clearAllConversations, createConversation, deleteConversation, listConversations } from '@/lib/client-api';
+import { useEffect, useState }from 'react';
+import { useConversation } from '@/lib/state/ConversationProvider';
+import { listConversations, createConversation } from '@/lib/client-api';
+import { Plus, MessageSquare, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import TranscriptsView from './TranscriptsView';
-import { Plus, FileText } from 'lucide-react';
 
-type Convo = { id: string; title: string; updated_at: string };
+type Convo = { id: string; title: string | null; updated_at: string };
 
 export default function Sidebar() {
-  const router = useRouter();
-  const search = useSearchParams();
-  const activeId = search.get('c');
   const [convos, setConvos] = useState<Convo[]>([]);
-  const [signedIn, setSignedIn] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [viewingTranscript, setViewingTranscript] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { conversationId, startConversation, stopConversation } = useConversation();
 
-  async function refresh() {
-    const { data: { session } } = await supabase.auth.getSession();
-    setSignedIn(!!session);
-    if (!session) { setConvos([]); setLoading(false); return; }
-    const list = await listConversations().catch(() => []);
-    setConvos(list);
-    setLoading(false);
+  const fetchConvos = async () => {
+    setIsLoading(true);
+    const conversationList = await listConversations();
+    setConvos(conversationList);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchConvos();
+    // Subscribe to changes in the conversations table for real-time updates
+    const channel = supabase.channel('conversations-sidebar')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (_payload) => {
+        fetchConvos();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleNewChat = () => {
+    if (conversationId) {
+        stopConversation();
+    }
+    startConversation();
+  };
+  
+  const handleDelete = async (e: React.MouseEvent, convoId: string) => {
+      e.stopPropagation();
+      if(confirm('Are you sure you want to delete this conversation?')){
+          await supabase.from('conversations').delete().eq('id', convoId);
+          fetchConvos();
+          if(conversationId === convoId){
+              stopConversation();
+          }
+      }
   }
 
-  useEffect(() => { refresh(); }, []);
-
-  if (!signedIn) return null;
-
   return (
-    <>
-      <aside className="hidden md:flex md:flex-col w-64 shrink-0 border-r border-white/10 min-h-[calc(100vh-56px)] sticky top-14 bg-[#0b0b12]">
-      <div className="p-3 flex items-center gap-2 border-b border-white/10">
+    <aside className="hidden md:flex flex-col w-64 bg-gray-900/50 border-r border-white/10 h-screen sticky top-0">
+      <div className="p-2 border-b border-white/10">
         <button
-          className="px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 text-sm flex items-center gap-2"
-          onClick={async () => {
-            const c = await createConversation().catch(() => null);
-            if (c) {
-              setConvos((prev) => [c, ...prev]);
-              const url = new URL(window.location.href);
-              url.searchParams.set('c', c.id);
-              router.replace(url.toString());
-            }
-          }}
+          onClick={handleNewChat}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-white bg-fuchsia-600 hover:bg-fuchsia-700 transition-colors"
         >
-          <Plus size={16} />
-          New chat
+          <Plus size={18} />
+          New Conversation
         </button>
-        {convos.length > 0 && (
-          <button
-            className="px-2 py-1 rounded text-xs text-gray-300 hover:text-white border border-white/10"
-            onClick={async () => {
-              if (!confirm('Clear all conversations?')) return;
-              await clearAllConversations().catch(() => {});
-              setConvos([]);
-              const url = new URL(window.location.href);
-              url.searchParams.delete('c');
-              router.replace(url.toString());
-            }}
-          >
-            Clear all
-          </button>
-        )}
       </div>
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="p-3 text-xs text-gray-400">Loading...</div>
-        ) : convos.length === 0 ? (
-          <div className="p-4 text-center">
-            <div className="mx-auto w-12 h-12 mb-3 rounded-full bg-white/5 flex items-center justify-center">
-              <FileText size={20} className="text-gray-400" />
+      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        {isLoading && <p className="text-xs text-gray-400 px-2">Loading...</p>}
+        {convos.map((convo) => (
+          <a
+            key={convo.id}
+            href={`/?c=${convo.id}`} 
+            className={`group flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm truncate cursor-pointer ${
+              conversationId === convo.id ? 'bg-white/10' : 'hover:bg-white/5 text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-3 truncate">
+                <MessageSquare size={16} className="shrink-0" />
+                <span className="truncate">{convo.title || 'New Conversation'}</span>
             </div>
-            <p className="text-xs text-gray-400">No conversations yet</p>
-            <p className="text-xs text-gray-500 mt-1">Your chats will appear here</p>
-          </div>
-        ) : (
-          <ul className="py-2">
-            {convos.map((c) => (
-              <li key={c.id} className={`group flex items-center justify-between gap-2 px-3 py-2 cursor-pointer text-sm ${activeId === c.id ? 'bg-white/5' : 'hover:bg-white/5'}`}
-                  onClick={() => {
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('c', c.id);
-                    router.replace(url.toString());
-                  }}
-              >
-                <div className="truncate flex-1">{c.title || 'Untitled'}</div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                  <button
-                    className="text-xs text-gray-400 hover:text-blue-400 p-1"
-                    title="View transcript"
-                    onClick={(e) => { e.stopPropagation(); setViewingTranscript(c.id); }}
-                  >
-                    📄
-                  </button>
-                  <button
-                    className="text-xs text-gray-400 hover:text-rose-400 p-1"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await deleteConversation(c.id).catch(() => {});
-                      setConvos((prev) => prev.filter((x) => x.id !== c.id));
-                      if (activeId === c.id) {
-                        const url = new URL(window.location.href);
-                        url.searchParams.delete('c');
-                        router.replace(url.toString());
-                      }
-                    }}
-                    title="Delete"
-                  >
-                    ×
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+            <button onClick={(e) => handleDelete(e, convo.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-400 transition-opacity">
+                <Trash2 size={14} />
+            </button>
+          </a>
+        ))}
       </div>
     </aside>
-
-    <TranscriptsView
-      conversationId={viewingTranscript}
-      isOpen={!!viewingTranscript}
-      onClose={() => setViewingTranscript(null)}
-    />
-    </>
   );
 }

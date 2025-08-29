@@ -28,6 +28,23 @@ interface ConversationContextType {
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
 
+// Add a new helper function for title generation
+async function generateTitleForConversation(convoId: string, msgs: Message[], token: string) {
+  const messageContents = msgs.map(m => `${m.role === 'user' ? 'User' : 'Kira'}: ${m.content}`);
+  try {
+    await fetch(`/api/conversations/${convoId}/title`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ messages: messageContents }),
+    });
+  } catch (error) {
+    console.error("Failed to generate title:", error);
+  }
+}
+
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
@@ -71,6 +88,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
     });
     return () => authListener.subscription.unsubscribe();
   }, []);
+
+  // Auto-title after the first exchange
+  useEffect(() => {
+    if (messages.length === 2 && conversationId && session) {
+      generateTitleForConversation(conversationId, messages, session.access_token);
+    }
+  }, [messages, conversationId, session]);
 
   // After returning from Stripe success, poll entitlements until active then scrub query param
   useEffect(() => {
@@ -202,6 +226,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   useEffect(() => {
     if (turnStatus === 'user_listening' && conversationStatus === 'active') {
+      // --- Barge-In Implementation ---
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
           mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });

@@ -16,11 +16,14 @@ const VAD_RMS_SENSITIVITY = 0.06;
 export default function HotMic({
   onResult,
   onPaywall,
-  disabled
+  disabled,
+  /** when true, clicking the orb opens the paywall immediately */
+  forcePaywall = false,
 }: {
   onResult: (t: { user: string; reply: string; estSeconds?: number }) => void;
   onPaywall?: () => void;
   disabled?: boolean;
+  forcePaywall?: boolean;
 }) {
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,6 +53,11 @@ export default function HotMic({
 
   function toggle() {
     if (disabled || busy) return;
+    // if user is out of minutes, don't touch the mic—just show paywall.
+    if (forcePaywall) {
+      onPaywall?.();
+      return;
+    }
     setActive(!active);
   }
 
@@ -195,13 +203,20 @@ export default function HotMic({
   }
 
   const orbScale = 1 + micVolume * 0.5;
+  const title = forcePaywall
+    ? 'Daily limit reached — click to upgrade'
+    : disabled || busy
+      ? 'Unavailable'
+      : active
+        ? 'Click to stop'
+        : 'Click to talk';
 
   return (
     <button
       onClick={toggle}
-      disabled={disabled || busy}
+      disabled={disabled || busy /* NOT disabled by forcePaywall */}
       className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-transform duration-100 ease-out"
-      title={disabled ? 'Trial exhausted' : active ? 'Click to stop' : 'Click to talk'}
+      title={title}
       style={{
         boxShadow: active ? '0 0 44px #8b5cf6' : '0 0 24px #4c1d95',
         background: active ? 'radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9)' : 'radial-gradient(circle at 35% 25%, #7c3aed, #1f1033)',
@@ -209,7 +224,9 @@ export default function HotMic({
       }}
     >
       {!active ? (
-        <div className="text-gray-100 text-sm select-none">Click to talk</div>
+        <div className="text-gray-100 text-sm select-none">
+          {forcePaywall ? 'Upgrade to keep talking' : 'Click to talk'}
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-2">
           <img src="/logo.png" alt="Kira" className="h-10 w-10 opacity-90" />

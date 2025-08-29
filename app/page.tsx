@@ -70,6 +70,7 @@ export default function HomePage() {
   }, [next, status]);
 
   const isPro = status === 'active';
+  const outOfMinutes = !isPro && secondsRemaining !== null && secondsRemaining <= 0;
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
@@ -92,10 +93,8 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-8">
             <div className="scale-125">
               <HotMic
-                disabled={
-                  paywalled ||
-                  (!isPro && secondsRemaining !== null && secondsRemaining <= 0)
-                }
+                disabled={paywalled}
+                forcePaywall={outOfMinutes}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);

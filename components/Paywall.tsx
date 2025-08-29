@@ -1,13 +1,15 @@
 'use client';
-import { startCheckout, ensureAnonSession } from '@/lib/client-api';
+import Link from 'next/link';
+import { startCheckout } from '@/lib/client-api';
 import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function Paywall() {
   const [isVisible, setIsVisible] = useState(true);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    // make sure we have an anonymous account before we send to checkout
-    ensureAnonSession().catch(() => {});
+    supabase.auth.getSession().then(({ data }) => setSignedIn(!!data.session));
   }, []);
 
   if (!isVisible) return null;
@@ -16,11 +18,7 @@ export default function Paywall() {
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center">
         <div className="flex items-start justify-end">
-          <button
-            onClick={() => setIsVisible(false)}
-            className="text-white/60 hover:text-white"
-            aria-label="Close"
-          >✕</button>
+          <button onClick={() => setIsVisible(false)} className="text-white/60 hover:text-white" aria-label="Close">✕</button>
         </div>
 
         <h2 className="text-2xl font-semibold mt-1">Trial ended</h2>
@@ -32,12 +30,20 @@ export default function Paywall() {
           <div>• Cancel anytime</div>
         </div>
 
-        <button
-          onClick={() => startCheckout()}
-          className="mt-6 w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700"
-        >
-          Create account & Upgrade — $1.99 / mo
-        </button>
+        {!signedIn ? (
+          <div className="mt-6 grid gap-2">
+            <Link href="/sign-up" className="w-full rounded-lg bg-white text-black font-medium py-3 hover:opacity-90">
+              Create account
+            </Link>
+            <Link href="/sign-in" className="w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
+              Log in
+            </Link>
+          </div>
+        ) : (
+          <button onClick={() => startCheckout()} className="mt-6 w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+            Upgrade — $1.99 / mo
+          </button>
+        )}
 
         <p className="text-[11px] text-white/40 mt-3">By subscribing you agree to the Terms & Privacy.</p>
       </div>

@@ -1,7 +1,8 @@
 'use client';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
-import { ensureAnonSession, fetchEntitlement, startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
+import { fetchEntitlement, startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
 
 function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 'slate'|'emerald' }) {
@@ -12,33 +13,30 @@ function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 
 }
 
 export default function Header() {
-  const [signedIn, setSignedIn] = useState(false);
+  const [email, setEmail] = useState<string | null>(null);
   const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
   const [seconds, setSeconds] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   async function refresh() {
-    await ensureAnonSession();
-    const { data: { session } } = await supabase.auth.getSession();
-    setSignedIn(!!session);
+    const { data: { session} } = await supabase.auth.getSession();
+    setEmail(session?.user?.email ?? null);
     const ent = await fetchEntitlement();
-    if (ent) {
-      setStatus(ent.status);
-      setSeconds(ent.secondsRemaining);
-    }
+    if (ent) { setStatus(ent.status); setSeconds(ent.secondsRemaining); }
   }
 
   useEffect(() => {
     refresh();
-
-    // allow other components to force a refresh when entitlement changes
     const onUpdate = () => refresh();
     window.addEventListener('entitlement:updated', onUpdate);
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) refresh();
+    document.addEventListener('click', (e) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     });
     return () => window.removeEventListener('entitlement:updated', onUpdate);
   }, []);
 
+  const signedIn = !!email;
   const isPro = status === 'active';
   const minutes = typeof seconds === 'number' ? Math.ceil(seconds / 60) : null;
 
@@ -46,7 +44,7 @@ export default function Header() {
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5">
       <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Image src="/logo.png" alt="Kira" width={24} height={24} className="opacity-90" />
+          <Link href="/"><Image src="/logo.png" alt="Kira" width={24} height={24} className="opacity-90" /></Link>
           <span className="text-sm text-white/70">Kira</span>
           <Pill>beta</Pill>
         </div>
@@ -55,50 +53,40 @@ export default function Header() {
           {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
           {!isPro && minutes !== null && <span className="text-xs text-white/50">{minutes} min left</span>}
 
-          {!signedIn && (
-            <button
-              onClick={async () => {
-                // Anonymous "one-tap" account for MVP; later swap to magic link
-                await ensureAnonSession();
-                await refresh();
-              }}
-              className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90"
-            >
-              Sign up
-            </button>
-          )}
-
-          {signedIn && !isPro && (
+          {!signedIn ? (
             <>
-              <button
-                onClick={() => startCheckout()}
-                className="px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700"
-              >
-                Upgrade $1.99/mo
-              </button>
-              <button
-                onClick={() => signOut()}
-                className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5"
-              >
-                Sign out
-              </button>
+              <Link href="/sign-in" className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5">Log in</Link>
+              <Link href="/sign-up" className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90">Sign up</Link>
             </>
-          )}
-
-          {signedIn && isPro && (
+          ) : (
             <>
-              <button
-                onClick={() => openBillingPortal()}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
-              >
-                Manage billing
-              </button>
-              <button
-                onClick={() => signOut()}
-                className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5"
-              >
-                Sign out
-              </button>
+              {!isPro && (
+                <button
+                  onClick={() => startCheckout()}
+                  className="px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700"
+                >
+                  Upgrade $1.99/mo
+                </button>
+              )}
+              <div className="relative" ref={ref}>
+                <button onClick={() => setOpen(v => !v)}
+                        className="h-9 w-9 rounded-full bg-white/10 border border-white/15 grid place-items-center">
+                  <span className="text-xs">{email?.[0]?.toUpperCase() ?? 'U'}</span>
+                </button>
+                {open && (
+                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-[#12101b] p-1 shadow-xl">
+                    <Link href="/account" className="block px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">Account</Link>
+                    {isPro && (
+                      <button onClick={() => openBillingPortal()} className="w-full text-left px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">
+                        Manage billing
+                      </button>
+                    )}
+                    <button onClick={() => signOut()} className="w-full text-left px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>

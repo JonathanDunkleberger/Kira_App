@@ -2,7 +2,6 @@ import './globals.css';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import Banner from '@/components/Banner';
-import ProfileProvider from '@/components/ProfileProvider';
 import { Suspense } from 'react';
 
 export const metadata = { title: 'Kira — AI Media Companion', description: 'Talk, don’t alt-tab.' };

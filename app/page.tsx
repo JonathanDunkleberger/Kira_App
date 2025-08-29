@@ -6,10 +6,12 @@ import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
 import { createConversation, fetchEntitlement } from "@/lib/client-api";
 import { supabase } from "@/lib/supabaseClient";
+import { getUsageState, syncUsageWithServer } from "@/lib/usageTracking";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [paywalled, setPaywalled] = useState(false);
+  const [usage, setUsage] = useState({ secondsRemaining: 15 * 60, plan: 'free' });
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
   const [lastUser, setLastUser] = useState("");
@@ -32,6 +34,16 @@ export default function HomePage() {
   useEffect(() => {
     setMounted(true);
     refreshEnt();
+    // track usage locally for guests and show paywall when out
+    const checkUsage = () => {
+      const current = getUsageState();
+      setUsage({ secondsRemaining: current.secondsRemaining, plan: current.plan });
+      if (current.secondsRemaining <= 0 && current.plan === 'free') setPaywalled(true);
+    };
+    checkUsage();
+  // if signed in, sync local usage cache with server entitlements once on mount
+  syncUsageWithServer().then(u => setUsage({ secondsRemaining: u.secondsRemaining, plan: u.plan }));
+    const usageInterval = setInterval(checkUsage, 5000);
     const url = new URL(window.location.href);
     const c = url.searchParams.get('c');
     if (c) setConversationId(c);
@@ -47,6 +59,7 @@ export default function HomePage() {
         }
       }
     })();
+    return () => clearInterval(usageInterval);
   }, []);
 
   // After returning from Stripe success, poll until webhook flips to active
@@ -112,7 +125,7 @@ export default function HomePage() {
                 disabled={paywalled}
                 mode={outOfMinutes ? 'launcher' : 'mic'}
                 conversationId={conversationId}
-        outOfMinutes={outOfMinutes}
+                outOfMinutes={outOfMinutes}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);
@@ -129,7 +142,7 @@ export default function HomePage() {
               <Transcript text={lastReply ? `Kira: ${lastReply}` : ''} />
             </div>
 
-            {paywalled && <Paywall />}
+            <Paywall isOpen={paywalled} onClose={() => setPaywalled(false)} />
           </div>
         )}
       </section>

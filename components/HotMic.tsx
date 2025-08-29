@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { playMp3Base64 } from "@/lib/audio";
 import { ensureAnonSession } from "@/lib/client-api";
 import { supabase } from "@/lib/supabaseClient";
+import { getUsageState, updateUsage } from "@/lib/usageTracking";
 
 type HotMicProps = {
   onResult: (t: { user: string; reply: string; estSeconds?: number }) => void;
@@ -24,9 +25,10 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
 
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<"idle" | "listening" | "thinking" | "speaking" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "listening" | "thinking" | "speaking" | "error" | "outOfTime">("idle");
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
   const [micVolume, setMicVolume] = useState(0);
+  const [usage, setUsage] = useState(getUsageState());
 
   const mediaRef = useRef<MediaStream | null>(null);
   const recRef = useRef<MediaRecorder | null>(null);
@@ -34,26 +36,32 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
   const vadRef = useRef<{ ctx: AudioContext; src: MediaStreamAudioSourceNode; analyser: AnalyserNode } | null>(null);
   const recordingStartTime = useRef<number>(0);
 
+  // Poll usage from localStorage so we can reflect changes live
+  useEffect(() => {
+    setUsage(getUsageState());
+    const interval = setInterval(() => setUsage(getUsageState()), 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleClick = () => {
-    // Immediately show paywall if user is out of minutes
-    if (outOfMinutes) {
+    const current = getUsageState();
+    if ((outOfMinutes || current.secondsRemaining <= 0) && current.plan === 'free') {
+      setStatus('outOfTime');
+      setTimeout(() => setStatus('idle'), 1500);
       onPaywall?.();
       return;
     }
     if (disabled || busy) return;
-    if (isLauncher) {
-      onPaywall?.();
-      return;
-    }
+    if (isLauncher) { onPaywall?.(); return; }
     setActive((v) => !v);
   };
 
   useEffect(() => {
     if (isLauncher) return; // never start mic in launcher mode
-    if (active && status === "idle") beginCapture();
+    if (active && status === "idle" && usage.secondsRemaining > 0) beginCapture();
     else if (!active) stopAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, status, isLauncher]);
+  }, [active, status, isLauncher, usage.secondsRemaining]);
 
   useEffect(() => () => { stopAll(); }, []);
 
@@ -158,6 +166,13 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
       const j = await res.json();
       onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
 
+      // Update usage tracking locally for Free users based on estimated TTS seconds
+      if (typeof j.estSeconds === 'number' && j.estSeconds > 0) {
+        const newUsage = updateUsage(j.estSeconds);
+        setUsage(newUsage);
+        if (newUsage.secondsRemaining <= 0) onPaywall?.();
+      }
+
       const done = () => { setPlaying(null); setStatus("idle"); };
       if (j.audioMp3Base64) {
         const a = await playMp3Base64(j.audioMp3Base64, done);
@@ -167,8 +182,8 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
         done();
       }
     } catch (err) {
-      console.error("Utterance error:", err);
-      setStatus("error");
+  console.error("Utterance error:", err);
+  setStatus("error");
       setTimeout(() => setStatus("idle"), 2000);
     } finally {
       setBusy(false);
@@ -202,34 +217,56 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
   return (
     <button
       onClick={handleClick}
-      disabled={disabled || busy}
+      disabled={disabled || busy || usage.secondsRemaining <= 0}
       className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-transform duration-100 ease-out"
       title={
-        isLauncher ? "Daily limit reached — click to upgrade" : disabled || busy ? "Unavailable" : active ? "Click to stop" : "Click to talk"
+        usage.secondsRemaining <= 0 ? "Daily limit reached — click to upgrade" : isLauncher ? "Daily limit reached — click to upgrade" : disabled || busy ? "Unavailable" : active ? "Click to stop" : "Click to talk"
       }
       style={{
         boxShadow: active && !isLauncher ? "0 0 44px #8b5cf6" : "0 0 24px #4c1d95",
         background:
           active && !isLauncher
             ? "radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9)"
+            : usage.secondsRemaining <= 0
+            ? "radial-gradient(circle at 35% 25%, #7c3aed, #1f1033, #000)"
             : "radial-gradient(circle at 35% 25%, #7c3aed, #1f1033)",
         transform: `scale(${orbScale})`,
+        opacity: usage.secondsRemaining <= 0 ? 0.7 : 1,
       }}
     >
       <div className="text-gray-100 text-sm select-none px-3 text-center leading-snug">
-    {isLauncher || outOfMinutes ? (
+        {usage.secondsRemaining <= 0 ? (
+          "Time's up! Upgrade to continue"
+        ) : status === 'outOfTime' ? (
+          "No time remaining"
+        ) : isLauncher || outOfMinutes ? (
           "Daily limit reached — Upgrade to keep talking"
         ) : active ? (
           <div className="flex flex-col items-center gap-2">
             <img src="/logo.png" alt="Kira" className="h-10 w-10 opacity-90" />
             <div className="text-xs text-gray-300">
-      {status === "thinking" ? "Thinking…" : status === "speaking" ? "Speaking…" : status === "error" ? "Error" : "Listening…"}
+              {status === "thinking" ? "Thinking…" : status === "speaking" ? "Speaking…" : status === "error" ? "Error" : "Listening…"}
             </div>
           </div>
         ) : (
           "Click to talk"
         )}
       </div>
+      {usage.secondsRemaining > 0 && (
+        <div className="absolute -bottom-2 left-0 right-0">
+          <div className="bg-white/10 rounded-full h-1 mx-4">
+            <div 
+              className="bg-fuchsia-500 h-1 rounded-full transition-all duration-300"
+              style={{ 
+                width: `${(usage.secondsRemaining / (15 * 60)) * 100}%` 
+              }}
+            />
+          </div>
+          <div className="text-xs text-white/50 mt-1">
+            {Math.ceil(usage.secondsRemaining / 60)}m left today
+          </div>
+        </div>
+      )}
     </button>
   );
 }

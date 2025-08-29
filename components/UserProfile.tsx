@@ -3,29 +3,15 @@ import { useEffect, useState } from "react";
 import CheckoutModal from "@/components/CheckoutModal";
 import { supabase } from "@/lib/supabaseClient";
 import { createPortalSession } from "@/lib/client-api";
+import { useProfile } from "@/components/ProfileProvider";
 
 type Entitlement = { plan: string };
 
 export default function UserProfile() {
   const [open, setOpen] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
-  const [supporter, setSupporter] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user || null;
-      setEmail(user?.email ?? null);
-      if (user) {
-        const { data } = await supabase.from('entitlements').select('plan').eq('user_id', user.id).maybeSingle();
-        const plan = (data as Entitlement | null)?.plan || 'free';
-        setSupporter(plan === 'supporter');
-      } else {
-        setSupporter(false);
-      }
-    })();
-  }, []);
+  const { email, profile } = useProfile();
+  const supporter = profile?.plan === 'supporter';
 
   function Icon({ active }: { active: boolean }) {
     return (

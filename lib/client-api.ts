@@ -1,5 +1,31 @@
 import { supabase } from '@/lib/supabaseClient';
 
+export async function getMe() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { user: null, entitlement: null };
+  const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
+  if (!r.ok) return { user: null, entitlement: null };
+  const secondsRemaining = (await r.json())?.secondsRemaining ?? null;
+  return { user: session.user ?? null, entitlement: { secondsRemaining } };
+}
+
+export async function openBillingPortal() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not signed in');
+  const r = await fetch('/api/stripe/portal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  const j = await r.json();
+  if (!r.ok || !j?.url) throw new Error(j?.error || 'Portal error');
+  window.location.href = j.url;
+}
+
+export async function signOut() {
+  await supabase.auth.signOut();
+  window.location.reload();
+}
+
 export async function sendUtterance(payload: { text: string }) {
   const r = await fetch("/api/utterance", {
     method: "POST",

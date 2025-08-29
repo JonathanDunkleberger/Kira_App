@@ -1,20 +1,16 @@
 import './globals.css';
-import Image from 'next/image';
-import UserProfile from '@/components/UserProfile';
+import Header from '@/components/Header';
+import Banner from '@/components/Banner';
+import ProfileProvider from '@/components/ProfileProvider';
 
 export const metadata = { title: 'Kira — AI Media Companion', description: 'Talk, don’t alt-tab.' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-bg text-ink font-ui antialiased">
-  <header className="container-page flex items-center justify-between pb-2 relative">
-          <div className="flex items-center gap-3">
-      <Image src="/logo.png" alt="Kira" width={28} height={28} priority />
-            <span className="subtle text-xs">beta</span>
-          </div>
-  <UserProfile />
-  </header>
+      <body className="bg-[#0b0b12] text-white font-ui antialiased">
+        <Banner />
+        <Header />
         {children}
       </body>
     </html>

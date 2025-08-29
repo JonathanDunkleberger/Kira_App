@@ -3,7 +3,7 @@ import { generateReply } from "@/lib/llm";
 import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
 import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
-import { ensureEntitlements, getSecondsRemaining, decrementSeconds } from "@/lib/usage";
+import { ensureEntitlements, getSecondsRemaining, decrementSeconds, getEntitlement } from "@/lib/usage";
 // Defer env reads to request-time
 
 export const runtime = "nodejs";
@@ -60,7 +60,10 @@ export async function POST(req: NextRequest) {
 
     // naive estimate ~15 chars/sec
     const estSeconds = Math.max(1, Math.ceil(reply.length / 15));
-    await decrementSeconds(userId, estSeconds);
+    const ent = await getEntitlement(userId);
+    if (ent.status !== 'active') {
+      await decrementSeconds(userId, estSeconds);
+    }
 
     return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
   } catch (e: any) {

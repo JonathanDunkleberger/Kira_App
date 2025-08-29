@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
@@ -13,6 +13,10 @@ export default function HomePage() {
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
 
+  const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
+  const success = query.get('success') === '1';
+  const canceled = query.get('canceled') === '1';
+
   useEffect(() => {
     setMounted(true);
     (async () => {
@@ -23,14 +27,29 @@ export default function HomePage() {
     })();
   }, []);
 
+  // If we just returned from Stripe success, pull fresh state and clear the paywall
+  useEffect(() => {
+    if (!mounted) return;
+    if (success) {
+      (async () => {
+        const s = await fetchSessionSeconds().catch(() => null);
+        if (typeof s === 'number') {
+          setSecondsRemaining(s);
+          setPaywalled(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('success');
+          history.replaceState({}, '', url.toString());
+        }
+      })();
+    }
+  }, [mounted, success]);
+
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
         <div>
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          <p className="text-gray-400">
-            Click the orb to start a conversation.
-          </p>
+          <p className="text-gray-400">Click the orb to start a conversation.</p>
 
           {secondsRemaining != null ? (
             <p className="text-xs text-gray-500 mt-2">
@@ -41,6 +60,8 @@ export default function HomePage() {
               Free trial: 15 min
             </p>
           )}
+          {canceled && <p className="text-xs text-rose-400 mt-2">Checkout canceled.</p>}
+          {success && <p className="text-xs text-emerald-400 mt-2">Payment successful — unlocking…</p>}
         </div>
 
         {mounted && (

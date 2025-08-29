@@ -18,17 +18,31 @@ export async function getSecondsRemaining(userId: string): Promise<number> {
   return data?.seconds_remaining ?? 0;
 }
 
+export async function getEntitlement(userId: string): Promise<{ status: string; seconds_remaining: number }> {
+  const sb = getSupabaseServerAdmin();
+  const { data } = await sb
+    .from('entitlements')
+    .select('status, seconds_remaining')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return (data as any) ?? { status: 'inactive', seconds_remaining: 0 };
+}
+
 export async function decrementSeconds(userId: string, seconds: number) {
   const sb = getSupabaseServerAdmin();
   await sb.rpc('decrement_seconds', { p_user_id: userId, p_seconds: seconds });
 }
 
-export async function addSupporter(userId: string) { // Removed 'minutes' argument
+// NEW: more explicit “pro” setter you can call anywhere (webhook uses inline variant)
+export async function setPro(userId: string, opts?: { stripeCustomerId?: string; stripeSubscriptionId?: string; status?: 'active'|'past_due'|'canceled' }) {
   const sb = getSupabaseServerAdmin();
   await sb.from('entitlements').upsert({
     user_id: userId,
     plan: 'supporter',
-    seconds_remaining: 999999999 // Grant a huge number for "unlimited"
+    status: opts?.status ?? 'active',
+    seconds_remaining: 999_999_999,
+    stripe_customer_id: opts?.stripeCustomerId,
+    stripe_subscription_id: opts?.stripeSubscriptionId
   });
 }
 

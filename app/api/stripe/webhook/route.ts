@@ -1,66 +1,103 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type Stripe from 'stripe';
-// Defer env reads to request-time
-import { addSupporter } from '@/lib/usage';
+import Stripe from 'stripe';
+import { env } from '@/lib/env';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
+const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+
 export async function POST(req: NextRequest) {
-  const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-  const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
-  if (!STRIPE_WEBHOOK_SECRET) {
-    console.error('Webhook Error: STRIPE_WEBHOOK_SECRET is not configured.');
-    return new NextResponse('Webhook handler not configured', { status: 500 });
+  const sig = req.headers.get('stripe-signature')!;
+  const buf = Buffer.from(await req.arrayBuffer());
+  const whSecret = env.STRIPE_WEBHOOK_SECRET;
+  if (!whSecret) {
+    return new NextResponse('Webhook not configured', { status: 500 });
   }
-
-  const sig = req.headers.get('stripe-signature');
-  if (!sig) {
-    return new NextResponse('Webhook Error: Missing stripe-signature', { status: 400 });
-  }
-
-  // Use raw body
-  const rawBody = await req.text();
-
-  // Lazy-load Stripe implementation to reduce initial bundle size
-  const { default: StripeImpl } = await import('stripe');
-  const stripe = new StripeImpl(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
   let event: Stripe.Event;
   try {
-  event = stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(buf, sig, whSecret);
   } catch (err: any) {
-    console.error(`Webhook Error: ${err.message}`);
     return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = (session.metadata as any)?.userId || session.client_reference_id || undefined;
-    const customerEmail = session.customer_details?.email; // Get email from the session
-    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+  const sb = getSupabaseServerAdmin();
 
-    // Ensure we have the user ID and the email they entered at checkout
-    if (userId && customerEmail) {
-      const sbAdmin = getSupabaseServerAdmin();
-      
-      // Promote the anonymous user to a permanent one by adding their email
-      const { error: updateError } = await sbAdmin.auth.admin.updateUserById(
-        userId,
-        { email: customerEmail }
-      );
+  async function activatePro(userId: string, customerId?: string | null, subscriptionId?: string | null) {
+    await sb.from('entitlements').upsert({
+      user_id: userId,
+      plan: 'supporter',
+      status: 'active',
+      seconds_remaining: 999_999_999,
+      stripe_customer_id: customerId ?? undefined,
+      stripe_subscription_id: subscriptionId ?? undefined,
+    });
+  }
 
-      if (updateError) {
-        console.error(`Webhook Error: Failed to update user ${userId} with email ${customerEmail}`, updateError);
-      } else {
-        // If the email update was successful, grant unlimited access
-        await addSupporter(userId);
-        // Persist Stripe customer id
-        if (customerId) {
-          const sbAdmin = getSupabaseServerAdmin();
-          await sbAdmin.from('profiles').upsert({ user_id: userId, stripe_customer_id: customerId });
-        }
+  async function updateStatusByCustomer(customerId: string, status: string, subscriptionId?: string) {
+    const { data } = await sb
+      .from('entitlements')
+      .select('user_id')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+
+    if (data?.user_id) {
+      await sb.from('entitlements').upsert({
+        user_id: data.user_id,
+        plan: 'supporter',
+        status,
+        stripe_customer_id: customerId,
+        stripe_subscription_id: subscriptionId,
+      });
+    }
+  }
+
+  async function updateStatusBySubscription(subscriptionId: string, status: string, customerId?: string) {
+    const { data } = await sb
+      .from('entitlements')
+      .select('user_id')
+      .eq('stripe_subscription_id', subscriptionId)
+      .maybeSingle();
+
+    if (data?.user_id) {
+      await sb.from('entitlements').upsert({
+        user_id: data.user_id,
+        plan: 'supporter',
+        status,
+        stripe_customer_id: customerId,
+        stripe_subscription_id: subscriptionId,
+      });
+    }
+  }
+
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const s = event.data.object as Stripe.Checkout.Session;
+      const userId = (s.metadata as any)?.userId as string | undefined;
+      const customerId = (s.customer as string) || undefined;
+      const subscriptionId = (s.subscription as string) || undefined;
+
+      if (userId) {
+        await activatePro(userId, customerId, subscriptionId);
+      } else if (customerId) {
+        await updateStatusByCustomer(customerId, 'active', subscriptionId);
       }
+      break;
+    }
+
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated': {
+      const sub = event.data.object as Stripe.Subscription;
+      const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'canceled';
+      await updateStatusBySubscription(sub.id, status, sub.customer as string);
+      break;
+    }
+
+    case 'customer.subscription.deleted': {
+      const sub = event.data.object as Stripe.Subscription;
+      await updateStatusBySubscription(sub.id, 'canceled', sub.customer as string);
+      break;
     }
   }
 

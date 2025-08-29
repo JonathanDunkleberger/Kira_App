@@ -10,7 +10,12 @@ export async function GET(req: NextRequest) {
   const APP_URL = process.env.APP_URL || '';
   const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '';
   const origin = req.headers.get('origin') || APP_URL;
-  if (APP_URL && ALLOWED_ORIGIN && origin !== ALLOWED_ORIGIN && !origin.includes(new URL(APP_URL).host)) {
+  const allowedHost = APP_URL ? new URL(APP_URL).host : '';
+  const isAllowed = !origin ||
+    origin === ALLOWED_ORIGIN ||
+    (allowedHost && origin.includes(allowedHost)) ||
+    origin.endsWith('.vercel.app');
+  if (!isAllowed) {
     return new NextResponse('Forbidden origin', { status: 403 });
   }
 

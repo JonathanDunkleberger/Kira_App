@@ -45,57 +45,78 @@ export async function POST(req: NextRequest) {
       if (!(audio instanceof Blob)) {
         return NextResponse.json({ error: "Missing audio" }, { status: 400 });
       }
-      const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
-      transcript = await transcribeWebmToText(arr);
-      if (!transcript) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
-    } else {
-      const body = await req.json().catch(() => ({}));
-      if (!body?.text || typeof body.text !== "string") {
-        return NextResponse.json({ error: "Missing text" }, { status: 400 });
+      try {
+        const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
+        transcript = await transcribeWebmToText(arr);
+      } catch (transcribeError) {
+        console.error("Transcription error:", transcribeError);
+        return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
       }
-      transcript = body.text;
-      if (!conversationId && typeof body.conversationId === 'string') conversationId = body.conversationId;
+      if (!transcript?.trim()) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
+    } else {
+      try {
+        const body = await req.json();
+        if (!body?.text || typeof body.text !== "string") {
+          return NextResponse.json({ error: "Missing text" }, { status: 400 });
+        }
+        transcript = body.text;
+        if (!conversationId && typeof body.conversationId === 'string') conversationId = body.conversationId;
+      } catch (jsonError) {
+        console.error("JSON parsing error:", jsonError);
+        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+      }
     }
 
     // With conversations: load recent messages for context and persist both sides
     const sb = getSupabaseServerAdmin();
     let reply: string;
-    if (conversationId) {
-      // Verify ownership and fetch history
-      const { data: conv } = await sb.from('conversations').select('id, user_id').eq('id', conversationId).maybeSingle();
-      if (!conv || conv.user_id !== userId) {
-        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    try {
+      if (conversationId) {
+        // Verify ownership and fetch history
+        const { data: conv } = await sb.from('conversations').select('id, user_id').eq('id', conversationId).maybeSingle();
+        if (!conv || conv.user_id !== userId) {
+          return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+        }
+        const { data: msgs } = await sb
+          .from('messages')
+          .select('role, content')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .limit(20);
+        const history = (msgs ?? []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content as string }));
+        reply = await generateReplyWithHistory(history, transcript);
+        // persist user and assistant messages, touch conversation updated_at
+        await sb.from('messages').insert([
+          { conversation_id: conversationId, role: 'user', content: transcript },
+          { conversation_id: conversationId, role: 'assistant', content: reply },
+        ]);
+        await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+      } else {
+        reply = await generateReply(transcript);
       }
-      const { data: msgs } = await sb
-        .from('messages')
-        .select('role, content')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .limit(20);
-      const history = (msgs ?? []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content as string }));
-      reply = await generateReplyWithHistory(history, transcript);
-      // persist user and assistant messages, touch conversation updated_at
-      await sb.from('messages').insert([
-        { conversation_id: conversationId, role: 'user', content: transcript },
-        { conversation_id: conversationId, role: 'assistant', content: reply },
-      ]);
-      await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-    } else {
-      reply = await generateReply(transcript);
+    } catch (llmError) {
+      console.error("LLM error:", llmError);
+      return NextResponse.json({ error: "Failed to generate response" }, { status: 500 });
     }
-    const audioMp3Base64 = await synthesizeSpeech(reply);
+
+    let audioMp3Base64 = "";
+    try {
+      audioMp3Base64 = await synthesizeSpeech(reply);
+    } catch (ttsError) {
+      console.error("TTS error:", ttsError);
+      // continue without audio
+    }
 
     // naive estimate ~15 chars/sec for daily decrement (skip for Pro)
+    let estSeconds = 0;
     if (ent.status !== 'active') {
-      const estSeconds = Math.max(1, Math.ceil(reply.length / 15));
+      estSeconds = Math.max(1, Math.ceil(reply.length / 15));
       await decrementDailySeconds(userId, estSeconds);
-      return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
     }
 
-    // Pro users: return with estSeconds=0
-  return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds: 0 }, { status: 200 });
+    return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
   } catch (e: any) {
     console.error("/api/utterance error:", e);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    return NextResponse.json({ error: "Server error: " + e.message }, { status: 500 });
   }
 }

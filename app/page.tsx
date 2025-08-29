@@ -17,6 +17,7 @@ export default function HomePage() {
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
   const success = query.get('success') === '1';
@@ -101,6 +102,15 @@ export default function HomePage() {
   const isPro = status === 'active';
   const outOfMinutes = !isPro && secondsRemaining !== null && secondsRemaining <= 0;
 
+  const handleResult = ({ user, reply, estSeconds }: { user: string; reply: string; estSeconds?: number }) => {
+    setLastUser(user);
+    setLastReply(reply);
+    setError(null);
+    if (!isPro && typeof estSeconds === 'number') {
+      setSecondsRemaining((prev) => (prev != null ? Math.max(0, prev - estSeconds) : prev));
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
@@ -126,16 +136,26 @@ export default function HomePage() {
                 mode={outOfMinutes ? 'launcher' : 'mic'}
                 conversationId={conversationId}
                 outOfMinutes={outOfMinutes}
-                onResult={({ user, reply, estSeconds }) => {
-                  setLastUser(user);
-                  setLastReply(reply);
-                  if (!isPro && typeof estSeconds === 'number') {
-                    setSecondsRemaining((prev) => (prev != null ? Math.max(0, prev - estSeconds) : prev));
-                  }
-                }}
+                onResult={handleResult}
                 onPaywall={() => setPaywalled(true)}
               />
             </div>
+
+            {error && (
+              <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-red-500/90 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  <span>{error}</span>
+                  <button onClick={() => setError(null)} className="ml-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="text-left max-w-xl">
               <Transcript text={lastUser ? `You: ${lastUser}` : ''} />

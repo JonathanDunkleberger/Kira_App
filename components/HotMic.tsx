@@ -13,6 +13,7 @@ type HotMicProps = {
   mode?: "mic" | "launcher";
   conversationId?: string | null;
   outOfMinutes?: boolean;
+  onConversationUpdate?: (newConversationId: string) => void;
 };
 
 const MIN_RECORDING_DURATION_MS = 1500;
@@ -20,7 +21,7 @@ const VAD_SILENCE_THRESHOLD_S = 10.0;
 const VAD_WARMUP_MS = 750;
 const VAD_RMS_SENSITIVITY = 0.06;
 
-export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId, outOfMinutes }: HotMicProps) {
+export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId, outOfMinutes, onConversationUpdate }: HotMicProps) {
   const isLauncher = mode === "launcher";
 
   const [active, setActive] = useState(false);
@@ -47,7 +48,7 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
     const current = getUsageState();
     if ((outOfMinutes || current.secondsRemaining <= 0) && current.plan === 'free') {
       setStatus('outOfTime');
-      setTimeout(() => setStatus('idle'), 1500);
+      setTimeout(() => setStatus('idle'), 2000);
       onPaywall?.();
       return;
     }
@@ -149,24 +150,44 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
     const headers: Record<string, string> = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const url = new URL('/api/utterance', window.location.origin);
       if (conversationId) url.searchParams.set('conversationId', conversationId);
-      const res = await fetch(url.toString(), { method: "POST", headers, body: fd, signal: controller.signal });
+
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const res = await fetch(url.toString(), { 
+        method: "POST", 
+        headers, 
+        body: fd,
+        signal: controller.signal
+      });
+
       clearTimeout(timeoutId);
 
       if (res.status === 402) {
+        // Paywall - no time remaining
+        setStatus("outOfTime");
         onPaywall?.();
-        setActive(false);
         return;
       }
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Server error: ${res.status} - ${errorText}`);
+      }
 
       const j = await res.json();
+      
+      // Validate response shape
+      if (!j || typeof j.transcript !== 'string' || typeof j.reply !== 'string') {
+        throw new Error("Invalid response format from server");
+      }
+
       onResult({ user: j.transcript, reply: j.reply, estSeconds: j.estSeconds });
 
-      // Update usage tracking locally for Free users based on estimated TTS seconds
+      // Update usage tracking
       if (typeof j.estSeconds === 'number' && j.estSeconds > 0) {
         const newUsage = updateUsage(j.estSeconds);
         setUsage(newUsage);
@@ -181,12 +202,14 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
       } else {
         done();
       }
-    } catch (err) {
-  console.error("Utterance error:", err);
-  setStatus("error");
-      setTimeout(() => setStatus("idle"), 2000);
+    } catch (err: any) {
+      console.error("Utterance error:", err);
+      setStatus("error");
+      // Show error briefly, then revert to idle
+      setTimeout(() => setStatus("idle"), 3000);
     } finally {
       setBusy(false);
+      setActive(false);
     }
   }
 

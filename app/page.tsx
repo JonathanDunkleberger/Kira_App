@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
-import { ensureAnonSession, fetchEntitlement } from "@/lib/client-api";
+import { fetchEntitlement } from "@/lib/client-api";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
@@ -17,9 +18,9 @@ export default function HomePage() {
   const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
   const success = query.get('success') === '1';
   const canceled = query.get('canceled') === '1';
+  const next = query.get('next');
 
   async function refreshEnt() {
-    await ensureAnonSession();
     const ent = await fetchEntitlement();
     if (ent) {
       setSecondsRemaining(ent.secondsRemaining);
@@ -41,17 +42,16 @@ export default function HomePage() {
       // poll for up to ~30s
       for (let i = 0; i < 15 && !stopped; i++) {
         await new Promise(r => setTimeout(r, 2000));
-        await refreshEnt();
-        if (status === 'active') break;
-        // read latest status after refresh
         const ent = await fetchEntitlement();
-        if (ent?.status === 'active') {
+        if (ent) {
           setSecondsRemaining(ent.secondsRemaining);
-          setStatus('active');
-          setPaywalled(false);
-          // Let header know to refresh
-          window.dispatchEvent(new Event('entitlement:updated'));
-          break;
+          setStatus(ent.status);
+          if (ent.status === 'active') {
+            setPaywalled(false);
+            // Let header know to refresh
+            window.dispatchEvent(new Event('entitlement:updated'));
+            break;
+          }
         }
       }
       // scrub query either way
@@ -64,6 +64,11 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, success]);
 
+  // If user came from sign-up with intent to upgrade, pre-open the paywall when not Pro
+  useEffect(() => {
+    if (next === 'upgrade' && status !== 'active') setPaywalled(true);
+  }, [next, status]);
+
   const isPro = status === 'active';
 
   return (
@@ -71,9 +76,9 @@ export default function HomePage() {
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
         <div>
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          <p className="text-gray-400">Click the orb to start a conversation. Trial is 10 minutes.</p>
+          {!isPro && <p className="text-gray-400">You get 15 minutes of free chats <span className="whitespace-nowrap">per day.</span></p>}
           {secondsRemaining != null && !isPro && (
-            <p className="text-xs text-gray-500 mt-2">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
+            <p className="text-xs text-gray-500 mt-2">Remaining today: {Math.ceil(secondsRemaining / 60)} min</p>
           )}
           {canceled && <p className="text-xs text-rose-400 mt-2">Checkout canceled.</p>}
           {success && !isPro && <p className="text-xs text-emerald-400 mt-2">Payment successful — unlocking…</p>}

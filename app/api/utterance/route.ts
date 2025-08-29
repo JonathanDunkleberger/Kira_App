@@ -3,14 +3,14 @@ import { generateReply } from "@/lib/llm";
 import { synthesizeSpeech } from "@/lib/tts";
 import { transcribeWebmToText } from "@/lib/stt";
 import { getSupabaseServerAdmin } from "@/lib/supabaseAdmin";
-import { ensureEntitlements, getSecondsRemaining, decrementSeconds, getEntitlement } from "@/lib/usage";
-// Defer env reads to request-time
+import { ensureEntitlements, getEntitlement, getDailySecondsRemaining, decrementDailySeconds } from "@/lib/usage";
+import { env, FREE_TRIAL_SECONDS } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth (Supabase access token expected) — allow bypass in dev if configured
+    // Auth (Supabase access token) — allow bypass in dev if configured
     let userId: string | null = null;
     const auth = req.headers.get("authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
@@ -20,21 +20,20 @@ export async function POST(req: NextRequest) {
       userId = userData?.user?.id || null;
     }
     if (!userId) {
-      if (process.env.DEV_ALLOW_NOAUTH === '1') {
-        userId = 'dev-user';
-      } else {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+      if (env.DEV_ALLOW_NOAUTH === '1') userId = 'dev-user';
+      else return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-  // userId is guaranteed to be a string now
-  const fts = parseInt(process.env.FREE_TRIAL_SECONDS || '600', 10);
-  await ensureEntitlements(userId, fts);
-  const remaining = await getSecondsRemaining(userId);
-    if (!remaining || remaining <= 0) {
+    // Ensure daily trial counters
+    await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
+    const ent = await getEntitlement(userId);
+    const dailyRemaining = await getDailySecondsRemaining(userId);
+
+    if (ent.status !== 'active' && dailyRemaining <= 0) {
       return NextResponse.json({ paywall: true }, { status: 402 });
     }
 
+    // Parse input
     let transcript = "";
     const ctype = req.headers.get("content-type") || "";
     if (ctype.includes("multipart/form-data")) {
@@ -43,7 +42,6 @@ export async function POST(req: NextRequest) {
       if (!(audio instanceof Blob)) {
         return NextResponse.json({ error: "Missing audio" }, { status: 400 });
       }
-      // FIX: Ensure processing stays inside the multipart branch
       const arr = new Uint8Array(await (audio as Blob).arrayBuffer());
       transcript = await transcribeWebmToText(arr);
       if (!transcript) return NextResponse.json({ error: "Empty transcript" }, { status: 400 });
@@ -58,14 +56,15 @@ export async function POST(req: NextRequest) {
     const reply = await generateReply(transcript);
     const audioMp3Base64 = await synthesizeSpeech(reply);
 
-    // naive estimate ~15 chars/sec
-    const estSeconds = Math.max(1, Math.ceil(reply.length / 15));
-    const ent = await getEntitlement(userId);
+    // naive estimate ~15 chars/sec for daily decrement (skip for Pro)
     if (ent.status !== 'active') {
-      await decrementSeconds(userId, estSeconds);
+      const estSeconds = Math.max(1, Math.ceil(reply.length / 15));
+      await decrementDailySeconds(userId, estSeconds);
+      return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
     }
 
-    return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds }, { status: 200 });
+    // Pro users: return with estSeconds=0
+    return NextResponse.json({ transcript, reply, audioMp3Base64, estSeconds: 0 }, { status: 200 });
   } catch (e: any) {
     console.error("/api/utterance error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

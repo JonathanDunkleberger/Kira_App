@@ -25,7 +25,8 @@ export async function sendUtterance(payload: { text: string }) {
 export type Entitlement = {
   plan: 'free' | 'supporter';
   status: 'inactive' | 'active' | 'past_due' | 'canceled';
-  secondsRemaining: number;
+  secondsRemaining: number; // daily remaining
+  trialPerDay: number;
 };
 
 export async function fetchEntitlement(): Promise<Entitlement | null> {
@@ -37,10 +38,11 @@ export async function fetchEntitlement(): Promise<Entitlement | null> {
 
   const j = await r.json();
   return {
-    plan: (j?.plan ?? 'free') as Entitlement['plan'],
-    status: (j?.status ?? 'inactive') as Entitlement['status'],
-    secondsRemaining: typeof j?.secondsRemaining === 'number' ? j.secondsRemaining : 0,
-  };
+    plan: (j?.plan ?? 'free'),
+    status: (j?.status ?? 'inactive'),
+    secondsRemaining: Number(j?.secondsRemaining ?? 0),
+    trialPerDay: Number(j?.trialPerDay ?? 900)
+  } as Entitlement;
 }
 
 // Backward compat for callers that only want seconds
@@ -50,33 +52,32 @@ export async function fetchSessionSeconds(): Promise<number | null> {
 }
 
 export async function startCheckout(): Promise<void> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error('Authentication session not found. Please refresh and try again.');
-
-    const r = await fetch('/api/stripe/create-checkout', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${session.access_token}` }
-    });
-
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j?.url) throw new Error(j?.error || `Server error: ${r.status}`);
-    window.location.href = j.url;
-  } catch (err: any) {
-    console.error("Checkout failed:", err);
-    alert(`Checkout Error: ${err.message}`);
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = '/sign-up?next=upgrade';
+    return;
   }
+  const r = await fetch('/api/stripe/create-checkout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j?.url) {
+    alert(j?.error || `Server error: ${r.status}`);
+    return;
+  }
+  window.location.href = j.url;
 }
 
 export async function openBillingPortal() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not signed in');
+  if (!session) { window.location.href = '/sign-in'; return; }
   const r = await fetch('/api/stripe/portal', {
     method: 'POST',
     headers: { Authorization: `Bearer ${session.access_token}` }
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j?.url) throw new Error(j?.error || 'Portal error');
+  if (!r.ok || !j?.url) { alert(j?.error || 'Portal error'); return; }
   window.location.href = j.url;
 }
 
@@ -86,11 +87,8 @@ export async function signOut() {
 }
 
 export async function ensureAnonSession(): Promise<void> {
+  // With email+password now in play, you might not want anon.
+  // Keep it no-op for now.
   const { data: { session } } = await supabase.auth.getSession();
   if (session) return;
-  // @ts-ignore
-  if (typeof supabase.auth.signInAnonymously === 'function') {
-    // @ts-ignore
-    await supabase.auth.signInAnonymously();
-  }
 }

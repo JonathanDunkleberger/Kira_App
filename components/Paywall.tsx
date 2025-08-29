@@ -32,17 +32,25 @@ export default function Paywall() {
 
         {!signedIn ? (
           <div className="mt-6 grid gap-2">
-            <Link href="/sign-up" className="w-full rounded-lg bg-white text-black font-medium py-3 hover:opacity-90">
+            <Link href="/sign-up?next=upgrade" className="w-full rounded-lg bg-white text-black font-medium py-3 hover:opacity-90">
               Create account
             </Link>
-            <Link href="/sign-in" className="w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
+            <Link href="/sign-in?next=upgrade" className="w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
               Log in
             </Link>
+            <button onClick={() => setIsVisible(false)} className="text-sm text-white/60 mt-2 hover:underline">
+              Return to home
+            </button>
           </div>
         ) : (
-          <button onClick={() => startCheckout()} className="mt-6 w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-            Upgrade — $1.99 / mo
-          </button>
+          <>
+            <button onClick={() => startCheckout()} className="mt-6 w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+              Upgrade — $1.99 / mo
+            </button>
+            <button onClick={() => setIsVisible(false)} className="text-sm text-white/60 mt-2 hover:underline">
+              Return to home
+            </button>
+          </>
         )}
 
         <p className="text-[11px] text-white/40 mt-3">By subscribing you agree to the Terms & Privacy.</p>

@@ -51,7 +51,7 @@ export default function Header() {
 
         <div className="flex items-center gap-3">
           {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
-          {!isPro && minutes !== null && <span className="text-xs text-white/50">{minutes} min left</span>}
+          {!isPro && minutes !== null && <span className="text-xs text-white/50">{minutes} min left today</span>}
 
           {!signedIn ? (
             <>

@@ -1,4 +1,5 @@
 // scripts/check-env.js
+require('dotenv').config({ path: '.env.local' }); // <-- load env from .env.local
 const { z } = require('zod');
 
 const EnvSchema = z.object({
@@ -31,7 +32,7 @@ try {
   if (!parsed.success) {
     const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('\n - ');
     if (isVercel) {
-      console.warn('⚠️  Environment warnings (continuing on Vercel):\n - ' + issues);
+  console.warn('⚠️ Environment warnings (continuing on Vercel):\n - ' + issues);
       process.exit(0);
     } else {
       console.error('❌ Invalid environment variables:\n - ' + issues);

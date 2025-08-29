@@ -1,31 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
 
-export async function getMe() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { user: null, entitlement: null };
-  const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
-  if (!r.ok) return { user: null, entitlement: null };
-  const secondsRemaining = (await r.json())?.secondsRemaining ?? null;
-  return { user: session.user ?? null, entitlement: { secondsRemaining } };
-}
-
-export async function openBillingPortal() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not signed in');
-  const r = await fetch('/api/stripe/portal', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` }
-  });
-  const j = await r.json();
-  if (!r.ok || !j?.url) throw new Error(j?.error || 'Portal error');
-  window.location.href = j.url;
-}
-
-export async function signOut() {
-  await supabase.auth.signOut();
-  window.location.reload();
-}
-
 export async function sendUtterance(payload: { text: string }) {
   const r = await fetch("/api/utterance", {
     method: "POST",
@@ -45,47 +19,70 @@ export async function sendUtterance(payload: { text: string }) {
     } catch {}
     throw new Error(message);
   }
-
   return r.json();
 }
 
-export async function fetchSessionSeconds(): Promise<number | null> {
+export type Entitlement = {
+  plan: 'free' | 'supporter';
+  status: 'inactive' | 'active' | 'past_due' | 'canceled';
+  secondsRemaining: number;
+};
+
+export async function fetchEntitlement(): Promise<Entitlement | null> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return null;
+
   const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
   if (!r.ok) return null;
+
   const j = await r.json();
-  return (typeof j?.secondsRemaining === 'number') ? j.secondsRemaining : null;
+  return {
+    plan: (j?.plan ?? 'free') as Entitlement['plan'],
+    status: (j?.status ?? 'inactive') as Entitlement['status'],
+    secondsRemaining: typeof j?.secondsRemaining === 'number' ? j.secondsRemaining : 0,
+  };
+}
+
+// Backward compat for callers that only want seconds
+export async function fetchSessionSeconds(): Promise<number | null> {
+  const ent = await fetchEntitlement();
+  return ent ? ent.secondsRemaining : null;
 }
 
 export async function startCheckout(): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      throw new Error('Authentication session not found. Please refresh the page and try again.');
-    }
+    if (!session) throw new Error('Authentication session not found. Please refresh and try again.');
 
     const r = await fetch('/api/stripe/create-checkout', {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}` }
     });
 
-    if (!r.ok) {
-      // This will now catch the 500 error from the server
-      const errorBody = await r.json().catch(() => ({ error: 'Failed to start checkout. Server returned an invalid response.' }));
-      throw new Error(errorBody.error || `Server error: ${r.status}`);
-    }
-    
-    const j = await r.json();
-    if (j?.url) {
-      window.location.href = j.url;
-    } else {
-      throw new Error('Could not retrieve a checkout URL.');
-    }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j?.url) throw new Error(j?.error || `Server error: ${r.status}`);
+    window.location.href = j.url;
   } catch (err: any) {
     console.error("Checkout failed:", err);
     alert(`Checkout Error: ${err.message}`);
   }
+}
+
+export async function openBillingPortal() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not signed in');
+  const r = await fetch('/api/stripe/portal', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j?.url) throw new Error(j?.error || 'Portal error');
+  window.location.href = j.url;
+}
+
+export async function signOut() {
+  await supabase.auth.signOut();
+  window.location.reload();
 }
 
 export async function ensureAnonSession(): Promise<void> {
@@ -96,16 +93,4 @@ export async function ensureAnonSession(): Promise<void> {
     // @ts-ignore
     await supabase.auth.signInAnonymously();
   }
-}
-
-export async function createPortalSession(): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not authenticated');
-  const r = await fetch('/api/stripe/create-portal', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` }
-  });
-  if (!r.ok) throw new Error(`Portal error: ${r.status}`);
-  const j = await r.json();
-  if (j?.url) window.location.href = j.url; else throw new Error('Portal URL missing');
 }

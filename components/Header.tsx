@@ -1,7 +1,7 @@
 'use client';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { ensureAnonSession, fetchSessionSeconds, startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
+import { ensureAnonSession, fetchEntitlement, startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
 
 function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 'slate'|'emerald' }) {
@@ -13,21 +13,33 @@ function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 
 
 export default function Header() {
   const [signedIn, setSignedIn] = useState(false);
+  const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
   const [seconds, setSeconds] = useState<number | null>(null);
-  const [email, setEmail] = useState<string | null>(null);
+
+  async function refresh() {
+    await ensureAnonSession();
+    const { data: { session } } = await supabase.auth.getSession();
+    setSignedIn(!!session);
+    const ent = await fetchEntitlement();
+    if (ent) {
+      setStatus(ent.status);
+      setSeconds(ent.secondsRemaining);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      await ensureAnonSession();
-      const { data: { session } } = await supabase.auth.getSession();
-      setSignedIn(!!session);
-      setEmail(session?.user?.email ?? null);
-      const s = await fetchSessionSeconds().catch(() => null);
-      setSeconds(s);
-    })();
+    refresh();
+
+    // allow other components to force a refresh when entitlement changes
+    const onUpdate = () => refresh();
+    window.addEventListener('entitlement:updated', onUpdate);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refresh();
+    });
+    return () => window.removeEventListener('entitlement:updated', onUpdate);
   }, []);
 
-  const isPro = typeof seconds === 'number' && seconds > 100000000;
+  const isPro = status === 'active';
   const minutes = typeof seconds === 'number' ? Math.ceil(seconds / 60) : null;
 
   return (
@@ -46,11 +58,13 @@ export default function Header() {
           {!signedIn && (
             <button
               onClick={async () => {
-                alert('You are in anonymous mode. Add magic link later for real accounts.');
+                // Anonymous "one-tap" account for MVP; later swap to magic link
+                await ensureAnonSession();
+                await refresh();
               }}
               className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90"
             >
-              Sign in
+              Sign up
             </button>
           )}
 

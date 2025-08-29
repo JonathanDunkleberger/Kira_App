@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
-import { ensureAnonSession, fetchSessionSeconds } from "@/lib/client-api";
+import { ensureAnonSession, fetchEntitlement } from "@/lib/client-api";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [paywalled, setPaywalled] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
 
@@ -17,62 +18,76 @@ export default function HomePage() {
   const success = query.get('success') === '1';
   const canceled = query.get('canceled') === '1';
 
+  async function refreshEnt() {
+    await ensureAnonSession();
+    const ent = await fetchEntitlement();
+    if (ent) {
+      setSecondsRemaining(ent.secondsRemaining);
+      setStatus(ent.status);
+    }
+  }
+
   useEffect(() => {
     setMounted(true);
-    (async () => {
-      await ensureAnonSession();
-      const s = await fetchSessionSeconds().catch(() => null);
-      if (s != null) setSecondsRemaining(s);
-      // Do not trigger paywall at load; only on 402 from API
-    })();
+    refreshEnt();
   }, []);
 
-  // If we just returned from Stripe success, pull fresh state and clear the paywall
+  // After returning from Stripe success, poll until webhook flips to active
   useEffect(() => {
-    if (!mounted) return;
-    if (success) {
-      (async () => {
-        const s = await fetchSessionSeconds().catch(() => null);
-        if (typeof s === 'number') {
-          setSecondsRemaining(s);
+    if (!mounted || !success) return;
+
+    let stopped = false;
+    (async () => {
+      // poll for up to ~30s
+      for (let i = 0; i < 15 && !stopped; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        await refreshEnt();
+        if (status === 'active') break;
+        // read latest status after refresh
+        const ent = await fetchEntitlement();
+        if (ent?.status === 'active') {
+          setSecondsRemaining(ent.secondsRemaining);
+          setStatus('active');
           setPaywalled(false);
-          const url = new URL(window.location.href);
-          url.searchParams.delete('success');
-          history.replaceState({}, '', url.toString());
+          // Let header know to refresh
+          window.dispatchEvent(new Event('entitlement:updated'));
+          break;
         }
-      })();
-    }
+      }
+      // scrub query either way
+      const url = new URL(window.location.href);
+      url.searchParams.delete('success');
+      history.replaceState({}, '', url.toString());
+    })();
+
+    return () => { stopped = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, success]);
+
+  const isPro = status === 'active';
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white">
       <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
         <div>
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          <p className="text-gray-400">Click the orb to start a conversation.</p>
-
-          {secondsRemaining != null ? (
-            <p className="text-xs text-gray-500 mt-2">
-              Remaining: {Math.ceil(secondsRemaining / 60)} min
-            </p>
-          ) : (
-            <p className="text-xs text-gray-500 mt-2">
-              Free trial: 15 min
-            </p>
+          <p className="text-gray-400">Click the orb to start a conversation. Trial is 10 minutes.</p>
+          {secondsRemaining != null && !isPro && (
+            <p className="text-xs text-gray-500 mt-2">Remaining: {Math.ceil(secondsRemaining / 60)} min</p>
           )}
           {canceled && <p className="text-xs text-rose-400 mt-2">Checkout canceled.</p>}
-          {success && <p className="text-xs text-emerald-400 mt-2">Payment successful — unlocking…</p>}
+          {success && !isPro && <p className="text-xs text-emerald-400 mt-2">Payment successful — unlocking…</p>}
         </div>
 
         {mounted && (
           <div className="flex flex-col items-center gap-8">
             <div className="scale-125">
               <HotMic
-                disabled={paywalled}
+                disabled={paywalled || (!isPro && (secondsRemaining ?? 0) <= 0)}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);
-                  if (typeof estSeconds === 'number') {
+                  if (!isPro && typeof estSeconds === 'number') {
                     setSecondsRemaining((prev) => (prev != null ? Math.max(0, prev - estSeconds) : prev));
                   }
                 }}

@@ -14,6 +14,7 @@ type HotMicProps = {
   conversationId?: string | null;
   outOfMinutes?: boolean;
   onConversationUpdate?: (newConversationId: string) => void;
+  isSignedIn?: boolean;
 };
 
 const MIN_RECORDING_DURATION_MS = 1500;
@@ -21,7 +22,7 @@ const VAD_SILENCE_THRESHOLD_S = 10.0;
 const VAD_WARMUP_MS = 750;
 const VAD_RMS_SENSITIVITY = 0.06;
 
-export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId, outOfMinutes, onConversationUpdate }: HotMicProps) {
+export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId, outOfMinutes, onConversationUpdate, isSignedIn = false }: HotMicProps) {
   const isLauncher = mode === "launcher";
 
   const [active, setActive] = useState(false);
@@ -46,6 +47,11 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
 
   const handleClick = () => {
     const current = getUsageState();
+    // If logged out and local usage is exhausted, go straight to paywall
+    if (!isSignedIn && current.secondsRemaining <= 0) {
+      onPaywall?.();
+      return;
+    }
     if ((outOfMinutes || current.secondsRemaining <= 0) && current.plan === 'free') {
       setStatus('outOfTime');
       setTimeout(() => setStatus('idle'), 2000);
@@ -173,6 +179,12 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
         return;
       }
       
+      if (res.status === 401) {
+        // Unauthorized should not show generic error; treat as paywall/CTA
+        onPaywall?.();
+        setStatus('outOfTime');
+        return;
+      }
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`Server error: ${res.status} - ${errorText}`);

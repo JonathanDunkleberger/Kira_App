@@ -17,6 +17,8 @@ export default function HomePage() {
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isConversationReady, setConversationReady] = useState(false);
+  const [session, setSession] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
@@ -49,15 +51,23 @@ export default function HomePage() {
     const c = url.searchParams.get('c');
     if (c) setConversationId(c);
     (async () => {
-      // If signed in and no conversation, create one to keep context from the first message
+      // Load session and ensure conversation exists for signed-in users
       const { data: { session } } = await supabase.auth.getSession();
-      if (session && !c) {
+      setSession(session);
+      if (c) {
+        setConversationReady(true);
+        return;
+      }
+      if (session) {
         const conv = await createConversation().catch(() => null);
         if (conv?.id) {
           setConversationId(conv.id);
           url.searchParams.set('c', conv.id);
           history.replaceState({}, '', url.toString());
         }
+        setConversationReady(true);
+      } else {
+        setConversationReady(true);
       }
     })();
     return () => clearInterval(usageInterval);
@@ -101,6 +111,7 @@ export default function HomePage() {
 
   const isPro = status === 'active';
   const outOfMinutes = !isPro && secondsRemaining !== null && secondsRemaining <= 0;
+  const isSignedIn = !!session;
 
   const handleResult = ({ user, reply, estSeconds }: { user: string; reply: string; estSeconds?: number }) => {
     setLastUser(user);
@@ -132,10 +143,11 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-8">
       <div className="scale-125">
               <HotMic
-                disabled={paywalled}
+                disabled={!isConversationReady || paywalled}
                 mode={outOfMinutes ? 'launcher' : 'mic'}
                 conversationId={conversationId}
                 outOfMinutes={outOfMinutes}
+                isSignedIn={isSignedIn}
                 onResult={handleResult}
                 onPaywall={() => setPaywalled(true)}
               />

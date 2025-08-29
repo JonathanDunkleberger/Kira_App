@@ -5,7 +5,6 @@ import HotMic from "@/components/HotMic";
 import Transcript from "@/components/Transcript";
 import Paywall from "@/components/Paywall";
 import { createConversation, fetchEntitlement } from "@/lib/client-api";
-import TranscriptsView from "@/components/TranscriptsView";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function HomePage() {
@@ -16,7 +15,6 @@ export default function HomePage() {
   const [lastUser, setLastUser] = useState("");
   const [lastReply, setLastReply] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
 
   const query = useMemo(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''), []);
   const success = query.get('success') === '1';
@@ -109,20 +107,12 @@ export default function HomePage() {
 
         {mounted && (
           <div className="flex flex-col items-center gap-8">
-            <div className="scale-125 relative">
-              {conversationId && (
-                <button
-                  onClick={() => setShowTranscript(true)}
-                  className="absolute -top-8 -right-8 p-2 text-white/60 hover:text-white hover:bg-white/5 rounded-lg"
-                  title="View transcript"
-                >
-                  📄
-                </button>
-              )}
+      <div className="scale-125">
               <HotMic
                 disabled={paywalled}
                 mode={outOfMinutes ? 'launcher' : 'mic'}
                 conversationId={conversationId}
+        outOfMinutes={outOfMinutes}
                 onResult={({ user, reply, estSeconds }) => {
                   setLastUser(user);
                   setLastReply(reply);
@@ -143,13 +133,6 @@ export default function HomePage() {
           </div>
         )}
       </section>
-      {showTranscript && (
-        <TranscriptsView
-          conversationId={conversationId}
-          isOpen={showTranscript}
-          onClose={() => setShowTranscript(false)}
-        />
-      )}
     </main>
   );
 }

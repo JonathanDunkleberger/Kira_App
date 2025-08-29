@@ -11,6 +11,7 @@ type HotMicProps = {
   disabled?: boolean;
   mode?: "mic" | "launcher";
   conversationId?: string | null;
+  outOfMinutes?: boolean;
 };
 
 const MIN_RECORDING_DURATION_MS = 1500;
@@ -18,12 +19,12 @@ const VAD_SILENCE_THRESHOLD_S = 10.0;
 const VAD_WARMUP_MS = 750;
 const VAD_RMS_SENSITIVITY = 0.06;
 
-export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId }: HotMicProps) {
+export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", conversationId, outOfMinutes }: HotMicProps) {
   const isLauncher = mode === "launcher";
 
   const [active, setActive] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<"idle" | "listening" | "thinking" | "speaking">("idle");
+  const [status, setStatus] = useState<"idle" | "listening" | "thinking" | "speaking" | "error">("idle");
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
   const [micVolume, setMicVolume] = useState(0);
 
@@ -34,6 +35,11 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
   const recordingStartTime = useRef<number>(0);
 
   const handleClick = () => {
+    // Immediately show paywall if user is out of minutes
+    if (outOfMinutes) {
+      onPaywall?.();
+      return;
+    }
     if (disabled || busy) return;
     if (isLauncher) {
       onPaywall?.();
@@ -135,9 +141,12 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
     const headers: Record<string, string> = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 
     try {
-  const url = new URL('/api/utterance', window.location.origin);
-  if (conversationId) url.searchParams.set('conversationId', conversationId);
-  const res = await fetch(url.toString(), { method: "POST", headers, body: fd });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const url = new URL('/api/utterance', window.location.origin);
+      if (conversationId) url.searchParams.set('conversationId', conversationId);
+      const res = await fetch(url.toString(), { method: "POST", headers, body: fd, signal: controller.signal });
+      clearTimeout(timeoutId);
 
       if (res.status === 402) {
         onPaywall?.();
@@ -159,7 +168,8 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
       }
     } catch (err) {
       console.error("Utterance error:", err);
-      setStatus("idle");
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 2000);
     } finally {
       setBusy(false);
     }
@@ -184,6 +194,7 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
   function stopAll() {
     forceCleanup();
     if (status !== "idle") setStatus("idle");
+    setActive(false);
   }
 
   const orbScale = 1 + (isLauncher ? 0 : micVolume * 0.5);
@@ -206,13 +217,13 @@ export default function HotMic({ onResult, onPaywall, disabled, mode = "mic", co
       }}
     >
       <div className="text-gray-100 text-sm select-none px-3 text-center leading-snug">
-        {isLauncher ? (
+    {isLauncher || outOfMinutes ? (
           "Daily limit reached — Upgrade to keep talking"
         ) : active ? (
           <div className="flex flex-col items-center gap-2">
             <img src="/logo.png" alt="Kira" className="h-10 w-10 opacity-90" />
             <div className="text-xs text-gray-300">
-              {status === "thinking" ? "Thinking…" : status === "speaking" ? "Speaking…" : "Listening…"}
+      {status === "thinking" ? "Thinking…" : status === "speaking" ? "Speaking…" : status === "error" ? "Error" : "Listening…"}
             </div>
           </div>
         ) : (

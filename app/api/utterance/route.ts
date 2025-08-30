@@ -92,10 +92,11 @@ export async function POST(req: NextRequest) {
     return new Response('Invalid state for guest user.', { status: 400 });
   }
 
-  // 1. Transcribe Audio
+  // 1. Parse form data and transcribe audio
   let transcript = '';
+  let formData: FormData;
   try {
-    const formData = await req.formData();
+    formData = await req.formData();
     const audio = formData.get('audio') as Blob | null;
     if (!audio) throw new Error('No audio file provided.');
     const arr = new Uint8Array(await audio.arrayBuffer());
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
         .select('role, content')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
-        .limit(10);
+        .limit(20);
       if (messages) {
         history = messages.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
       }
@@ -123,6 +124,20 @@ export async function POST(req: NextRequest) {
     } catch (error: any) {
       console.error('DB Error:', error);
       return new Response(`Error fetching history or saving message: ${error.message}`, { status: 500 });
+    }
+  } else {
+    // Guest: read short history window from the form data if provided
+    try {
+      const historyStr = formData.get('history') as string | null;
+      if (historyStr) {
+        const parsed = JSON.parse(historyStr);
+        if (Array.isArray(parsed)) {
+          history = parsed.filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+                          .map((m: any) => ({ role: m.role, content: m.content }));
+        }
+      }
+    } catch (e) {
+      console.warn('Could not parse guest history');
     }
   }
 

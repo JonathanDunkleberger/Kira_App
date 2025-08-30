@@ -160,6 +160,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
     
     const formData = new FormData();
     formData.append('audio', audioBlob, 'audio.webm');
+    // For guests, pass a small window of recent history to preserve context server-side
+    if (!session) {
+      try {
+        const guestHistory = messages.slice(-6); // 3 turns max
+        formData.append('history', JSON.stringify(guestHistory));
+      } catch {}
+    }
     
     const url = new URL('/api/utterance', window.location.origin);
     if (conversationId) url.searchParams.set('conversationId', conversationId);

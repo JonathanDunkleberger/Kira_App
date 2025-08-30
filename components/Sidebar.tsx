@@ -1,20 +1,22 @@
 "use client";
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare } from 'lucide-react';
 
 export default function Sidebar() {
-  const { allConversations, conversationId, loadConversation, newConversation } = useConversation();
+  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation } = useConversation();
   const convos = allConversations;
-  const activeId = conversationId;
+  const activeId = currentConversationId ?? null;
   const isLoading = useMemo(() => false, []);
+
+  useEffect(() => { fetchAllConversations(); }, [fetchAllConversations]);
 
   return (
     <aside className="hidden md:flex flex-col w-64 bg-gray-900/50 border-r border-white/10 h-screen sticky top-0">
       <div className="p-2 border-b border-white/10">
         <button
-          onClick={async () => { await newConversation(); }}
+          onClick={async () => { await newConversation(); startConversation(); }}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-white bg-fuchsia-600 hover:bg-fuchsia-700 transition-colors"
         >
           <Plus size={18} />

@@ -8,6 +8,7 @@ import { createConversation as apiCreateConversation, listConversations, getConv
 
 const PRO_SESSION_SECONDS = 30 * 60; // increased from 20 to 30 minutes
 const GUEST_SESSION_SECONDS = 15 * 60;
+const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
@@ -16,6 +17,7 @@ type Convo = { id: string; title: string | null; updated_at: string };
 
 interface ConversationContextType {
   conversationId: string | null;
+  currentConversationId?: string | null; // alias for convenience
   messages: Message[];
   conversationStatus: ConversationStatus;
   turnStatus: TurnStatus;
@@ -29,6 +31,7 @@ interface ConversationContextType {
   allConversations: Convo[];
   loadConversation: (id: string) => Promise<void>;
   newConversation: () => Promise<void>;
+  fetchAllConversations: () => Promise<void>;
   // Timer surface (daily remaining for free users)
   dailySecondsRemaining: number | null;
 }
@@ -54,15 +57,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const vadCleanupRef = useRef<() => void>(() => {});
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
-    const fetchProfile = async () => {
+  const fetchProfile = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       if (session) {
         const ent = await fetchEntitlement().catch(() => null);
         setIsPro(ent?.status === 'active');
         setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
+    // Baseline the session timer based on plan
+    setProConversationTimer((ent?.status === 'active') ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
         // Preload user's conversations
         listConversations().then(setAllConversations).catch(() => setAllConversations([]));
         // Realtime updates
@@ -121,8 +127,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setMessages([]);
     setConversationStatus('active');
     setTurnStatus('user_listening');
-  setProConversationTimer(PRO_SESSION_SECONDS);
-  }, [session]);
+    setProConversationTimer(isPro ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
+  }, [session, isPro]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
     vadCleanupRef.current();
@@ -136,6 +142,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, []);
 
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
     setTurnStatus('processing_speech');
     setMicVolume(0);
     
@@ -218,6 +226,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
       
     } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }
+    finally { isProcessingRef.current = false; }
   }, [session, conversationId, stopConversation, messages, allConversations]);
 
   useEffect(() => {
@@ -272,7 +281,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
             // Ensure analyser/stream are torn down at end of a turn
             try { cleanup(); } catch {}
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (audioBlob.size > 200) processAudioChunk(audioBlob);
+            if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) processAudioChunk(audioBlob);
           };
           mediaRecorderRef.current.start();
           checkSilence();
@@ -318,8 +327,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
     } catch {}
   }, [session]);
 
+  // Expose explicit refresh of conversations list
+  const fetchAllConversations = useCallback(async () => {
+    if (!session) { setAllConversations([]); return; }
+    try { const list = await listConversations(); setAllConversations(list); } catch { /* noop */ }
+  }, [session]);
+
   const value = {
     conversationId,
+    currentConversationId: conversationId,
     messages,
     conversationStatus,
     turnStatus,
@@ -332,6 +348,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     allConversations,
     loadConversation,
     newConversation,
+    fetchAllConversations,
     dailySecondsRemaining,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;

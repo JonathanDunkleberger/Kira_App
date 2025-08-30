@@ -9,7 +9,6 @@ export default function HotMic() {
     turnStatus, 
     startConversation, 
     stopConversation,
-    secondsRemaining,
   isPro,
   micVolume
   } = useConversation();
@@ -40,12 +39,6 @@ export default function HotMic() {
     }
   }, [isSessionActive, turnStatus, isPro]);
   
-  const timerText = useMemo(() => {
-    const minutes = Math.floor(secondsRemaining / 60);
-    const seconds = secondsRemaining % 60;
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds} left`;
-  }, [secondsRemaining]);
-
   return (
     <div className="flex flex-col items-center gap-4">
       <button
@@ -70,7 +63,6 @@ export default function HotMic() {
       </button>
       <div className="h-8 text-center">
         <p className="text-gray-400">{subText}</p>
-        {isSessionActive && <p className="text-sm text-fuchsia-400 font-mono">{timerText}</p>}
       </div>
     </div>
   );

@@ -4,13 +4,14 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
-import { createConversation as apiCreateConversation } from '@/lib/client-api';
+import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 
 const PRO_CONVERSATION_LIMIT_SECONDS = 20 * 60;
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
+type Convo = { id: string; title: string | null; updated_at: string };
 
 interface ConversationContextType {
   conversationId: string | null;
@@ -23,6 +24,12 @@ interface ConversationContextType {
   isPro: boolean;
   micVolume: number;
   error: string | null;
+  // Centralized conversations state
+  allConversations: Convo[];
+  loadConversation: (id: string) => Promise<void>;
+  newConversation: () => Promise<void>;
+  // Timer surface (daily remaining for free users)
+  dailySecondsRemaining: number | null;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -36,6 +43,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [allConversations, setAllConversations] = useState<Convo[]>([]);
+  const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
+  const conversationsChannelRef = useRef<any>(null);
   
   const [proConversationTimer, setProConversationTimer] = useState(PRO_CONVERSATION_LIMIT_SECONDS);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -49,13 +59,34 @@ export default function ConversationProvider({ children }: { children: React.Rea
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       if (session) {
-        const { data: profile } = await supabase.from('entitlements').select('status').eq('user_id', session.user.id).maybeSingle();
-        setIsPro(profile?.status === 'active');
-      } else { setIsPro(false); }
+        const ent = await fetchEntitlement().catch(() => null);
+        setIsPro(ent?.status === 'active');
+        setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
+        // Preload user's conversations
+        listConversations().then(setAllConversations).catch(() => setAllConversations([]));
+        // Realtime updates
+        if (conversationsChannelRef.current) {
+          try { supabase.removeChannel(conversationsChannelRef.current); } catch {}
+        }
+        conversationsChannelRef.current = supabase
+          .channel('conversations-provider')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => {
+            listConversations().then(setAllConversations).catch(() => {});
+          })
+          .subscribe();
+      } else {
+        setIsPro(false);
+      }
     };
     fetchProfile();
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); fetchProfile(); });
-    return () => authListener.subscription.unsubscribe();
+    return () => {
+      authListener.subscription.unsubscribe();
+      if (conversationsChannelRef.current) {
+        try { supabase.removeChannel(conversationsChannelRef.current); } catch {}
+        conversationsChannelRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -77,6 +108,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
       try {
         const newConversation = await apiCreateConversation('New Conversation');
         setConversationId(newConversation.id);
+  // refresh list & select
+  listConversations().then(setAllConversations).catch(() => {});
       } catch (e: any) {
         setError(`Failed to create conversation: ${e.message}`);
         return;
@@ -127,8 +160,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
           throw new Error(errorText || `API Error (${response.status})`);
       }
       
-      const userTranscript = decodeURIComponent(response.headers.get('X-User-Transcript') || '');
-      setMessages(prev => [...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }]);
+  const userTranscript = decodeURIComponent(response.headers.get('X-User-Transcript') || '');
+  setMessages(prev => [...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }]);
       
       const assistantMessageId = crypto.randomUUID();
       setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
@@ -145,6 +178,30 @@ export default function ConversationProvider({ children }: { children: React.Rea
         setMessages(prev => prev.map(msg => msg.id === assistantMessageId ? { ...msg, content: fullAssistantReply } : msg));
       }
 
+      // Auto-title after second turn for signed-in users with untitled conversations
+      try {
+        if (session && conversationId) {
+          const userCount = [...messages, { role: 'assistant', content: fullAssistantReply, id: 'tmp' } as Message]
+            .filter(m => m.role === 'user').length;
+          if (userCount >= 2) {
+            // Title based on the first user message
+            const firstUser = [...messages].find(m => m.role === 'user');
+            const base = firstUser?.content || userTranscript;
+            const title = base.trim().slice(0, 60).replace(/\s+/g, ' ');
+            // Only patch if currently generic
+            const current = allConversations.find(c => c.id === conversationId)?.title || '';
+            if (!current || /new chat|new conversation/i.test(current)) {
+              await fetch(`/api/conversations/${conversationId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+                body: JSON.stringify({ title })
+              }).catch(() => {});
+              listConversations().then(setAllConversations).catch(() => {});
+            }
+          }
+        }
+      } catch {}
+
       const audioRes = await fetch('/api/synthesize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fullAssistantReply }) });
       if (audioRes.ok) {
         const { audioMp3Base64 } = await audioRes.json();
@@ -152,9 +209,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
           audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => setTurnStatus('user_listening'));
         } else { setTurnStatus('user_listening'); }
       } else { console.error('Speech synthesis failed.'); setTurnStatus('user_listening'); }
+      // Refresh daily seconds after a turn
+      if (session) {
+        fetchEntitlement().then(ent => {
+          if (ent) setDailySecondsRemaining(ent.secondsRemaining);
+        }).catch(() => {});
+      }
       
     } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }
-  }, [session, conversationId, stopConversation]);
+  }, [session, conversationId, stopConversation, messages, allConversations]);
 
   useEffect(() => {
     if (turnStatus === 'user_listening' && conversationStatus === 'active') {
@@ -196,7 +259,48 @@ export default function ConversationProvider({ children }: { children: React.Rea
     return () => vadCleanupRef.current();
   }, [turnStatus, conversationStatus, processAudioChunk, stopConversation]);
 
-  const value = { conversationId, messages, conversationStatus, turnStatus, startConversation, stopConversation, secondsRemaining: proConversationTimer, isPro, micVolume, error };
+  // Load a conversation's messages into provider
+  const loadConversation = useCallback(async (id: string) => {
+    if (!session) return;
+    try {
+      const data = await getConversation(id);
+      const msgs = (data?.messages || []) as Array<{ id: string; role: 'user'|'assistant'; content: string }>;
+      setConversationId(id);
+      setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
+      setConversationStatus('idle');
+      setTurnStatus('idle');
+    } catch (e) {
+      // noop
+    }
+  }, [session]);
+
+  // Create conversation without starting mic
+  const newConversation = useCallback(async () => {
+    if (!session) return;
+    try {
+      const c = await apiCreateConversation('New Conversation');
+      setConversationId(c.id);
+      setMessages([]);
+      listConversations().then(setAllConversations).catch(() => {});
+    } catch {}
+  }, [session]);
+
+  const value = {
+    conversationId,
+    messages,
+    conversationStatus,
+    turnStatus,
+    startConversation,
+    stopConversation,
+    secondsRemaining: proConversationTimer,
+    isPro,
+    micVolume,
+    error,
+    allConversations,
+    loadConversation,
+    newConversation,
+    dailySecondsRemaining,
+  };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }
 

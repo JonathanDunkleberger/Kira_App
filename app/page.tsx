@@ -2,12 +2,12 @@
 
 import HotMic from '@/components/HotMic';
 import ConversationView from '@/components/ConversationView';
-import ConversationProvider, { useConversation } from '@/lib/state/ConversationProvider';
+import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
 
 function ConversationShell() {
-  const { isPro, secondsRemaining, conversationStatus } = useConversation();
-  const paywalled = !isPro && secondsRemaining <= 0 && conversationStatus !== 'active';
+  const { isPro, dailySecondsRemaining, conversationStatus } = useConversation();
+  const paywalled = !isPro && (dailySecondsRemaining ?? 0) <= 0 && conversationStatus !== 'active';
   return (
     <div className="flex flex-col items-center gap-8">
       <div className="scale-125">
@@ -27,9 +27,7 @@ export default function HomePage() {
           <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
           <p className="text-gray-400">Speak naturally. Kira will listen and reply.</p>
         </div>
-        <ConversationProvider>
-          <ConversationShell />
-        </ConversationProvider>
+  <ConversationShell />
       </section>
     </main>
   );

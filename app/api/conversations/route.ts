@@ -24,17 +24,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const sb = getSupabaseServerAdmin();
-  const { data: userData } = await sb.auth.getUser(token);
-  const userId = userData?.user?.id;
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  let userId: string | null = null;
+  if (token) {
+    const { data: userData } = await sb.auth.getUser(token);
+    userId = userData?.user?.id ?? null;
+  }
 
   const { title } = await req.json().catch(() => ({}));
+
+  const isGuest = !userId;
   const { data, error } = await sb
     .from('conversations')
-    .insert({ user_id: userId, title: title || 'New chat' })
+    .insert({
+      user_id: userId, // nullable for guests
+      title: title || 'New Conversation',
+      is_guest: isGuest,
+    })
     .select('id,title,created_at,updated_at')
     .single();
 

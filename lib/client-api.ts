@@ -110,13 +110,17 @@ export async function listConversations() {
 
 export async function createConversation(title?: string) {
   const headers = await authHeader();
-  if (!headers) throw new Error('Not signed in');
   const r = await fetch('/api/conversations', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', ...(headers || {}) },
     body: JSON.stringify({ title })
   });
-  if (!r.ok) throw new Error('Failed to create conversation');
+  if (!r.ok) {
+    // Try to extract server error for clarity
+    let msg = 'Failed to create conversation';
+    try { const j = await r.json(); msg = j?.error || msg; } catch {}
+    throw new Error(msg);
+  }
   const j = await r.json();
   return j.conversation as { id: string; title: string; updated_at: string };
 }

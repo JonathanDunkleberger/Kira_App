@@ -24,7 +24,8 @@ create table if not exists public.profiles (
 -- Conversations and messages
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  is_guest boolean not null default false,
   title text not null default 'New chat',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -68,9 +69,15 @@ create policy "profiles-own" on public.profiles
 
 -- RLS for conversations: owner can select/modify/delete
 create policy "convos-select-own" on public.conversations
-  for select using (auth.uid() = user_id);
+  for select using (
+    -- Authenticated users can access their own
+    (user_id is not null and auth.uid() = user_id)
+  );
 create policy "convos-insert-own" on public.conversations
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    -- Allow inserts by service role (server) for guests (user_id null) or users
+    true
+  );
 create policy "convos-update-own" on public.conversations
   for update using (auth.uid() = user_id);
 create policy "convos-delete-own" on public.conversations

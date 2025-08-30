@@ -87,10 +87,7 @@ export async function POST(req: NextRequest) {
     if (user) userId = user.id;
   }
 
-  // Guests should not send a conversationId
-  if (!userId && conversationId) {
-    return new Response('Invalid state for guest user.', { status: 400 });
-  }
+  // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
 
   // 1. Parse form data and transcribe audio
   let transcript = '';

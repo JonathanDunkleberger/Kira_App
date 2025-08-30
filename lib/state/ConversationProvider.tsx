@@ -117,23 +117,20 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setError(null);
     setViewMode('conversation');
 
-    let currentConvId = conversationId;
+    let currentConvId = session ? conversationId : null;
 
-    if (!currentConvId && session) {
+    if (!currentConvId) {
       try {
         const newConversation = await apiCreateConversation('New Conversation');
         setConversationId(newConversation.id);
         currentConvId = newConversation.id;
         setMessages([]);
-        // refresh list & select
-        listConversations().then(setAllConversations).catch(() => {});
+        // refresh list for signed-in users only
+        if (session) listConversations().then(setAllConversations).catch(() => {});
       } catch (e: any) {
         setError(`Failed to create conversation: ${e.message}`);
         return;
       }
-    } else if (!currentConvId && !session) {
-      // Guest starts a fresh session
-      setMessages([]);
     }
 
     setConversationStatus('active');
@@ -160,13 +157,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     
     const formData = new FormData();
     formData.append('audio', audioBlob, 'audio.webm');
-    // For guests, pass a small window of recent history to preserve context server-side
-    if (!session) {
-      try {
-        const guestHistory = messages.slice(-6); // 3 turns max
-        formData.append('history', JSON.stringify(guestHistory));
-      } catch {}
-    }
+  // No need to pass guest history; guests now have a server conversationId after first turn
     
     const url = new URL('/api/utterance', window.location.origin);
     if (conversationId) url.searchParams.set('conversationId', conversationId);

@@ -236,76 +236,67 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [session, conversationId, stopConversation, messages, allConversations]);
 
   useEffect(() => {
-    const setupMicrophone = async () => {
-      if (turnStatus === 'user_listening' && conversationStatus === 'active') {
-        // Stop any assistant audio (barge-in)
-        if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
-        // Clean up any lingering VAD from previous states
-        try { vadCleanupRef.current(); } catch {}
+    // VAD-based listening flow using @ricky0123/vad-web
+    if (conversationStatus === 'active' && turnStatus === 'user_listening') {
+      // barge-in: stop any assistant audio currently playing
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
 
+  let cleanupVAD: () => void = () => {};
+
+      const setupVAD = async () => {
         try {
+          const { MicVAD } = await import('@ricky0123/vad-web');
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-          audioChunksRef.current = [];
 
-          // Prepare VAD/analyser
-          const audioContext = new AudioContext();
-          const source = audioContext.createMediaStreamSource(stream);
-          const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 512;
-          source.connect(analyser);
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
-          let silenceStart = performance.now();
-          let animationFrameId: number;
-
-      const checkSilence = () => {
-            if (mediaRecorderRef.current?.state !== 'recording') { setMicVolume(0); return; }
-            analyser.getByteFrequencyData(dataArray);
-            const sum = dataArray.reduce((acc, val) => acc + val, 0);
-            setMicVolume(sum / dataArray.length / 255);
-            if (sum < 50) {
-        if (performance.now() - silenceStart > 90000) {
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                  mediaRecorderRef.current.stop();
+          const vad = await MicVAD.new({
+            stream,
+            onSpeechStart: () => {
+              // Start recording when speech begins
+              audioChunksRef.current = [];
+              mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+              mediaRecorderRef.current.ondataavailable = (event) => {
+                audioChunksRef.current.push(event.data);
+              };
+              mediaRecorderRef.current.onstop = () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
+                  processAudioChunk(audioBlob);
                 }
+              };
+              mediaRecorderRef.current.start();
+            },
+            onSpeechEnd: () => {
+              if (mediaRecorderRef.current?.state === 'recording') {
+                mediaRecorderRef.current.stop();
               }
-            } else { silenceStart = performance.now(); }
-            animationFrameId = requestAnimationFrame(checkSilence);
-          };
+            },
+          });
 
-          // Define cleanup and store it immediately
-          const cleanup = () => {
-            cancelAnimationFrame(animationFrameId);
-            try { stream.getTracks().forEach(t => t.stop()); } catch {}
-            try { if (audioContext.state !== 'closed') audioContext.close(); } catch {}
-          };
-          vadCleanupRef.current = cleanup;
+          // MicVAD starts automatically; ensure we can stop and release
+          vad.start();
 
-          // Hook recorder handlers after cleanup is defined
-          mediaRecorderRef.current.ondataavailable = event => audioChunksRef.current.push(event.data);
-          mediaRecorderRef.current.onstop = () => {
-            // Ensure analyser/stream are torn down at end of a turn
-            try { cleanup(); } catch {}
-            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-            if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) processAudioChunk(audioBlob);
+          cleanupVAD = () => {
+            try { vad.destroy(); } catch {}
+            try { stream.getTracks().forEach((t) => t.stop()); } catch {}
           };
-          mediaRecorderRef.current.start();
-          checkSilence();
+          vadCleanupRef.current = cleanupVAD;
         } catch (err) {
+          console.error('VAD setup failed:', err);
           setError('Microphone access was denied.');
           stopConversation('ended_by_user');
         }
-      }
-    };
+      };
 
-    setupMicrophone();
-    // Cleanup when leaving user_listening/active or unmount
-    return () => {
-      if (turnStatus !== 'user_listening' || conversationStatus !== 'active') {
-        try { vadCleanupRef.current(); } catch {}
-      }
-    };
-  }, [turnStatus, conversationStatus, processAudioChunk, stopConversation]);
+      setupVAD();
+
+      return () => {
+        try { cleanupVAD(); } catch {}
+      };
+    }
+  }, [conversationStatus, turnStatus, processAudioChunk, stopConversation]);
 
   // Load a conversation's messages into provider
   const loadConversation = useCallback(async (id: string) => {

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@ricky0123/vad-web": "^0.0.26",
     "@stripe/react-stripe-js": "2.8.0",
     "@stripe/stripe-js": "3.4.1",
     "@supabase/ssr": "^0.7.0",

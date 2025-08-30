@@ -115,26 +115,31 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   const startConversation = useCallback(async () => {
     setError(null);
-  setViewMode('conversation');
-    // Guest vs logged-in conversation creation
-    if (session) {
+    setViewMode('conversation');
+
+    let currentConvId = conversationId;
+
+    if (!currentConvId && session) {
       try {
         const newConversation = await apiCreateConversation('New Conversation');
         setConversationId(newConversation.id);
-  // refresh list & select
-  listConversations().then(setAllConversations).catch(() => {});
+        currentConvId = newConversation.id;
+        setMessages([]);
+        // refresh list & select
+        listConversations().then(setAllConversations).catch(() => {});
       } catch (e: any) {
         setError(`Failed to create conversation: ${e.message}`);
         return;
       }
-    } else {
-      setConversationId(null);
+    } else if (!currentConvId && !session) {
+      // Guest starts a fresh session
+      setMessages([]);
     }
-    setMessages([]);
+
     setConversationStatus('active');
     setTurnStatus('user_listening');
     setProConversationTimer(isPro ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
-  }, [session, isPro]);
+  }, [session, isPro, conversationId]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
     vadCleanupRef.current();
@@ -300,6 +305,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Load a conversation's messages into provider
   const loadConversation = useCallback(async (id: string) => {
+    // End any active session before loading a new one
     stopConversation('ended_by_user');
     setError(null);
     if (!session) return;
@@ -308,13 +314,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
       const msgs = (data?.messages || []) as Array<{ id: string; role: 'user'|'assistant'; content: string }>;
       setConversationId(id);
       setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
+      // Reset state ready for user input
       setConversationStatus('idle');
       setTurnStatus('idle');
-      setViewMode('history');
-    } catch (e) {
-      // noop
+      // Switch back to main conversation UI
+      setViewMode('conversation');
+    } catch (e: any) {
+      setError('Failed to load conversation: ' + (e?.message || 'Unknown error'));
     }
-  }, [session]);
+  }, [session, stopConversation]);
 
   // Create conversation without starting mic
   const newConversation = useCallback(async () => {

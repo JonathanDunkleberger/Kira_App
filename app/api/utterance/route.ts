@@ -104,9 +104,9 @@ export async function POST(req: NextRequest) {
     return new Response(`Error during transcription: ${error.message}`, { status: 500 });
   }
 
-  // 2. Fetch History & Save User Message (for logged-in users only)
+  // 2. Fetch History & Save User Message (now keyed solely on conversationId)
   let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  if (userId && conversationId) {
+  if (conversationId) {
     try {
       const { data: messages } = await sb
         .from('messages')
@@ -117,24 +117,11 @@ export async function POST(req: NextRequest) {
       if (messages) {
         history = messages.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
       }
+      // Save the current user message to DB for this conversation (works for guests too)
       await sb.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript });
     } catch (error: any) {
       console.error('DB Error:', error);
       return new Response(`Error fetching history or saving message: ${error.message}`, { status: 500 });
-    }
-  } else {
-    // Guest: read short history window from the form data if provided
-    try {
-      const historyStr = formData.get('history') as string | null;
-      if (historyStr) {
-        const parsed = JSON.parse(historyStr);
-        if (Array.isArray(parsed)) {
-          history = parsed.filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-                          .map((m: any) => ({ role: m.role, content: m.content }));
-        }
-      }
-    } catch (e) {
-      console.warn('Could not parse guest history');
     }
   }
 
@@ -186,7 +173,7 @@ export async function POST(req: NextRequest) {
 
     const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
-        if (userId && conversationId) {
+        if (conversationId) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
           await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
         }

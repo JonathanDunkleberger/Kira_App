@@ -248,66 +248,68 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [session, conversationId, stopConversation, messages, allConversations]);
 
   useEffect(() => {
-    // VAD-based listening flow using @ricky0123/vad-web
+    // Robust VAD setup: always rebuild on state changes and ensure full teardown
+    let vadAndStream: { vad: any; stream: MediaStream } | null = null;
+
+    const setupVAD = async () => {
+      try {
+        const { MicVAD } = await import('@ricky0123/vad-web');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        const vad = await MicVAD.new({
+          stream,
+          onSpeechStart: () => {
+            // Start recording when speech begins
+            audioChunksRef.current = [];
+            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current.ondataavailable = (event) => {
+              audioChunksRef.current.push(event.data);
+            };
+            mediaRecorderRef.current.onstop = () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
+                processAudioChunk(audioBlob);
+              }
+            };
+            mediaRecorderRef.current.start();
+          },
+          onSpeechEnd: () => {
+            if (mediaRecorderRef.current?.state === 'recording') {
+              mediaRecorderRef.current.stop();
+            }
+          },
+        });
+
+        // Start VAD and retain handles for cleanup
+        vad.start();
+        vadAndStream = { vad, stream };
+        vadCleanupRef.current = () => {
+          try { vad.destroy(); } catch {}
+          try { stream.getTracks().forEach((t) => t.stop()); } catch {}
+        };
+      } catch (err) {
+        console.error('VAD or Microphone setup failed:', err);
+        setError('Microphone access was denied. Please check your browser settings.');
+        stopConversation('ended_by_user');
+      }
+    };
+
     if (conversationStatus === 'active' && turnStatus === 'user_listening') {
       // barge-in: stop any assistant audio currently playing
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
         audioPlayerRef.current = null;
       }
-
-  let cleanupVAD: () => void = () => {};
-
-      const setupVAD = async () => {
-        try {
-          const { MicVAD } = await import('@ricky0123/vad-web');
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-          const vad = await MicVAD.new({
-            stream,
-            onSpeechStart: () => {
-              // Start recording when speech begins
-              audioChunksRef.current = [];
-              mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-              mediaRecorderRef.current.ondataavailable = (event) => {
-                audioChunksRef.current.push(event.data);
-              };
-              mediaRecorderRef.current.onstop = () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
-                  processAudioChunk(audioBlob);
-                }
-              };
-              mediaRecorderRef.current.start();
-            },
-            onSpeechEnd: () => {
-              if (mediaRecorderRef.current?.state === 'recording') {
-                mediaRecorderRef.current.stop();
-              }
-            },
-          });
-
-          // MicVAD starts automatically; ensure we can stop and release
-          vad.start();
-
-          cleanupVAD = () => {
-            try { vad.destroy(); } catch {}
-            try { stream.getTracks().forEach((t) => t.stop()); } catch {}
-          };
-          vadCleanupRef.current = cleanupVAD;
-        } catch (err) {
-          console.error('VAD setup failed:', err);
-          setError('Microphone access was denied.');
-          stopConversation('ended_by_user');
-        }
-      };
-
       setupVAD();
-
-      return () => {
-        try { cleanupVAD(); } catch {}
-      };
     }
+
+    // Critical cleanup on dependency changes/unmount
+    return () => {
+      if (vadAndStream) {
+        try { vadAndStream.vad.destroy(); } catch {}
+        try { vadAndStream.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch {}
+      }
+    };
   }, [conversationStatus, turnStatus, processAudioChunk, stopConversation]);
 
   // Load a conversation's messages into provider

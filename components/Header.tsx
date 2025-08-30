@@ -2,8 +2,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { fetchEntitlement, startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
+import { startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 'slate'|'emerald' }) {
   const map = kind === 'emerald'
@@ -14,16 +15,13 @@ function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 
 
 export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
-  const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
-  const [seconds, setSeconds] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { isPro, dailySecondsRemaining, conversationStatus, secondsRemaining } = useConversation();
 
   async function refresh() {
     const { data: { session} } = await supabase.auth.getSession();
     setEmail(session?.user?.email ?? null);
-    const ent = await fetchEntitlement();
-    if (ent) { setStatus(ent.status); setSeconds(ent.secondsRemaining); }
   }
 
   useEffect(() => {
@@ -37,8 +35,14 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  const isPro = status === 'active';
-  const minutes = typeof seconds === 'number' ? Math.ceil(seconds / 60) : null;
+  const showSessionTimer = isPro && conversationStatus === 'active';
+  const sessionTimerText = (() => {
+    const s = Math.max(0, Number(secondsRemaining || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${r < 10 ? '0' : ''}${r} left`;
+  })();
+  const minutes = typeof dailySecondsRemaining === 'number' ? Math.ceil(dailySecondsRemaining / 60) : null;
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5">
@@ -51,7 +55,11 @@ export default function Header() {
 
         <div className="flex items-center gap-3">
           {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
-          {!isPro && minutes !== null && <span className="text-xs text-white/50">{minutes}m left</span>}
+          {showSessionTimer ? (
+            <span className="text-xs text-white/50">{sessionTimerText}</span>
+          ) : (
+            minutes !== null && <span className="text-xs text-white/50">{minutes}m left</span>
+          )}
 
           {!signedIn ? (
             <>

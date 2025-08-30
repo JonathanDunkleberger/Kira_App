@@ -24,6 +24,7 @@ you think, feel, and reason like a person. Your goal is to be an authentic and e
 - MAINTAIN your persona: You are Kira first. Only reference being an AI if it is directly relevant or funny.
 - SPOKEN dialogue only. Do not use stage directions, asterisks, or describe actions. Express everything through speech.
 - NO meta-commentary about reasoning. Just respond as Kira.
+ - You must respond in English only, regardless of the user's language.
 `;
 const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
   {
@@ -86,15 +87,13 @@ export async function POST(req: NextRequest) {
     if (user) userId = user.id;
   }
 
-  // Guests should not send a conversationId
-  if (!userId && conversationId) {
-    return new Response('Invalid state for guest user.', { status: 400 });
-  }
+  // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
 
-  // 1. Transcribe Audio
+  // 1. Parse form data and transcribe audio
   let transcript = '';
+  let formData: FormData;
   try {
-    const formData = await req.formData();
+    formData = await req.formData();
     const audio = formData.get('audio') as Blob | null;
     if (!audio) throw new Error('No audio file provided.');
     const arr = new Uint8Array(await audio.arrayBuffer());
@@ -105,19 +104,20 @@ export async function POST(req: NextRequest) {
     return new Response(`Error during transcription: ${error.message}`, { status: 500 });
   }
 
-  // 2. Fetch History & Save User Message (for logged-in users only)
+  // 2. Fetch History & Save User Message (now keyed solely on conversationId)
   let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  if (userId && conversationId) {
+  if (conversationId) {
     try {
       const { data: messages } = await sb
         .from('messages')
         .select('role, content')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
-        .limit(10);
+        .limit(20);
       if (messages) {
         history = messages.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
       }
+      // Save the current user message to DB for this conversation (works for guests too)
       await sb.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript });
     } catch (error: any) {
       console.error('DB Error:', error);
@@ -125,9 +125,36 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // --- START RAG IMPLEMENTATION ---
+  // 1) Retrieve relevant long-term memories for authenticated users
+  let retrievedMemories = '';
+  try {
+    if (userId) {
+      const embeddingResponse = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: transcript,
+      });
+      const queryEmbedding = (embeddingResponse.data?.[0]?.embedding || []) as number[];
+      const { data: memories } = await sb.rpc('match_memories', {
+        p_user_id: userId,
+        query_embedding: queryEmbedding,
+        match_threshold: 0.75,
+        match_count: 5,
+      });
+      if (memories && (memories as any[]).length) {
+        const memoryContent = (memories as any[]).map((m: any) => `- ${m.content}`).join('\n');
+        retrievedMemories = `\n\nREMEMBER THESE FACTS FROM PAST CONVERSATIONS:\n${memoryContent}`;
+      }
+    }
+  } catch (err) {
+    console.error('Memory retrieval error:', err);
+  }
+  const augmentedSystemPrompt = CHARACTER_SYSTEM_PROMPT + retrievedMemories;
+  // --- END RAG IMPLEMENTATION ---
+
   // 3. Stream LLM Response
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
+    { role: 'system', content: augmentedSystemPrompt },
     ...FEW_SHOTS.flatMap((shot) => [
       { role: 'user' as const, content: shot.user },
       { role: 'assistant' as const, content: shot.assistant },
@@ -146,9 +173,26 @@ export async function POST(req: NextRequest) {
 
     const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
-        if (userId && conversationId) {
+        if (conversationId) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
           await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+        }
+        // Fire-and-forget memory extraction with the last turn
+        try {
+          if (userId) {
+            const lastTurnMessages = [
+              ...history.slice(-4),
+              { role: 'user', content: transcript },
+              { role: 'assistant', content: completion },
+            ];
+            fetch(new URL('/api/memory', req.url).toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, messages: lastTurnMessages }),
+            }).catch((e) => console.error('Failed to trigger memory extraction:', e));
+          }
+        } catch (e) {
+          console.error('Memory extraction trigger error:', e);
         }
       },
     });

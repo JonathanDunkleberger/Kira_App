@@ -14,3 +14,34 @@ body { background: var(--bg); color: var(--ink); margin: 0; font-family: ui-sans
 .subtle { color: #a3a3a3; }
 
 .orb { height: 100%; width: 100%; border-radius: 9999px; background: radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9); box-shadow: 0 0 44px #6d28d9aa; }
+
+/* Custom Scrollbar Styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6a6a6a;
+  background-clip: content-box;
+}
+/* Hide scrollbar by default, show on hover */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+.scrollbar-hover:hover .scrollbar-hide {
+  scrollbar-width: auto; /* Firefox */
+}
+.scrollbar-hover:hover .scrollbar-hide::-webkit-scrollbar {
+  display: block; /* Chrome/Safari/Opera */
+}

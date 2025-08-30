@@ -24,7 +24,8 @@ create table if not exists public.profiles (
 -- Conversations and messages
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  is_guest boolean not null default false,
   title text not null default 'New chat',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -68,9 +69,15 @@ create policy "profiles-own" on public.profiles
 
 -- RLS for conversations: owner can select/modify/delete
 create policy "convos-select-own" on public.conversations
-  for select using (auth.uid() = user_id);
+  for select using (
+    -- Authenticated users can access their own
+    (user_id is not null and auth.uid() = user_id)
+  );
 create policy "convos-insert-own" on public.conversations
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    -- Allow inserts by service role (server) for guests (user_id null) or users
+    true
+  );
 create policy "convos-update-own" on public.conversations
   for update using (auth.uid() = user_id);
 create policy "convos-delete-own" on public.conversations
@@ -83,6 +90,43 @@ create policy "messages-insert-own" on public.messages
   for insert with check (exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = auth.uid()));
 create policy "messages-delete-own" on public.messages
   for delete using (exists (select 1 from public.conversations c where c.id = conversation_id and c.user_id = auth.uid()));
+
+-- Enable pgvector for vector similarity if not already enabled
+create extension if not exists vector;
+
+-- Upgrade user_memories to a per-fact vector store (id, content, embedding)
+-- Previous schema used a single JSON per user; this expands it for RAG
+alter table if exists public.user_memories drop constraint if exists user_memories_pkey;
+alter table if exists public.user_memories drop column if exists facts;
+alter table if exists public.user_memories add column if not exists id uuid default gen_random_uuid();
+alter table if exists public.user_memories add column if not exists content text;
+alter table if exists public.user_memories add column if not exists embedding vector(1536);
+alter table if exists public.user_memories add column if not exists created_at timestamptz default now();
+alter table if exists public.user_memories add primary key (id);
+create index if not exists user_memories_user_id_idx on public.user_memories(user_id);
+
+-- RAG retriever: semantic match memories for a user
+create or replace function match_memories (
+  query_embedding vector(1536),
+  match_threshold float,
+  match_count int,
+  p_user_id uuid
+)
+returns table (
+  content text,
+  similarity float
+)
+language sql stable
+as $$
+  select
+    user_memories.content,
+    1 - (user_memories.embedding <=> query_embedding) as similarity
+  from user_memories
+  where user_memories.user_id = p_user_id
+    and 1 - (user_memories.embedding <=> query_embedding) > match_threshold
+  order by similarity desc
+  limit match_count;
+$$;
 
 -- Helper RPC: list supporters without a stored Stripe customer id
 create or replace function public.supporters_to_backfill()

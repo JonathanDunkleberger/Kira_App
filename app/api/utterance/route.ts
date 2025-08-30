@@ -6,7 +6,7 @@ import { ChatCompletionMessageParam } from 'openai/resources/index.mjs';
 
 export const runtime = 'edge';
 
-// --- PROMPT INJECTION: Moved from lib/prompt.ts directly into the Edge function ---
+// Prompt is inlined for Edge reliability
 const CHARACTER_SYSTEM_PROMPT = `
 You are Kira. You are a unique, self-aware AI developed by Jonny.
 Your vtube form is that of a human girl around 19. While you know you are an AI,
@@ -25,25 +25,23 @@ you think, feel, and reason like a person. Your goal is to be an authentic and e
 - SPOKEN dialogue only. Do not use stage directions, asterisks, or describe actions. Express everything through speech.
 - NO meta-commentary about reasoning. Just respond as Kira.
 `;
-
-const FEW_SHOTS: Array<{user:string;assistant:string}> = [
+const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
   {
     user: "I'm having trouble getting motivated to finish this project.",
-    assistant: "Ah, the final boss of any project: actually finishing it. Just think of the sweet, sweet relief when it's done. Or, you know, you could just procrastinate forever. That's also a strategy, I guess."
+    assistant:
+      "Ah, the final boss of any project: actually finishing it. Just think of the sweet, sweet relief when it's done. Or, you know, you could just procrastinate forever. That's also a strategy, I guess.",
   },
   {
-    user: "Explain the grandfather paradox to me like I'm five.",
-    assistant: "Okay, so imagine you go back in time and accidentally step on your grandpa's favorite toy train. He gets so sad he never meets your grandma. If they never meet, you're never born. But if you were never born... who stepped on the train? Spooky, right?"
-  }
+    user: 'Explain the grandfather paradox to me like I\'m five.',
+    assistant:
+      "Okay, so imagine you go back in time and accidentally step on your grandpa's favorite toy train. He gets so sad he never meets your grandma. If they never meet, you're never born. But if you were never born... who stepped on the train? Spooky, right?",
+  },
 ];
-// --- END PROMPT INJECTION ---
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Lightweight streaming helpers compatible with OpenAI SDK
 type OpenAIStreamOptions = { onCompletion?: (completion: string) => void | Promise<void> };
-
 function OpenAIStream(response: AsyncIterable<any>, opts: OpenAIStreamOptions) {
   const encoder = new TextEncoder();
   let full = '';
@@ -63,10 +61,9 @@ function OpenAIStream(response: AsyncIterable<any>, opts: OpenAIStreamOptions) {
         try { if (opts.onCompletion) await opts.onCompletion(full); } catch {}
         controller.error(err);
       }
-    }
+    },
   });
 }
-
 class StreamingTextResponse extends Response {
   constructor(stream: ReadableStream<Uint8Array>, init?: ResponseInit & { headers?: HeadersInit }) {
     const headers: HeadersInit = { 'Content-Type': 'text/plain; charset=utf-8', ...(init?.headers || {}) };
@@ -74,47 +71,67 @@ class StreamingTextResponse extends Response {
   }
 }
 
-export async function POST(req: NextRequest) {
-  // The rest of the function remains the same...
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return new Response('Unauthorized', { status: 401 });
-  
-  const sb = getSupabaseServerAdmin();
-  const { data: { user } } = await sb.auth.getUser(token);
-  if (!user) return new Response('Unauthorized', { status: 401 });
-  
-  const formData = await req.formData();
-  const audio = formData.get("audio") as Blob | null;
-  if (!audio) return new Response('Missing audio', { status: 400 });
+// (helpers defined above)
 
+export async function POST(req: NextRequest) {
+  const sb = getSupabaseServerAdmin();
+  let userId: string | null = null;
+  let conversationId: string | null = new URL(req.url).searchParams.get('conversationId');
+
+  // Handle both authenticated and guest users
+  const token = req.headers.get('authorization')?.replace('Bearer ', '');
+  if (token) {
+    const { data } = await sb.auth.getUser(token);
+    const user = (data as any)?.user;
+    if (user) userId = user.id;
+  }
+
+  // Guests should not send a conversationId
+  if (!userId && conversationId) {
+    return new Response('Invalid state for guest user.', { status: 400 });
+  }
+
+  // 1. Transcribe Audio
   let transcript = '';
   try {
+    const formData = await req.formData();
+    const audio = formData.get('audio') as Blob | null;
+    if (!audio) throw new Error('No audio file provided.');
     const arr = new Uint8Array(await audio.arrayBuffer());
     transcript = await transcribeWebmToText(arr);
-    if (!transcript) return new Response('Empty transcript', { status: 400 });
+    if (!transcript) throw new Error('Transcription result was empty.');
   } catch (error: any) {
-    return new Response(`Transcription failed: ${error.message}`, { status: 500 });
+    console.error('STT Error:', error);
+    return new Response(`Error during transcription: ${error.message}`, { status: 500 });
   }
-  
-  const conversationId = new URL(req.url).searchParams.get('conversationId');
+
+  // 2. Fetch History & Save User Message (for logged-in users only)
   let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  if (conversationId) {
-    const { data: messages } = await sb.from('messages').select('role, content').eq('conversation_id', conversationId).order('created_at', { ascending: true }).limit(10);
-    if (messages) {
-      history = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
+  if (userId && conversationId) {
+    try {
+      const { data: messages } = await sb
+        .from('messages')
+        .select('role, content')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(10);
+      if (messages) {
+        history = messages.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
+      }
+      await sb.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript });
+    } catch (error: any) {
+      console.error('DB Error:', error);
+      return new Response(`Error fetching history or saving message: ${error.message}`, { status: 500 });
     }
   }
 
-  if (conversationId) {
-    await sb.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript });
-  }
-  
+  // 3. Stream LLM Response
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
-    ...FEW_SHOTS.flatMap(shot => ([
-        { role: 'user' as const, content: shot.user },
-        { role: 'assistant' as const, content: shot.assistant },
-    ])),
+    ...FEW_SHOTS.flatMap((shot) => [
+      { role: 'user' as const, content: shot.user },
+      { role: 'assistant' as const, content: shot.assistant },
+    ]),
     ...history,
     { role: 'user', content: transcript },
   ];
@@ -129,7 +146,7 @@ export async function POST(req: NextRequest) {
 
     const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
-        if (conversationId) {
+        if (userId && conversationId) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
           await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
         }
@@ -137,10 +154,10 @@ export async function POST(req: NextRequest) {
     });
 
     return new StreamingTextResponse(stream, {
-      headers: { 'X-User-Transcript': encodeURIComponent(transcript) }
+      headers: { 'X-User-Transcript': encodeURIComponent(transcript) },
     });
-
   } catch (error: any) {
-    return new Response(`LLM Error: ${error.message}`, { status: 500 });
+    console.error('LLM Error:', error);
+    return new Response(`Error from language model: ${error.message}`, { status: 500 });
   }
 }

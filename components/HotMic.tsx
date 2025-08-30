@@ -9,7 +9,6 @@ export default function HotMic() {
     turnStatus, 
     startConversation, 
     stopConversation,
-  isPro,
   micVolume
   } = useConversation();
 
@@ -25,7 +24,7 @@ export default function HotMic() {
 
   const { orbText, subText } = useMemo(() => {
     if (!isSessionActive) {
-      return { orbText: 'Start Conversation', subText: isPro ? '20 min session limit' : '15 min free daily' };
+      return { orbText: 'Start Conversation', subText: 'Click to begin' };
     }
     switch (turnStatus) {
       case 'user_listening':
@@ -37,26 +36,25 @@ export default function HotMic() {
       default:
         return { orbText: 'Click to End', subText: '' };
     }
-  }, [isSessionActive, turnStatus, isPro]);
+  }, [isSessionActive, turnStatus]);
   
   return (
     <div className="flex flex-col items-center gap-4">
       <button
         onClick={handleClick}
-        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-all duration-300 ease-out text-white text-lg font-semibold text-center leading-snug select-none"
+        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full transition-all duration-100 ease-out text-white text-lg font-semibold text-center leading-snug select-none"
         style={{
-          // Enhanced Visuals
-          boxShadow: isSessionActive 
-            ? (turnStatus === 'processing_speech' 
-                ? "0 0 60px #fbbf24, 0 0 25px #fbbf24 inset" // Thinking state - amber glow
-                : "0 0 50px #a855f7, 0 0 20px #a855f7 inset") // Active state - purple glow
-            : "0 0 24px #4c1d95", // Idle state
+          boxShadow: isSessionActive
+            ? (turnStatus === 'processing_speech'
+                ? '0 0 60px #fbbf24, 0 0 25px #fbbf24 inset'
+                : '0 0 50px #a855f7, 0 0 20px #a855f7 inset')
+            : '0 0 24px #4c1d95',
           background: isSessionActive
-            ? (turnStatus === 'processing_speech' 
-                ? "radial-gradient(circle, #fcd34d, #b45309)"
-                : "radial-gradient(circle, #d8b4fe, #7e22ce)")
-            : "radial-gradient(circle, #6d28d9, #1e1b4b)",
-          transform: `scale(${isSessionActive && turnStatus === 'user_listening' ? 1 + Math.min(0.12, micVolume * 0.25) : isSessionActive && turnStatus === 'assistant_speaking' ? 1.05 : 1})`,
+            ? (turnStatus === 'processing_speech'
+                ? 'radial-gradient(circle, #fcd34d, #b45309)'
+                : 'radial-gradient(circle, #d8b4fe, #7e22ce)')
+            : 'radial-gradient(circle, #6d28d9, #1e1b4b)',
+          transform: `scale(${turnStatus === 'user_listening' ? 1 + micVolume * 2 : (isSessionActive ? 1.05 : 1)})`,
         }}
       >
         {orbText}

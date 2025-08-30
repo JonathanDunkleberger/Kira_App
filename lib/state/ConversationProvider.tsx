@@ -6,7 +6,8 @@ import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 
-const PRO_CONVERSATION_LIMIT_SECONDS = 20 * 60;
+const PRO_SESSION_SECONDS = 30 * 60; // increased from 20 to 30 minutes
+const GUEST_SESSION_SECONDS = 15 * 60;
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
@@ -47,7 +48,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const conversationsChannelRef = useRef<any>(null);
   
-  const [proConversationTimer, setProConversationTimer] = useState(PRO_CONVERSATION_LIMIT_SECONDS);
+  const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -90,7 +91,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, []);
 
   useEffect(() => {
-    if (conversationStatus === 'active' && isPro) {
+  if (conversationStatus === 'active' && isPro) {
       proTimerIntervalRef.current = setInterval(() => {
         setProConversationTimer(prev => {
           if (prev <= 1) { stopConversation('ended_by_limit'); return 0; }
@@ -120,7 +121,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setMessages([]);
     setConversationStatus('active');
     setTurnStatus('user_listening');
-    setProConversationTimer(PRO_CONVERSATION_LIMIT_SECONDS);
+  setProConversationTimer(PRO_SESSION_SECONDS);
   }, [session]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
@@ -220,43 +221,75 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [session, conversationId, stopConversation, messages, allConversations]);
 
   useEffect(() => {
-    if (turnStatus === 'user_listening' && conversationStatus === 'active') {
-      if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
-      
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        audioChunksRef.current = [];
-        mediaRecorderRef.current.ondataavailable = event => audioChunksRef.current.push(event.data);
-        mediaRecorderRef.current.onstop = () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          if (audioBlob.size > 200) processAudioChunk(audioBlob);
-        };
-        mediaRecorderRef.current.start();
+    const setupMicrophone = async () => {
+      if (turnStatus === 'user_listening' && conversationStatus === 'active') {
+        // Stop any assistant audio (barge-in)
+        if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
+        // Clean up any lingering VAD from previous states
+        try { vadCleanupRef.current(); } catch {}
 
-        const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 512;
-        source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        let silenceStart = performance.now();
-        let animationFrameId: number;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          audioChunksRef.current = [];
 
-        const checkSilence = () => {
-          if (mediaRecorderRef.current?.state !== 'recording') { setMicVolume(0); return; }
-          analyser.getByteFrequencyData(dataArray);
-          const sum = dataArray.reduce((acc, val) => acc + val, 0);
-          setMicVolume(sum / dataArray.length / 255);
-          if (sum < 50) {
-            if (performance.now() - silenceStart > 1500) mediaRecorderRef.current.stop();
-          } else { silenceStart = performance.now(); }
-          animationFrameId = requestAnimationFrame(checkSilence);
-        };
-        checkSilence();
-        vadCleanupRef.current = () => { cancelAnimationFrame(animationFrameId); audioContext.close(); };
-      }).catch(() => { setError('Microphone access was denied.'); stopConversation('ended_by_user'); });
-    }
-    return () => vadCleanupRef.current();
+          // Prepare VAD/analyser
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 512;
+          source.connect(analyser);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          let silenceStart = performance.now();
+          let animationFrameId: number;
+
+          const checkSilence = () => {
+            if (mediaRecorderRef.current?.state !== 'recording') { setMicVolume(0); return; }
+            analyser.getByteFrequencyData(dataArray);
+            const sum = dataArray.reduce((acc, val) => acc + val, 0);
+            setMicVolume(sum / dataArray.length / 255);
+            if (sum < 50) {
+              if (performance.now() - silenceStart > 1500) {
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                  mediaRecorderRef.current.stop();
+                }
+              }
+            } else { silenceStart = performance.now(); }
+            animationFrameId = requestAnimationFrame(checkSilence);
+          };
+
+          // Define cleanup and store it immediately
+          const cleanup = () => {
+            cancelAnimationFrame(animationFrameId);
+            try { stream.getTracks().forEach(t => t.stop()); } catch {}
+            try { if (audioContext.state !== 'closed') audioContext.close(); } catch {}
+          };
+          vadCleanupRef.current = cleanup;
+
+          // Hook recorder handlers after cleanup is defined
+          mediaRecorderRef.current.ondataavailable = event => audioChunksRef.current.push(event.data);
+          mediaRecorderRef.current.onstop = () => {
+            // Ensure analyser/stream are torn down at end of a turn
+            try { cleanup(); } catch {}
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            if (audioBlob.size > 200) processAudioChunk(audioBlob);
+          };
+          mediaRecorderRef.current.start();
+          checkSilence();
+        } catch (err) {
+          setError('Microphone access was denied.');
+          stopConversation('ended_by_user');
+        }
+      }
+    };
+
+    setupMicrophone();
+    // Cleanup when leaving user_listening/active or unmount
+    return () => {
+      if (turnStatus !== 'user_listening' || conversationStatus !== 'active') {
+        try { vadCleanupRef.current(); } catch {}
+      }
+    };
   }, [turnStatus, conversationStatus, processAudioChunk, stopConversation]);
 
   // Load a conversation's messages into provider

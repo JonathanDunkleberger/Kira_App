@@ -20,15 +20,25 @@ function ConversationShell() {
 }
 
 export default function HomePage() {
+  const { error, viewMode } = useConversation();
   return (
-    <main className="min-h-screen bg-[#0b0b12] text-white">
-      <section className="mx-auto max-w-3xl px-6 py-20 text-center flex flex-col items-center gap-8">
-        <div>
-          <h1 className="text-4xl font-semibold mb-2">Talk with Kira</h1>
-          <p className="text-gray-400">Speak naturally. Kira will listen and reply.</p>
-        </div>
-  <ConversationShell />
-      </section>
+    <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
+      {viewMode === 'conversation' ? (
+        <>
+          <section className="flex-1 container mx-auto max-w-4xl px-6 pt-10 text-center flex flex-col items-center gap-8 justify-center">
+            <h1 className="text-4xl font-semibold">Talk with Kira</h1>
+            <p className="text-gray-400">Speak naturally. Kira will listen and reply.</p>
+            <HotMic />
+            {error && <p className="text-rose-400 mt-2">Error: {error}</p>}
+          </section>
+          <ConversationView />
+        </>
+      ) : (
+        <section className="w-full h-full flex flex-col items-center pt-8">
+          <h2 className="text-2xl font-semibold mb-4">Conversation History</h2>
+          <ConversationView />
+        </section>
+      )}
     </main>
   );
 }

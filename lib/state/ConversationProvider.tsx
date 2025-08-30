@@ -14,6 +14,7 @@ type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_s
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
 type Convo = { id: string; title: string | null; updated_at: string };
+type ViewMode = 'conversation' | 'history';
 
 interface ConversationContextType {
   conversationId: string | null;
@@ -34,6 +35,9 @@ interface ConversationContextType {
   fetchAllConversations: () => Promise<void>;
   // Timer surface (daily remaining for free users)
   dailySecondsRemaining: number | null;
+  // View mode state
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -49,6 +53,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [error, setError] = useState<string | null>(null);
   const [allConversations, setAllConversations] = useState<Convo[]>([]);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('conversation');
   const conversationsChannelRef = useRef<any>(null);
   
   const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
@@ -110,6 +115,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   const startConversation = useCallback(async () => {
     setError(null);
+  setViewMode('conversation');
     // Guest vs logged-in conversation creation
     if (session) {
       try {
@@ -252,13 +258,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
           let silenceStart = performance.now();
           let animationFrameId: number;
 
-          const checkSilence = () => {
+      const checkSilence = () => {
             if (mediaRecorderRef.current?.state !== 'recording') { setMicVolume(0); return; }
             analyser.getByteFrequencyData(dataArray);
             const sum = dataArray.reduce((acc, val) => acc + val, 0);
             setMicVolume(sum / dataArray.length / 255);
             if (sum < 50) {
-              if (performance.now() - silenceStart > 1500) {
+        if (performance.now() - silenceStart > 90000) {
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                   mediaRecorderRef.current.stop();
                 }
@@ -303,6 +309,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Load a conversation's messages into provider
   const loadConversation = useCallback(async (id: string) => {
+    stopConversation('ended_by_user');
+    setError(null);
     if (!session) return;
     try {
       const data = await getConversation(id);
@@ -311,6 +319,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
       setConversationStatus('idle');
       setTurnStatus('idle');
+      setViewMode('history');
     } catch (e) {
       // noop
     }
@@ -350,6 +359,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     newConversation,
     fetchAllConversations,
     dailySecondsRemaining,
+  viewMode,
+  setViewMode,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

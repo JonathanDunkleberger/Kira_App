@@ -22,9 +22,9 @@ export default function ConversationView() {
   }
 
   return (
-    <div ref={scrollRef} className="w-full max-w-4xl mx-auto p-4 h-[40vh] overflow-y-auto flex flex-col-reverse">
+    <div ref={scrollRef} className="w-full max-w-4xl mx-auto p-4 h-[calc(100vh-350px)] overflow-y-auto custom-scrollbar">
       <div className="space-y-3">
-        {messages.slice().reverse().map(m => (
+        {messages.map(m => (
           <div key={m.id} className={m.role === 'user' ? 'text-gray-200' : 'text-fuchsia-200'}>
             <div className={`inline-block px-3 py-2 rounded-lg ${m.role === 'user' ? 'bg-white/5' : 'bg-fuchsia-900/30'}`}>
               {m.role === 'user' ? 'You: ' : 'Kira: '}{m.content}

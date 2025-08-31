@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { getDailySecondsRemaining, decrementDailySeconds, getEntitlement } from '@/lib/usage';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
@@ -86,6 +87,21 @@ export async function POST(req: NextRequest) {
     const user = (data as any)?.user;
     if (user) userId = user.id;
   }
+  // Server-side daily time enforcement for authenticated users
+  try {
+    if (userId) {
+      const secondsLeft = await getDailySecondsRemaining(userId);
+      if (secondsLeft <= 0) {
+        const ent = await getEntitlement(userId);
+        if (ent.status !== 'active') {
+          return new Response('Daily time limit exceeded.', { status: 402 });
+        }
+      }
+    }
+  } catch (e) {
+    // If usage check fails, proceed; downstream may still succeed
+    console.warn('Usage enforcement check failed:', e);
+  }
 
   // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
 
@@ -171,7 +187,7 @@ export async function POST(req: NextRequest) {
       max_tokens: 400,
     });
 
-    const stream = OpenAIStream(response as any, {
+  const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
         if (conversationId) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
@@ -190,6 +206,9 @@ export async function POST(req: NextRequest) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId, messages: lastTurnMessages }),
             }).catch((e) => console.error('Failed to trigger memory extraction:', e));
+
+      // Decrement a small amount of daily time for authenticated Free users
+      decrementDailySeconds(userId, 5).catch(() => {});
           }
         } catch (e) {
           console.error('Memory extraction trigger error:', e);

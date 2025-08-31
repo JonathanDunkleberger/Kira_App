@@ -17,6 +17,7 @@ type Convo = { id: string; title: string | null; updated_at: string };
 type ViewMode = 'conversation' | 'history';
 
 interface ConversationContextType {
+  session?: Session | null;
   conversationId: string | null;
   currentConversationId?: string | null; // alias for convenience
   messages: Message[];
@@ -182,6 +183,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
       });
 
       // Improved error handling
+      if (response.status === 402) {
+        // Server paywall enforcement
+        setShowPaywall(true);
+        throw new Error('Daily time limit exceeded.');
+      }
       if (!response.ok || !response.body) {
           const errorText = await response.text();
           if(response.status === 401 && !session) {
@@ -360,6 +366,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [session]);
 
   const value = {
+  session,
     conversationId,
     currentConversationId: conversationId,
     messages,

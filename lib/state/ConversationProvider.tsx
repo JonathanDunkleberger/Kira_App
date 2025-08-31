@@ -47,8 +47,6 @@ interface ConversationContextType {
   // Streak
   currentStreak: number | null;
   hasPostedToday: boolean;
-  // Daily topic
-  dailyTopic?: string | null;
   // Achievements (lean V1)
   unlockedAchievements?: string[];
   newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
@@ -74,7 +72,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
   const [currentStreak, setCurrentStreak] = useState<number | null>(null);
   const [hasPostedToday, setHasPostedToday] = useState(false);
-  const [dailyTopic, setDailyTopic] = useState<string | null>(null);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
   // Centralize paywall state via hook
@@ -241,10 +238,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
           setCurrentStreak(null);
         }
       } catch {}
-      try {
-        const t = await fetch('/api/daily-topic').then(r => r.json()).catch(() => null);
-        setDailyTopic(t?.topic ?? null);
-      } catch {}
+  // Daily topic removed
     })();
   }, []);
 
@@ -631,7 +625,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
   promptPaywall,
   currentStreak,
   hasPostedToday,
-  dailyTopic,
   unlockedAchievements,
   newlyUnlockedToast,
   setNewlyUnlockedToast,

@@ -5,7 +5,6 @@ import ConversationView from '@/components/ConversationView';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
 import StreakIndicator from '@/components/StreakIndicator';
-import DailyTopicBanner from '@/components/DailyTopicBanner';
 import AchievementToast from '@/components/AchievementToast';
 
 function ConversationShell() {
@@ -25,7 +24,6 @@ export default function HomePage() {
   const { error, viewMode } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
-  <DailyTopicBanner />
   <AchievementToast />
       {viewMode === 'conversation' ? (
         <>

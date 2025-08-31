@@ -238,13 +238,28 @@ export default function ConversationProvider({ children }: { children: React.Rea
         }
       } catch {}
 
-      const audioRes = await fetch('/api/synthesize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fullAssistantReply }) });
-      if (audioRes.ok) {
-        const { audioMp3Base64 } = await audioRes.json();
-        if (audioMp3Base64) {
-          audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => setTurnStatus('user_listening'));
-        } else { setTurnStatus('user_listening'); }
-      } else { console.error('Speech synthesis failed.'); setTurnStatus('user_listening'); }
+      try {
+        const audioRes = await fetch('/api/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: fullAssistantReply })
+        });
+
+        if (audioRes.ok) {
+          const { audioMp3Base64 } = await audioRes.json();
+          if (audioMp3Base64) {
+            audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => setTurnStatus('user_listening'));
+          } else {
+            setTurnStatus('user_listening');
+          }
+        } else {
+          console.error('Speech synthesis failed.');
+          setTurnStatus('user_listening');
+        }
+      } catch (ttsError) {
+        console.error('Error during TTS playback:', ttsError);
+        setTurnStatus('user_listening');
+      }
       // Refresh daily seconds after a turn
       if (session) {
         fetchEntitlement().then(ent => {

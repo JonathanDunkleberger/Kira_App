@@ -471,7 +471,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     };
 
-    if (conversationStatus === 'active' && turnStatus === 'user_listening') {
+  if (!showPaywall && conversationStatus === 'active' && turnStatus === 'user_listening') {
       // barge-in: stop any assistant audio currently playing
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
@@ -487,7 +487,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         try { vadAndStream.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch {}
       }
     };
-  }, [conversationStatus, turnStatus, processAudioChunk, stopConversation]);
+  }, [conversationStatus, turnStatus, processAudioChunk, stopConversation, showPaywall]);
 
   // Load a conversation's messages into provider
   const loadConversation = useCallback(async (id: string) => {

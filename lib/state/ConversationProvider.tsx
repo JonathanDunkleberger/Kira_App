@@ -299,9 +299,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const userTranscript = decodeURIComponent(response.headers.get('X-User-Transcript') || '');
   setMessages(prev => [...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }]);
       
-      const assistantMessageId = crypto.randomUUID();
+  const assistantMessageId = crypto.randomUUID();
       setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
       setTurnStatus('assistant_speaking');
+  const shouldTriggerPaywall = response.headers.get('X-Paywall-Trigger') === 'true';
       
       let fullAssistantReply = '';
       const reader = response.body.getReader();
@@ -348,17 +349,39 @@ export default function ConversationProvider({ children }: { children: React.Rea
         if (audioRes.ok) {
           const { audioMp3Base64 } = await audioRes.json();
           if (audioMp3Base64) {
-            audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => setTurnStatus('user_listening'));
+            audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
+              if (shouldTriggerPaywall) {
+                promptPaywall();
+                stopConversation('ended_by_limit');
+              } else {
+                setTurnStatus('user_listening');
+              }
+            });
           } else {
-            setTurnStatus('user_listening');
+            if (shouldTriggerPaywall) {
+              promptPaywall();
+              stopConversation('ended_by_limit');
+            } else {
+              setTurnStatus('user_listening');
+            }
           }
         } else {
           console.error('Speech synthesis failed.');
-          setTurnStatus('user_listening');
+          if (shouldTriggerPaywall) {
+            promptPaywall();
+            stopConversation('ended_by_limit');
+          } else {
+            setTurnStatus('user_listening');
+          }
         }
       } catch (ttsError) {
         console.error('Error during TTS playback:', ttsError);
-        setTurnStatus('user_listening');
+        if (shouldTriggerPaywall) {
+          promptPaywall();
+          stopConversation('ended_by_limit');
+        } else {
+          setTurnStatus('user_listening');
+        }
       }
       // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
@@ -366,28 +389,24 @@ export default function ConversationProvider({ children }: { children: React.Rea
           if (ent) setDailySecondsRemaining(ent.secondsRemaining);
         }).catch(() => {});
       } else {
-        // For guests, decrement local remaining based on assistant response words
+        // Guests: refresh remaining seconds from server for the current conversation
         try {
-          const words = (fullAssistantReply || '')
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean).length;
-          const estimatedSeconds = Math.min(30, Math.max(2, Math.ceil(words / 2.5)));
-          const today = new Date().toISOString().split('T')[0];
-          const lastVisit = localStorage.getItem('kira_last_visit');
-          if (lastVisit !== today) {
-            // Reset guest bucket implicitly if day rolled over
-            localStorage.setItem('kira_last_visit', today);
+          const guestConvId = conversationId || (typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null);
+          if (guestConvId) {
+            const res = await fetch(`/api/conversations/guest/${guestConvId}`);
+            if (res.ok) {
+              const j = await res.json();
+              const remaining = Number(j?.secondsRemaining ?? 0);
+              setDailySecondsRemaining(remaining);
+              if (remaining <= 0) {
+                setShowPaywall(true);
+                stopConversation('ended_by_limit');
+              }
+            }
           }
-          const prior = Number(localStorage.getItem('kira_guest_time') ?? '900');
-          const next = Math.max(0, prior - estimatedSeconds);
-          localStorage.setItem('kira_guest_time', String(next));
-          setDailySecondsRemaining(next);
-          if (next <= 0) {
-            setShowPaywall(true);
-            stopConversation('ended_by_limit');
-          }
-        } catch {}
+        } catch {
+          // Silent fallback: keep previous value
+        }
       }
       
     } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }

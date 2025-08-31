@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { decrementDailySeconds } from '@/lib/usage';
+import { decrementDailySeconds, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
   const sb = getSupabaseServerAdmin();
   let userId: string | null = null;
   let conversationId: string | null = new URL(req.url).searchParams.get('conversationId');
+  let lastTurnPaywallFlag = false;
 
   // Handle both authenticated and guest users
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
@@ -90,13 +91,37 @@ export async function POST(req: NextRequest) {
     const user = (data as any)?.user;
     if (user) userId = user.id;
   }
-  // Server-side paywall enforcement for authenticated users
+  // Server-side paywall enforcement for authenticated users with graceful last-turn signal
   try {
-    await enforcePaywall(userId);
-  } catch (e) {
-    if (e instanceof PaywallError) {
-      return createPaywallResponse(e.message);
+    if (userId) {
+      const ent = await getEntitlement(userId);
+      if (ent.status !== 'active') {
+        const secondsLeft = await getDailySecondsRemaining(userId);
+        if (secondsLeft <= 0) {
+          return new Response('Daily time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+        }
+        if (secondsLeft < 15) {
+          lastTurnPaywallFlag = true;
+        }
+      }
+    } else {
+      // Guests: use conversation seconds_remaining
+      if (conversationId) {
+        const { data: conv } = await sb
+          .from('conversations')
+          .select('seconds_remaining')
+          .eq('id', conversationId)
+          .single();
+        const secondsLeft = Number(conv?.seconds_remaining ?? 0);
+        if (secondsLeft <= 0) {
+          return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+        }
+        if (secondsLeft < 15) {
+          lastTurnPaywallFlag = true;
+        }
+      }
     }
+  } catch (e) {
     console.warn('Usage enforcement check failed:', e);
   }
 
@@ -241,7 +266,10 @@ export async function POST(req: NextRequest) {
     });
 
     return new StreamingTextResponse(stream, {
-      headers: { 'X-User-Transcript': encodeURIComponent(transcript) },
+      headers: {
+        'X-User-Transcript': encodeURIComponent(transcript),
+        'X-Paywall-Trigger': lastTurnPaywallFlag ? 'true' : 'false',
+      },
     });
   } catch (error: any) {
     console.error('LLM Error:', error);

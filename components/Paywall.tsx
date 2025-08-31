@@ -18,6 +18,10 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   const signedIn = !!session;
   const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
   const [timeDisplay, setTimeDisplay] = useState('');
+  // Get guest conversation id (if any) to tag auth links
+  const guestConversationId = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
+  const signUpHref = `/sign-up?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
+  const signInHref = `/sign-in?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,9 +97,14 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
               Upgrade to Pro — $1.99 / mo
             </button>
           ) : (
-            <Link href="/sign-up?next=upgrade" onClick={handleUpgradeClick} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+            <>
+              <Link href={signUpHref} onClick={handleUpgradeClick} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
               Create Account & Subscribe
-            </Link>
+              </Link>
+              <Link href={signInHref} onClick={handleUpgradeClick} className="block w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
+                Log In to Continue
+              </Link>
+            </>
           )}
           <button onClick={onClose} className="text-sm text-white/60 hover:underline">
             Maybe later

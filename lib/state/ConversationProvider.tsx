@@ -94,6 +94,31 @@ export default function ConversationProvider({ children }: { children: React.Rea
     const getProfile = async (currentSession: Session | null) => {
       setSession(currentSession);
       if (currentSession) {
+        // Attempt to claim a guest conversation if present in URL or session
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlGuestConv = urlParams.get('guestConvId');
+          const storedGuestConv = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
+          const guestConvId = urlGuestConv || storedGuestConv;
+          if (guestConvId) {
+            await fetch('/api/auth/claim-conversation', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentSession.access_token}`,
+              },
+              body: JSON.stringify({ guestConvId })
+            });
+            try { sessionStorage.removeItem('guestConversationId'); } catch {}
+            if (urlGuestConv) {
+              urlParams.delete('guestConvId');
+              const qs = urlParams.toString();
+              window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+            }
+          }
+        } catch (e) {
+          console.warn('Guest conversation claim failed:', e);
+        }
         // LOGGED-IN users
         const ent = await fetchEntitlement().catch(() => null);
         setIsPro(ent?.status === 'active');
@@ -184,6 +209,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
         setConversationId(newConversation.id);
         currentConvId = newConversation.id;
         setMessages([]);
+        // Persist guest conversation id so we can fetch remaining time and later claim it after signup
+        if (!session) {
+          try { sessionStorage.setItem('guestConversationId', newConversation.id); } catch {}
+        }
         // refresh list for signed-in users only
         if (session) listConversations().then(setAllConversations).catch(() => {});
       } catch (e: any) {

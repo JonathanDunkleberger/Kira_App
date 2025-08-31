@@ -72,15 +72,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const isProcessingRef = useRef(false);
 
   useEffect(() => {
-  const fetchProfile = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      if (session) {
+    const getProfile = async (currentSession: Session | null) => {
+      setSession(currentSession);
+      if (currentSession) {
+        // LOGGED-IN users
         const ent = await fetchEntitlement().catch(() => null);
         setIsPro(ent?.status === 'active');
         setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
-    // Baseline the session timer based on plan
-    setProConversationTimer((ent?.status === 'active') ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
+        // Baseline the session timer based on plan
+        setProConversationTimer((ent?.status === 'active') ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
         // Preload user's conversations
         listConversations().then(setAllConversations).catch(() => setAllConversations([]));
         // Realtime updates
@@ -94,11 +94,27 @@ export default function ConversationProvider({ children }: { children: React.Rea
           })
           .subscribe();
       } else {
+        // GUEST users
         setIsPro(false);
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const lastVisit = localStorage.getItem('kira_last_visit');
+          if (lastVisit === today) {
+            const time = Number(localStorage.getItem('kira_guest_time') ?? GUEST_SESSION_SECONDS);
+            setDailySecondsRemaining(time);
+          } else {
+            localStorage.setItem('kira_last_visit', today);
+            localStorage.setItem('kira_guest_time', String(GUEST_SESSION_SECONDS));
+            setDailySecondsRemaining(GUEST_SESSION_SECONDS);
+          }
+        } catch {
+          setDailySecondsRemaining(GUEST_SESSION_SECONDS);
+        }
       }
     };
-    fetchProfile();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); fetchProfile(); });
+
+    supabase.auth.getSession().then(({ data: { session } }) => getProfile(session));
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { getProfile(session); });
     return () => {
       authListener.subscription.unsubscribe();
       if (conversationsChannelRef.current) {
@@ -119,6 +135,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
     return () => { if (proTimerIntervalRef.current) clearInterval(proTimerIntervalRef.current); };
   }, [conversationStatus, isPro]);
+
+  // Free users: countdown daily remaining while session is active (moved below stopConversation)
 
   const startConversation = useCallback(async () => {
     // Gate free users with no remaining time
@@ -161,6 +179,26 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setTurnStatus('idle');
     setMicVolume(0);
   }, []);
+
+  // Free users: countdown daily remaining while session is active
+  useEffect(() => {
+    if (isPro || conversationStatus !== 'active') return;
+    const interval = setInterval(() => {
+      setDailySecondsRemaining(prev => {
+        const current = typeof prev === 'number' ? prev : 0;
+        const next = Math.max(0, current - 1);
+        if (!session) {
+          try { localStorage.setItem('kira_guest_time', String(next)); } catch {}
+        }
+        if (next <= 0) {
+          stopConversation('ended_by_limit');
+          promptPaywall();
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPro, conversationStatus, session, stopConversation, promptPaywall]);
 
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
     if (isProcessingRef.current) return;

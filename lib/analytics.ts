@@ -59,3 +59,10 @@ export const trackUpgradeClick = (properties: PaywallEventProperties) =>
 
 export const trackUpgradeSuccess = (properties: PaywallEventProperties) =>
   trackPaywallEvent('paywall_upgrade_success', properties);
+
+// Optional nudge events
+export const trackUpgradeNudged = (properties: PaywallEventProperties) =>
+  trackPaywallEvent('upgrade_nudged', properties);
+
+export const trackUpgradeNudgeClick = (properties: PaywallEventProperties) =>
+  trackPaywallEvent('upgrade_nudge_click', properties);

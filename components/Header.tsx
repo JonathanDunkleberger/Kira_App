@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
+import HeaderUsageChip from '@/components/HeaderUsageChip';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
 
@@ -52,7 +53,7 @@ export default function Header() {
           <Pill>beta</Pill>
         </div>
 
-        <div className="flex items-center gap-3">
+  <div className="flex items-center gap-3">
           {/* --- START REVISED TIMER & PILL LOGIC --- */}
           {/* Timer for Pro Users (Active Convo Only) */}
           {isPro && conversationStatus === 'active' && (
@@ -65,7 +66,7 @@ export default function Header() {
           )}
 
           {/* Pro/Free Pill */}
-          {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
+      {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
           {/* --- END REVISED TIMER & PILL LOGIC --- */}
 
           {!signedIn ? (
@@ -75,6 +76,7 @@ export default function Header() {
             </>
           ) : (
             <>
+        <HeaderUsageChip />
               {!isPro && (
                 <button
                   onClick={() => startCheckout()}

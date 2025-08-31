@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { trackUpgradeSuccess } from '@/lib/analytics';
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function Banner() {
   const [msg, setMsg] = useState<string | null>(null);
+  const { startConversation } = useConversation();
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -39,6 +42,8 @@ export default function Banner() {
               }
             } catch {}
             window.dispatchEvent(new Event('entitlement:updated'));
+            trackUpgradeSuccess({ userType: 'authenticated', plan: 'pro' });
+            setTimeout(() => { try { startConversation(); } catch {} }, 400);
           }
         } catch {}
       })();

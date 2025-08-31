@@ -322,6 +322,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
       setTurnStatus('assistant_speaking');
   const shouldTriggerPaywall = response.headers.get('X-Paywall-Trigger') === 'true';
       if (shouldTriggerPaywall && !isPro) {
+        // soft earcon cue
+        import('@/lib/audio').then(m => m.playEarcon().catch(() => {})).catch(() => {});
         if (!showPaywall && !recentlyClosedRef.current) {
           setShowUpgradeNudge(true);
           // Cooldown to avoid immediate re-open after modal close

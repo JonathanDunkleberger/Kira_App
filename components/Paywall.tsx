@@ -18,6 +18,7 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   const signedIn = !!session;
   const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
   const [timeDisplay, setTimeDisplay] = useState('');
+  const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
   // Get guest conversation id (if any) to tag auth links
   const guestConversationId = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
   const signUpHref = `/sign-up?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
@@ -70,10 +71,10 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center">
-        <h2 className="text-2xl font-semibold">Time’s up for today</h2>
-        <p className="text-sm text-white/70 my-4">
-          You’ve used your free daily minutes. Get unlimited conversations, faster responses, and priority voice.
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center" role="dialog" aria-modal="true" aria-label="Paywall">
+        <h2 className="text-2xl font-semibold">You reached today’s free limit</h2>
+        <p className="text-sm text-white/70 my-3">
+          Go unlimited: faster replies, priority voice, and no daily cap.
         </p>
 
         <div className="mb-6 p-4 rounded-lg bg-white/5 border border-white/10 text-left">
@@ -96,13 +97,13 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
 
         <div className="space-y-3">
           {signedIn ? (
-            <button onClick={handleUpgradeClick} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-              Upgrade for $1.99/mo
+            <button onClick={() => { setIsLoadingCheckout(true); handleUpgradeClick(); }} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700 disabled:opacity-50" disabled={isLoadingCheckout}>
+              {isLoadingCheckout ? 'Opening Checkout…' : 'Upgrade • $1.99/mo'}
             </button>
           ) : (
             <>
-              <Link href={signUpHref} onClick={handleUpgradeClick} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-              Upgrade for $1.99/mo
+              <Link href={signUpHref} onClick={() => { setIsLoadingCheckout(true); handleUpgradeClick(); }} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+              Upgrade • $1.99/mo
               </Link>
               <Link href={signInHref} onClick={handleUpgradeClick} className="block w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
                 Log in to continue

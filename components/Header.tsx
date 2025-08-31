@@ -35,7 +35,6 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  const showSessionTimer = isPro && conversationStatus === 'active';
   const sessionTimerText = (() => {
     const s = Math.max(0, Number(secondsRemaining || 0));
     const m = Math.floor(s / 60);
@@ -55,10 +54,13 @@ export default function Header() {
 
         <div className="flex items-center gap-3">
           {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
-          {showSessionTimer ? (
+          {/* Case 1: Pro user in an active conversation */}
+          {isPro && conversationStatus === 'active' && (
             <span className="text-xs text-white/50">{sessionTimerText}</span>
-          ) : (
-            minutes !== null && <span className="text-xs text-white/50">{minutes}m left</span>
+          )}
+          {/* Case 2: Free user always shows daily remaining */}
+          {!isPro && minutes !== null && (
+            <span className="text-xs text-white/50">{minutes}m left today</span>
           )}
 
           {!signedIn ? (

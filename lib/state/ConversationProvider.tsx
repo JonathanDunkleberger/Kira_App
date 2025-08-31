@@ -38,6 +38,9 @@ interface ConversationContextType {
   // View mode state
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  // Paywall control
+  showPaywall: boolean;
+  setShowPaywall: (open: boolean) => void;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -54,6 +57,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [allConversations, setAllConversations] = useState<Convo[]>([]);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('conversation');
+  const [showPaywall, setShowPaywall] = useState(false);
   const conversationsChannelRef = useRef<any>(null);
   
   const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
@@ -114,7 +118,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [conversationStatus, isPro]);
 
   const startConversation = useCallback(async () => {
+    // Gate free users with no remaining time
+    if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
+      setShowPaywall(true);
+      return;
+    }
     setError(null);
+    setShowPaywall(false);
     setViewMode('conversation');
 
     let currentConvId = session ? conversationId : null;
@@ -136,7 +146,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setConversationStatus('active');
     setTurnStatus('user_listening');
     setProConversationTimer(isPro ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
-  }, [session, isPro, conversationId]);
+  }, [session, isPro, conversationId, dailySecondsRemaining]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
     vadCleanupRef.current();
@@ -366,6 +376,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     dailySecondsRemaining,
   viewMode,
   setViewMode,
+  showPaywall,
+  setShowPaywall,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

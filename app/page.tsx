@@ -6,15 +6,14 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
 
 function ConversationShell() {
-  const { isPro, dailySecondsRemaining, conversationStatus } = useConversation();
-  const paywalled = !isPro && (dailySecondsRemaining ?? 0) <= 0 && conversationStatus !== 'active';
+  const { showPaywall, setShowPaywall } = useConversation();
   return (
     <div className="flex flex-col items-center gap-8">
       <div className="scale-125">
         <HotMic />
       </div>
       <ConversationView />
-      <Paywall isOpen={paywalled} onClose={() => { /* kept controlled by provider state */ }} />
+      <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
     </div>
   );
 }

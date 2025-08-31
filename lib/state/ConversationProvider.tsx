@@ -284,8 +284,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
       // Improved error handling
       if (response.status === 402) {
-        // Server paywall enforcement
-        setShowPaywall(true);
+        // Server paywall enforcement; centralize paywall via stopConversation
+        stopConversation('ended_by_limit');
         throw new Error('Daily time limit exceeded.');
       }
       if (!response.ok || !response.body) {
@@ -351,7 +351,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
           if (audioMp3Base64) {
             audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
               if (shouldTriggerPaywall) {
-                promptPaywall();
                 stopConversation('ended_by_limit');
               } else {
                 setTurnStatus('user_listening');
@@ -359,7 +358,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
             });
           } else {
             if (shouldTriggerPaywall) {
-              promptPaywall();
               stopConversation('ended_by_limit');
             } else {
               setTurnStatus('user_listening');
@@ -368,7 +366,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
         } else {
           console.error('Speech synthesis failed.');
           if (shouldTriggerPaywall) {
-            promptPaywall();
             stopConversation('ended_by_limit');
           } else {
             setTurnStatus('user_listening');
@@ -377,7 +374,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
       } catch (ttsError) {
         console.error('Error during TTS playback:', ttsError);
         if (shouldTriggerPaywall) {
-          promptPaywall();
           stopConversation('ended_by_limit');
         } else {
           setTurnStatus('user_listening');
@@ -399,7 +395,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
               const remaining = Number(j?.secondsRemaining ?? 0);
               setDailySecondsRemaining(remaining);
               if (remaining <= 0) {
-                setShowPaywall(true);
                 stopConversation('ended_by_limit');
               }
             }

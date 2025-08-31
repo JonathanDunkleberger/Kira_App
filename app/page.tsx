@@ -25,7 +25,6 @@ export default function HomePage() {
   const { error, viewMode } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
-  <StreakIndicator />
   <DailyTopicBanner />
   <AchievementToast />
       {viewMode === 'conversation' ? (

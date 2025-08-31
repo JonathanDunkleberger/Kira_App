@@ -74,7 +74,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
+  const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
   const [currentStreak, setCurrentStreak] = useState<number | null>(null);
   const [hasPostedToday, setHasPostedToday] = useState(false);
   const [dailyTopic, setDailyTopic] = useState<string | null>(null);
@@ -150,9 +150,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
           console.warn('Guest conversation claim failed:', e);
         }
         // LOGGED-IN users
-        const ent = await fetchEntitlement().catch(() => null);
+  const ent = await fetchEntitlement().catch(() => null);
         setIsPro(ent?.status === 'active');
-        setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
+  setDailySecondsRemaining(Number(ent?.secondsRemaining ?? 0));
         // Baseline the session timer for Pro users only
         if (ent?.status === 'active') {
           setProConversationTimer(proSessionSeconds);
@@ -343,7 +343,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // Trigger paywall if daily time becomes exhausted regardless of session state
   useEffect(() => {
     // Prevent loop by bailing if paywall is already shown
-    if (!isPro && dailySecondsRemaining !== null && dailySecondsRemaining <= 0 && !showPaywall) {
+  if (!isPro && dailySecondsRemaining <= 0 && !showPaywall) {
       if (conversationStatus === 'active') {
         // Let stopConversation handle cleanup and opening the paywall last
         stopConversation('ended_by_limit');
@@ -355,7 +355,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Handle landing-on-page with zero time left (no active conversation)
   useEffect(() => {
-    if (!isPro && (dailySecondsRemaining ?? 0) <= 0 && !showPaywall) {
+  if (!isPro && (dailySecondsRemaining ?? 0) <= 0 && !showPaywall) {
       promptPaywall();
     }
   }, [isPro, dailySecondsRemaining, showPaywall, promptPaywall]);
@@ -495,7 +495,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
         fetchEntitlement().then(ent => {
-          if (ent) setDailySecondsRemaining(ent.secondsRemaining);
+          if (ent) setDailySecondsRemaining(Number(ent.secondsRemaining ?? 0));
         }).catch(() => {});
         // Update streak once per day
         if (!hasPostedToday) {

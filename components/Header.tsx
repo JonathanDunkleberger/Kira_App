@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageChip from '@/components/HeaderUsageChip';
+import StreakIndicator from '@/components/StreakIndicator';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
 
@@ -45,15 +46,15 @@ export default function Header() {
   const minutes = typeof dailySecondsRemaining === 'number' ? Math.ceil(dailySecondsRemaining / 60) : null;
 
   return (
-    <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5">
-      <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
+      <div className="px-4 md:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/"><Image src="/logo.png" alt="Kira" width={24} height={24} className="opacity-90" /></Link>
           <span className="text-sm text-white/70">Kira</span>
           <Pill>beta</Pill>
         </div>
 
-  <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
           {/* --- START REVISED HEADER --- */}
           {/* Pro session timer (optional) */}
           {isPro && conversationStatus === 'active' && (
@@ -61,7 +62,7 @@ export default function Header() {
           )}
           {/* Pro Pill only for Pro users */}
           {isPro && <Pill kind="emerald">Pro</Pill>}
-          {/* Free minutes text and Free pill removed; usage chip is primary */}
+          {/* Free minutes chip is primary; inline streak indicator for cohesion */}
           {/* --- END REVISED HEADER --- */}
 
           {!signedIn ? (
@@ -71,6 +72,8 @@ export default function Header() {
             </>
           ) : (
             <>
+              {/* Show streak for free users inline */}
+              {!isPro && <StreakIndicator />}
               <HeaderUsageChip />
               <div className="relative" ref={ref}>
                 <button onClick={() => setOpen(v => !v)}

@@ -5,25 +5,31 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function StreakIndicator() {
   const { currentStreak } = useConversation();
-
   if (!currentStreak || currentStreak <= 0) return null;
-
   return (
-    <div className="fixed top-16 right-3 z-40 select-none">
-      <AnimatePresence mode="popLayout">
-        <motion.div
-          key={currentStreak}
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-          className="rounded-full bg-amber-500/20 border border-amber-400/30 px-3 py-1 text-amber-200 text-sm shadow-lg"
-          aria-label={`Current streak: ${currentStreak}`}
+    <AnimatePresence mode="popLayout">
+      <motion.div
+        key={currentStreak}
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80"
+        aria-label={`Current streak: ${currentStreak}`}
+        title={`Daily streak: ${currentStreak}`}
+      >
+        <span>🔥</span>
+        <motion.span
+          key={`n-${currentStreak}`}
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 5 }}
+          transition={{ duration: 0.2 }}
+          className="tabular-nums"
         >
-          <span className="mr-1">🔥</span>
           {currentStreak}
-        </motion.div>
-      </AnimatePresence>
-    </div>
+        </motion.span>
+      </motion.div>
+    </AnimatePresence>
   );
 }

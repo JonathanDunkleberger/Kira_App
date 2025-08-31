@@ -115,21 +115,25 @@ export default function ConversationProvider({ children }: { children: React.Rea
           })
           .subscribe();
       } else {
-        // GUEST users
+        // GUEST users: server-authoritative remaining seconds
         setIsPro(false);
         try {
-          const res = await fetch('/api/config');
-          const cfg = await res.json().catch(() => ({}));
-          const GUEST_SECONDS = Number(cfg?.freeTrialSeconds ?? 900);
-          const today = new Date().toISOString().split('T')[0];
-          const lastVisit = localStorage.getItem('kira_last_visit');
-          if (lastVisit === today) {
-            const time = Number(localStorage.getItem('kira_guest_time') ?? GUEST_SECONDS);
-            setDailySecondsRemaining(time);
+          const guestConvId = sessionStorage.getItem('guestConversationId');
+          if (guestConvId) {
+            const res = await fetch(`/api/conversations/guest/${guestConvId}`);
+            if (res.ok) {
+              const j = await res.json();
+              setDailySecondsRemaining(Number(j?.secondsRemaining ?? 0));
+            } else {
+              // If not found or expired, fall back to default from config
+              const cfgRes = await fetch('/api/config');
+              const cfg = await cfgRes.json().catch(() => ({}));
+              setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
+            }
           } else {
-            localStorage.setItem('kira_last_visit', today);
-            localStorage.setItem('kira_guest_time', String(GUEST_SECONDS));
-            setDailySecondsRemaining(GUEST_SECONDS);
+            const cfgRes = await fetch('/api/config');
+            const cfg = await cfgRes.json().catch(() => ({}));
+            setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
           }
         } catch {
           setDailySecondsRemaining(900);

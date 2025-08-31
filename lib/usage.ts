@@ -65,15 +65,20 @@ export async function getDailySecondsRemaining(userId: string): Promise<number> 
   return ent.trial_seconds_remaining;
 }
 
-/** Decrement daily seconds (no-op for Pro). */
-export async function decrementDailySeconds(userId: string, seconds: number) {
+/**
+ * Decrement daily seconds based on calculated duration.
+ * Returns the updated remaining seconds (undefined for Pro users).
+ */
+export async function decrementDailySeconds(userId: string, secondsUsed: number): Promise<number | undefined> {
   const sb = getSupabaseServerAdmin();
   await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
   const ent = await getEntitlement(userId);
   if (ent.status === 'active') return; // Pro users don’t decrement
 
-  const newVal = Math.max(0, (ent.trial_seconds_remaining ?? 0) - seconds);
-  await sb.from('entitlements').update({ trial_seconds_remaining: newVal }).eq('user_id', userId);
+  const currentRemaining = ent.trial_seconds_remaining ?? 0;
+  const newRemaining = Math.max(0, currentRemaining - secondsUsed);
+  await sb.from('entitlements').update({ trial_seconds_remaining: newRemaining }).eq('user_id', userId);
+  return newRemaining;
 }
 
 /** Keep your existing Pro-grant semantics. */

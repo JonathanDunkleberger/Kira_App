@@ -2,12 +2,12 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { usePaywallBase } from '@/lib/hooks/usePaywall';
+import { PRO_SESSION_SECONDS } from '@/lib/env';
 import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 
-const PRO_SESSION_SECONDS = 30 * 60; // increased from 20 to 30 minutes
 const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
@@ -208,25 +208,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [promptPaywall]);
 
-  // Free users: countdown daily remaining while session is active
-  useEffect(() => {
-  if (isPro || conversationStatus !== 'active') return;
-    const interval = setInterval(() => {
-      setDailySecondsRemaining(prev => {
-        const current = typeof prev === 'number' ? prev : 0;
-        const next = Math.max(0, current - 1);
-        if (!session) {
-          try { localStorage.setItem('kira_guest_time', String(next)); } catch {}
-        }
-        if (next <= 0) {
-          setShowPaywall(true);
-          stopConversation('ended_by_limit');
-        }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isPro, conversationStatus, session, stopConversation, promptPaywall]);
+  // Removed per-second client countdown for free users. We now trust server updates
+  // and refresh after each turn and periodically via checkUsage().
 
   // Trigger paywall if daily time becomes exhausted regardless of session state
   useEffect(() => {
@@ -342,11 +325,34 @@ export default function ConversationProvider({ children }: { children: React.Rea
         console.error('Error during TTS playback:', ttsError);
         setTurnStatus('user_listening');
       }
-      // Refresh daily seconds after a turn
+      // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
         fetchEntitlement().then(ent => {
           if (ent) setDailySecondsRemaining(ent.secondsRemaining);
         }).catch(() => {});
+      } else {
+        // For guests, decrement local remaining based on assistant response words
+        try {
+          const words = (fullAssistantReply || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean).length;
+          const estimatedSeconds = Math.min(30, Math.max(2, Math.ceil(words / 2.5)));
+          const today = new Date().toISOString().split('T')[0];
+          const lastVisit = localStorage.getItem('kira_last_visit');
+          if (lastVisit !== today) {
+            // Reset guest bucket implicitly if day rolled over
+            localStorage.setItem('kira_last_visit', today);
+          }
+          const prior = Number(localStorage.getItem('kira_guest_time') ?? '900');
+          const next = Math.max(0, prior - estimatedSeconds);
+          localStorage.setItem('kira_guest_time', String(next));
+          setDailySecondsRemaining(next);
+          if (next <= 0) {
+            setShowPaywall(true);
+            stopConversation('ended_by_limit');
+          }
+        } catch {}
       }
       
     } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }

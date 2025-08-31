@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getDailySecondsRemaining, decrementDailySeconds, getEntitlement } from '@/lib/usage';
+import { decrementDailySeconds } from '@/lib/usage';
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
@@ -203,9 +203,18 @@ export async function POST(req: NextRequest) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId, messages: lastTurnMessages }),
             }).catch((e) => console.error('Failed to trigger memory extraction:', e));
-
-      // Decrement a small amount of daily time for authenticated Free users
-      decrementDailySeconds(userId, 5).catch(() => {});
+            // Decrement daily time for authenticated Free users based on assistant response length
+            try {
+              const words = (completion || '')
+                .trim()
+                .split(/\s+/)
+                .filter(Boolean).length;
+              // Estimate speaking duration: ~2.5 words/sec, clamp between 2s and 30s per turn
+              const estimatedSeconds = Math.min(30, Math.max(2, Math.ceil(words / 2.5)));
+              await decrementDailySeconds(userId, estimatedSeconds);
+            } catch (decErr) {
+              console.warn('Failed to decrement daily seconds:', decErr);
+            }
           }
         } catch (e) {
           console.error('Memory extraction trigger error:', e);

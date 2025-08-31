@@ -251,6 +251,12 @@ export default function ConversationProvider({ children }: { children: React.Rea
           stream,
           onSpeechStart: () => {
             // Start recording when speech begins
+            // Guard: stop and clear any lingering recorder from a previous turn
+            if (mediaRecorderRef.current?.state === 'recording') {
+              try { mediaRecorderRef.current.stop(); } catch {}
+            }
+            mediaRecorderRef.current = null;
+
             audioChunksRef.current = [];
             mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current.ondataavailable = (event) => {

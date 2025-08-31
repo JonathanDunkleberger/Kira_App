@@ -342,16 +342,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Trigger paywall if daily time becomes exhausted regardless of session state
   useEffect(() => {
-    // Prevent loop by bailing if paywall is already shown
-  if (!isPro && dailySecondsRemaining <= 0 && !showPaywall) {
-      if (conversationStatus === 'active') {
-        // Let stopConversation handle cleanup and opening the paywall last
-        stopConversation('ended_by_limit');
-      } else {
-        setShowPaywall(true);
-      }
+    // Automatic paywall: when time hits zero for free users, end session and trigger paywall
+    if (!isPro && dailySecondsRemaining <= 0 && !showPaywall) {
+      stopConversation('ended_by_limit');
     }
-  }, [dailySecondsRemaining, isPro, conversationStatus, stopConversation, showPaywall]);
+  }, [dailySecondsRemaining, isPro, stopConversation, showPaywall]);
 
   // Handle landing-on-page with zero time left (no active conversation)
   useEffect(() => {

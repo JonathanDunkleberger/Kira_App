@@ -17,16 +17,12 @@ export default function HotMic() {
   } = useConversation();
 
   const isSessionActive = conversationStatus === 'active';
+  const disabled = !isPro && (dailySecondsRemaining ?? 0) <= 0;
 
   const handleClick = () => {
     if (isSessionActive) {
       stopConversation();
     } else {
-      // Immediate paywall gate for free users with no time left
-      if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
-        promptPaywall();
-        return;
-      }
       startConversation();
     }
   };
@@ -61,7 +57,8 @@ export default function HotMic() {
     <div className="flex flex-col items-center gap-4">
       <motion.button
         onClick={handleClick}
-        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
+        disabled={disabled}
+        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none disabled:opacity-50 disabled:cursor-not-allowed"
         // Animate orb scale and glow
         animate={orbAnimation}
         transition={{ type: 'spring', stiffness: 200, damping: 20 }}

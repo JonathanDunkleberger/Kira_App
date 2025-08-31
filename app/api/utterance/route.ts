@@ -229,7 +229,7 @@ export async function POST(req: NextRequest) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
           await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
         }
-        // Fire-and-forget memory extraction with the last turn
+        // Fire-and-forget memory extraction with the last turn (authenticated users only)
         try {
           if (userId) {
             const lastTurnMessages = [
@@ -242,26 +242,30 @@ export async function POST(req: NextRequest) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ userId, messages: lastTurnMessages }),
             }).catch((e) => console.error('Failed to trigger memory extraction:', e));
-            // Decrement daily time for authenticated Free users based on assistant response length
-            try {
-              const words = (completion || '')
-                .trim()
-                .split(/\s+/)
-                .filter(Boolean).length;
-              // Estimate speaking duration: ~2.5 words/sec, clamp between 2s and 30s per turn
-              const estimatedSeconds = Math.min(30, Math.max(2, Math.ceil(words / 2.5)));
-              if (userId) {
-                await decrementDailySeconds(userId, estimatedSeconds);
-              } else if (conversationId) {
-                await sb.rpc('decrement_guest_seconds', { conv_id: conversationId, seconds_to_decrement: estimatedSeconds });
-              }
-            } catch (decErr) {
-              console.warn('Failed to decrement remaining seconds:', decErr);
-            }
           }
         } catch (e) {
           console.error('Memory extraction trigger error:', e);
         }
+
+        // --- START GUEST TIME DECREMENT LOGIC ---
+        // Estimate time used based on the AI's response length
+        try {
+          const words = (completion || '').trim().split(/\s+/).filter(Boolean).length;
+          const estimatedSeconds = Math.ceil(words / 2.5); // Approx. 2.5 words per second
+          const timeUsed = Math.max(2, Math.min(30, estimatedSeconds)); // Clamp between 2-30s
+
+          if (userId) {
+            await decrementDailySeconds(userId, timeUsed);
+          } else if (conversationId) {
+            await sb.rpc('decrement_guest_seconds', {
+              conv_id: conversationId,
+              seconds_to_decrement: timeUsed,
+            });
+          }
+        } catch (decErr) {
+          console.warn('Failed to decrement remaining seconds:', decErr);
+        }
+        // --- END GUEST TIME DECREMENT LOGIC ---
       },
     });
 

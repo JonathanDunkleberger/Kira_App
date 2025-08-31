@@ -54,6 +54,8 @@ interface ConversationContextType {
   dailyTopic?: string | null;
   // Achievements (lean V1)
   unlockedAchievements?: string[];
+  newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
+  setNewlyUnlockedToast?: (val: { id: string; name: string; description?: string | null } | null) => void;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -77,6 +79,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [hasPostedToday, setHasPostedToday] = useState(false);
   const [dailyTopic, setDailyTopic] = useState<string | null>(null);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
+  const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
   // Centralize paywall state via hook
   const {
     isOpen: paywallOpen,
@@ -166,6 +169,25 @@ export default function ConversationProvider({ children }: { children: React.Rea
             listConversations().then(setAllConversations).catch(() => {});
           })
           .subscribe();
+
+        // Realtime subscription for newly unlocked achievements
+        try {
+          const uid = currentSession.user.id;
+          supabase
+            .channel('achievements-realtime')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_achievements', filter: `user_id=eq.${uid}` }, async (payload) => {
+              try {
+                const achId = (payload?.new as any)?.achievement_id as string;
+                if (!achId) return;
+                const { data } = await supabase.from('achievements').select('id,name,description').eq('id', achId).maybeSingle();
+                if (data) {
+                  setNewlyUnlockedToast({ id: data.id, name: data.name, description: data.description });
+                  setUnlockedAchievements(prev => prev.includes(data.id) ? prev : [...prev, data.id]);
+                }
+              } catch {}
+            })
+            .subscribe();
+        } catch {}
       } else {
         // GUEST users: server-authoritative remaining seconds
         setIsPro(false);
@@ -213,15 +235,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           // Fetch unlocked achievements
-          try {
-            const r = await fetch('/api/usage', { headers: { Authorization: `Bearer ${session.access_token}` } });
-            // fallback: if /api/usage not relevant, we still try to fetch user_achievements directly via RPC
-          } catch {}
-          try {
-            const headers = { Authorization: `Bearer ${session.access_token}` };
-            const res = await fetch('/api/analytics/paywall', { headers });
-            // ignore, placeholder to warm auth in edge
-          } catch {}
+          // prefetch any required auth state; non-fatal if these fail
           try {
             const headers = { Authorization: `Bearer ${session.access_token}` };
             const ua = await fetch('/api/user/achievements', { headers }).catch(() => null);
@@ -653,6 +667,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   hasPostedToday,
   dailyTopic,
   unlockedAchievements,
+  newlyUnlockedToast,
+  setNewlyUnlockedToast,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

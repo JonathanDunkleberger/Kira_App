@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       .update({ current_streak: nextStreak, last_streak_date: nextDate })
       .eq('user_id', userId);
 
-    return NextResponse.json({ currentStreak: nextStreak });
+  return NextResponse.json({ currentStreak: nextStreak, streak: nextStreak });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 });
   }

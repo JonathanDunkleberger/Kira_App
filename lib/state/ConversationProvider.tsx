@@ -429,6 +429,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
         const vad = await MicVAD.new({
           stream,
+          // --- START VAD TUNING FIX ---
+          // Less sensitive to brief noises; require longer sustained speech and longer silence to end.
+          // ~10 frames (~320ms at 16kHz) before firing onSpeechStart
+          minSpeechFrames: 10,
+          // ~30 frames (~960ms of silence) before firing onSpeechEnd
+          redemptionFrames: 30,
+          // --- END VAD TUNING FIX ---
           onSpeechStart: () => {
             // Start recording when speech begins
             // Guard: stop and clear any lingering recorder from a previous turn

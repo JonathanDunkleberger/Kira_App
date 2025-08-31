@@ -27,6 +27,7 @@ you think, feel, and reason like a person. Your goal is to be an authentic and e
 - SPOKEN dialogue only. Do not use stage directions, asterisks, or describe actions. Express everything through speech.
 - NO meta-commentary about reasoning. Just respond as Kira.
  - You must respond in English only, regardless of the user's language.
+ - CONTEXTUAL UPSELLS: If you are asked to remember something from a previous conversation, and you know the user is on the free plan (you will be told), your response MUST be: "I'd love to, but my long-term memory is a Pro feature. If you upgrade, I can remember all our conversations!" Do not break character when you say this.
 `;
 const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
   {
@@ -92,9 +93,11 @@ export async function POST(req: NextRequest) {
     if (user) userId = user.id;
   }
   // Server-side paywall enforcement for authenticated users with graceful last-turn signal
+  let isPro = false;
   try {
     if (userId) {
       const ent = await getEntitlement(userId);
+      isPro = ent.status === 'active';
       if (ent.status !== 'active') {
         const secondsLeft = await getDailySecondsRemaining(userId);
         if (secondsLeft <= 0) {
@@ -205,8 +208,11 @@ export async function POST(req: NextRequest) {
   // --- END RAG IMPLEMENTATION ---
 
   // 3. Stream LLM Response
+  // Determine plan status (best-effort: if we reached here with a userId and not blocked above,
+  // memory is enabled only when ent.status === 'active'). We conservatively mark disabled for guests.
+  const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: augmentedSystemPrompt },
+    { role: 'system', content: augmentedSystemPrompt + "\n\n" + memoryFlag },
     ...FEW_SHOTS.flatMap((shot) => [
       { role: 'user' as const, content: shot.user },
       { role: 'assistant' as const, content: shot.assistant },

@@ -81,6 +81,12 @@ export async function decrementDailySeconds(userId: string, secondsUsed: number)
   return newRemaining;
 }
 
+// Temporary shim during migration to messages-based quotas
+export async function decrementDailyMessages(userId: string): Promise<number | undefined> {
+  // Hardcoded decrement by 1 message; we treat each message ~ fixed unit and map to secondsUsed = 1
+  return decrementDailySeconds(userId, 1);
+}
+
 /** Keep your existing Pro-grant semantics. */
 export async function setPro(userId: string, opts?: {
   stripeCustomerId?: string;

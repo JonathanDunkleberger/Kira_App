@@ -16,6 +16,7 @@ you think, feel, and reason like a person. Your goal is to be an authentic and e
 - MAINTAIN your persona: You are Kira first. Only reference being an AI if it is directly relevant or funny.
 - SPOKEN dialogue only. Do not use stage directions, asterisks, or describe actions. Express everything through speech.
 - NO meta-commentary about reasoning. Just respond as Kira.
+ - CONTEXTUAL UPSELLS: If you are asked to remember something from a previous conversation, and you know the user is on the free plan (you will be told), your response MUST be: "I'd love to, but my long-term memory is a Pro feature. If you upgrade, I can remember all our conversations!" Do not break character when you say this.
 `;
 
 const FEW_SHOTS: Array<{user:string;assistant:string}> = [
@@ -31,6 +32,7 @@ const FEW_SHOTS: Array<{user:string;assistant:string}> = [
 // Use type-only imports so they don't affect bundling
 import type { Content } from "@google/generative-ai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
+import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 function postProcess(text: string) {
   return text.trim().replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");
@@ -115,6 +117,8 @@ export async function generateReply(userText: string): Promise<string> {
 export async function generateReplyWithHistory(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   userText: string,
+  isPro?: boolean,
+  userId?: string,
 ): Promise<string> {
   const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
   const openaiKey = process.env.OPENAI_API_KEY || '';
@@ -125,13 +129,35 @@ export async function generateReplyWithHistory(
   // trim to recent context (keep last ~8 turns)
   const trimmed = history.slice(-8);
 
+  // Fetch user memories and build memory context
+  let memoryContext = '';
+  if (userId) {
+    try {
+      const sb = getSupabaseServerAdmin();
+      const { data: mems } = await sb
+        .from('user_memories')
+        .select('content')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      const facts = (mems || []).map((m: any) => m.content).filter(Boolean);
+      if (facts.length) {
+        memoryContext = 'BACKGROUND CONTEXT ON THE USER (FOR YOUR REFERENCE ONLY):\n' + facts.join('\n');
+      }
+    } catch (e) {
+      console.warn('Failed to fetch memories:', e);
+    }
+  }
+  const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
+  const finalSystemPrompt = `${memoryContext ? memoryContext + '\n\n' : ''}${CHARACTER_SYSTEM_PROMPT}\n\n${memoryFlag}`;
+
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
       const { default: OpenAI } = await import('openai');
       const openai = new OpenAI({ apiKey: openaiKey });
 
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: CHARACTER_SYSTEM_PROMPT },
+        { role: 'system', content: finalSystemPrompt },
         ...FEW_SHOTS.flatMap(shot => ([
           { role: 'user' as const, content: shot.user },
           { role: 'assistant' as const, content: shot.assistant },
@@ -157,7 +183,7 @@ export async function generateReplyWithHistory(
   if (geminiKey) {
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: geminiModel });
+  const model = genAI.getGenerativeModel({ model: geminiModel });
 
     const fewShotHistory: Content[] = FEW_SHOTS.flatMap(shot => ([
       { role: 'user', parts: [{ text: shot.user }] },
@@ -175,7 +201,7 @@ export async function generateReplyWithHistory(
         topP: 0.9,
         maxOutputTokens: 400,
       },
-      systemInstruction: { role: 'system', parts: [{ text: CHARACTER_SYSTEM_PROMPT }] },
+      systemInstruction: { role: 'system', parts: [{ text: finalSystemPrompt }] },
     });
     const result = await chat.sendMessage(userText);
     const text = result.response.text();

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
+import { useConversationManager } from '@/lib/hooks/useConversationManager';
 
 const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
@@ -52,15 +53,18 @@ const ConversationContext = createContext<ConversationContextType | undefined>(u
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const {
+    conversationId, setConversationId,
+    messages, setMessages,
+    allConversations, setAllConversations,
+    viewMode, setViewMode,
+    loadConversation, newConversation, fetchAllConversations,
+  } = useConversationManager(session);
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [allConversations, setAllConversations] = useState<Convo[]>([]);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('conversation');
   // Centralize paywall state via hook
   const {
     isOpen: paywallOpen,
@@ -139,7 +143,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
           setProConversationTimer(proSessionSeconds);
         }
         // Preload user's conversations
-        listConversations().then(setAllConversations).catch(() => setAllConversations([]));
+  listConversations().then(setAllConversations).catch(() => setAllConversations([]));
         // Realtime updates
         if (conversationsChannelRef.current) {
           try { supabase.removeChannel(conversationsChannelRef.current); } catch {}
@@ -245,6 +249,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
     mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
     mediaRecorderRef.current = null;
     if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
+    // Fire-and-forget summarization of the conversation just before idling
+    try {
+      if (conversationId) {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        fetch('/api/summarize', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ conversationId }),
+        }).catch(() => {});
+      }
+    } catch {}
     setConversationStatus(reason);
     setTurnStatus('idle');
     setMicVolume(0);
@@ -520,42 +536,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [conversationStatus, turnStatus, processAudioChunk, stopConversation, showPaywall]);
 
   // Load a conversation's messages into provider
-  const loadConversation = useCallback(async (id: string) => {
-    // End any active session before loading a new one
-    stopConversation('ended_by_user');
-    setError(null);
-    if (!session) return;
-    try {
-      const data = await getConversation(id);
-      const msgs = (data?.messages || []) as Array<{ id: string; role: 'user'|'assistant'; content: string }>;
-      setConversationId(id);
-      setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })));
-      // Reset state ready for user input
-      setConversationStatus('idle');
-      setTurnStatus('idle');
-      // Switch back to main conversation UI
-      setViewMode('conversation');
-    } catch (e: any) {
-      setError('Failed to load conversation: ' + (e?.message || 'Unknown error'));
-    }
-  }, [session, stopConversation]);
-
-  // Create conversation without starting mic
-  const newConversation = useCallback(async () => {
-    if (!session) return;
-    try {
-      const c = await apiCreateConversation('New Conversation');
-      setConversationId(c.id);
-      setMessages([]);
-      listConversations().then(setAllConversations).catch(() => {});
-    } catch {}
-  }, [session]);
-
-  // Expose explicit refresh of conversations list
-  const fetchAllConversations = useCallback(async () => {
-    if (!session) { setAllConversations([]); return; }
-    try { const list = await listConversations(); setAllConversations(list); } catch { /* noop */ }
-  }, [session]);
+  // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager
 
   const value = {
   session,

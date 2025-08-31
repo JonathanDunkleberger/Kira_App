@@ -60,6 +60,33 @@ export default function UserProfile() {
               >
                 Sign Out
               </button>
+              <button
+                onClick={async () => {
+                  setOpen(false);
+                  const ok = window.confirm('Are you sure? This will permanently delete your account and all conversations.');
+                  if (!ok) return;
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const r = await fetch('/api/user/delete', {
+                      method: 'POST',
+                      headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+                    });
+                    if (!r.ok) {
+                      let msg = 'Delete failed';
+                      try { const j = await r.json(); msg = j?.error || msg; } catch {}
+                      alert(msg);
+                      return;
+                    }
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    await supabase.auth.signOut();
+                  }
+                }}
+                className="w-full text-left px-2 py-2 rounded-md hover:bg-white/10 text-rose-400"
+              >
+                Delete Account
+              </button>
             </div>
           ) : (
             <div className="space-y-2">

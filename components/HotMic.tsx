@@ -10,7 +10,10 @@ export default function HotMic() {
     turnStatus, 
     startConversation, 
     stopConversation,
-    micVolume,
+  micVolume,
+  isPro,
+  dailySecondsRemaining,
+  promptPaywall,
   } = useConversation();
 
   const isSessionActive = conversationStatus === 'active';
@@ -19,6 +22,11 @@ export default function HotMic() {
     if (isSessionActive) {
       stopConversation();
     } else {
+      // Immediate paywall gate for free users with no time left
+      if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
+        promptPaywall();
+        return;
+      }
       startConversation();
     }
   };

@@ -44,32 +44,49 @@ export default function HotMic() {
   }, [isSessionActive, turnStatus]);
 
   // --- START ANIMATION LOGIC ---
-  const isSpeaking = turnStatus === 'user_listening' || turnStatus === 'assistant_speaking';
-  const orbAnimation = {
-    scale: isSpeaking ? 1.15 : 1.0,
-    boxShadow: isSpeaking
-      ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
-      : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
-  } as const;
+  const baseScale = 1;
+  const scale = (() => {
+    if (turnStatus === 'user_listening') {
+      // expand/contract with live mic volume
+      return baseScale + Math.min(0.4, Math.max(0, micVolume)) * 0.4 + 0; // cap subtlely
+    }
+    if (turnStatus === 'assistant_speaking') {
+      return baseScale; // use keyframe animate below for gentle pulse
+    }
+    return baseScale;
+  })();
+  const pulseWhenAssistant = turnStatus === 'assistant_speaking'
+    ? { scale: [1, 1.05, 1], transition: { duration: 1.5, repeat: Infinity } as const }
+    : undefined;
   // --- END ANIMATION LOGIC ---
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <motion.button
-        onClick={handleClick}
-        disabled={disabled}
-        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none disabled:opacity-50 disabled:cursor-not-allowed"
-        // Animate orb scale and glow
-        animate={orbAnimation}
-        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-        style={{
-          background: turnStatus === 'processing_speech'
-            ? 'radial-gradient(circle, #fcd34d, #b45309)'
-            : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
-        }}
-      >
-        {orbText}
-      </motion.button>
+      <div className="relative group">
+        <motion.button
+          onClick={handleClick}
+          disabled={disabled}
+          className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none disabled:opacity-50 disabled:cursor-not-allowed"
+          // Animate orb scale and glow
+          animate={pulseWhenAssistant ?? { scale }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          style={{
+            background: turnStatus === 'processing_speech'
+              ? 'radial-gradient(circle, #fcd34d, #b45309)'
+              : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
+            boxShadow: (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking')
+              ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
+              : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
+          }}
+        >
+          {orbText}
+        </motion.button>
+        {disabled && (
+          <span className="pointer-events-none absolute left-1/2 top-full mt-3 -translate-x-1/2 origin-top scale-0 rounded-md bg-gray-800 px-2 py-1 text-xs text-white shadow-lg transition-transform duration-150 group-hover:scale-100">
+            Daily limit reached. Upgrade for unlimited conversations.
+          </span>
+        )}
+      </div>
       <div className="h-8 text-center">
         <p className="text-gray-400">{subText}</p>
       </div>

@@ -532,6 +532,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
           // 75 frames (~2.4s of silence) before firing onSpeechEnd
           redemptionFrames: 75,
           // --- END VAD TUNING FIX ---
+          // Provide continuous mic volume (0..1) while VAD is active so UI can animate
+          // @ts-expect-error Library's type doesn't declare the level argument, but it is provided at runtime.
+          onVADMisfire: (level: number) => {
+            // Clamp to [0,1] and update UI while listening
+            const v = typeof level === 'number' && isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+            setMicVolume(v);
+          },
           onSpeechStart: () => {
             // Start recording when speech begins
             // Guard: stop and clear any lingering recorder from a previous turn
@@ -557,6 +564,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
             if (mediaRecorderRef.current?.state === 'recording') {
               mediaRecorderRef.current.stop();
             }
+            // Reset mic visualization when speech ends
+            setMicVolume(0);
           },
         });
 
@@ -566,6 +575,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
         vadCleanupRef.current = () => {
           try { vad.destroy(); } catch {}
           try { stream.getTracks().forEach((t) => t.stop()); } catch {}
+          // Ensure volume visualization is cleared on teardown
+          setMicVolume(0);
         };
       } catch (err) {
         console.error('VAD or Microphone setup failed:', err);

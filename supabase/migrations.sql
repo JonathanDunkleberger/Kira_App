@@ -147,6 +147,26 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Create paywall events table for conversion tracking
+create table if not exists public.paywall_events (
+  id uuid default gen_random_uuid() primary key,
+  event text not null,
+  properties jsonb,
+  timestamp timestamptz default now(),
+  user_agent text,
+  url text,
+  user_id uuid references auth.users(id) on delete set null,
+  user_type text,
+  plan text,
+  seconds_remaining integer,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create index if not exists paywall_events_user_id_idx on public.paywall_events(user_id);
+create index if not exists paywall_events_event_idx on public.paywall_events(event);
+create index if not exists paywall_events_timestamp_idx on public.paywall_events(timestamp);
+
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users

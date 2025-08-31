@@ -5,6 +5,7 @@ import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { usePaywall } from '@/lib/hooks/usePaywall';
 import { useEffect, useState } from 'react';
+import { trackUpgradeClick, trackPaywallTriggered, PaywallEventProperties } from '@/lib/analytics';
 
 interface PaywallProps {
   isOpen: boolean;
@@ -12,10 +13,11 @@ interface PaywallProps {
 }
 
 export default function Paywall({ isOpen, onClose }: PaywallProps) {
-  const { session } = useConversation();
+  const { session, conversationId } = useConversation();
   const { secondsRemaining, isPro, isLoading } = usePaywall();
   const signedIn = !!session;
   const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
+  const [timeDisplay, setTimeDisplay] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -24,6 +26,41 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
       .then(cfg => setFreeMinutes(Math.floor(Number(cfg?.freeTrialSeconds ?? 900) / 60)))
       .catch(() => setFreeMinutes(null));
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const properties: PaywallEventProperties = {
+        userId: session?.user?.id,
+        userType: session ? 'authenticated' : 'guest',
+        plan: isPro ? 'pro' : 'free',
+        secondsRemaining: secondsRemaining ?? undefined,
+        conversationId: conversationId || undefined,
+        source: 'time_exhaustion',
+      };
+      trackPaywallTriggered(properties);
+    }
+  }, [isOpen, session, isPro, secondsRemaining, conversationId]);
+
+  useEffect(() => {
+    if (secondsRemaining !== null) {
+      const minutes = Math.floor(secondsRemaining / 60);
+      const seconds = secondsRemaining % 60;
+      setTimeDisplay(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    }
+  }, [secondsRemaining]);
+
+  const handleUpgradeClick = () => {
+    const properties: PaywallEventProperties = {
+      userId: session?.user?.id,
+      userType: session ? 'authenticated' : 'guest',
+      plan: 'free',
+      secondsRemaining: secondsRemaining ?? undefined,
+      conversationId: conversationId || undefined,
+      source: 'paywall_button',
+    };
+    trackUpgradeClick(properties);
+    startCheckout();
+  };
 
   if (!isOpen) return null;
 
@@ -52,11 +89,11 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
 
         <div className="space-y-3">
           {signedIn ? (
-            <button onClick={startCheckout} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+            <button onClick={handleUpgradeClick} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
               Upgrade to Pro — $1.99 / mo
             </button>
           ) : (
-            <Link href="/sign-up?next=upgrade" className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
+            <Link href="/sign-up?next=upgrade" onClick={handleUpgradeClick} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
               Create Account & Subscribe
             </Link>
           )}

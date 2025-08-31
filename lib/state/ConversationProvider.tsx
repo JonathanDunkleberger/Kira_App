@@ -431,10 +431,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
           stream,
           // --- START VAD TUNING FIX ---
           // Less sensitive to brief noises; require longer sustained speech and longer silence to end.
-          // ~10 frames (~320ms at 16kHz) before firing onSpeechStart
-          minSpeechFrames: 10,
-          // ~30 frames (~960ms of silence) before firing onSpeechEnd
-          redemptionFrames: 30,
+          // 15 frames (~480ms at 16kHz) before firing onSpeechStart
+          minSpeechFrames: 15,
+          // 75 frames (~2.4s of silence) before firing onSpeechEnd
+          redemptionFrames: 75,
           // --- END VAD TUNING FIX ---
           onSpeechStart: () => {
             // Start recording when speech begins

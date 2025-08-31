@@ -53,14 +53,6 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-3">
-          {!isPro && (
-            <button
-              onClick={promptPaywall}
-              className="px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700"
-            >
-              Subscribe
-            </button>
-          )}
           {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
           {/* Case 1: Pro user in an active conversation */}
           {isPro && conversationStatus === 'active' && (

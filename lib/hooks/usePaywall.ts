@@ -67,11 +67,10 @@ export function usePaywallBase(params: {
   }, [session, setShowPaywall]);
 
   const triggerPaywall = useCallback(() => {
+    // Open both internal and provider flags without re-calling promptPaywall to avoid loops
     setIsOpen(true);
     setShowPaywall(true);
-    // Also call provider's prompt for any side effects
-    promptPaywall();
-  }, [setShowPaywall, promptPaywall]);
+  }, [setShowPaywall]);
 
   const dismissPaywall = useCallback(() => {
     setIsOpen(false);

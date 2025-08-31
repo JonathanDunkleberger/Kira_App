@@ -75,9 +75,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
   });
   const [showPaywall, setShowPaywallState] = useState(false);
   const setShowPaywall = useCallback((open: boolean) => {
+    // Only update local state; avoid calling hook's trigger/dismiss to prevent recursion
     setShowPaywallState(open);
-    if (open) triggerPaywall(); else dismissPaywall();
-  }, [triggerPaywall, dismissPaywall]);
+  }, []);
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
   

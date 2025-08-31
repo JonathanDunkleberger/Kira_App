@@ -7,7 +7,6 @@ import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 
 const PRO_SESSION_SECONDS = 30 * 60; // increased from 20 to 30 minutes
-const GUEST_SESSION_SECONDS = 15 * 60;
 const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
@@ -79,8 +78,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
         const ent = await fetchEntitlement().catch(() => null);
         setIsPro(ent?.status === 'active');
         setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
-        // Baseline the session timer based on plan
-        setProConversationTimer((ent?.status === 'active') ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
+        // Baseline the session timer for Pro users only
+        if (ent?.status === 'active') {
+          setProConversationTimer(PRO_SESSION_SECONDS);
+        }
         // Preload user's conversations
         listConversations().then(setAllConversations).catch(() => setAllConversations([]));
         // Realtime updates
@@ -97,18 +98,21 @@ export default function ConversationProvider({ children }: { children: React.Rea
         // GUEST users
         setIsPro(false);
         try {
+          const res = await fetch('/api/config');
+          const cfg = await res.json().catch(() => ({}));
+          const GUEST_SECONDS = Number(cfg?.freeTrialSeconds ?? 900);
           const today = new Date().toISOString().split('T')[0];
           const lastVisit = localStorage.getItem('kira_last_visit');
           if (lastVisit === today) {
-            const time = Number(localStorage.getItem('kira_guest_time') ?? GUEST_SESSION_SECONDS);
+            const time = Number(localStorage.getItem('kira_guest_time') ?? GUEST_SECONDS);
             setDailySecondsRemaining(time);
           } else {
             localStorage.setItem('kira_last_visit', today);
-            localStorage.setItem('kira_guest_time', String(GUEST_SESSION_SECONDS));
-            setDailySecondsRemaining(GUEST_SESSION_SECONDS);
+            localStorage.setItem('kira_guest_time', String(GUEST_SECONDS));
+            setDailySecondsRemaining(GUEST_SECONDS);
           }
         } catch {
-          setDailySecondsRemaining(GUEST_SESSION_SECONDS);
+          setDailySecondsRemaining(900);
         }
       }
     };
@@ -166,7 +170,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
     setConversationStatus('active');
     setTurnStatus('user_listening');
-    setProConversationTimer(isPro ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
+  if (isPro) setProConversationTimer(PRO_SESSION_SECONDS);
   }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
@@ -178,7 +182,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setConversationStatus(reason);
     setTurnStatus('idle');
     setMicVolume(0);
-  }, []);
+    if (reason === 'ended_by_limit') {
+      // Ensure paywall opens when ending due to limit
+      promptPaywall();
+    }
+  }, [promptPaywall]);
 
   // Free users: countdown daily remaining while session is active
   useEffect(() => {
@@ -192,7 +200,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
         }
         if (next <= 0) {
           stopConversation('ended_by_limit');
-          promptPaywall();
         }
         return next;
       });

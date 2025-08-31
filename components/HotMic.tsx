@@ -10,7 +10,7 @@ export default function HotMic() {
     turnStatus, 
     startConversation, 
     stopConversation,
-  micVolume
+    micVolume,
   } = useConversation();
 
   const isSessionActive = conversationStatus === 'active';

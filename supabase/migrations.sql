@@ -31,6 +31,10 @@ create table if not exists public.conversations (
   updated_at timestamptz default now()
 );
 
+-- Add per-conversation remaining seconds for guests (ignored for authed users)
+alter table if exists public.conversations
+  add column if not exists seconds_remaining int;
+
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references public.conversations(id) on delete cascade,
@@ -144,6 +148,17 @@ begin
   insert into public.entitlements (user_id) values (new.id)
   on conflict (user_id) do nothing;
   return new;
+end;
+$$ language plpgsql security definer;
+
+-- Guest conversations: decrement remaining seconds atomically by RPC
+create or replace function public.decrement_guest_seconds(conv_id uuid, seconds_to_decrement int)
+returns void as $$
+begin
+  update public.conversations
+  set seconds_remaining = greatest(0, coalesce(seconds_remaining, 0) - seconds_to_decrement),
+      updated_at = now()
+  where id = conv_id;
 end;
 $$ language plpgsql security definer;
 

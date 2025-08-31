@@ -100,6 +100,20 @@ export async function POST(req: NextRequest) {
     console.warn('Usage enforcement check failed:', e);
   }
 
+  // Additional server-side enforcement for guests using conversation seconds_remaining
+  if (!userId && conversationId) {
+    try {
+      const { data: conv, error: convErr } = await sb
+        .from('conversations')
+        .select('seconds_remaining')
+        .eq('id', conversationId)
+        .single();
+      if (convErr || (conv && typeof conv.seconds_remaining === 'number' && conv.seconds_remaining <= 0)) {
+        return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+      }
+    } catch {}
+  }
+
   // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
 
   // 1. Parse form data and transcribe audio
@@ -211,9 +225,13 @@ export async function POST(req: NextRequest) {
                 .filter(Boolean).length;
               // Estimate speaking duration: ~2.5 words/sec, clamp between 2s and 30s per turn
               const estimatedSeconds = Math.min(30, Math.max(2, Math.ceil(words / 2.5)));
-              await decrementDailySeconds(userId, estimatedSeconds);
+              if (userId) {
+                await decrementDailySeconds(userId, estimatedSeconds);
+              } else if (conversationId) {
+                await sb.rpc('decrement_guest_seconds', { conv_id: conversationId, seconds_to_decrement: estimatedSeconds });
+              }
             } catch (decErr) {
-              console.warn('Failed to decrement daily seconds:', decErr);
+              console.warn('Failed to decrement remaining seconds:', decErr);
             }
           }
         } catch (e) {

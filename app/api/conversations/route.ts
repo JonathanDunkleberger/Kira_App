@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
+import { FREE_TRIAL_SECONDS } from '@/lib/env';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
       user_id: userId, // nullable for guests
       title: title || 'New Conversation',
       is_guest: isGuest,
+  seconds_remaining: isGuest ? FREE_TRIAL_SECONDS : null,
     })
     .select('id,title,created_at,updated_at')
     .single();

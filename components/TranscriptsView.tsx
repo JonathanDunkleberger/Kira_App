@@ -100,8 +100,8 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
             >
               {exporting ? 'Exporting...' : 'Export'}
             </button>
-            <button onClick={onClose} className="p-2 hover:bg.white/5 rounded-lg">
-              ✕
+            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg" aria-label="Close transcript">
+              ×
             </button>
           </div>
         </div>

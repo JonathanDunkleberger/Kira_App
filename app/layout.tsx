@@ -4,6 +4,7 @@ import Banner from '@/components/Banner';
 import Sidebar from '@/components/Sidebar'; // <-- Add this import
 import { Suspense } from 'react';
 import ConversationProvider from '@/lib/state/ConversationProvider';
+import UpgradeSnackbarPortal from '@/components/UpgradeSnackbarPortal';
 
 export const metadata = { title: 'Kira — AI Media Companion', description: 'Talk, don’t alt-tab.' };
 
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="flex-1 min-w-0">{children}</div>
         </div>
       </div>
+  <UpgradeSnackbarPortal />
     </ConversationProvider>
       </body>
     </html>

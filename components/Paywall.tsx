@@ -71,15 +71,18 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center">
-        <h2 className="text-2xl font-semibold">Time's Up for Today</h2>
-        <p className="text-sm text-white/60 my-4">
-          You've used all your free chat time. Subscribe to continue talking with Kira.
+        <h2 className="text-2xl font-semibold">Time’s up for today</h2>
+        <p className="text-sm text-white/70 my-4">
+          You’ve used your free daily minutes. Get unlimited conversations, faster responses, and priority voice.
         </p>
 
         <div className="mb-6 p-4 rounded-lg bg-white/5 border border-white/10 text-left">
-          <h3 className="font-semibold mb-2 text-center">Pro Features</h3>
-          <ul className="text-sm text-white/70 space-y-1">
-            {/* Add or customize your Pro feature bullets here if desired */}
+          <ul className="text-sm text-white/80 space-y-1">
+            <li>• Unlimited daily minutes</li>
+            <li>• Faster responses & priority queue</li>
+            <li>• High-quality voice (no watermark)</li>
+            <li>• Conversation history & export</li>
+            <li>• Early access to new features</li>
           </ul>
         </div>
 
@@ -94,20 +97,20 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
         <div className="space-y-3">
           {signedIn ? (
             <button onClick={handleUpgradeClick} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-              Upgrade to Pro — $1.99 / mo
+              Upgrade for $1.99/mo
             </button>
           ) : (
             <>
               <Link href={signUpHref} onClick={handleUpgradeClick} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-              Create Account & Subscribe
+              Upgrade for $1.99/mo
               </Link>
               <Link href={signInHref} onClick={handleUpgradeClick} className="block w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
-                Log In to Continue
+                Log in to continue
               </Link>
             </>
           )}
           <button onClick={onClose} className="text-sm text-white/60 hover:underline">
-            Maybe later
+            Come back tomorrow
           </button>
         </div>
         {!isLoading && secondsRemaining !== null && secondsRemaining > 0 && (

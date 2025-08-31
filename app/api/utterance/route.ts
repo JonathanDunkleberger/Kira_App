@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   const sb = getSupabaseServerAdmin();
   let userId: string | null = null;
   let conversationId: string | null = new URL(req.url).searchParams.get('conversationId');
-  let lastTurnPaywallFlag = false;
+  // legacy last-turn flag removed; client now uses automatic paywall watcher
 
   // Handle both authenticated and guest users
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
@@ -103,9 +103,7 @@ export async function POST(req: NextRequest) {
         if (secondsLeft <= 0) {
           return new Response('Daily time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
         }
-        if (secondsLeft < 15) {
-          lastTurnPaywallFlag = true;
-        }
+  // no header flag; automatic client watcher handles last-turn experience
       }
     } else {
       // Guests: use conversation seconds_remaining
@@ -119,9 +117,7 @@ export async function POST(req: NextRequest) {
         if (secondsLeft <= 0) {
           return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
         }
-        if (secondsLeft < 15) {
-          lastTurnPaywallFlag = true;
-        }
+  // no header flag; automatic client watcher handles last-turn experience
       }
     }
   } catch (e) {
@@ -272,7 +268,6 @@ export async function POST(req: NextRequest) {
     return new StreamingTextResponse(stream, {
       headers: {
         'X-User-Transcript': encodeURIComponent(transcript),
-        'X-Paywall-Trigger': lastTurnPaywallFlag ? 'true' : 'false',
       },
     });
   } catch (error: any) {

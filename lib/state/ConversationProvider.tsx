@@ -44,9 +44,6 @@ interface ConversationContextType {
   showPaywall: boolean;
   setShowPaywall: (open: boolean) => void;
   promptPaywall: () => void;
-  // Upgrade nudge (last-turn snackbar)
-  showUpgradeNudge: boolean;
-  setShowUpgradeNudge: (open: boolean) => void;
   // Streak
   currentStreak: number | null;
   hasPostedToday: boolean;
@@ -96,20 +93,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setShowPaywall: (open: boolean) => setShowPaywallState(open),
   });
   const [showPaywall, setShowPaywallState] = useState(false);
-  const [showUpgradeNudge, setShowUpgradeNudge] = useState(false);
-  const recentlyClosedRef = useRef(false);
   const setShowPaywall = useCallback((open: boolean) => {
     // Only update local state; avoid calling hook's trigger/dismiss to prevent recursion
     setShowPaywallState(open);
   }, []);
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
-  // Listen for snackbar dismiss to debounce re-nudging briefly
-  useEffect(() => {
-    const onDismiss = () => { recentlyClosedRef.current = true; setTimeout(() => { recentlyClosedRef.current = false; }, 3000); };
-    window.addEventListener('upgrade_nudge:dismissed', onDismiss);
-    return () => window.removeEventListener('upgrade_nudge:dismissed', onDismiss);
-  }, []);
+  // (Upgrade nudge removed)
   
   const [proConversationTimer, setProConversationTimer] = useState(1800);
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);
@@ -328,12 +318,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setConversationStatus(reason);
     setTurnStatus('idle');
     setMicVolume(0);
-    // Hide upgrade nudge when ending a conversation
-    setShowUpgradeNudge(false);
-  if (reason === 'ended_by_limit') {
+    if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
       promptPaywall();
-  recentlyClosedRef.current = true;
     }
   }, [promptPaywall]);
 
@@ -401,16 +388,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const assistantMessageId = crypto.randomUUID();
       setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
       setTurnStatus('assistant_speaking');
-  const shouldTriggerPaywall = response.headers.get('X-Paywall-Trigger') === 'true';
-      if (shouldTriggerPaywall && !isPro) {
-        // soft earcon cue
-        import('@/lib/audio').then(m => m.playEarcon().catch(() => {})).catch(() => {});
-        if (!showPaywall && !recentlyClosedRef.current) {
-          setShowUpgradeNudge(true);
-          // Cooldown to avoid immediate re-open after modal close
-          window.setTimeout(() => { recentlyClosedRef.current = false; }, 3000);
-        }
-      }
+  // Legacy last-turn nudge removed; automatic paywall watcher now handles gating
       
       let fullAssistantReply = '';
       const reader = response.body.getReader();
@@ -458,34 +436,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
           const { audioMp3Base64 } = await audioRes.json();
           if (audioMp3Base64) {
             audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
-              if (shouldTriggerPaywall) {
-                stopConversation('ended_by_limit');
-              } else {
-                setTurnStatus('user_listening');
-              }
-            });
-          } else {
-            if (shouldTriggerPaywall) {
-              stopConversation('ended_by_limit');
-            } else {
               setTurnStatus('user_listening');
-            }
-          }
-        } else {
-          console.error('Speech synthesis failed.');
-          if (shouldTriggerPaywall) {
-            stopConversation('ended_by_limit');
+            });
           } else {
             setTurnStatus('user_listening');
           }
+        } else {
+          console.error('Speech synthesis failed.');
+          setTurnStatus('user_listening');
         }
       } catch (ttsError) {
         console.error('Error during TTS playback:', ttsError);
-        if (shouldTriggerPaywall) {
-          stopConversation('ended_by_limit');
-        } else {
-          setTurnStatus('user_listening');
-        }
+        setTurnStatus('user_listening');
       }
       // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
@@ -656,8 +618,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
   showPaywall: showPaywall || paywallOpen,
   setShowPaywall,
   promptPaywall,
-  showUpgradeNudge,
-  setShowUpgradeNudge,
   currentStreak,
   hasPostedToday,
   dailyTopic,

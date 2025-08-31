@@ -327,20 +327,20 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // Removed per-second client countdown for free users. We now trust server updates
   // and refresh after each turn and periodically via checkUsage().
 
-  // Trigger paywall if daily time becomes exhausted regardless of session state
+  // Definitive automatic paywall logic (single source of truth)
   useEffect(() => {
-    // Automatic paywall: when time hits zero for free users, end session and trigger paywall
-    if (!isPro && dailySecondsRemaining <= 0 && !showPaywall) {
-      stopConversation('ended_by_limit');
+    // Condition: If the user is NOT pro AND their time is zero or less...
+    if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
+      // If a conversation is currently active, stop it first.
+      // The stopConversation function will then trigger the paywall.
+      if (conversationStatus === 'active') {
+        stopConversation('ended_by_limit');
+      } else {
+        // If no conversation is active, just show the paywall directly.
+        promptPaywall();
+      }
     }
-  }, [dailySecondsRemaining, isPro, stopConversation, showPaywall]);
-
-  // Handle landing-on-page with zero time left (no active conversation)
-  useEffect(() => {
-  if (!isPro && (dailySecondsRemaining ?? 0) <= 0 && !showPaywall) {
-      promptPaywall();
-    }
-  }, [isPro, dailySecondsRemaining, showPaywall, promptPaywall]);
+  }, [isPro, dailySecondsRemaining, conversationStatus]);
 
   // Periodic usage checks to sync paywall
   useEffect(() => {

@@ -19,7 +19,7 @@ export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { isPro, dailySecondsRemaining, conversationStatus, secondsRemaining, promptPaywall } = useConversation();
+  const { isPro, dailySecondsRemaining, conversationStatus, secondsRemaining } = useConversation();
 
   async function refresh() {
     const { data: { session} } = await supabase.auth.getSession();
@@ -43,7 +43,12 @@ export default function Header() {
     const r = s % 60;
     return `${m}:${r < 10 ? '0' : ''}${r} left`;
   })();
-  const minutes = typeof dailySecondsRemaining === 'number' ? Math.ceil(dailySecondsRemaining / 60) : null;
+  const freeCountdown = (() => {
+    const remaining = Number(dailySecondsRemaining ?? 0);
+    const mm = Math.floor(remaining / 60);
+    const ss = remaining % 60;
+    return `${mm}:${ss < 10 ? '0' : ''}${ss} left`;
+  })();
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
@@ -56,13 +61,12 @@ export default function Header() {
 
         <div className="flex items-center gap-3">
           {/* --- START REVISED HEADER --- */}
-          {/* Pro session timer (optional) */}
-          {isPro && conversationStatus === 'active' && (
-            <span className="text-xs text-white/50">{sessionTimerText}</span>
+          {/* Free user countdown */}
+          {!isPro && (
+            <Pill>{freeCountdown}</Pill>
           )}
-          {/* Pro Pill only for Pro users */}
-          {isPro && <Pill kind="emerald">Pro</Pill>}
-          {/* Free minutes chip is primary; inline streak indicator for cohesion */}
+          {/* Pro-only: show single premium pill */}
+          {isPro && <Pill kind="emerald">♦ Pro Unlimited</Pill>}
           {/* --- END REVISED HEADER --- */}
 
           {!signedIn ? (

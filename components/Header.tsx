@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { startCheckout, openBillingPortal, signOut } from '@/lib/client-api';
+import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageChip from '@/components/HeaderUsageChip';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
@@ -54,20 +54,15 @@ export default function Header() {
         </div>
 
   <div className="flex items-center gap-3">
-          {/* --- START REVISED TIMER & PILL LOGIC --- */}
-          {/* Timer for Pro Users (Active Convo Only) */}
+          {/* --- START REVISED HEADER --- */}
+          {/* Pro session timer (optional) */}
           {isPro && conversationStatus === 'active' && (
             <span className="text-xs text-white/50">{sessionTimerText}</span>
           )}
-
-          {/* Timer for Free Users (Always Visible) */}
-          {!isPro && minutes !== null && (
-            <span className="text-xs text-white/50">{minutes}m left today</span>
-          )}
-
-          {/* Pro/Free Pill */}
-      {isPro ? <Pill kind="emerald">Pro</Pill> : <Pill>Free</Pill>}
-          {/* --- END REVISED TIMER & PILL LOGIC --- */}
+          {/* Pro Pill only for Pro users */}
+          {isPro && <Pill kind="emerald">Pro</Pill>}
+          {/* Free minutes text and Free pill removed; usage chip is primary */}
+          {/* --- END REVISED HEADER --- */}
 
           {!signedIn ? (
             <>
@@ -76,15 +71,7 @@ export default function Header() {
             </>
           ) : (
             <>
-        <HeaderUsageChip />
-              {!isPro && (
-                <button
-                  onClick={() => startCheckout()}
-                  className="px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700"
-                >
-                  Upgrade $1.99/mo
-                </button>
-              )}
+              <HeaderUsageChip />
               <div className="relative" ref={ref}>
                 <button onClick={() => setOpen(v => !v)}
                         className="h-9 w-9 rounded-full bg-white/10 border border-white/15 grid place-items-center">

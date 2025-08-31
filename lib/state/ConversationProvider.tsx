@@ -41,6 +41,7 @@ interface ConversationContextType {
   // Paywall control
   showPaywall: boolean;
   setShowPaywall: (open: boolean) => void;
+  promptPaywall: () => void;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -58,6 +59,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('conversation');
   const [showPaywall, setShowPaywall] = useState(false);
+  const promptPaywall = useCallback(() => setShowPaywall(true), []);
   const conversationsChannelRef = useRef<any>(null);
   
   const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
@@ -120,7 +122,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const startConversation = useCallback(async () => {
     // Gate free users with no remaining time
     if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
-      setShowPaywall(true);
+      promptPaywall();
       return;
     }
     setError(null);
@@ -146,7 +148,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setConversationStatus('active');
     setTurnStatus('user_listening');
     setProConversationTimer(isPro ? PRO_SESSION_SECONDS : GUEST_SESSION_SECONDS);
-  }, [session, isPro, conversationId, dailySecondsRemaining]);
+  }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
     vadCleanupRef.current();
@@ -378,6 +380,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   setViewMode,
   showPaywall,
   setShowPaywall,
+  promptPaywall,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

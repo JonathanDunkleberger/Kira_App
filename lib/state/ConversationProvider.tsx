@@ -7,6 +7,7 @@ import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
+import { checkAchievements } from '@/lib/achievements';
 
 const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
@@ -46,6 +47,13 @@ interface ConversationContextType {
   // Upgrade nudge (last-turn snackbar)
   showUpgradeNudge: boolean;
   setShowUpgradeNudge: (open: boolean) => void;
+  // Streak
+  currentStreak: number | null;
+  hasPostedToday: boolean;
+  // Daily topic
+  dailyTopic?: string | null;
+  // Achievements (lean V1)
+  unlockedAchievements?: string[];
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -65,6 +73,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
+  const [currentStreak, setCurrentStreak] = useState<number | null>(null);
+  const [hasPostedToday, setHasPostedToday] = useState(false);
+  const [dailyTopic, setDailyTopic] = useState<string | null>(null);
+  const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   // Centralize paywall state via hook
   const {
     isOpen: paywallOpen,
@@ -192,6 +204,44 @@ export default function ConversationProvider({ children }: { children: React.Rea
         conversationsChannelRef.current = null;
       }
     };
+  }, []);
+
+  // Fetch current streak and daily topic on load
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Fetch unlocked achievements
+          try {
+            const r = await fetch('/api/usage', { headers: { Authorization: `Bearer ${session.access_token}` } });
+            // fallback: if /api/usage not relevant, we still try to fetch user_achievements directly via RPC
+          } catch {}
+          try {
+            const headers = { Authorization: `Bearer ${session.access_token}` };
+            const res = await fetch('/api/analytics/paywall', { headers });
+            // ignore, placeholder to warm auth in edge
+          } catch {}
+          try {
+            const headers = { Authorization: `Bearer ${session.access_token}` };
+            const ua = await fetch('/api/user/achievements', { headers }).catch(() => null);
+            if (ua?.ok) {
+              const j = await ua.json();
+              if (Array.isArray(j?.ids)) setUnlockedAchievements(j.ids as string[]);
+            }
+          } catch {}
+          const r = await fetch('/api/streak/get', { headers: { Authorization: `Bearer ${session.access_token}` } });
+          const j = await r.json().catch(() => ({}));
+          if (r.ok) setCurrentStreak(Number(j?.currentStreak ?? 0));
+        } else {
+          setCurrentStreak(null);
+        }
+      } catch {}
+      try {
+        const t = await fetch('/api/daily-topic').then(r => r.json()).catch(() => null);
+        setDailyTopic(t?.topic ?? null);
+      } catch {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -433,6 +483,42 @@ export default function ConversationProvider({ children }: { children: React.Rea
         fetchEntitlement().then(ent => {
           if (ent) setDailySecondsRemaining(ent.secondsRemaining);
         }).catch(() => {});
+        // Update streak once per day
+        if (!hasPostedToday) {
+          try {
+            const r = await fetch('/api/streak/update', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } });
+            const j = await r.json().catch(() => ({}));
+            if (r.ok && typeof j?.currentStreak === 'number') {
+              setCurrentStreak(j.currentStreak);
+              setHasPostedToday(true);
+            }
+          } catch {}
+        }
+        // Achievements: compute and persist newly unlocked
+        try {
+          const messagesCount = [...messages, { role: 'assistant', content: fullAssistantReply, id: 'tmp' } as any].length;
+          const conversationCount = allConversations.length;
+          // memoryCount requires a server call; approximate via dedicated API
+          let memoryCount = 0;
+          try {
+            const res = await fetch('/api/memory', { method: 'GET', headers: { Authorization: `Bearer ${session.access_token}` } });
+            if (res.ok) {
+              const j = await res.json();
+              memoryCount = Number(j?.count ?? 0);
+            }
+          } catch {}
+          const newly = checkAchievements({ messagesCount, conversationCount, memoryCount, unlockedAchievements });
+          if (newly.length) {
+            setUnlockedAchievements(prev => Array.from(new Set([...prev, ...newly])));
+            // best-effort insert
+            await fetch('/api/user/achievements', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({ ids: newly })
+            }).catch(() => {});
+            // TODO: show toast UI here in a future pass
+          }
+        } catch {}
       } else {
         // Guests: refresh remaining seconds from server for the current conversation
         try {
@@ -563,6 +649,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   promptPaywall,
   showUpgradeNudge,
   setShowUpgradeNudge,
+  currentStreak,
+  hasPostedToday,
+  dailyTopic,
+  unlockedAchievements,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

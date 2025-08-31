@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { decrementDailySeconds, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
+import { decrementDailySeconds, decrementDailyMessages, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
@@ -254,22 +254,16 @@ export async function POST(req: NextRequest) {
         }
 
         // --- START GUEST TIME DECREMENT LOGIC ---
-        // Estimate time used based on the AI's response length
+        // Messages-based decrement: one unit per assistant reply (auth users only for now)
         try {
-          const words = (completion || '').trim().split(/\s+/).filter(Boolean).length;
-          const estimatedSeconds = Math.ceil(words / 2.5); // Approx. 2.5 words per second
-          const timeUsed = Math.max(2, Math.min(30, estimatedSeconds)); // Clamp between 2-30s
-
           if (userId) {
-            await decrementDailySeconds(userId, timeUsed);
+            await decrementDailyMessages(userId);
           } else if (conversationId) {
-            await sb.rpc('decrement_guest_seconds', {
-              conv_id: conversationId,
-              seconds_to_decrement: timeUsed,
-            });
+            // Guests unchanged until DB migration: decrement by a small fixed time to prevent abuse
+            await sb.rpc('decrement_guest_seconds', { conv_id: conversationId, seconds_to_decrement: 5 });
           }
         } catch (decErr) {
-          console.warn('Failed to decrement remaining seconds:', decErr);
+          console.warn('Failed to decrement remaining quota:', decErr);
         }
         // --- END GUEST TIME DECREMENT LOGIC ---
       },

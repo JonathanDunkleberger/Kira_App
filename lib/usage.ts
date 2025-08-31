@@ -65,6 +65,11 @@ export async function getDailySecondsRemaining(userId: string): Promise<number> 
   return ent.trial_seconds_remaining;
 }
 
+// Transition helper: messages-based quota reads the same field until DB is migrated.
+export async function getDailyMessagesRemaining(userId: string): Promise<number> {
+  return getDailySecondsRemaining(userId);
+}
+
 /**
  * Decrement daily seconds based on calculated duration.
  * Returns the updated remaining seconds (undefined for Pro users).

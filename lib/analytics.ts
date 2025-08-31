@@ -51,6 +51,9 @@ export function trackPaywallEvent(event: string, properties: PaywallEventPropert
 }
 
 // Helpers
+// Central mapping from internal plan names to analytics enum
+export const mapPlan = (plan: 'free' | 'supporter'): 'free' | 'pro' => (plan === 'supporter' ? 'pro' : 'free');
+
 export const trackPaywallTriggered = (properties: PaywallEventProperties) =>
   trackPaywallEvent('paywall_triggered', properties);
 

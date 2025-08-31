@@ -85,6 +85,12 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, []);
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
+  // Listen for snackbar dismiss to debounce re-nudging briefly
+  useEffect(() => {
+    const onDismiss = () => { recentlyClosedRef.current = true; setTimeout(() => { recentlyClosedRef.current = false; }, 3000); };
+    window.addEventListener('upgrade_nudge:dismissed', onDismiss);
+    return () => window.removeEventListener('upgrade_nudge:dismissed', onDismiss);
+  }, []);
   
   const [proConversationTimer, setProConversationTimer] = useState(1800);
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);

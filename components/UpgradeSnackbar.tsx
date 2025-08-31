@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { startCheckout } from "@/lib/client-api";
-import { trackPaywallEvent } from "@/lib/analytics";
+import { trackPaywallEvent, trackUpgradeNudged, trackUpgradeNudgeClick } from "@/lib/analytics";
 
 type Props = {
   open: boolean;
@@ -11,6 +11,8 @@ type Props = {
   secondsRemaining?: number | null;
   conversationId?: string | null;
   anchorTop?: boolean; // optional: flip position if transcript modal is open
+  userType?: 'guest' | 'authenticated';
+  plan?: 'free' | 'pro';
 };
 
 const TODAY_KEY = () => `kira_nudge_suppressed_${new Date().toISOString().slice(0,10)}`;
@@ -20,7 +22,9 @@ export default function UpgradeSnackbar({
   onClose,
   secondsRemaining,
   conversationId,
-  anchorTop = false
+  anchorTop = false,
+  userType = 'guest',
+  plan = 'free'
 }: Props) {
   const prefersReduced = useReducedMotion();
   const [visible, setVisible] = useState(false);
@@ -35,9 +39,9 @@ export default function UpgradeSnackbar({
   useEffect(() => {
     if (open && !suppressedToday) {
       setVisible(true);
-      trackPaywallEvent("upgrade_nudged", {
-        userType: "guest",
-        plan: "free",
+  trackUpgradeNudged({
+    userType,
+    plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
         source: "last_turn"
@@ -45,7 +49,7 @@ export default function UpgradeSnackbar({
     } else {
       setVisible(false);
     }
-  }, [open, suppressedToday, secondsRemaining, conversationId]);
+  }, [open, suppressedToday, secondsRemaining, conversationId, userType, plan]);
 
   // 8s auto-dismiss, paused on hover
   useEffect(() => {
@@ -66,8 +70,8 @@ export default function UpgradeSnackbar({
     onClose?.();
     if (reason === "click") {
       trackPaywallEvent("upgrade_nudge_dismiss", {
-        userType: "guest",
-        plan: "free",
+  userType,
+  plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
         source: "last_turn"
@@ -76,9 +80,9 @@ export default function UpgradeSnackbar({
   };
 
   const handleUpgrade = () => {
-    trackPaywallEvent("upgrade_nudge_click", {
-      userType: "guest",
-      plan: "free",
+    trackUpgradeNudgeClick({
+      userType,
+      plan,
       secondsRemaining: secondsRemaining ?? undefined,
       conversationId: conversationId ?? undefined,
       source: "last_turn"
@@ -130,12 +134,14 @@ export default function UpgradeSnackbar({
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={handleUpgrade}
+                    aria-label="Upgrade and continue"
                     className="inline-flex items-center justify-center rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700 px-3 py-1.5 text-sm font-medium"
                   >
                     Upgrade & Continue
                   </button>
                   <button
                     onClick={() => dismiss("click")}
+                    aria-label="Dismiss"
                     className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/5"
                   >
                     Not now

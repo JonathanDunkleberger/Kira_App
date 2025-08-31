@@ -1,5 +1,5 @@
 import { getSupabaseServerAdmin } from './supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from './env';
+import { FREE_TRIAL_SECONDS } from './env.server';
 
 /**
  * Ensure a row exists and daily counters are initialized.

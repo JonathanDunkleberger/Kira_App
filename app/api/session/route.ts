@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { env, FREE_TRIAL_SECONDS } from '@/lib/env';
+import { envServer as env, FREE_TRIAL_SECONDS } from '@/lib/env.server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 import { ensureEntitlements, getEntitlement, getDailySecondsRemaining } from '@/lib/usage';
 

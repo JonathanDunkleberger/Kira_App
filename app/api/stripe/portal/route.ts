@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { env } from '@/lib/env';
+import { envServer as env } from '@/lib/env.server';
 import Stripe from 'stripe';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 

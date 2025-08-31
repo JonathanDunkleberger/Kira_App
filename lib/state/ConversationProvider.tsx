@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { usePaywallBase } from '@/lib/hooks/usePaywall';
-import { PRO_SESSION_SECONDS } from '@/lib/env';
 import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
@@ -82,7 +81,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
   
-  const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
+  const [proConversationTimer, setProConversationTimer] = useState(1800);
+  const [proSessionSeconds, setProSessionSeconds] = useState(1800);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -125,7 +125,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         setDailySecondsRemaining(typeof ent?.secondsRemaining === 'number' ? ent!.secondsRemaining : null);
         // Baseline the session timer for Pro users only
         if (ent?.status === 'active') {
-          setProConversationTimer(PRO_SESSION_SECONDS);
+          setProConversationTimer(proSessionSeconds);
         }
         // Preload user's conversations
         listConversations().then(setAllConversations).catch(() => setAllConversations([]));
@@ -154,11 +154,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
               const cfgRes = await fetch('/api/config');
               const cfg = await cfgRes.json().catch(() => ({}));
               setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
+              setProSessionSeconds(Number(cfg?.proSessionSeconds ?? 1800));
             }
           } else {
             const cfgRes = await fetch('/api/config');
             const cfg = await cfgRes.json().catch(() => ({}));
             setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
+            setProSessionSeconds(Number(cfg?.proSessionSeconds ?? 1800));
           }
         } catch {
           setDailySecondsRemaining(900);
@@ -223,7 +225,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
     setConversationStatus('active');
     setTurnStatus('user_listening');
-  if (isPro) setProConversationTimer(PRO_SESSION_SECONDS);
+  if (isPro) setProConversationTimer(proSessionSeconds);
   }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {

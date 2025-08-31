@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from '@/lib/env';
+import { FREE_TRIAL_SECONDS } from '@/lib/env.server';
 
 export const runtime = 'nodejs';
 

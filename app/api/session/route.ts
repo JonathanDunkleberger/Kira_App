@@ -33,8 +33,9 @@ export async function GET(req: NextRequest) {
       token: randomUUID(),
       plan: ent.plan,
       status: ent.status,
-      secondsRemaining,           // daily remaining
-      trialPerDay: FREE_TRIAL_SECONDS
+  secondsRemaining,           // daily remaining
+  trialPerDay: FREE_TRIAL_SECONDS,
+  paywallRequired: secondsRemaining <= 0 && ent.status !== 'active'
     },
     { headers: { 'Access-Control-Allow-Origin': origin } }
   );

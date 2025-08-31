@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
+import { usePaywall } from '@/lib/hooks/usePaywall';
+import { useEffect, useState } from 'react';
 
 interface PaywallProps {
   isOpen: boolean;
@@ -11,7 +13,17 @@ interface PaywallProps {
 
 export default function Paywall({ isOpen, onClose }: PaywallProps) {
   const { session } = useConversation();
+  const { secondsRemaining, isPro, isLoading } = usePaywall();
   const signedIn = !!session;
+  const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => setFreeMinutes(Math.floor(Number(cfg?.freeTrialSeconds ?? 900) / 60)))
+      .catch(() => setFreeMinutes(null));
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -30,6 +42,14 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
           </ul>
         </div>
 
+  {freeMinutes !== null && (
+          <div className="mb-4 p-3 bg-rose-900/20 border border-rose-700/30 rounded-lg">
+            <p className="text-sm text-rose-200 text-center">
+              You've used all your {freeMinutes} free minutes for today
+            </p>
+          </div>
+        )}
+
         <div className="space-y-3">
           {signedIn ? (
             <button onClick={startCheckout} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
@@ -44,6 +64,11 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
             Maybe later
           </button>
         </div>
+        {!isLoading && secondsRemaining !== null && secondsRemaining > 0 && (
+          <div className="mt-4 text-xs text-white/40">
+            {Math.floor(secondsRemaining / 60)} minutes remaining today
+          </div>
+        )}
       </div>
     </div>
   );

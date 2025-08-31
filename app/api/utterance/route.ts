@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDailySecondsRemaining, decrementDailySeconds, getEntitlement } from '@/lib/usage';
+import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
@@ -75,6 +76,8 @@ class StreamingTextResponse extends Response {
 
 // (helpers defined above)
 
+// standardized paywall response imported from lib/http
+
 export async function POST(req: NextRequest) {
   const sb = getSupabaseServerAdmin();
   let userId: string | null = null;
@@ -87,19 +90,13 @@ export async function POST(req: NextRequest) {
     const user = (data as any)?.user;
     if (user) userId = user.id;
   }
-  // Server-side daily time enforcement for authenticated users
+  // Server-side paywall enforcement for authenticated users
   try {
-    if (userId) {
-      const secondsLeft = await getDailySecondsRemaining(userId);
-      if (secondsLeft <= 0) {
-        const ent = await getEntitlement(userId);
-        if (ent.status !== 'active') {
-          return new Response('Daily time limit exceeded.', { status: 402 });
-        }
-      }
-    }
+    await enforcePaywall(userId);
   } catch (e) {
-    // If usage check fails, proceed; downstream may still succeed
+    if (e instanceof PaywallError) {
+      return createPaywallResponse(e.message);
+    }
     console.warn('Usage enforcement check failed:', e);
   }
 

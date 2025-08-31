@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { usePaywallBase } from '@/lib/hooks/usePaywall';
 import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
@@ -58,8 +59,27 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [allConversations, setAllConversations] = useState<Convo[]>([]);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('conversation');
-  const [showPaywall, setShowPaywall] = useState(false);
-  const promptPaywall = useCallback(() => setShowPaywall(true), []);
+  // Centralize paywall state via hook
+  const {
+    isOpen: paywallOpen,
+    triggerPaywall,
+    dismissPaywall,
+    secondsRemaining: paywallSeconds,
+    isPro: paywallIsPro,
+    checkUsage,
+  } = usePaywallBase({
+    session,
+    contextIsPro: isPro,
+    dailySecondsRemaining,
+    promptPaywall: () => setShowPaywall(true),
+    setShowPaywall: (open: boolean) => setShowPaywallState(open),
+  });
+  const [showPaywall, setShowPaywallState] = useState(false);
+  const setShowPaywall = useCallback((open: boolean) => {
+    setShowPaywallState(open);
+    if (open) triggerPaywall(); else dismissPaywall();
+  }, [triggerPaywall, dismissPaywall]);
+  const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
   
   const [proConversationTimer, setProConversationTimer] = useState(PRO_SESSION_SECONDS);
@@ -149,7 +169,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       return;
     }
     setError(null);
-    setShowPaywall(false);
+  setShowPaywall(false);
     setViewMode('conversation');
 
     let currentConvId = session ? conversationId : null;
@@ -182,7 +202,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setConversationStatus(reason);
     setTurnStatus('idle');
     setMicVolume(0);
-    if (reason === 'ended_by_limit') {
+  if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
       promptPaywall();
     }
@@ -190,7 +210,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Free users: countdown daily remaining while session is active
   useEffect(() => {
-    if (isPro || conversationStatus !== 'active') return;
+  if (isPro || conversationStatus !== 'active') return;
     const interval = setInterval(() => {
       setDailySecondsRemaining(prev => {
         const current = typeof prev === 'number' ? prev : 0;
@@ -199,6 +219,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
           try { localStorage.setItem('kira_guest_time', String(next)); } catch {}
         }
         if (next <= 0) {
+          setShowPaywall(true);
           stopConversation('ended_by_limit');
         }
         return next;
@@ -206,6 +227,22 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }, 1000);
     return () => clearInterval(interval);
   }, [isPro, conversationStatus, session, stopConversation, promptPaywall]);
+
+  // Trigger paywall if daily time becomes exhausted regardless of session state
+  useEffect(() => {
+  if (!isPro && dailySecondsRemaining !== null && dailySecondsRemaining <= 0) {
+      if (conversationStatus === 'active') {
+        stopConversation('ended_by_limit');
+      }
+      setShowPaywall(true);
+    }
+  }, [dailySecondsRemaining, isPro, conversationStatus, stopConversation]);
+
+  // Periodic usage checks to sync paywall
+  useEffect(() => {
+    const id = setInterval(() => { checkUsage().catch(() => {}); }, 30000);
+    return () => clearInterval(id);
+  }, [checkUsage]);
 
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
     if (isProcessingRef.current) return;
@@ -445,7 +482,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     dailySecondsRemaining,
   viewMode,
   setViewMode,
-  showPaywall,
+  showPaywall: showPaywall || paywallOpen,
   setShowPaywall,
   promptPaywall,
   };

@@ -8,6 +8,7 @@ import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
+import { useEntitlement } from '@/lib/hooks/useEntitlement';
 
 const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
 
@@ -101,6 +102,22 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [proConversationTimer, setProConversationTimer] = useState(1800);
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Centralized entitlement hook
+  const ent = useEntitlement();
+
+  // Keep provider state in sync with entitlement
+  useEffect(() => {
+    if (!ent.isLoading) {
+      const pro = ent.userStatus === 'pro';
+      setIsPro(pro);
+      setDailySecondsRemaining(ent.secondsRemaining);
+      setProSessionSeconds(ent.proSessionLimit || 1800);
+      // Reset pro per-session timer on entitlement change if a conversation is active and user is pro
+      if (pro && conversationStatus === 'active') {
+        setProConversationTimer(ent.proSessionLimit || 1800);
+      }
+    }
+  }, [ent.isLoading, ent.userStatus, ent.secondsRemaining, ent.proSessionLimit, conversationStatus]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -108,7 +125,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const isProcessingRef = useRef(false);
 
   useEffect(() => {
-    const getProfile = async (currentSession: Session | null) => {
+  const getProfile = async (currentSession: Session | null) => {
       setSession(currentSession);
       if (currentSession) {
         // Attempt to claim a guest conversation if present in URL or session
@@ -136,12 +153,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
         } catch (e) {
           console.warn('Guest conversation claim failed:', e);
         }
-        // LOGGED-IN users
-  const ent = await fetchEntitlement().catch(() => null);
-        setIsPro(ent?.status === 'active');
-  setDailySecondsRemaining(Number(ent?.secondsRemaining ?? 0));
-        // Baseline the session timer for Pro users only
-        if (ent?.status === 'active') {
+        // Logged-in: entitlement will be handled by useEntitlement hook; just ensure timer baseline
+        if (isPro) {
           setProConversationTimer(proSessionSeconds);
         }
         // Preload user's conversations
@@ -176,31 +189,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
             .subscribe();
         } catch {}
       } else {
-        // GUEST users: server-authoritative remaining seconds
-        setIsPro(false);
-        try {
-          const guestConvId = sessionStorage.getItem('guestConversationId');
-          if (guestConvId) {
-            const res = await fetch(`/api/conversations/guest/${guestConvId}`);
-            if (res.ok) {
-              const j = await res.json();
-              setDailySecondsRemaining(Number(j?.secondsRemaining ?? 0));
-            } else {
-              // If not found or expired, fall back to default from config
-              const cfgRes = await fetch('/api/config');
-              const cfg = await cfgRes.json().catch(() => ({}));
-              setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
-              setProSessionSeconds(Number(cfg?.proSessionSeconds ?? 1800));
-            }
-          } else {
-            const cfgRes = await fetch('/api/config');
-            const cfg = await cfgRes.json().catch(() => ({}));
-            setDailySecondsRemaining(Number(cfg?.freeTrialSeconds ?? 900));
-            setProSessionSeconds(Number(cfg?.proSessionSeconds ?? 1800));
-          }
-        } catch {
-          setDailySecondsRemaining(900);
-        }
+        // Guest: entitlement handled by hook; no-op here
       }
     };
 
@@ -445,9 +434,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
       // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
-        fetchEntitlement().then(ent => {
-          if (ent) setDailySecondsRemaining(Number(ent.secondsRemaining ?? 0));
-        }).catch(() => {});
+        // Refresh entitlement from server after a completed turn
+        try { (ent as any).refresh?.(); } catch {}
         // Update streak once per day
         if (!hasPostedToday) {
           try {
@@ -485,23 +473,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
           }
         } catch {}
       } else {
-        // Guests: refresh remaining seconds from server for the current conversation
-        try {
-          const guestConvId = conversationId || (typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null);
-          if (guestConvId) {
-            const res = await fetch(`/api/conversations/guest/${guestConvId}`);
-            if (res.ok) {
-              const j = await res.json();
-              const remaining = Number(j?.secondsRemaining ?? 0);
-              setDailySecondsRemaining(remaining);
-              if (remaining <= 0) {
-                stopConversation('ended_by_limit');
-              }
-            }
-          }
-        } catch {
-          // Silent fallback: keep previous value
-        }
+        // Guests: entitlement hook will refresh on interval; optionally force refresh
+        try { (ent as any).refresh?.(); } catch {}
       }
       
     } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }

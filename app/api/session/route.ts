@@ -23,43 +23,43 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const guestId = url.searchParams.get('guestId');
     if (!guestId) {
-      return NextResponse.json(
-        {
-          status: 'inactive',
-          plan: 'free',
-          secondsRemaining: FREE_TRIAL_SECONDS,
-          trialPerDay: FREE_TRIAL_SECONDS,
-          proSessionLimit: PRO_SESSION_SECONDS,
-        },
-        { headers: { 'Access-Control-Allow-Origin': origin } }
-      );
+      const payload = {
+        status: 'inactive',
+        plan: 'free',
+        secondsRemaining: FREE_TRIAL_SECONDS,
+        dailyLimitSeconds: FREE_TRIAL_SECONDS,
+        trialPerDay: FREE_TRIAL_SECONDS,
+        proSessionLimit: PRO_SESSION_SECONDS,
+      } as const;
+      try { console.log(`[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     }
     // Try to read server-side guest conversation remaining seconds
     try {
       const sb = getSupabaseServerAdmin();
       const { data } = await sb.from('conversations').select('seconds_remaining').eq('id', guestId).maybeSingle();
       const secondsRemaining = Number(data?.seconds_remaining ?? FREE_TRIAL_SECONDS);
-      return NextResponse.json(
-        {
-          status: 'inactive',
-          plan: 'free',
-          secondsRemaining,
-          trialPerDay: FREE_TRIAL_SECONDS,
-          proSessionLimit: PRO_SESSION_SECONDS,
-        },
-        { headers: { 'Access-Control-Allow-Origin': origin } }
-      );
+      const payload = {
+        status: 'inactive',
+        plan: 'free',
+        secondsRemaining,
+        dailyLimitSeconds: FREE_TRIAL_SECONDS,
+        trialPerDay: FREE_TRIAL_SECONDS,
+        proSessionLimit: PRO_SESSION_SECONDS,
+      } as const;
+      try { console.log(`[Entitlement Check] User: guest-id-${guestId} | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     } catch {
-      return NextResponse.json(
-        {
-          status: 'inactive',
-          plan: 'free',
-          secondsRemaining: FREE_TRIAL_SECONDS,
-          trialPerDay: FREE_TRIAL_SECONDS,
-          proSessionLimit: PRO_SESSION_SECONDS,
-        },
-        { headers: { 'Access-Control-Allow-Origin': origin } }
-      );
+      const payload = {
+        status: 'inactive',
+        plan: 'free',
+        secondsRemaining: FREE_TRIAL_SECONDS,
+        dailyLimitSeconds: FREE_TRIAL_SECONDS,
+        trialPerDay: FREE_TRIAL_SECONDS,
+        proSessionLimit: PRO_SESSION_SECONDS,
+      } as const;
+      try { console.log(`[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     }
   }
 
@@ -72,16 +72,17 @@ export async function GET(req: NextRequest) {
   const ent = await getEntitlement(userId);
   const secondsRemaining = await getDailySecondsRemaining(userId);
 
-  return NextResponse.json(
-    {
-      token: randomUUID(),
-      plan: ent.plan,
-      status: ent.status,
-  secondsRemaining,           // daily remaining
-  trialPerDay: FREE_TRIAL_SECONDS,
-  proSessionLimit: PRO_SESSION_SECONDS,
-  paywallRequired: secondsRemaining <= 0 && ent.status !== 'active'
-    },
-    { headers: { 'Access-Control-Allow-Origin': origin } }
-  );
+  const isPro = ent.status === 'active';
+  const payload = {
+    token: randomUUID(),
+    plan: ent.plan,
+    status: ent.status,
+    secondsRemaining,           // daily remaining
+    dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : FREE_TRIAL_SECONDS,
+    trialPerDay: FREE_TRIAL_SECONDS,
+    proSessionLimit: PRO_SESSION_SECONDS,
+    paywallRequired: secondsRemaining <= 0 && !isPro,
+  } as const;
+  try { console.log(`[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`); } catch {}
+  return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
 }

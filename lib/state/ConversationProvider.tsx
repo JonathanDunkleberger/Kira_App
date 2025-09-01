@@ -10,7 +10,7 @@ import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 
 // Increase minimum size to avoid short/noise causing 400 errors
-const MIN_AUDIO_BLOB_SIZE = 5000;
+const MIN_AUDIO_BLOB_SIZE = 4000;
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
@@ -514,13 +514,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const vad = await MicVAD.new({
           stream,
-          minSpeechFrames: 5, // Slightly quicker to activate
-          preSpeechPadFrames: 5,
-          redemptionFrames: 38, // More responsive, still forgives short pauses
-
-          // More sensitive to speech
-          positiveSpeechThreshold: 0.50,
-          negativeSpeechThreshold: 0.35, // Keep less sensitive to avoid cutting off
+          minSpeechFrames: 6,
+          redemptionFrames: 30,
+          positiveSpeechThreshold: 0.6,
+          negativeSpeechThreshold: 0.35,
+          preSpeechPadFrames: 4,
           // @ts-expect-error level provided at runtime
           onVADMisfire: (level: number) => {
             const v = typeof level === 'number' && isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;

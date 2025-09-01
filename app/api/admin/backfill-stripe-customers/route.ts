@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       const customers = await stripe.customers.search({ query: `email:'${safeEmail}'` });
       const cust = customers.data[0];
       if (cust?.id) {
-        await sb.from('profiles').upsert({ user_id: row.user_id, stripe_customer_id: cust.id });
+        await sb.from('entitlements').upsert({ user_id: row.user_id, stripe_customer_id: cust.id }, { onConflict: 'user_id' });
         results.push({ user_id: row.user_id, email, customer_id: cust.id, status: 'ok' });
       } else {
         results.push({ user_id: row.user_id, email, status: 'not-found' });

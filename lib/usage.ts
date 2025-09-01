@@ -30,7 +30,8 @@ export async function ensureEntitlements(userId: string, perDay: number = FREE_T
     .eq('user_id', userId)
     .maybeSingle();
 
-  const perDayValue = entRow?.trial_seconds_per_day ?? perDay;
+  // Always prefer the server-configured value (env) to avoid stale DB overrides
+  const perDayValue = perDay;
   if (!entRow?.trial_last_reset || entRow.trial_last_reset !== today) {
     await sb.from('entitlements').update({
       trial_last_reset: today,

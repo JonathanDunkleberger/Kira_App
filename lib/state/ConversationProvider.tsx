@@ -36,6 +36,7 @@ interface ConversationContextType {
   newConversation: () => Promise<void>;
   fetchAllConversations: () => Promise<void>;
   dailySecondsRemaining: number | null;
+  dailyLimitSeconds: number;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   showPaywall: boolean;
@@ -556,6 +557,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     newConversation,
     fetchAllConversations,
     dailySecondsRemaining,
+  dailyLimitSeconds: ent.dailyLimitSeconds,
     viewMode,
     setViewMode,
     showPaywall,

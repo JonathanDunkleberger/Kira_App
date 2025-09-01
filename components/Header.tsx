@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { openBillingPortal, signOut, startCheckout } from '@/lib/client-api';
+import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageChip from '@/components/HeaderUsageChip';
 import StreakIndicator from '@/components/StreakIndicator';
 import { supabase } from '@/lib/supabaseClient';
@@ -19,7 +19,7 @@ export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { isPro, dailySecondsRemaining } = useConversation();
+  const { isPro } = useConversation();
 
   async function refresh() {
     const { data: { session} } = await supabase.auth.getSession();
@@ -37,12 +37,7 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  const freeCountdown = (() => {
-    const remaining = Number(dailySecondsRemaining ?? 0);
-    const mm = Math.floor(remaining / 60);
-    const ss = remaining % 60;
-    return `${mm}:${ss < 10 ? '0' : ''}${ss} left`;
-  })();
+  // countdown/CTA handled by HeaderUsageChip; no duplicate here
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
@@ -54,20 +49,7 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* --- START REVISED HEADER --- */}
-          {/* Free funnel: show countdown or Subscribe CTA */}
-          {!isPro && (dailySecondsRemaining ?? 0) > 0 && (
-            <Pill>{freeCountdown}</Pill>
-          )}
-          {!isPro && (dailySecondsRemaining ?? 0) <= 0 && (
-            <button
-              onClick={() => startCheckout()}
-              className="font-bold text-fuchsia-500 hover:text-fuchsia-400"
-            >
-              Subscribe Now
-            </button>
-          )}
-          {/* --- END REVISED HEADER --- */}
+          {/* Countdown/CTA lives in HeaderUsageChip to avoid duplicates */}
 
           {!signedIn ? (
             <>

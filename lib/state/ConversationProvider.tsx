@@ -121,7 +121,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
               },
               body: JSON.stringify({ guestConvId })
             });
-            try { sessionStorage.removeItem('guestConversationId'); } catch {}
+            // Preserve original guest identity after claim; do NOT remove guestConversationId
             if (urlGuestConv) {
               urlParams.delete('guestConvId');
               const qs = urlParams.toString();

@@ -10,7 +10,7 @@ import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 
 // Increase minimum size to avoid short/noise causing 400 errors
-const MIN_AUDIO_BLOB_SIZE = 4000;
+const MIN_AUDIO_BLOB_SIZE = 5000;
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
@@ -516,7 +516,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
           stream,
           minSpeechFrames: 5, // Slightly quicker to activate
           preSpeechPadFrames: 5,
-          redemptionFrames: 45, // More forgiving of pauses (~1.35s)
+          redemptionFrames: 38, // More responsive, still forgives short pauses
 
           // More sensitive to speech
           positiveSpeechThreshold: 0.50,

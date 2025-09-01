@@ -84,9 +84,9 @@ export async function openBillingPortal() {
 export async function signOut() {
   await supabase.auth.signOut();
 
-  // We intentionally DO NOT clear sessionStorage or localStorage here.
+  // We intentionally DO NOT clear localStorage here.
   // This ensures that after sign-out the browser falls back to the
-  // original guest identity (guestConversationId) and does not get a new
+  // original guest identity (kiraGuestId) and does not get a new
   // free allocation by generating a fresh guest.
   window.location.reload();
 }

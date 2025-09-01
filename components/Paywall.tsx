@@ -20,10 +20,10 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
     return Math.floor(lim / 60);
   }, [dailyLimitSeconds]);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
-  // Get guest conversation id (if any) to tag auth links
-  const guestConversationId = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
-  const signUpHref = `/sign-up?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
-  const signInHref = `/sign-in?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
+  // Get unified guest id (if any) to tag auth links
+  const kiraGuestId = typeof window !== 'undefined' ? localStorage.getItem('kiraGuestId') : null;
+  const signUpHref = `/sign-up?next=upgrade${kiraGuestId ? `&guestConvId=${kiraGuestId}` : ''}`;
+  const signInHref = `/sign-in?next=upgrade${kiraGuestId ? `&guestConvId=${kiraGuestId}` : ''}`;
 
   // All time data now comes from useEntitlement; no local/config fallbacks.
 

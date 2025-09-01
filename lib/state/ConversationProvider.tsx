@@ -110,7 +110,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const urlGuestConv = urlParams.get('guestConvId');
-          const storedGuestConv = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
+          const storedGuestConv = typeof window !== 'undefined' ? localStorage.getItem('kiraGuestId') : null;
           const guestConvId = urlGuestConv || storedGuestConv;
           if (guestConvId) {
             await fetch('/api/auth/claim-conversation', {
@@ -121,7 +121,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
               },
               body: JSON.stringify({ guestConvId })
             });
-            // Preserve original guest identity after claim; do NOT remove guestConversationId
+            // Preserve original guest identity after claim; do NOT remove kiraGuestId
             if (urlGuestConv) {
               urlParams.delete('guestConvId');
               const qs = urlParams.toString();
@@ -247,9 +247,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
         setConversationId(newConversation.id);
         currentConvId = newConversation.id;
         setMessages([]);
-        // Persist guest conversation id so we can fetch remaining time and later claim it after signup
+        // Persist guest identity so we can fetch remaining time and later claim it after signup
         if (!session) {
-          try { sessionStorage.setItem('guestConversationId', newConversation.id); } catch {}
+          try { localStorage.setItem('kiraGuestId', newConversation.id); } catch {}
         }
         // refresh list for signed-in users only
         if (session) listConversations().then(setAllConversations).catch(() => {});

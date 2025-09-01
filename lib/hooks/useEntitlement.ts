@@ -11,16 +11,9 @@ export type Entitlement = {
 };
 
 const getGuestId = (): string => {
-  // Prefer an existing guest conversation id if present
+  const key = 'kiraGuestId';
   try {
-    const convId = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('guestConversationId') || localStorage.getItem('guestConversationId'))
-      : null;
-    if (convId) return convId;
-  } catch {}
-  const key = 'kira_guest_id';
-  try {
-    const existing = localStorage.getItem(key);
+    const existing = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
     if (existing) return existing;
     const id = crypto.randomUUID();
     localStorage.setItem(key, id);

@@ -79,16 +79,14 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center" role="dialog" aria-modal="true" aria-label="Paywall">
         <h2 className="text-2xl font-semibold">You reached today’s free limit</h2>
         <p className="text-sm text-white/70 my-3">
-          Go unlimited: faster replies, priority voice, and no daily cap.
+          Go unlimited to continue the conversation.
         </p>
 
         <div className="mb-6 p-4 rounded-lg bg-white/5 border border-white/10 text-left">
-          <ul className="text-sm text-white/80 space-y-1">
-            <li>• Unlimited daily minutes</li>
-            <li>• Faster responses & priority queue</li>
-            <li>• High-quality voice (no watermark)</li>
-            <li>• Conversation history & export</li>
-            <li>• Early access to new features</li>
+          <ul className="text-sm text-white/80 space-y-1 list-disc pl-5">
+            <li><strong>Unlimited Conversations:</strong> Chat with Kira as long as you want, every single day, without interruption.</li>
+            <li><strong>Early Access to New Features:</strong> Be the first to try out new capabilities, voices, and personalities as we build them.</li>
+            <li><strong>Support Kira's Development:</strong> Your subscription directly helps us improve the experience and keep the conversation going.</li>
           </ul>
         </div>
 

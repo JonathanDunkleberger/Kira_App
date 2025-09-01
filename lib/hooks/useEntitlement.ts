@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 export type Entitlement = {
@@ -38,7 +38,7 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
     isLoading: true,
   });
 
-  const fetchEnt = async () => {
+  const fetchEnt = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       let res: Response;
@@ -66,13 +66,23 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
     } catch {
       setEntitlement(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchEnt();
     const id = setInterval(fetchEnt, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchEnt]);
+
+  // Re-validate entitlement immediately on auth changes (login/logout/token refresh)
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        fetchEnt();
+      }
+    });
+    return () => { sub?.subscription?.unsubscribe(); };
+  }, [fetchEnt]);
 
   return { ...entitlement, refresh: fetchEnt };
 }

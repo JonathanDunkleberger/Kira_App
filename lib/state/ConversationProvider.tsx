@@ -163,7 +163,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
     };
 
   supabase.auth.getSession().then(({ data: { session } }) => getProfile(session));
-  const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { getProfile(session); });
+  const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    getProfile(session);
+    // Force entitlement refresh on auth boundary changes
+    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      try { (ent as any).refresh?.(); } catch {}
+    }
+  });
     return () => {
       authListener.subscription.unsubscribe();
       if (conversationsChannelRef.current) {

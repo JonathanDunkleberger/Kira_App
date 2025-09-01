@@ -28,7 +28,11 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
     if (!isOpen) return;
     fetch('/api/config')
       .then(r => r.json())
-      .then(cfg => setFreeMinutes(Math.floor(Number(cfg?.freeTrialSeconds ?? 900) / 60)))
+      .then(cfg => {
+        const v = Number(cfg?.freeTrialSeconds);
+        if (Number.isFinite(v) && v > 0) setFreeMinutes(Math.floor(v / 60));
+        else setFreeMinutes(null);
+      })
       .catch(() => setFreeMinutes(null));
   }, [isOpen]);
 

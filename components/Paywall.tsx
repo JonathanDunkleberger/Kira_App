@@ -21,7 +21,7 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   }, [dailyLimitSeconds]);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
   // Get unified guest id (if any) to tag auth links
-  const kiraGuestId = typeof window !== 'undefined' ? localStorage.getItem('kiraGuestId') : null;
+  const kiraGuestId = typeof window !== 'undefined' ? (localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id')) : null;
   const signUpHref = `/sign-up?next=upgrade${kiraGuestId ? `&guestConvId=${kiraGuestId}` : ''}`;
   const signInHref = `/sign-in?next=upgrade${kiraGuestId ? `&guestConvId=${kiraGuestId}` : ''}`;
 

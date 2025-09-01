@@ -28,7 +28,7 @@ export default function Banner() {
               refresh_token: j.refresh_token,
             });
             try {
-              const guestConvId = localStorage.getItem('kiraGuestId');
+              const guestConvId = localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id');
               if (guestConvId) {
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session) {

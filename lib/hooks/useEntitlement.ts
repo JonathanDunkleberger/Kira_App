@@ -13,8 +13,15 @@ export type Entitlement = {
 const getGuestId = (): string => {
   const key = 'kiraGuestId';
   try {
-    const existing = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
-    if (existing) return existing;
+    if (typeof window === 'undefined') return 'guest';
+    // Migrate from legacy keys if present
+    const existing = localStorage.getItem(key)
+      || localStorage.getItem('guestConversationId')
+      || localStorage.getItem('kira_guest_id');
+    if (existing) {
+      try { localStorage.setItem(key, existing); } catch {}
+      return existing;
+    }
     const id = crypto.randomUUID();
     localStorage.setItem(key, id);
     return id;

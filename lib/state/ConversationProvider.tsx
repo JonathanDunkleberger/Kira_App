@@ -514,11 +514,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const vad = await MicVAD.new({
           stream,
-          minSpeechFrames: 6,
-          redemptionFrames: 30,
-          positiveSpeechThreshold: 0.6,
-          negativeSpeechThreshold: 0.35,
-          preSpeechPadFrames: 4,
+          minSpeechFrames: 5, // Slightly quicker to activate
+          preSpeechPadFrames: 5,
+          redemptionFrames: 45, // More forgiving of pauses (~1.35s)
+
+          // More sensitive to speech
+          positiveSpeechThreshold: 0.50,
+          negativeSpeechThreshold: 0.35, // Keep less sensitive to avoid cutting off
           // @ts-expect-error level provided at runtime
           onVADMisfire: (level: number) => {
             const v = typeof level === 'number' && isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;

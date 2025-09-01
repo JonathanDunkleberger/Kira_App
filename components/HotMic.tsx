@@ -11,6 +11,7 @@ export default function HotMic() {
     startConversation, 
     stopConversation,
   micVolume,
+  kiraVolume,
   isPro,
   dailySecondsRemaining,
   promptPaywall,
@@ -51,17 +52,15 @@ export default function HotMic() {
   const baseScale = 1;
   const scale = (() => {
     if (turnStatus === 'user_listening') {
-      // expand/contract with live mic volume
-      return baseScale + Math.min(0.4, Math.max(0, micVolume)) * 0.4 + 0; // cap subtlely
+      // A more sensitive curve: low volume has little effect, high volume has a big effect.
+      return baseScale + Math.pow(micVolume, 2) * 0.7;
     }
     if (turnStatus === 'assistant_speaking') {
-      return baseScale; // use keyframe animate below for gentle pulse
+      // Drive the scale with Kira's real-time audio volume
+      return baseScale + Math.pow(kiraVolume || 0, 2) * 0.5;
     }
     return baseScale;
   })();
-  const pulseWhenAssistant = turnStatus === 'assistant_speaking'
-    ? { scale: [1, 1.05, 1], transition: { duration: 1.5, repeat: Infinity } as const }
-    : undefined;
   // --- END ANIMATION LOGIC ---
 
   return (
@@ -69,8 +68,8 @@ export default function HotMic() {
         <motion.button
           onClick={handleClick}
           className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
-          // Animate orb scale and glow
-          animate={pulseWhenAssistant ?? { scale }}
+          // Animate orb scale and glow directly
+          animate={{ scale }}
           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
           aria-disabled={false}
           style={{

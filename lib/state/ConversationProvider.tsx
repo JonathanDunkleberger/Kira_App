@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { playMp3Base64 } from '@/lib/audio';
+import { playMp3Base64, playAndAnalyzeAudio } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
@@ -30,6 +30,7 @@ interface ConversationContextType {
   secondsRemaining: number; // pro per-session timer
   isPro: boolean;
   micVolume: number;
+  kiraVolume: number;
   error: string | null;
   allConversations: Convo[];
   loadConversation: (id: string) => Promise<void>;
@@ -66,6 +67,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);
+  const [kiraVolume, setKiraVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
@@ -110,7 +112,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         try {
           const urlParams = new URLSearchParams(window.location.search);
           const urlGuestConv = urlParams.get('guestConvId');
-          const storedGuestConv = typeof window !== 'undefined' ? localStorage.getItem('kiraGuestId') : null;
+          const storedGuestConv = typeof window !== 'undefined' ? (localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id')) : null;
           const guestConvId = urlGuestConv || storedGuestConv;
           if (guestConvId) {
             await fetch('/api/auth/claim-conversation', {
@@ -422,10 +424,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
         if (audioRes.ok) {
           const { audioMp3Base64 } = await audioRes.json();
           if (audioMp3Base64) {
-            audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
-              // Only transition back to listening if still active
-              if (conversationStatus === 'active') setTurnStatus('user_listening');
-            });
+            audioPlayerRef.current = await playAndAnalyzeAudio(
+              audioMp3Base64,
+              (v) => setKiraVolume(v),
+              () => {
+                // Only transition back to listening if still active
+                if (conversationStatus === 'active') setTurnStatus('user_listening');
+              }
+            );
           } else {
             if (conversationStatus === 'active') setTurnStatus('user_listening');
           }
@@ -576,7 +582,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     stopConversation,
     secondsRemaining: proConversationTimer,
     isPro,
-    micVolume,
+  micVolume,
+  kiraVolume,
     error,
     allConversations,
     loadConversation,

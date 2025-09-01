@@ -44,9 +44,6 @@ interface ConversationContextType {
   showPaywall: boolean;
   setShowPaywall: (open: boolean) => void;
   promptPaywall: () => void;
-  // Streak
-  currentStreak: number | null;
-  hasPostedToday: boolean;
   // Achievements (lean V1)
   unlockedAchievements?: string[];
   newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
@@ -70,8 +67,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
-  const [currentStreak, setCurrentStreak] = useState<number | null>(null);
-  const [hasPostedToday, setHasPostedToday] = useState(false);
+  // Streak removed in v1
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
   // Local paywall state (legacy hook removed)
@@ -189,14 +185,12 @@ export default function ConversationProvider({ children }: { children: React.Rea
     };
   }, []);
 
-  // Fetch current streak and daily topic on load
+  // Prefetch achievements for signed-in users (streak removed)
   useEffect(() => {
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          // Fetch unlocked achievements
-          // prefetch any required auth state; non-fatal if these fail
           try {
             const headers = { Authorization: `Bearer ${session.access_token}` };
             const ua = await fetch('/api/user/achievements', { headers }).catch(() => null);
@@ -205,14 +199,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
               if (Array.isArray(j?.ids)) setUnlockedAchievements(j.ids as string[]);
             }
           } catch {}
-          const r = await fetch('/api/streak/get', { headers: { Authorization: `Bearer ${session.access_token}` } });
-          const j = await r.json().catch(() => ({}));
-          if (r.ok) setCurrentStreak(Number(j?.currentStreak ?? 0));
-        } else {
-          setCurrentStreak(null);
         }
       } catch {}
-  // Daily topic removed
     })();
   }, []);
 
@@ -421,17 +409,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
       if (session) {
         // Refresh entitlement from server after a completed turn
         try { (ent as any).refresh?.(); } catch {}
-        // Update streak once per day
-        if (!hasPostedToday) {
-          try {
-            const r = await fetch('/api/streak/update', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } });
-            const j = await r.json().catch(() => ({}));
-            if (r.ok && typeof j?.currentStreak === 'number') {
-              setCurrentStreak(j.currentStreak);
-              setHasPostedToday(true);
-            }
-          } catch {}
-        }
         // Achievements: compute and persist newly unlocked
         try {
           const messagesCount = [...messages, { role: 'assistant', content: fullAssistantReply, id: 'tmp' } as any].length;
@@ -581,8 +558,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
   showPaywall,
   setShowPaywall,
   promptPaywall,
-  currentStreak,
-  hasPostedToday,
   unlockedAchievements,
   newlyUnlockedToast,
   setNewlyUnlockedToast,

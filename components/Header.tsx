@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageChip from '@/components/HeaderUsageChip';
-import StreakIndicator from '@/components/StreakIndicator';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
 
@@ -58,8 +57,6 @@ export default function Header() {
             </>
           ) : (
             <>
-              {/* Show streak for free users inline */}
-              {!isPro && <StreakIndicator />}
               <HeaderUsageChip />
               <div className="relative" ref={ref}>
                 <button onClick={() => setOpen(v => !v)}

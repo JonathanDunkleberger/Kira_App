@@ -4,7 +4,6 @@ import HotMic from '@/components/HotMic';
 import ConversationView from '@/components/ConversationView';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
-import StreakIndicator from '@/components/StreakIndicator';
 import AchievementToast from '@/components/AchievementToast';
 
 function ConversationShell() {

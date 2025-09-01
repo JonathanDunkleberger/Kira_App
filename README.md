@@ -1,192 +1,87 @@
-# 🎤 Kira AI VTuber — Web App Extension
+# Kira AI
 
-This repo is the web app extension of the original Kira AI VTuber project. It brings Kira’s voice-first companion experience to the browser with push‑to‑talk, transcripts, real auth, metered usage, and Stripe billing.
+## Your Voice-First AI Media Companion
 
-- Original project: [Kira_AI](https://github.com/JonathanDunkleberger/Kira_AI)
-- Demo GIF: [VTuber Demo — Kira v3](https://github.com/JonathanDunkleberger/Kira_AI/blob/main/VTuber%20Demo%20-%20Kirav3.gif?raw=true)
+**[Live Demo](https://kira.ai)**
 
-
-## 🧭 Overview
-
-- Next.js 14 (App Router) frontend hosted on Vercel
-- Server routes for STT → LLM → TTS loop, auth/session, and billing
-- Supabase for Auth + Postgres (usage metering, entitlements, memories)
-- Stripe Checkout + Webhook for paid plans
-- Azure Speech (Ashley) for TTS; OpenAI for LLM
-
-This extends the local/desktop Kira by exposing a minimal, production-grade web stack that preserves the identity and UX of the original (voice, personality, barge‑in), while adding web auth and metering.
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase)
+![Stripe](https://img.shields.io/badge/Stripe-Checkout-635BFF?logo=stripe)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)
 
 
-## ✨ Features
+## Overview & Demo
 
-- 🎙️ Push‑to‑Talk mic button (pulsing orb)
-- 📝 Transcript pane
-- ⏸️ Barge‑in: talking cancels current playback immediately
-- 🔔 Earcon if response prep >800ms (no filler speech)
-- 🔐 Real auth with Supabase
-- 🧮 Usage metering: tracks seconds and characters
-- 💳 Stripe billing with webhook‑driven entitlements
-- 🚦 Simple per‑IP rate limits
+Kira AI is a voice-first, real-time media companion that turns conversation into creation. It combines speech-to-text, LLM reasoning, and lifelike text-to-speech to deliver a natural, hands-free experience. The product is built as a modern, freemium SaaS with a robust paywall and a conversion-focused user journey.
+
+<!-- Replace with an actual product GIF/screencast -->
+![Kira AI demo](https://user-images.githubusercontent.com/placeholder/kira-demo.gif)
 
 
-## 🧱 Architecture (high level)
+## Key Features
 
-- Client (Next.js 14)
-  - Mic capture → POST to /api/utterance
-  - Plays returned MP3, shows transcript, handles barge‑in + earcon
-  - Supabase Auth UI on the client
-- Server (Edge + Node routes)
-  - /api/session (Edge): reads Supabase session, ensures entitlements, returns secondsRemaining
-  - /api/utterance (Node): audio → STT → LLM → Azure TTS (Ashley) → MP3
-  - /api/stripe/create-checkout (Node): creates Stripe Checkout session
-  - /api/stripe/webhook (Node): grants plan on successful events
-- Data (Supabase tables)
-  - entitlements (free vs paid)
-  - usage_counters (seconds + chars)
-  - user_memories (optional)
+- Intelligent Voice Activity Detection: Seamless, hands-free conversation—just start talking and Kira responds.
+- Robust Usage Metering: A server-authoritative entitlement system built on Supabase to manage daily time limits for free-tier users.
+- Freemium SaaS Model: A complete subscription system with three distinct user states (Guest, Registered Free, and Pro) powered by Stripe.
+- Proactive Upgrade Nudge: A subtle, one-time nudge below a usage threshold that accelerates conversion without interrupting flow.
+- Seamless Guest-to-User Claiming: After signup, conversations started as a guest are automatically claimed to the new account.
+- Real-Time STT → LLM → TTS Loop: Production-grade pipeline for natural conversations.
 
 
-## 🔐 Auth + Metering flow
+## Tech Stack & Architecture
 
-- Client authenticates with Supabase; session is available to server routes
-- /api/session
-  - ensureEntitlements(userId, FREE_TRIAL_SECONDS)
-  - return secondsRemaining
-- /api/utterance
-  - after ttsToMp3Base64, decrementSeconds(userId, estSeconds)
-  - if balance ≤ 0 → HTTP 402 with { paywall: true }
+- Frontend: Next.js, React, Tailwind CSS, Framer Motion
+- Backend: Next.js App Router (API Routes), Vercel Serverless Functions
+- Database: Supabase (Postgres), including Auth and database functions
+- AI Pipeline: OpenAI Whisper (STT), OpenAI/Gemini (LLM), Microsoft Azure (TTS)
+- Payments: Stripe Checkout & Webhooks
 
-
-## 🚦 Rate limits
-
-- Per‑IP limiter keyed by ip + hour in Supabase
-- Reject new utterances if exceeding N/minute
+Kira AI is built on a modern, scalable, serverless architecture. The front-end leverages a centralized state management pattern to ensure a predictable UI, while the backend uses a server-authoritative model for all business logic, including the robust entitlement and payment systems.
 
 
-## 🔔 Earcon and ⏯️ Barge‑in
+## Project Highlights (What I'm Proud Of)
 
-- If /api/utterance >800ms, play a subtle chime so the UX feels “alive”
-- If user holds PTT while audio is playing, pause immediately and discard queued playback
-
-
-## 🗂️ API summary
-
-- GET /api/session (Edge)
-  - Input: cookie‑based auth (Supabase)
-  - Output: { secondsRemaining: number, ephemeralToken?: string }
-- POST /api/utterance (Node)
-  - Input: audio blob/stream (PCM/WEBM), user_id from session
-  - Steps: STT → LLM → TTS
-  - Output: { audioBase64: string, transcript: string }
-  - Errors: 402 { paywall: true } when out of balance
-- POST /api/stripe/create-checkout (Node)
-  - Input: { priceId }
-  - Output: { url } (redirect)
-- POST /api/stripe/webhook (Node)
-  - Handles checkout completion → grants entitlements
+- End-to-End Refactoring: Led a full-stack refactor that transformed a buggy prototype into a stable, commercially viable V1. This involved diagnosing persistent state management issues, eliminating technical debt, and establishing a new, robust architecture.
+- Architected a Scalable Entitlement System: Designed and implemented a server-authoritative system from scratch to manage user plans and daily usage limits, solving critical bugs related to inconsistent state.
+- Designed a Seamless Conversion Funnel: Engineered the complete user journey from a free guest session to a paying subscriber, including a proactive nudge system and a frictionless guest-to-user conversation claiming process.
 
 
-## 🔧 Environment variables
+## Local Development
 
-Copy .env.example to .env.local and fill in values:
+Environment Setup (required .env.local keys)
 
-```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+Supabase
 
-# OpenAI
-OPENAI_API_KEY=
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY
 
-# Azure Speech (TTS)
-AZURE_SPEECH_KEY=
-AZURE_SPEECH_REGION=
+Stripe
 
-# Stripe
-STRIPE_SECRET_KEY=
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-STRIPE_PRICE_ID=
-STRIPE_WEBHOOK_SECRET=
+- STRIPE_SECRET_KEY
+- STRIPE_PRICE_ID
+- STRIPE_WEBHOOK_SECRET (optional)
 
-# App
-FREE_TRIAL_SECONDS=120
-```
+AI
 
+- OPENAI_API_KEY (optional)
+- GOOGLE_GEMINI_API_KEY (optional)
+- LLM_PROVIDER (openai|gemini)
+- OPENAI_MODEL / GEMINI_MODEL (optional)
 
-## 🧪 Local development
+Azure Speech (TTS)
 
-Prereqs
+- AZURE_SPEECH_KEY
+- AZURE_SPEECH_REGION
+- AZURE_TTS_VOICE (default en-US-AshleyNeural)
+- AZURE_TTS_RATE (default +25%)
+- AZURE_TTS_PITCH (default +25%)
 
-- Node 18+ (or newer) and pnpm/yarn/npm
-- Supabase project (URL + anon key)
-- Stripe test keys
-- Azure Speech key + region
-- OpenAI API key
+App
 
-Run
-
-```bash
-pnpm install
-pnpm dev
-```
-
-App will be available at [http://localhost:3000](http://localhost:3000).
-
-
-## 🚀 Deploy
-
-- Vercel: import repo and set all env vars
-  - Route runtimes: /api/session → Edge; /api/utterance and /api/stripe/* → Node.js
-- Supabase: run supabase/migrations.sql and create RLS policies by user_id
-- Stripe: set STRIPE_PRICE_ID and STRIPE_WEBHOOK_SECRET; add webhook to /api/stripe/webhook
-- Azure Speech: set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION
-
-
-## 🔄 Roadmap
-
-- Move STT + LLM to a WebRTC Live adapter (Realtime/Gemini)
-- Keep Azure Ashley TTS to preserve voice identity
-
-
-## 📁 Project structure
-
-```text
-app/
-  api/
-    session/route.ts
-    utterance/route.ts
-    stripe/
-      create-checkout/route.ts
-      webhook/route.ts
-  layout.tsx
-  page.tsx
-components/
-  MicButton.tsx
-  PulsingOrb.tsx
-  Transcript.tsx
-  Paywall.tsx
-lib/
-  env.ts
-  supabaseClient.ts
-  prompt.ts
-  usage.ts
-  audio.ts
-  stt.ts
-  llm.ts
-  tts.ts
-supabase/
-  migrations.sql
-```
-
-
-## ✅ Status
-
-- Web app extension scaffolded
-- Core PTT loop in place (client + server)
-- Auth + metering hooks defined
-- Stripe integration wired (Checkout + Webhook)
-
----
-
-Questions or ideas? Open an issue or start a discussion.
+- APP_URL
+- FREE_TRIAL_SECONDS
+- PRO_SESSION_SECONDS (default 1800)
+- ALLOWED_ORIGIN
+- DEV_ALLOW_NOAUTH (optional)
 

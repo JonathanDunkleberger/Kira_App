@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { trackUpgradeClick, trackPaywallTriggered, PaywallEventProperties } from '@/lib/analytics';
 
 interface PaywallProps {
@@ -16,25 +16,18 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   const { session, conversationId, isPro } = useConversation();
   const ent = useEntitlement();
   const signedIn = !!session;
-  const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
-  const [timeDisplay, setTimeDisplay] = useState('');
+  const totalMinutes = useMemo(() => {
+    const lim = ent?.dailyLimitSeconds;
+    if (!Number.isFinite(lim) || lim <= 0) return null;
+    return Math.floor(lim / 60);
+  }, [ent?.dailyLimitSeconds]);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
   // Get guest conversation id (if any) to tag auth links
   const guestConversationId = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
   const signUpHref = `/sign-up?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
   const signInHref = `/sign-in?next=upgrade${guestConversationId ? `&guestConvId=${guestConversationId}` : ''}`;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(cfg => {
-        const v = Number(cfg?.freeTrialSeconds);
-        if (Number.isFinite(v) && v > 0) setFreeMinutes(Math.floor(v / 60));
-        else setFreeMinutes(null);
-      })
-      .catch(() => setFreeMinutes(null));
-  }, [isOpen]);
+  // All time data now comes from useEntitlement; no local/config fallbacks.
 
   // Auto-dismiss if the user becomes Pro while the paywall is open
   useEffect(() => {
@@ -55,13 +48,7 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
     }
   }, [isOpen, session, ent.userStatus, ent.secondsRemaining, conversationId]);
 
-  useEffect(() => {
-    if (ent.secondsRemaining !== null) {
-      const minutes = Math.floor(ent.secondsRemaining / 60);
-      const seconds = ent.secondsRemaining % 60;
-      setTimeDisplay(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-    }
-  }, [ent.secondsRemaining]);
+  // No local time formatting state; render directly from ent.secondsRemaining when needed.
 
   const handleUpgradeClick = () => {
     const properties: PaywallEventProperties = {
@@ -94,10 +81,10 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
           </ul>
         </div>
 
-  {freeMinutes !== null && (
+  {totalMinutes !== null && (
           <div className="mb-4 p-3 bg-rose-900/20 border border-rose-700/30 rounded-lg">
             <p className="text-sm text-rose-200 text-center">
-              You've used all your {freeMinutes} free minutes for today
+              You've used all your {totalMinutes} free minutes for today
             </p>
           </div>
         )}
@@ -121,7 +108,7 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
             Come back tomorrow
           </button>
         </div>
-    {!ent.isLoading && ent.secondsRemaining !== null && ent.secondsRemaining > 0 && (
+  {!ent.isLoading && Number.isFinite(ent.secondsRemaining) && ent.secondsRemaining > 0 && (
           <div className="mt-4 text-xs text-white/40">
       {Math.floor(ent.secondsRemaining / 60)} minutes remaining today
           </div>

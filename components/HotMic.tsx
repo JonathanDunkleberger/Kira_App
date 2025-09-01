@@ -61,8 +61,7 @@ export default function HotMic() {
   // --- END ANIMATION LOGIC ---
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative group">
+  <div className="flex flex-col items-center gap-4">
         <motion.button
           onClick={handleClick}
           disabled={disabled}
@@ -81,12 +80,7 @@ export default function HotMic() {
         >
           {orbText}
         </motion.button>
-        {disabled && (
-          <span className="pointer-events-none absolute left-1/2 top-full mt-3 -translate-x-1/2 origin-top scale-0 rounded-md bg-gray-800 px-2 py-1 text-xs text-white shadow-lg transition-transform duration-150 group-hover:scale-100">
-            Daily limit reached. Upgrade for unlimited conversations.
-          </span>
-        )}
-      </div>
+      
       <div className="h-8 text-center">
         <p className="text-gray-400">{subText}</p>
       </div>

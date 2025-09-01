@@ -9,7 +9,8 @@ import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 
-const MIN_AUDIO_BLOB_SIZE = 1000; // ignore tiny/noise chunks
+// Increase minimum size to avoid short/noise causing 400 errors
+const MIN_AUDIO_BLOB_SIZE = 4000;
 
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
@@ -103,6 +104,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const vadCleanupRef = useRef<() => void>(() => {});
+  const inflightAbortRef = useRef<AbortController | null>(null);
   const isProcessingRef = useRef(false);
 
   useEffect(() => {
@@ -259,6 +261,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
     mediaRecorderRef.current = null;
     if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
+    // Cancel any in-flight utterance processing to prevent stray replies
+    try { inflightAbortRef.current?.abort(); } catch {}
+    inflightAbortRef.current = null;
     // Fire-and-forget summarization of the conversation just before idling
     try {
       if (conversationId) {
@@ -271,8 +276,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
         }).catch(() => {});
       }
     } catch {}
-    setConversationStatus(reason);
-    setTurnStatus('idle');
+  setConversationStatus(reason);
+  setTurnStatus('idle');
     setMicVolume(0);
     if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
@@ -307,6 +312,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
+    // If conversation is no longer active, drop the chunk
+    if (conversationStatus !== 'active') { isProcessingRef.current = false; return; }
     setTurnStatus('processing_speech');
     setMicVolume(0);
     
@@ -316,12 +323,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
     
     const url = new URL('/api/utterance', window.location.origin);
     if (conversationId) url.searchParams.set('conversationId', conversationId);
+    // Prepare abort controller so we can cancel on stop
+    const abort = new AbortController();
+    inflightAbortRef.current = abort;
     
     try {
   const response = await fetch(url.toString(), {
         method: 'POST',
         headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {},
         body: formData,
+        signal: abort.signal,
       });
 
       // Improved error handling
@@ -343,13 +354,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
       
   const assistantMessageId = crypto.randomUUID();
       setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
+      if (conversationStatus !== 'active') { throw new Error('Conversation inactive'); }
       setTurnStatus('assistant_speaking');
   // Legacy last-turn nudge removed; automatic paywall watcher now handles gating
       
       let fullAssistantReply = '';
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      while (true) {
+  while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value);
@@ -392,18 +404,19 @@ export default function ConversationProvider({ children }: { children: React.Rea
           const { audioMp3Base64 } = await audioRes.json();
           if (audioMp3Base64) {
             audioPlayerRef.current = await playMp3Base64(audioMp3Base64, () => {
-              setTurnStatus('user_listening');
+              // Only transition back to listening if still active
+              if (conversationStatus === 'active') setTurnStatus('user_listening');
             });
           } else {
-            setTurnStatus('user_listening');
+            if (conversationStatus === 'active') setTurnStatus('user_listening');
           }
         } else {
           console.error('Speech synthesis failed.');
-          setTurnStatus('user_listening');
+          if (conversationStatus === 'active') setTurnStatus('user_listening');
         }
       } catch (ttsError) {
         console.error('Error during TTS playback:', ttsError);
-        setTurnStatus('user_listening');
+        if (conversationStatus === 'active') setTurnStatus('user_listening');
       }
       // Refresh daily seconds after a turn for signed-in users (server truth)
       if (session) {
@@ -439,28 +452,41 @@ export default function ConversationProvider({ children }: { children: React.Rea
         try { (ent as any).refresh?.(); } catch {}
       }
       
-    } catch (e: any) { setError(e.message); stopConversation('ended_by_user'); }
-    finally { isProcessingRef.current = false; }
-  }, [session, conversationId, stopConversation, messages, allConversations]);
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        // Silently ignore aborted requests
+      } else {
+        setError(e.message || 'Audio processing failed');
+      }
+      // Ensure we return to idle/listening state appropriately
+      if (conversationStatus === 'active') {
+        setTurnStatus('user_listening');
+      }
+    } finally {
+      isProcessingRef.current = false;
+      inflightAbortRef.current = null;
+    }
+  }, [session, conversationId, stopConversation, messages, allConversations, conversationStatus]);
 
   useEffect(() => {
     // Robust VAD setup: always rebuild on state changes and ensure full teardown
     let vadAndStream: { vad: any; stream: MediaStream } | null = null;
 
-    const setupVAD = async () => {
+  const setupVAD = async () => {
       try {
         const { MicVAD } = await import('@ricky0123/vad-web');
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        const vad = await MicVAD.new({
+    const vad = await MicVAD.new({
           stream,
-          // --- START VAD TUNING FIX ---
-          // Less sensitive to brief noises; require longer sustained speech and longer silence to end.
-          // 15 frames (~480ms at 16kHz) before firing onSpeechStart
-          minSpeechFrames: 15,
-          // 75 frames (~2.4s of silence) before firing onSpeechEnd
-          redemptionFrames: 75,
-          // --- END VAD TUNING FIX ---
+      // Simplified, responsive VAD tuning
+      // Start on modest speech presence, stop on a short natural pause
+      minSpeechFrames: 6,          // ~200ms speech before start
+      redemptionFrames: 30,        // ~1s silence before end
+      positiveSpeechThreshold: 0.6,
+      negativeSpeechThreshold: 0.35,
+      preSpeechPadFrames: 4,       // small pre-roll for cutting word starts
+      // Note: leave defaults for most other params
           // Provide continuous mic volume (0..1) while VAD is active so UI can animate
           // @ts-expect-error Library's type doesn't declare the level argument, but it is provided at runtime.
           onVADMisfire: (level: number) => {
@@ -483,9 +509,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
             };
             mediaRecorderRef.current.onstop = () => {
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-              if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
-                processAudioChunk(audioBlob);
-              }
+        if (audioBlob.size <= MIN_AUDIO_BLOB_SIZE) { setMicVolume(0); return; }
+        processAudioChunk(audioBlob);
             };
             mediaRecorderRef.current.start();
           },

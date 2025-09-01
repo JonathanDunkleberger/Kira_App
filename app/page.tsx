@@ -20,7 +20,7 @@ function ConversationShell() {
 }
 
 export default function HomePage() {
-  const { error, viewMode } = useConversation();
+  const { error, viewMode, showPaywall, setShowPaywall } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
   <AchievementToast />
@@ -33,11 +33,15 @@ export default function HomePage() {
             {error && <p className="text-rose-400 mt-2">Error: {error}</p>}
           </section>
           <ConversationView />
+          {/* Mount paywall globally so promptPaywall always renders a modal */}
+          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
         </>
       ) : (
         <section className="w-full h-full flex flex-col items-center pt-8">
           <h2 className="text-2xl font-semibold mb-4">Conversation History</h2>
           <ConversationView />
+          {/* Keep paywall available in history view as well */}
+          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
         </section>
       )}
     </main>

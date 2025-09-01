@@ -18,8 +18,9 @@ export default function HotMic() {
 
   const isSessionActive = conversationStatus === 'active';
   const handleClick = () => {
-    // Definitive paywall gate: click opens paywall when out of time
-    if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
+    // Always produce a visible result on click
+    const remaining = dailySecondsRemaining ?? 0;
+    if (!isPro && remaining <= 0) {
       promptPaywall();
       return;
     }
@@ -71,6 +72,7 @@ export default function HotMic() {
           // Animate orb scale and glow
           animate={pulseWhenAssistant ?? { scale }}
           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+          aria-disabled={false}
           style={{
             background: turnStatus === 'processing_speech'
               ? 'radial-gradient(circle, #fcd34d, #b45309)'

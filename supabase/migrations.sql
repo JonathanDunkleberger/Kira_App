@@ -13,6 +13,11 @@ create table if not exists public.entitlements (
   updated_at timestamptz default now()
 );
 
+-- Streak columns (safe to re-run)
+alter table if exists public.entitlements
+  add column if not exists current_streak int not null default 0,
+  add column if not exists last_streak_date date;
+
 -- Profiles to store external billing identifiers
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -30,6 +35,10 @@ create table if not exists public.conversations (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Add per-conversation remaining seconds for guests (ignored for authed users)
+alter table if exists public.conversations
+  add column if not exists seconds_remaining int;
 
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
@@ -134,8 +143,7 @@ returns table(user_id uuid, email text) as $$
   select u.id as user_id, u.email
   from public.entitlements e
   join auth.users u on u.id = e.user_id
-  left join public.profiles p on p.user_id = e.user_id
-  where e.plan = 'supporter' and (p.stripe_customer_id is null or length(p.stripe_customer_id) = 0);
+  where e.plan = 'supporter' and (e.stripe_customer_id is null or length(e.stripe_customer_id) = 0);
 $$ language sql stable security definer;
 
 -- Seed entitlements when a new user signs up
@@ -146,6 +154,69 @@ begin
   return new;
 end;
 $$ language plpgsql security definer;
+
+-- Achievements tables (lean v1)
+create table if not exists public.achievements (
+  id text primary key,
+  name text not null,
+  description text
+);
+
+create table if not exists public.user_achievements (
+  user_id uuid references auth.users(id) on delete cascade,
+  achievement_id text references public.achievements(id) on delete cascade,
+  unlocked_at timestamptz default now(),
+  primary key (user_id, achievement_id)
+);
+
+alter table public.achievements enable row level security;
+alter table public.user_achievements enable row level security;
+
+-- Anyone can read the catalog
+create policy if not exists "achievements-read" on public.achievements for select using (true);
+
+-- Users can read their own unlocks and insert new ones for themselves
+create policy if not exists "user_achievements-select-own" on public.user_achievements for select using (auth.uid() = user_id);
+create policy if not exists "user_achievements-insert-own" on public.user_achievements for insert with check (auth.uid() = user_id);
+
+-- Seed a few example achievements (idempotent)
+insert into public.achievements (id, name, description) values
+  ('ICEBREAKER','First Hello','Send your first message'),
+  ('DEEP_THINKER','Deep Thinker','Reach 100 total messages'),
+  ('CHATTERBOX','Chatterbox','Have 5 conversations'),
+  ('FIRST_MEMORY','First Memory','Save your first memory')
+on conflict (id) do nothing;
+
+-- Guest conversations: decrement remaining seconds atomically by RPC
+create or replace function public.decrement_guest_seconds(conv_id uuid, seconds_to_decrement int)
+returns void as $$
+begin
+  update public.conversations
+  set seconds_remaining = greatest(0, coalesce(seconds_remaining, 0) - seconds_to_decrement),
+      updated_at = now()
+  where id = conv_id;
+end;
+$$ language plpgsql security definer;
+
+-- Create paywall events table for conversion tracking
+create table if not exists public.paywall_events (
+  id uuid default gen_random_uuid() primary key,
+  event text not null,
+  properties jsonb,
+  timestamp timestamptz default now(),
+  user_agent text,
+  url text,
+  user_id uuid references auth.users(id) on delete set null,
+  user_type text,
+  plan text,
+  seconds_remaining integer,
+  conversation_id uuid references public.conversations(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create index if not exists paywall_events_user_id_idx on public.paywall_events(user_id);
+create index if not exists paywall_events_event_idx on public.paywall_events(event);
+create index if not exists paywall_events_timestamp_idx on public.paywall_events(timestamp);
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created

@@ -4,25 +4,26 @@ import HotMic from '@/components/HotMic';
 import ConversationView from '@/components/ConversationView';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
+import AchievementToast from '@/components/AchievementToast';
 
 function ConversationShell() {
-  const { isPro, dailySecondsRemaining, conversationStatus } = useConversation();
-  const paywalled = !isPro && (dailySecondsRemaining ?? 0) <= 0 && conversationStatus !== 'active';
+  const { showPaywall, setShowPaywall } = useConversation();
   return (
     <div className="flex flex-col items-center gap-8">
       <div className="scale-125">
         <HotMic />
       </div>
       <ConversationView />
-      <Paywall isOpen={paywalled} onClose={() => { /* kept controlled by provider state */ }} />
+  <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
     </div>
   );
 }
 
 export default function HomePage() {
-  const { error, viewMode } = useConversation();
+  const { error, viewMode, showPaywall, setShowPaywall } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
+  <AchievementToast />
       {viewMode === 'conversation' ? (
         <>
           <section className="flex-1 container mx-auto max-w-4xl px-6 pt-10 text-center flex flex-col items-center gap-8 justify-center">
@@ -32,11 +33,15 @@ export default function HomePage() {
             {error && <p className="text-rose-400 mt-2">Error: {error}</p>}
           </section>
           <ConversationView />
+          {/* Mount paywall globally so promptPaywall always renders a modal */}
+          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
         </>
       ) : (
         <section className="w-full h-full flex flex-col items-center pt-8">
           <h2 className="text-2xl font-semibold mb-4">Conversation History</h2>
           <ConversationView />
+          {/* Keep paywall available in history view as well */}
+          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
         </section>
       )}
     </main>

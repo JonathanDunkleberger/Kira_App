@@ -36,3 +36,6 @@ Thumbs.db
 # Workspace artifacts
 project_context.txt
 .vercel
+supabase/.temp/
+*.txt
+!README.txt

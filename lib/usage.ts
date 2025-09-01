@@ -1,5 +1,5 @@
 import { getSupabaseServerAdmin } from './supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from './env';
+import { FREE_TRIAL_SECONDS } from './env.server';
 
 /**
  * Ensure a row exists and daily counters are initialized.
@@ -30,7 +30,8 @@ export async function ensureEntitlements(userId: string, perDay: number = FREE_T
     .eq('user_id', userId)
     .maybeSingle();
 
-  const perDayValue = entRow?.trial_seconds_per_day ?? perDay;
+  // Always prefer the server-configured value (env) to avoid stale DB overrides
+  const perDayValue = perDay;
   if (!entRow?.trial_last_reset || entRow.trial_last_reset !== today) {
     await sb.from('entitlements').update({
       trial_last_reset: today,
@@ -65,15 +66,31 @@ export async function getDailySecondsRemaining(userId: string): Promise<number> 
   return ent.trial_seconds_remaining;
 }
 
-/** Decrement daily seconds (no-op for Pro). */
-export async function decrementDailySeconds(userId: string, seconds: number) {
+// Transition helper: messages-based quota reads the same field until DB is migrated.
+export async function getDailyMessagesRemaining(userId: string): Promise<number> {
+  return getDailySecondsRemaining(userId);
+}
+
+/**
+ * Decrement daily seconds based on calculated duration.
+ * Returns the updated remaining seconds (undefined for Pro users).
+ */
+export async function decrementDailySeconds(userId: string, secondsUsed: number): Promise<number | undefined> {
   const sb = getSupabaseServerAdmin();
   await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
   const ent = await getEntitlement(userId);
   if (ent.status === 'active') return; // Pro users don’t decrement
 
-  const newVal = Math.max(0, (ent.trial_seconds_remaining ?? 0) - seconds);
-  await sb.from('entitlements').update({ trial_seconds_remaining: newVal }).eq('user_id', userId);
+  const currentRemaining = ent.trial_seconds_remaining ?? 0;
+  const newRemaining = Math.max(0, currentRemaining - secondsUsed);
+  await sb.from('entitlements').update({ trial_seconds_remaining: newRemaining }).eq('user_id', userId);
+  return newRemaining;
+}
+
+// Temporary shim during migration to messages-based quotas
+export async function decrementDailyMessages(userId: string): Promise<number | undefined> {
+  // Hardcoded decrement by 1 message; we treat each message ~ fixed unit and map to secondsUsed = 1
+  return decrementDailySeconds(userId, 1);
 }
 
 /** Keep your existing Pro-grant semantics. */

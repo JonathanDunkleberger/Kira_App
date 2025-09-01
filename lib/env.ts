@@ -20,9 +20,11 @@ const EnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   APP_URL: z.string().url(),
   FREE_TRIAL_SECONDS: z.string(),
+  PRO_SESSION_SECONDS: z.string().default('1800'),
   ALLOWED_ORIGIN: z.string(),
   DEV_ALLOW_NOAUTH: z.string().optional()
 });
 
 export const env = EnvSchema.parse({ ...process.env });
 export const FREE_TRIAL_SECONDS = parseInt(env.FREE_TRIAL_SECONDS, 10);
+export const PRO_SESSION_SECONDS = parseInt(env.PRO_SESSION_SECONDS, 10);

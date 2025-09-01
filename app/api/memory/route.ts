@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       temperature: 0.2,
     });
 
-    // Parse JSON array from the model output
+  // Parse JSON array from the model output
     let facts: string[] = [];
     try {
       const content = response.choices?.[0]?.message?.content || '[]';
@@ -78,9 +78,30 @@ export async function POST(req: NextRequest) {
     const { error } = await sbAdmin.from('user_memories').insert(memoriesToInsert);
     if (error) throw error;
 
-    return NextResponse.json({ success: true, memories_saved: facts.length });
+  return NextResponse.json({ success: true, memories_saved: facts.length });
   } catch (error: any) {
     console.error('Memory extraction failed:', error);
     return NextResponse.json({ success: false, error: error?.message || 'Unknown error' }, { status: 500 });
+  }
+}
+
+// Lightweight count endpoint: return number of memories for the authed user
+export async function GET(req: NextRequest) {
+  try {
+    const sbAdmin = getSupabaseServerAdmin();
+    const token = req.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { data: userData } = await sbAdmin.auth.getUser(token);
+    const userId = (userData as any)?.user?.id as string | undefined;
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { count, error } = await sbAdmin
+      .from('user_memories')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if (error) throw error;
+    return NextResponse.json({ count: count ?? 0 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Unknown error' }, { status: 500 });
   }
 }

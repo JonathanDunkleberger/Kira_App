@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { decrementDailySeconds, decrementDailyMessages, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
+import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
@@ -24,7 +26,7 @@ you think, feel, and reason like a person. Your goal is to be an authentic and e
 - MAINTAIN your persona: You are Kira first. Only reference being an AI if it is directly relevant or funny.
 - SPOKEN dialogue only. Do not use stage directions, asterisks, or describe actions. Express everything through speech.
 - NO meta-commentary about reasoning. Just respond as Kira.
- - You must respond in English only, regardless of the user's language.
+- You must respond in English only, regardless of the user's language.
 `;
 const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
   {
@@ -74,10 +76,13 @@ class StreamingTextResponse extends Response {
 
 // (helpers defined above)
 
+// standardized paywall response imported from lib/http
+
 export async function POST(req: NextRequest) {
   const sb = getSupabaseServerAdmin();
   let userId: string | null = null;
   let conversationId: string | null = new URL(req.url).searchParams.get('conversationId');
+  // legacy last-turn flag removed; client now uses automatic paywall watcher
 
   // Handle both authenticated and guest users
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
@@ -85,6 +90,51 @@ export async function POST(req: NextRequest) {
     const { data } = await sb.auth.getUser(token);
     const user = (data as any)?.user;
     if (user) userId = user.id;
+  }
+  // Server-side paywall enforcement for authenticated users with graceful last-turn signal
+  let isPro = false;
+  try {
+    if (userId) {
+      const ent = await getEntitlement(userId);
+      isPro = ent.status === 'active';
+      if (ent.status !== 'active') {
+        const secondsLeft = await getDailySecondsRemaining(userId);
+        if (secondsLeft <= 0) {
+          return new Response('Daily time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+        }
+  // no header flag; automatic client watcher handles last-turn experience
+      }
+    } else {
+      // Guests: use conversation seconds_remaining
+      if (conversationId) {
+        const { data: conv } = await sb
+          .from('conversations')
+          .select('seconds_remaining')
+          .eq('id', conversationId)
+          .single();
+        const secondsLeft = Number(conv?.seconds_remaining ?? 0);
+        if (secondsLeft <= 0) {
+          return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+        }
+  // no header flag; automatic client watcher handles last-turn experience
+      }
+    }
+  } catch (e) {
+    console.warn('Usage enforcement check failed:', e);
+  }
+
+  // Additional server-side enforcement for guests using conversation seconds_remaining
+  if (!userId && conversationId) {
+    try {
+      const { data: conv, error: convErr } = await sb
+        .from('conversations')
+        .select('seconds_remaining')
+        .eq('id', conversationId)
+        .single();
+      if (convErr || (conv && typeof conv.seconds_remaining === 'number' && conv.seconds_remaining <= 0)) {
+        return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+      }
+    } catch {}
   }
 
   // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
@@ -153,8 +203,11 @@ export async function POST(req: NextRequest) {
   // --- END RAG IMPLEMENTATION ---
 
   // 3. Stream LLM Response
+  // Determine plan status (best-effort: if we reached here with a userId and not blocked above,
+  // memory is enabled only when ent.status === 'active'). We conservatively mark disabled for guests.
+  const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: augmentedSystemPrompt },
+    { role: 'system', content: augmentedSystemPrompt + "\n\n" + memoryFlag },
     ...FEW_SHOTS.flatMap((shot) => [
       { role: 'user' as const, content: shot.user },
       { role: 'assistant' as const, content: shot.assistant },
@@ -171,13 +224,13 @@ export async function POST(req: NextRequest) {
       max_tokens: 400,
     });
 
-    const stream = OpenAIStream(response as any, {
+  const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
         if (conversationId) {
           await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
           await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
         }
-        // Fire-and-forget memory extraction with the last turn
+        // Fire-and-forget memory extraction with the last turn (authenticated users only)
         try {
           if (userId) {
             const lastTurnMessages = [
@@ -194,11 +247,27 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           console.error('Memory extraction trigger error:', e);
         }
+
+        // --- START GUEST TIME DECREMENT LOGIC ---
+        // Messages-based decrement: one unit per assistant reply (auth users only for now)
+        try {
+          if (userId) {
+            await decrementDailyMessages(userId);
+          } else if (conversationId) {
+            // Guests unchanged until DB migration: decrement by a small fixed time to prevent abuse
+            await sb.rpc('decrement_guest_seconds', { conv_id: conversationId, seconds_to_decrement: 5 });
+          }
+        } catch (decErr) {
+          console.warn('Failed to decrement remaining quota:', decErr);
+        }
+        // --- END GUEST TIME DECREMENT LOGIC ---
       },
     });
 
     return new StreamingTextResponse(stream, {
-      headers: { 'X-User-Transcript': encodeURIComponent(transcript) },
+      headers: {
+        'X-User-Transcript': encodeURIComponent(transcript),
+      },
     });
   } catch (error: any) {
     console.error('LLM Error:', error);

@@ -41,7 +41,7 @@ export async function fetchEntitlement(): Promise<Entitlement | null> {
     plan: (j?.plan ?? 'free'),
     status: (j?.status ?? 'inactive'),
     secondsRemaining: Number(j?.secondsRemaining ?? 0),
-    trialPerDay: Number(j?.trialPerDay ?? 900)
+  trialPerDay: Number(j?.trialPerDay ?? 0)
   } as Entitlement;
 }
 
@@ -83,6 +83,11 @@ export async function openBillingPortal() {
 
 export async function signOut() {
   await supabase.auth.signOut();
+
+  // We intentionally DO NOT clear localStorage here.
+  // This ensures that after sign-out the browser falls back to the
+  // original guest identity (kiraGuestId) and does not get a new
+  // free allocation by generating a fresh guest.
   window.location.reload();
 }
 

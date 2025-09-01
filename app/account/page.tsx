@@ -1,24 +1,13 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { fetchEntitlement, openBillingPortal, signOut } from '@/lib/client-api';
+import { useConversation } from '@/lib/state/ConversationProvider';
+import { openBillingPortal, signOut } from '@/lib/client-api';
 
 export default function AccountPage() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [plan, setPlan] = useState<'free'|'supporter'>('free');
-  const [status, setStatus] = useState<'inactive'|'active'|'past_due'|'canceled'>('inactive');
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setEmail(session?.user?.email ?? null);
-      const ent = await fetchEntitlement();
-      if (ent) { setPlan(ent.plan); setStatus(ent.status); setSeconds(ent.secondsRemaining); }
-    })();
-  }, []);
-
-  const isPro = status === 'active';
+  const { session, isPro, dailySecondsRemaining } = useConversation();
+  const email = session?.user?.email ?? null;
+  const plan = isPro ? 'supporter' : 'free' as const;
+  const status = isPro ? 'active' : 'inactive' as const;
+  const seconds = dailySecondsRemaining ?? 0;
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white grid place-items-center px-4">
@@ -28,7 +17,7 @@ export default function AccountPage() {
           <div><span className="text-white/50">Email:</span> {email ?? '—'}</div>
           <div><span className="text-white/50">Plan:</span> {plan === 'supporter' ? 'Pro' : 'Free'}</div>
           <div><span className="text-white/50">Status:</span> {status}</div>
-          {status !== 'active' && <div><span className="text-white/50">Trial minutes left:</span> {Math.ceil(seconds/60)}</div>}
+          {!isPro && <div><span className="text-white/50">Trial minutes left:</span> {Math.ceil(seconds/60)}</div>}
         </div>
 
         <div className="mt-6 flex gap-3">

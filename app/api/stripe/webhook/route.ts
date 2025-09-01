@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { env } from '@/lib/env';
+import { envServer as env } from '@/lib/env.server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
@@ -80,6 +80,24 @@ export async function POST(req: NextRequest) {
 
       if (userId) {
         await activatePro(userId, customerId, subscriptionId);
+        // Track successful upgrade
+        try {
+          await fetch(`${env.APP_URL}/api/analytics/paywall`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'paywall_upgrade_success',
+              properties: {
+                userId,
+                userType: 'authenticated',
+                plan: 'pro',
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscriptionId,
+              },
+              timestamp: new Date().toISOString(),
+            }),
+          });
+        } catch {}
       } else if (customerId) {
         await updateStatusByCustomer(customerId, 'active', subscriptionId);
       }

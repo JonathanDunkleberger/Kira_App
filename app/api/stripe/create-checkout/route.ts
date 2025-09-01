@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { env } from '@/lib/env';
+import { envServer as env } from '@/lib/env.server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
-    success_url: `${env.APP_URL}/?success=1`,
+    success_url: `${env.APP_URL}/?success=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.APP_URL}/?canceled=1`,
     customer: stripeCustomerId!,
     metadata: { userId },

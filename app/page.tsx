@@ -15,7 +15,7 @@ function ConversationShell() {
         <HotMic />
       </div>
       <ConversationView />
-      <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
+  <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
     </div>
   );
 }

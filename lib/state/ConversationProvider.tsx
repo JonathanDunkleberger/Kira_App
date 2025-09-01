@@ -1,11 +1,10 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { usePaywallBase } from '@/lib/hooks/usePaywall';
 import { supabase } from '@/lib/supabaseClient';
 import { playMp3Base64 } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
-import { createConversation as apiCreateConversation, listConversations, getConversation, fetchEntitlement } from '@/lib/client-api';
+import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
@@ -75,21 +74,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [hasPostedToday, setHasPostedToday] = useState(false);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
-  // Centralize paywall state via hook
-  const {
-    isOpen: paywallOpen,
-    triggerPaywall,
-    dismissPaywall,
-    secondsRemaining: paywallSeconds,
-    isPro: paywallIsPro,
-    checkUsage,
-  } = usePaywallBase({
-    session,
-    contextIsPro: isPro,
-    dailySecondsRemaining,
-    promptPaywall: () => setShowPaywall(true),
-    setShowPaywall: (open: boolean) => setShowPaywallState(open),
-  });
+  // Local paywall state (legacy hook removed)
   const [showPaywall, setShowPaywallState] = useState(false);
   const setShowPaywall = useCallback((open: boolean) => {
     // Only update local state; avoid calling hook's trigger/dismiss to prevent recursion
@@ -325,11 +310,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [isPro, dailySecondsRemaining, conversationStatus]);
 
-  // Periodic usage checks to sync paywall
+  // Periodic entitlement refresh to sync remaining seconds
   useEffect(() => {
-    const id = setInterval(() => { checkUsage().catch(() => {}); }, 30000);
+    const id = setInterval(() => { try { (ent as any).refresh?.(); } catch {} }, 30000);
     return () => clearInterval(id);
-  }, [checkUsage]);
+  }, [ent]);
 
   const processAudioChunk = useCallback(async (audioBlob: Blob) => {
     if (isProcessingRef.current) return;
@@ -593,7 +578,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     dailySecondsRemaining,
   viewMode,
   setViewMode,
-  showPaywall: showPaywall || paywallOpen,
+  showPaywall,
   setShowPaywall,
   promptPaywall,
   currentStreak,

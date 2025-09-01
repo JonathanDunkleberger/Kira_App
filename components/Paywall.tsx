@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { usePaywall } from '@/lib/hooks/usePaywall';
+import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { useEffect, useState } from 'react';
 import { trackUpgradeClick, trackPaywallTriggered, PaywallEventProperties } from '@/lib/analytics';
 
@@ -14,7 +14,7 @@ interface PaywallProps {
 
 export default function Paywall({ isOpen, onClose }: PaywallProps) {
   const { session, conversationId } = useConversation();
-  const { secondsRemaining, isPro, isLoading } = usePaywall();
+  const ent = useEntitlement();
   const signedIn = !!session;
   const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
   const [timeDisplay, setTimeDisplay] = useState('');
@@ -33,33 +33,33 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
+  if (isOpen) {
       const properties: PaywallEventProperties = {
         userId: session?.user?.id,
         userType: session ? 'authenticated' : 'guest',
-        plan: isPro ? 'pro' : 'free',
-        secondsRemaining: secondsRemaining ?? undefined,
+    plan: ent.userStatus === 'pro' ? 'pro' : 'free',
+    secondsRemaining: ent.secondsRemaining ?? undefined,
         conversationId: conversationId || undefined,
         source: 'time_exhaustion',
       };
       trackPaywallTriggered(properties);
     }
-  }, [isOpen, session, isPro, secondsRemaining, conversationId]);
+  }, [isOpen, session, ent.userStatus, ent.secondsRemaining, conversationId]);
 
   useEffect(() => {
-    if (secondsRemaining !== null) {
-      const minutes = Math.floor(secondsRemaining / 60);
-      const seconds = secondsRemaining % 60;
+    if (ent.secondsRemaining !== null) {
+      const minutes = Math.floor(ent.secondsRemaining / 60);
+      const seconds = ent.secondsRemaining % 60;
       setTimeDisplay(`${minutes}:${seconds.toString().padStart(2, '0')}`);
     }
-  }, [secondsRemaining]);
+  }, [ent.secondsRemaining]);
 
   const handleUpgradeClick = () => {
     const properties: PaywallEventProperties = {
       userId: session?.user?.id,
       userType: session ? 'authenticated' : 'guest',
-      plan: 'free',
-      secondsRemaining: secondsRemaining ?? undefined,
+  plan: 'free',
+  secondsRemaining: ent.secondsRemaining ?? undefined,
       conversationId: conversationId || undefined,
       source: 'paywall_button',
     };
@@ -114,9 +114,9 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
             Come back tomorrow
           </button>
         </div>
-        {!isLoading && secondsRemaining !== null && secondsRemaining > 0 && (
+    {!ent.isLoading && ent.secondsRemaining !== null && ent.secondsRemaining > 0 && (
           <div className="mt-4 text-xs text-white/40">
-            {Math.floor(secondsRemaining / 60)} minutes remaining today
+      {Math.floor(ent.secondsRemaining / 60)} minutes remaining today
           </div>
         )}
       </div>

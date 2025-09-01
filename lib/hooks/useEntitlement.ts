@@ -1,0 +1,78 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+
+export type Entitlement = {
+  userStatus: 'guest' | 'free' | 'pro';
+  secondsRemaining: number;
+  trialPerDay: number;
+  proSessionLimit: number;
+  isLoading: boolean;
+};
+
+const getGuestId = (): string => {
+  // Prefer an existing guest conversation id if present
+  try {
+    const convId = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('guestConversationId') || localStorage.getItem('guestConversationId'))
+      : null;
+    if (convId) return convId;
+  } catch {}
+  const key = 'kira_guest_id';
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+    return id;
+  } catch {
+    return 'guest';
+  }
+};
+
+export function useEntitlement(): Entitlement {
+  const [entitlement, setEntitlement] = useState<Entitlement>({
+    userStatus: 'guest',
+    secondsRemaining: 900,
+    trialPerDay: 900,
+    proSessionLimit: 1800,
+    isLoading: true,
+  });
+
+  useEffect(() => {
+    const fetchEnt = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let res: Response;
+        if (session?.access_token) {
+          res = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        } else {
+          const guestId = getGuestId();
+          const url = new URL('/api/session', window.location.origin);
+          url.searchParams.set('guestId', guestId);
+          res = await fetch(url.toString());
+        }
+        if (!res.ok) {
+          setEntitlement(prev => ({ ...prev, isLoading: false }));
+          return;
+        }
+        const data = await res.json();
+        const status = String(data?.status ?? 'inactive');
+        const sessionPresent = !!(await supabase.auth.getSession()).data.session;
+        const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? (status === 'active' ? 'pro' : 'free') : 'guest';
+        const secondsRemaining = Number(data?.secondsRemaining ?? 0);
+        const trialPerDay = Number(data?.trialPerDay ?? 900);
+        const proSessionLimit = Number(data?.proSessionLimit ?? 1800);
+        setEntitlement({ userStatus, secondsRemaining, trialPerDay, proSessionLimit, isLoading: false });
+        try { localStorage.setItem('kira:secondsRemaining', String(secondsRemaining)); } catch {}
+      } catch {
+        setEntitlement(prev => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    fetchEnt();
+    const id = setInterval(fetchEnt, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return entitlement;
+}

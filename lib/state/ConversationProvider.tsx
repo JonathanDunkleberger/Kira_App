@@ -21,31 +21,26 @@ type ViewMode = 'conversation' | 'history';
 interface ConversationContextType {
   session?: Session | null;
   conversationId: string | null;
-  currentConversationId?: string | null; // alias for convenience
+  currentConversationId?: string | null;
   messages: Message[];
   conversationStatus: ConversationStatus;
   turnStatus: TurnStatus;
   startConversation: () => void;
   stopConversation: (reason?: ConversationStatus) => void;
-  secondsRemaining: number;
+  secondsRemaining: number; // pro per-session timer
   isPro: boolean;
   micVolume: number;
   error: string | null;
-  // Centralized conversations state
   allConversations: Convo[];
   loadConversation: (id: string) => Promise<void>;
   newConversation: () => Promise<void>;
   fetchAllConversations: () => Promise<void>;
-  // Timer surface (daily remaining for free users)
   dailySecondsRemaining: number | null;
-  // View mode state
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  // Paywall control
   showPaywall: boolean;
   setShowPaywall: (open: boolean) => void;
   promptPaywall: () => void;
-  // Achievements (lean V1)
   unlockedAchievements?: string[];
   newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
   setNewlyUnlockedToast?: (val: { id: string; name: string; description?: string | null } | null) => void;
@@ -68,47 +63,38 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [micVolume, setMicVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
-  // Streak removed in v1
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
-  // Local paywall state (legacy hook removed)
   const [showPaywall, setShowPaywallState] = useState(false);
-  const setShowPaywall = useCallback((open: boolean) => {
-    // Only update local state; avoid calling hook's trigger/dismiss to prevent recursion
-    setShowPaywallState(open);
-  }, []);
+  const setShowPaywall = useCallback((open: boolean) => setShowPaywallState(open), []);
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
   const conversationsChannelRef = useRef<any>(null);
-  // (Upgrade nudge removed)
-  
   const [proConversationTimer, setProConversationTimer] = useState(1800);
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  // Centralized entitlement hook
   const ent = useEntitlement();
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const vadCleanupRef = useRef<() => void>(() => {});
+  const isProcessingRef = useRef(false);
+  const inflightAbortRef = useRef<AbortController | null>(null);
 
-  // Keep provider state in sync with entitlement
+  // Sync entitlement -> provider state
   useEffect(() => {
     if (!ent.isLoading) {
       const pro = ent.userStatus === 'pro';
       setIsPro(pro);
       setDailySecondsRemaining(ent.secondsRemaining);
       setProSessionSeconds(ent.proSessionLimit || 1800);
-      // Reset pro per-session timer on entitlement change if a conversation is active and user is pro
       if (pro && conversationStatus === 'active') {
         setProConversationTimer(ent.proSessionLimit || 1800);
       }
     }
   }, [ent.isLoading, ent.userStatus, ent.secondsRemaining, ent.proSessionLimit, conversationStatus]);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const vadCleanupRef = useRef<() => void>(() => {});
-  const inflightAbortRef = useRef<AbortController | null>(null);
-  const isProcessingRef = useRef(false);
 
   useEffect(() => {
-  const getProfile = async (currentSession: Session | null) => {
+    const getProfile = async (currentSession: Session | null) => {
       setSession(currentSession);
       if (currentSession) {
         // Attempt to claim a guest conversation if present in URL or session
@@ -176,8 +162,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => getProfile(session));
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { getProfile(session); });
+  supabase.auth.getSession().then(({ data: { session } }) => getProfile(session));
+  const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { getProfile(session); });
     return () => {
       authListener.subscription.unsubscribe();
       if (conversationsChannelRef.current) {
@@ -207,7 +193,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, []);
 
   useEffect(() => {
-  if (conversationStatus === 'active' && isPro) {
+    if (conversationStatus === 'active' && isPro) {
       proTimerIntervalRef.current = setInterval(() => {
         setProConversationTimer(prev => {
           if (prev <= 1) { stopConversation('ended_by_limit'); return 0; }
@@ -353,7 +339,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   setMessages(prev => [...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }]);
       
   const assistantMessageId = crypto.randomUUID();
-      setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
+  setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
       if (conversationStatus !== 'active') { throw new Error('Conversation inactive'); }
       setTurnStatus('assistant_speaking');
   // Legacy last-turn nudge removed; automatic paywall watcher now handles gating
@@ -468,40 +454,31 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [session, conversationId, stopConversation, messages, allConversations, conversationStatus]);
 
+  // Strictly turn-based VAD: only active during user_listening
   useEffect(() => {
-    // Robust VAD setup: always rebuild on state changes and ensure full teardown
     let vadAndStream: { vad: any; stream: MediaStream } | null = null;
 
-  const setupVAD = async () => {
+    const setupVAD = async () => {
       try {
         const { MicVAD } = await import('@ricky0123/vad-web');
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    const vad = await MicVAD.new({
+        const vad = await MicVAD.new({
           stream,
-      // Simplified, responsive VAD tuning
-      // Start on modest speech presence, stop on a short natural pause
-      minSpeechFrames: 6,          // ~200ms speech before start
-      redemptionFrames: 30,        // ~1s silence before end
-      positiveSpeechThreshold: 0.6,
-      negativeSpeechThreshold: 0.35,
-      preSpeechPadFrames: 4,       // small pre-roll for cutting word starts
-      // Note: leave defaults for most other params
-          // Provide continuous mic volume (0..1) while VAD is active so UI can animate
-          // @ts-expect-error Library's type doesn't declare the level argument, but it is provided at runtime.
+          minSpeechFrames: 6,
+          redemptionFrames: 30,
+          positiveSpeechThreshold: 0.6,
+          negativeSpeechThreshold: 0.35,
+          preSpeechPadFrames: 4,
+          // @ts-expect-error level provided at runtime
           onVADMisfire: (level: number) => {
-            // Clamp to [0,1] and update UI while listening
             const v = typeof level === 'number' && isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
             setMicVolume(v);
           },
           onSpeechStart: () => {
-            // Start recording when speech begins
-            // Guard: stop and clear any lingering recorder from a previous turn
             if (mediaRecorderRef.current?.state === 'recording') {
               try { mediaRecorderRef.current.stop(); } catch {}
             }
             mediaRecorderRef.current = null;
-
             audioChunksRef.current = [];
             mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current.ondataavailable = (event) => {
@@ -509,8 +486,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
             };
             mediaRecorderRef.current.onstop = () => {
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        if (audioBlob.size <= MIN_AUDIO_BLOB_SIZE) { setMicVolume(0); return; }
-        processAudioChunk(audioBlob);
+              if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
+                if (turnStatus === 'user_listening' && conversationStatus === 'active') {
+                  processAudioChunk(audioBlob);
+                }
+              } else {
+                setMicVolume(0);
+              }
             };
             mediaRecorderRef.current.start();
           },
@@ -518,18 +500,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
             if (mediaRecorderRef.current?.state === 'recording') {
               mediaRecorderRef.current.stop();
             }
-            // Reset mic visualization when speech ends
             setMicVolume(0);
           },
         });
-
-        // Start VAD and retain handles for cleanup
         vad.start();
         vadAndStream = { vad, stream };
         vadCleanupRef.current = () => {
           try { vad.destroy(); } catch {}
           try { stream.getTracks().forEach((t) => t.stop()); } catch {}
-          // Ensure volume visualization is cleared on teardown
           setMicVolume(0);
         };
       } catch (err) {
@@ -539,29 +517,23 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     };
 
-  if (!showPaywall && conversationStatus === 'active' && turnStatus === 'user_listening') {
-      // barge-in: stop any assistant audio currently playing
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current = null;
-      }
+    if (turnStatus === 'user_listening') {
       setupVAD();
     }
 
-    // Critical cleanup on dependency changes/unmount
     return () => {
       if (vadAndStream) {
         try { vadAndStream.vad.destroy(); } catch {}
         try { vadAndStream.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch {}
       }
     };
-  }, [conversationStatus, turnStatus, processAudioChunk, stopConversation, showPaywall]);
+  }, [turnStatus]);
 
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager
 
   const value = {
-  session,
+    session,
     conversationId,
     currentConversationId: conversationId,
     messages,
@@ -578,14 +550,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
     newConversation,
     fetchAllConversations,
     dailySecondsRemaining,
-  viewMode,
-  setViewMode,
-  showPaywall,
-  setShowPaywall,
-  promptPaywall,
-  unlockedAchievements,
-  newlyUnlockedToast,
-  setNewlyUnlockedToast,
+    viewMode,
+    setViewMode,
+    showPaywall,
+    setShowPaywall,
+    promptPaywall,
+    unlockedAchievements,
+    newlyUnlockedToast,
+    setNewlyUnlockedToast,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

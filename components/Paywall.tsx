@@ -13,7 +13,7 @@ interface PaywallProps {
 }
 
 export default function Paywall({ isOpen, onClose }: PaywallProps) {
-  const { session, conversationId } = useConversation();
+  const { session, conversationId, isPro } = useConversation();
   const ent = useEntitlement();
   const signedIn = !!session;
   const [freeMinutes, setFreeMinutes] = useState<number | null>(null);
@@ -31,6 +31,11 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
       .then(cfg => setFreeMinutes(Math.floor(Number(cfg?.freeTrialSeconds ?? 900) / 60)))
       .catch(() => setFreeMinutes(null));
   }, [isOpen]);
+
+  // Auto-dismiss if the user becomes Pro while the paywall is open
+  useEffect(() => {
+    if (isOpen && isPro) onClose();
+  }, [isOpen, isPro, onClose]);
 
   useEffect(() => {
   if (isOpen) {

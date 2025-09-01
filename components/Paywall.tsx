@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { useEffect, useMemo, useState } from 'react';
 import { trackUpgradeClick, trackPaywallTriggered, PaywallEventProperties } from '@/lib/analytics';
 
@@ -13,14 +12,13 @@ interface PaywallProps {
 }
 
 export default function Paywall({ isOpen, onClose }: PaywallProps) {
-  const { session, conversationId, isPro } = useConversation();
-  const ent = useEntitlement();
+  const { session, conversationId, isPro, dailySecondsRemaining, dailyLimitSeconds } = useConversation();
   const signedIn = !!session;
   const totalMinutes = useMemo(() => {
-    const lim = ent?.dailyLimitSeconds;
+    const lim = dailyLimitSeconds;
     if (!Number.isFinite(lim) || lim <= 0) return null;
     return Math.floor(lim / 60);
-  }, [ent?.dailyLimitSeconds]);
+  }, [dailyLimitSeconds]);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
   // Get guest conversation id (if any) to tag auth links
   const guestConversationId = typeof window !== 'undefined' ? sessionStorage.getItem('guestConversationId') : null;
@@ -39,23 +37,23 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
       const properties: PaywallEventProperties = {
         userId: session?.user?.id,
         userType: session ? 'authenticated' : 'guest',
-    plan: ent.userStatus === 'pro' ? 'pro' : 'free',
-    secondsRemaining: ent.secondsRemaining ?? undefined,
+    plan: isPro ? 'pro' : 'free',
+    secondsRemaining: dailySecondsRemaining ?? undefined,
         conversationId: conversationId || undefined,
         source: 'time_exhaustion',
       };
       trackPaywallTriggered(properties);
     }
-  }, [isOpen, session, ent.userStatus, ent.secondsRemaining, conversationId]);
+  }, [isOpen, session, isPro, dailySecondsRemaining, conversationId]);
 
-  // No local time formatting state; render directly from ent.secondsRemaining when needed.
+  // No local time formatting state; render directly from provider values when needed.
 
   const handleUpgradeClick = () => {
     const properties: PaywallEventProperties = {
       userId: session?.user?.id,
       userType: session ? 'authenticated' : 'guest',
   plan: 'free',
-  secondsRemaining: ent.secondsRemaining ?? undefined,
+  secondsRemaining: dailySecondsRemaining ?? undefined,
       conversationId: conversationId || undefined,
       source: 'paywall_button',
     };
@@ -108,9 +106,9 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
             Come back tomorrow
           </button>
         </div>
-  {!ent.isLoading && Number.isFinite(ent.secondsRemaining) && ent.secondsRemaining > 0 && (
+    {Number.isFinite(dailySecondsRemaining) && (dailySecondsRemaining ?? 0) > 0 && (
           <div className="mt-4 text-xs text-white/40">
-      {Math.floor(ent.secondsRemaining / 60)} minutes remaining today
+      {Math.floor((dailySecondsRemaining ?? 0) / 60)} minutes remaining today
           </div>
         )}
       </div>

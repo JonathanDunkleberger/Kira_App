@@ -39,3 +39,9 @@ project_context.txt
 supabase/.temp/
 *.txt
 !README.txt
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

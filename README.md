@@ -1,87 +1,50 @@
-# Kira AI
+✨ Kira AI — The Web-Based Media Companion
+Your voice-first AI companion, re-imagined for the web.
+Live Demo kira-ai-2.vercel.app
 
-## Your Voice-First AI Media Companion
+🚀 From Desktop Hobby Project to Scalable SaaS
+This project is the professional, web-based evolution of the original open-source Kira AI VTuber, a Python-based desktop application.
 
-**[Live Demo](https://kira.ai)**
+The goal of this new version was to take the core concept of a voice-first AI companion and re-architect it as a scalable, accessible, and commercially viable SaaS application. By moving to a web-native stack, Kira is no longer a complex local setup but a seamless experience available to anyone in a browser.
 
-![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)
-![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase)
-![Stripe](https://img.shields.io/badge/Stripe-Checkout-635BFF?logo=stripe)
-![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel)
+🎯 Key Features
+🎙️ Seamless Voice Conversations: Engage in fluid, natural conversations. The intelligent Voice Activity Detection (VAD) means you can just start talking, and Kira listens and responds without the need for push-to-talk.
 
+📈 Freemium SaaS Model: Kira operates on a metered-usage model with three distinct user states (Guest, Registered Free, and Pro), powered by Stripe for secure subscriptions.
 
-## Overview & Demo
+🧠 Persistent Memory (Pro Feature): Pro subscribers unlock Kira's long-term memory, allowing her to recall details from previous conversations for a truly personalized companion experience.
 
-Kira AI is a voice-first, real-time media companion that turns conversation into creation. It combines speech-to-text, LLM reasoning, and lifelike text-to-speech to deliver a natural, hands-free experience. The product is built as a modern, freemium SaaS with a robust paywall and a conversion-focused user journey.
+🌐 Accessible Anywhere: As a fully web-based application, there are no downloads or complicated installations. If you have a browser, you can talk to Kira.
 
-<!-- Replace with an actual product GIF/screencast -->
-![Kira AI demo](https://user-images.githubusercontent.com/placeholder/kira-demo.gif)
+🔐 Secure & Private: User authentication is handled securely by Supabase Auth, and conversation history is private to each registered user.
 
+🛠️ Tech Stack & Architecture
+This project was built with a modern, scalable, serverless architecture to ensure reliability and a high-quality user experience.
 
-## Key Features
+Category	Technology
+Frontend	Next.js, React, Tailwind CSS, Framer Motion
+Backend	Next.js API Routes (Serverless Functions on Vercel)
+Database	Supabase (Postgres), Supabase Auth, Row Level Security
+AI Pipeline	OpenAI Whisper (STT), OpenAI/Gemini (LLM), Microsoft Azure (TTS)
+Payments	Stripe Checkout & Webhooks
+The application's frontend relies on a centralized state management pattern to ensure a predictable UI. The backend uses a server-authoritative model for all business logic, including the robust entitlement system that manages user plans and daily usage limits.
 
-- Intelligent Voice Activity Detection: Seamless, hands-free conversation—just start talking and Kira responds.
-- Robust Usage Metering: A server-authoritative entitlement system built on Supabase to manage daily time limits for free-tier users.
-- Freemium SaaS Model: A complete subscription system with three distinct user states (Guest, Registered Free, and Pro) powered by Stripe.
-- Proactive Upgrade Nudge: A subtle, one-time nudge below a usage threshold that accelerates conversion without interrupting flow.
-- Seamless Guest-to-User Claiming: After signup, conversations started as a guest are automatically claimed to the new account.
-- Real-Time STT → LLM → TTS Loop: Production-grade pipeline for natural conversations.
+🏆 Project Highlights & Engineering Challenges
+This wasn't just a rebuild; it was a comprehensive refactoring focused on stability and commercial viability.
 
+Architected a Bug-Free Entitlement System: Diagnosed and resolved persistent, critical bugs related to inconsistent state management. I designed and implemented a new server-authoritative system from scratch to handle user plans, daily time limits, and guest sessions reliably.
 
-## Tech Stack & Architecture
+Designed a Frictionless Conversion Funnel: Engineered the complete user journey from a free guest session to a paying subscriber. This included building a proactive "nudge" system and a seamless guest-to-user conversation claiming process that preserves user history after signup.
 
-- Frontend: Next.js, React, Tailwind CSS, Framer Motion
-- Backend: Next.js App Router (API Routes), Vercel Serverless Functions
-- Database: Supabase (Postgres), including Auth and database functions
-- AI Pipeline: OpenAI Whisper (STT), OpenAI/Gemini (LLM), Microsoft Azure (TTS)
-- Payments: Stripe Checkout & Webhooks
+Implemented a Polished User Experience: Overhauled the core user interface, including a dynamic, voice-driven orb animation using the Web Audio API and fine-tuning the Voice Activity Detection (VAD) for a more natural and responsive conversational flow.
 
-Kira AI is built on a modern, scalable, serverless architecture. The front-end leverages a centralized state management pattern to ensure a predictable UI, while the backend uses a server-authoritative model for all business logic, including the robust entitlement and payment systems.
+🔑 Environment Setup
+This project is configured via environment variables and is not intended to be a step-by-step open-source guide. The setup expects the following keys:
 
+Supabase URL & Keys
 
-## Project Highlights (What I'm Proud Of)
+Stripe API & Webhook Keys
 
-- End-to-End Refactoring: Led a full-stack refactor that transformed a buggy prototype into a stable, commercially viable V1. This involved diagnosing persistent state management issues, eliminating technical debt, and establishing a new, robust architecture.
-- Architected a Scalable Entitlement System: Designed and implemented a server-authoritative system from scratch to manage user plans and daily usage limits, solving critical bugs related to inconsistent state.
-- Designed a Seamless Conversion Funnel: Engineered the complete user journey from a free guest session to a paying subscriber, including a proactive nudge system and a frictionless guest-to-user conversation claiming process.
+OpenAI & Azure API Keys
 
-
-## Local Development
-
-Environment Setup (required .env.local keys)
-
-Supabase
-
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-
-Stripe
-
-- STRIPE_SECRET_KEY
-- STRIPE_PRICE_ID
-- STRIPE_WEBHOOK_SECRET (optional)
-
-AI
-
-- OPENAI_API_KEY (optional)
-- GOOGLE_GEMINI_API_KEY (optional)
-- LLM_PROVIDER (openai|gemini)
-- OPENAI_MODEL / GEMINI_MODEL (optional)
-
-Azure Speech (TTS)
-
-- AZURE_SPEECH_KEY
-- AZURE_SPEECH_REGION
-- AZURE_TTS_VOICE (default en-US-AshleyNeural)
-- AZURE_TTS_RATE (default +25%)
-- AZURE_TTS_PITCH (default +25%)
-
-App
-
-- APP_URL
-- FREE_TRIAL_SECONDS
-- PRO_SESSION_SECONDS (default 1800)
-- ALLOWED_ORIGIN
-- DEV_ALLOW_NOAUTH (optional)
-
+Application URL & Free Trial Configuration

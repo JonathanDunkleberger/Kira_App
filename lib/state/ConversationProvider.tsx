@@ -42,6 +42,10 @@ interface ConversationContextType {
   showPaywall: boolean;
   setShowPaywall: (open: boolean) => void;
   promptPaywall: () => void;
+  // proactive upgrade nudge
+  showUpgradeNudge?: boolean;
+  setShowUpgradeNudge?: (open: boolean) => void;
+  upgradeNudgeSource?: 'last_turn' | 'proactive_threshold';
   unlockedAchievements?: string[];
   newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
   setNewlyUnlockedToast?: (val: { id: string; name: string; description?: string | null } | null) => void;
@@ -69,6 +73,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [showPaywall, setShowPaywallState] = useState(false);
   const setShowPaywall = useCallback((open: boolean) => setShowPaywallState(open), []);
   const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
+  // proactive nudge state
+  const [showUpgradeNudge, setShowUpgradeNudge] = useState(false);
+  const [hasShownProactiveNudge, setHasShownProactiveNudge] = useState(false);
+  const [upgradeNudgeSource, setUpgradeNudgeSource] = useState<'last_turn' | 'proactive_threshold'>('last_turn');
   const conversationsChannelRef = useRef<any>(null);
   const [proConversationTimer, setProConversationTimer] = useState(1800);
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);
@@ -170,6 +178,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
     if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
       try { (ent as any).refresh?.(); } catch {}
     }
+    // Reset proactive nudge on explicit login/logout
+    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+      setHasShownProactiveNudge(false);
+      setShowUpgradeNudge(false);
+    }
   });
     return () => {
       authListener.subscription.unsubscribe();
@@ -219,6 +232,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
       promptPaywall();
       return;
     }
+  // Reset proactive nudge at the start of a new conversation session
+  setHasShownProactiveNudge(false);
+  setShowUpgradeNudge(false);
     setError(null);
   setShowPaywall(false);
     setViewMode('conversation');
@@ -295,6 +311,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     }
   }, [isPro, dailySecondsRemaining, conversationStatus]);
+
+  // Proactive upgrade nudge when approaching limit (one-time until reset)
+  useEffect(() => {
+    const secs = dailySecondsRemaining ?? 0;
+    if (!isPro && conversationStatus === 'active' && secs > 0 && secs <= 60 && !hasShownProactiveNudge) {
+      setUpgradeNudgeSource('proactive_threshold');
+      setShowUpgradeNudge(true);
+      setHasShownProactiveNudge(true);
+    }
+  }, [isPro, conversationStatus, dailySecondsRemaining, hasShownProactiveNudge]);
 
   // Periodic entitlement refresh to sync remaining seconds
   useEffect(() => {
@@ -563,6 +589,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     showPaywall,
     setShowPaywall,
     promptPaywall,
+  showUpgradeNudge,
+  setShowUpgradeNudge,
+  upgradeNudgeSource,
     unlockedAchievements,
     newlyUnlockedToast,
     setNewlyUnlockedToast,

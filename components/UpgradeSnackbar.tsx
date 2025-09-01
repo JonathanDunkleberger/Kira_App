@@ -13,6 +13,7 @@ type Props = {
   anchorTop?: boolean; // optional: flip position if transcript modal is open
   userType?: 'guest' | 'authenticated';
   plan?: 'free' | 'pro';
+  source?: 'last_turn' | 'proactive_threshold';
 };
 
 const TODAY_KEY = () => `kira_nudge_suppressed_${new Date().toISOString().slice(0,10)}`;
@@ -24,7 +25,8 @@ export default function UpgradeSnackbar({
   conversationId,
   anchorTop = false,
   userType = 'guest',
-  plan = 'free'
+  plan = 'free',
+  source = 'last_turn'
 }: Props) {
   const prefersReduced = useReducedMotion();
   const [visible, setVisible] = useState(false);
@@ -44,12 +46,12 @@ export default function UpgradeSnackbar({
     plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
-        source: "last_turn"
+    source
       });
     } else {
       setVisible(false);
     }
-  }, [open, suppressedToday, secondsRemaining, conversationId, userType, plan]);
+  }, [open, suppressedToday, secondsRemaining, conversationId, userType, plan, source]);
 
   // 8s auto-dismiss, paused on hover
   useEffect(() => {
@@ -74,7 +76,7 @@ export default function UpgradeSnackbar({
   plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
-        source: "last_turn"
+  source
       });
     }
   };
@@ -85,7 +87,7 @@ export default function UpgradeSnackbar({
       plan,
       secondsRemaining: secondsRemaining ?? undefined,
       conversationId: conversationId ?? undefined,
-      source: "last_turn"
+  source
     });
     startCheckout();
   };

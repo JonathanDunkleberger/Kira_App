@@ -6,8 +6,9 @@ import { mapPlan } from "@/lib/analytics";
 
 export default function UpgradeSnackbarPortal() {
   const {
-    showUpgradeNudge,
-    setShowUpgradeNudge,
+  showUpgradeNudge,
+  setShowUpgradeNudge,
+  upgradeNudgeSource,
     dailySecondsRemaining,
     currentConversationId,
     session,
@@ -18,13 +19,14 @@ export default function UpgradeSnackbarPortal() {
     <UpgradeSnackbar
       open={!!showUpgradeNudge}
       onClose={() => {
-        setShowUpgradeNudge(false);
+        setShowUpgradeNudge?.(false);
         try { window.dispatchEvent(new Event('upgrade_nudge:dismissed')); } catch {}
       }}
       secondsRemaining={dailySecondsRemaining}
       conversationId={currentConversationId}
       userType={session ? 'authenticated' : 'guest'}
       plan={mapPlan(isPro ? 'supporter' : 'free')}
+  source={upgradeNudgeSource}
     />
   );
 }

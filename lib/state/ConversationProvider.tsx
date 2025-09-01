@@ -271,7 +271,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
     mediaRecorderRef.current = null;
-    if (audioPlayerRef.current) { audioPlayerRef.current.pause(); audioPlayerRef.current = null; }
+    if (audioPlayerRef.current) {
+      try {
+        if (typeof (audioPlayerRef.current as any).stop === 'function') {
+          // Web Audio API source node
+          (audioPlayerRef.current as any).stop();
+        } else if (typeof (audioPlayerRef.current as any).pause === 'function') {
+          // HTMLAudioElement
+          (audioPlayerRef.current as any).pause();
+        }
+      } catch {}
+      audioPlayerRef.current = null;
+    }
     // Cancel any in-flight utterance processing to prevent stray replies
     try { inflightAbortRef.current?.abort(); } catch {}
     inflightAbortRef.current = null;

@@ -41,7 +41,7 @@ export async function fetchEntitlement(): Promise<Entitlement | null> {
     plan: (j?.plan ?? 'free'),
     status: (j?.status ?? 'inactive'),
     secondsRemaining: Number(j?.secondsRemaining ?? 0),
-    trialPerDay: Number(j?.trialPerDay ?? 900)
+  trialPerDay: Number(j?.trialPerDay ?? 0)
   } as Entitlement;
 }
 

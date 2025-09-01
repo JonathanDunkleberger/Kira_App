@@ -32,9 +32,9 @@ const getGuestId = (): string => {
 export function useEntitlement(): Entitlement & { refresh: () => Promise<void> } {
   const [entitlement, setEntitlement] = useState<Entitlement>({
     userStatus: 'guest',
-    secondsRemaining: 900,
-    trialPerDay: 900,
-    proSessionLimit: 1800,
+  secondsRemaining: 0,
+  trialPerDay: 0,
+  proSessionLimit: 0,
     isLoading: true,
   });
 
@@ -55,12 +55,12 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
         return;
       }
       const data = await res.json();
-      const status = String(data?.status ?? 'inactive');
+  const status = String(data?.status ?? 'inactive');
       const sessionPresent = !!(await supabase.auth.getSession()).data.session;
       const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? (status === 'active' ? 'pro' : 'free') : 'guest';
-      const secondsRemaining = Number(data?.secondsRemaining ?? 0);
-      const trialPerDay = Number(data?.trialPerDay ?? 900);
-      const proSessionLimit = Number(data?.proSessionLimit ?? 1800);
+  const secondsRemaining = Number(data?.secondsRemaining ?? 0);
+  const trialPerDay = Number(data?.trialPerDay ?? 0);
+  const proSessionLimit = Number(data?.proSessionLimit ?? 0);
       setEntitlement({ userStatus, secondsRemaining, trialPerDay, proSessionLimit, isLoading: false });
       try { localStorage.setItem('kira:secondsRemaining', String(secondsRemaining)); } catch {}
     } catch {

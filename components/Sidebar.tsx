@@ -5,7 +5,7 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon } from '@radix-ui/react-icons';
+import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
@@ -184,58 +184,65 @@ export default function Sidebar() {
             </button>
           </Popover.Trigger>
           <Popover.Portal>
-            <Popover.Content
-              side="top"
-              align="start"
+            <Popover.Content 
+              side="top" 
+              align="start" 
               sideOffset={10}
-              className="w-60 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50"
+              className="w-60 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
             >
-              {/* Manage Subscription (Only for Pro users) */}
-              {isPro && (
-                <div
-                  onClick={openBillingPortal}
-                  className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
-                >
-                  <LoopIcon className="w-4 h-4" /> Manage Subscription
-                </div>
-              )}
+              {/* Wrap in a DropdownMenu.Root to enable submenu behavior */}
+              <DropdownMenu.Root>
+                {/* Manage Subscription (Only for Pro users) */}
+                {isPro && (
+                  <DropdownMenu.Item onSelect={openBillingPortal} className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                    <LoopIcon className="w-4 h-4" /> Manage Subscription
+                  </DropdownMenu.Item>
+                )}
 
-              {/* Clear History (Only for logged-in users) */}
-              {session && (
-                <div
-                  onClick={clearAllConversations}
-                  className="flex items-center gap-3 p-2 m-1 rounded text-red-400 hover:bg-red-500/10 cursor-pointer"
-                >
-                  <TrashIcon className="w-4 h-4" /> Clear Chat History
-                </div>
-              )}
+                {/* Clear History (Only for logged-in users) */}
+                {session && (
+                  <DropdownMenu.Item onSelect={clearAllConversations} className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none">
+                    <TrashIcon className="w-4 h-4" /> Clear Chat History
+                  </DropdownMenu.Item>
+                )}
 
-              <div className="border-t border-neutral-800 my-1" />
+                <div className="border-t border-neutral-800 my-1"></div>
 
-              {/* External feedback form */}
-              <a
-                href="https://tally.so/r/w7yeRZ"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
-              >
-                <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
-              </a>
-              {/* Privacy & Help page */}
-              <Link
-                href="/privacy"
-                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
-              >
-                <QuestionMarkCircledIcon className="w-4 h-4" /> Privacy & Help
-              </Link>
+                {/* Send Feedback */}
+                <DropdownMenu.Item asChild>
+                  <a href="https://tally.so/r/w7yeRZ" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                    <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
+                  </a>
+                </DropdownMenu.Item>
 
-              <Link
-                href="/terms"
-                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
-              >
-                <FileTextIcon className="w-4 h-4" /> Terms of Service
-              </Link>
-
+                {/* --- NESTED HELP SUBMENU --- */}
+                <DropdownMenu.Sub>
+                  <DropdownMenu.SubTrigger className="flex w-full items-center justify-between gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                    <div className="flex items-center gap-3">
+                      <QuestionMarkCircledIcon className="w-4 h-4" /> Help
+                    </div>
+                    <ChevronRightIcon className="w-4 h-4" />
+                  </DropdownMenu.SubTrigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.SubContent 
+                      sideOffset={10} 
+                      alignOffset={-5}
+                      className="w-48 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
+                    >
+                      <DropdownMenu.Item asChild>
+                        <Link href="/privacy" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
+                          <FileTextIcon className="w-4 h-4" /> Privacy Policy
+                        </Link>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item asChild>
+                        <Link href="/terms" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
+                          <FileTextIcon className="w-4 h-4" /> Terms of Service
+                        </Link>
+                      </DropdownMenu.Item>
+                    </DropdownMenu.SubContent>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Sub>
+              </DropdownMenu.Root>
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>

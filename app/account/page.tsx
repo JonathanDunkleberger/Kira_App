@@ -3,7 +3,7 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { openBillingPortal, signOut } from '@/lib/client-api';
 
 export default function AccountPage() {
-  const { session, isPro, dailySecondsRemaining } = useConversation();
+  const { session, isPro, dailySecondsRemaining, promptPaywall } = useConversation();
   const email = session?.user?.email ?? null;
   const plan = isPro ? 'supporter' : 'free' as const;
   const status = isPro ? 'active' : 'inactive' as const;
@@ -27,9 +27,12 @@ export default function AccountPage() {
               Manage billing
             </button>
           ) : (
-            <a href="/?next=upgrade" className="px-4 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700">
+            <button 
+              onClick={() => promptPaywall('proactive_click')}
+              className="px-4 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700"
+            >
               Upgrade
-            </a>
+            </button>
           )}
           <button onClick={() => signOut()}
             className="px-4 py-2 rounded-lg border border-white/15 hover:bg-white/5">

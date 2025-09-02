@@ -3,6 +3,8 @@
   "compilerOptions": {
   "module": "Node16",
   "moduleResolution": "Node16",
+  "baseUrl": ".",
+  "esModuleInterop": true,
     "outDir": "./dist",
     "noEmit": false
   },

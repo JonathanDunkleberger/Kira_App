@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { openBillingPortal, signOut, startCheckout } from '@/lib/client-api';
+import { openBillingPortal, signOut, startCheckout, deleteAccount } from '@/lib/client-api';
 
 export default function AccountPage() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function AccountPage() {
 
   return (
     <main className="min-h-screen bg-[#0b0b12] text-white grid place-items-center px-4">
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#12101b] p-6 shadow-2xl">
+  <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#12101b] p-6 shadow-2xl">
         <h1 className="text-2xl font-semibold">Your account</h1>
         <div className="mt-4 space-y-2 text-sm text-white/80">
           <div><span className="text-white/50">Email:</span> {email ?? '—'}</div>
@@ -53,7 +53,19 @@ export default function AccountPage() {
           </button>
         </div>
 
-        
+        {/* Danger Zone */}
+        <div className="mt-8 border-t border-red-500/20 pt-6">
+          <h2 className="text-lg font-medium text-red-400">Danger Zone</h2>
+          <p className="text-sm text-white/50 mb-3">
+            Permanently delete your account and all associated data, including chat history and subscription information.
+          </p>
+          <button 
+            onClick={deleteAccount}
+            className="px-4 py-2 text-sm rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          >
+            Delete My Account
+          </button>
+        </div>
       </div>
     </main>
   );

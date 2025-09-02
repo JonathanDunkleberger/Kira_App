@@ -178,3 +178,34 @@ export async function appendMessage(conversationId: string, role: 'user'|'assist
   });
   if (!r.ok) throw new Error('Failed to append message');
 }
+
+// --- Account deletion ---
+export async function deleteAccount() {
+  const confirmed = window.confirm(
+    'Are you sure you want to permanently delete your account? This will also cancel any active subscriptions and cannot be undone.'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('You must be logged in to delete your account.');
+
+    const response = await fetch('/api/user/delete', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+
+    if (!response.ok) {
+      let msg = 'Failed to delete account.';
+      try { const j = await response.json(); msg = j?.error || msg; } catch {}
+      throw new Error(msg);
+    }
+
+    alert('Your account has been successfully deleted.');
+    await supabase.auth.signOut();
+    window.location.href = '/';
+  } catch (error: any) {
+    alert(`Error: ${error?.message || 'Unknown error'}`);
+  }
+}

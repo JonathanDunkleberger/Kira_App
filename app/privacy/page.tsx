@@ -32,8 +32,8 @@ export default function PrivacyPage() {
 
         <h2>4. Data Deletion</h2>
         <p>You can delete your account and all associated conversation data at any time from your account page. This action is irreversible.</p>
-        <h2>5. Contact Us</h2>
-        <p>If you have any questions about this privacy policy, please contact us at [your-support-email@example.com].</p>
+  <h2>5. Contact Us</h2>
+  <p>If you have any questions about this privacy policy, please contact us at <a href="mailto:info@elsaresearch.co">info@elsaresearch.co</a>.</p>
       </div>
     </main>
   );

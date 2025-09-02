@@ -4,6 +4,23 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 
+// Plays a silent audio clip to unlock the browser's audio context on mobile.
+let audioUnlocked = false;
+const unlockMobileAudio = async () => {
+  if (audioUnlocked) return;
+  try {
+    const silentAudio =
+      'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    const audio = new Audio(silentAudio);
+    await audio.play();
+    audioUnlocked = true;
+    console.log('Audio context unlocked successfully.');
+  } catch (error) {
+    console.error('Failed to unlock audio context:', error);
+    // Do not throw; main functionality can still proceed.
+  }
+};
+
 export default function HotMic() {
   const { 
     conversationStatus, 
@@ -18,7 +35,10 @@ export default function HotMic() {
   } = useConversation();
 
   const isSessionActive = conversationStatus === 'active';
-  const handleClick = () => {
+  const handleClick = async () => {
+    // Ensure audio context is unlocked on first user interaction (mobile browsers)
+    await unlockMobileAudio();
+
     // Always produce a visible result on click
     const remaining = dailySecondsRemaining ?? 0;
     if (!isPro && remaining <= 0) {

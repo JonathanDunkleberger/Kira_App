@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { openBillingPortal, signOut, clearAllConversations } from '@/lib/client-api';
+import { openBillingPortal, signOut, startCheckout } from '@/lib/client-api';
 
 export default function AccountPage() {
   const router = useRouter();
-  const { session, isPro, dailySecondsRemaining, promptPaywall } = useConversation();
+  const { session, isPro, dailySecondsRemaining } = useConversation();
   // Hydration flag to avoid redirecting before provider sets session
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
@@ -41,7 +41,7 @@ export default function AccountPage() {
             </button>
           ) : (
             <button 
-              onClick={() => promptPaywall('proactive_click')}
+              onClick={startCheckout}
               className="px-4 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700"
             >
               Upgrade
@@ -53,16 +53,7 @@ export default function AccountPage() {
           </button>
         </div>
 
-        {/* Clear chat history */}
-        <div className="mt-8 border-t border-red-500/20 pt-4">
-          <button 
-            onClick={clearAllConversations}
-            className="px-4 py-2 text-sm rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          >
-            Clear Chat History
-          </button>
-          <p className="text-xs text-white/50 mt-2">Permanently delete all of your conversations.</p>
-        </div>
+        
       </div>
     </main>
   );

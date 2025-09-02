@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { Plus, MessageSquare, Menu, Search, Settings } from 'lucide-react';
+import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
+import * as Popover from '@radix-ui/react-popover';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon } from '@radix-ui/react-icons';
+import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
+import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 
 export default function Sidebar() {
-  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation } = useConversation();
+  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation, session, isPro } = useConversation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -71,29 +77,168 @@ export default function Sidebar() {
               <p className="text-xs text-white/50 px-2">No chats found.</p>
             )}
             {recent.map((convo) => (
-              <div
-                key={convo.id}
-                onClick={() => loadConversation(convo.id)}
-                className={`group flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm truncate cursor-pointer transition-all duration-200 ease-in-out ${
-                  activeId === convo.id ? 'bg-white/10' : 'hover:bg-white/10 hover:scale-[1.02] text-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 truncate">
-                  <MessageSquare size={16} className="shrink-0" />
+              <DropdownMenu.Root key={convo.id}>
+                <div
+                  onClick={() => loadConversation(convo.id)}
+                  className={`group relative flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm truncate cursor-pointer transition-colors ${
+                    activeId === convo.id
+                      ? 'bg-fuchsia-800/60'
+                      : 'hover:bg-neutral-800 text-gray-300'
+                  }`}
+                >
+                  {/* Conversation Title */}
                   <span className="truncate">{convo.title || 'New Conversation'}</span>
+
+                  {/* 3-Dot Menu Trigger (appears on hover) */}
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-neutral-700 focus:opacity-100"
+                      aria-label="Chat options"
+                    >
+                      <DotsHorizontalIcon />
+                    </button>
+                  </DropdownMenu.Trigger>
                 </div>
-              </div>
+
+                {/* Dropdown Menu Content */}
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    sideOffset={5}
+                    align="start"
+                    className="w-40 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
+                  >
+                    <DropdownMenu.Item
+                      onSelect={() => console.log('Pinning:', convo.id)}
+                      className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none"
+                    >
+                      <PinLeftIcon /> Pin
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={async () => {
+                        const next = window.prompt('Rename conversation', convo.title || '');
+                        if (next == null) return; // cancelled
+                        const title = next.trim();
+                        if (!title || title === (convo.title || '')) return;
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) { alert('Please sign in to rename.'); return; }
+                        const r = await fetch(`/api/conversations/${convo.id}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({ title }),
+                        });
+                        if (!r.ok) {
+                          try { const j = await r.json(); alert(j?.error || 'Failed to rename'); }
+                          catch { alert('Failed to rename'); }
+                          return;
+                        }
+                        // refresh list to show new title
+                        try { await fetchAllConversations(); } catch {}
+                      }}
+                      className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none"
+                    >
+                      <Pencil2Icon /> Rename
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator className="h-[1px] bg-neutral-700 my-1" />
+                    <DropdownMenu.Item
+                      onSelect={async () => {
+                        if (window.confirm('Are you sure you want to delete this conversation?')) {
+                          try {
+                            await deleteConversation(convo.id);
+                            // If the active conversation was deleted, a full reload is simplest
+                            if (activeId === convo.id) {
+                              window.location.reload();
+                              return;
+                            }
+                            await fetchAllConversations();
+                          } catch (e) {
+                            alert('Failed to delete conversation.');
+                          }
+                        }
+                      }}
+                      className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none"
+                    >
+                      <TrashIcon /> Delete
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             ))}
           </>
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer: Settings & Help popover */}
       <div className="p-2 border-t border-white/10">
-        <a href="/account" className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5" title={isCollapsed ? 'Settings & Help' : ''}>
-          <Settings size={16} className="text-white/70" />
-          {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
-        </a>
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5 transition-colors"
+              title={isCollapsed ? 'Settings' : ''}
+            >
+              <GearIcon className="h-5 w-5 text-white/70" />
+              {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={10}
+              className="w-60 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50"
+            >
+              {/* Manage Subscription (Only for Pro users) */}
+              {isPro && (
+                <div
+                  onClick={openBillingPortal}
+                  className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+                >
+                  <LoopIcon className="w-4 h-4" /> Manage Subscription
+                </div>
+              )}
+
+              {/* Clear History (Only for logged-in users) */}
+              {session && (
+                <div
+                  onClick={clearAllConversations}
+                  className="flex items-center gap-3 p-2 m-1 rounded text-red-400 hover:bg-red-500/10 cursor-pointer"
+                >
+                  <TrashIcon className="w-4 h-4" /> Clear Chat History
+                </div>
+              )}
+
+              <div className="border-t border-neutral-800 my-1" />
+
+              {/* External feedback form */}
+              <a
+                href="https://tally.so/r/w7yeRZ"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
+                <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
+              </a>
+              {/* Privacy & Help page */}
+              <Link
+                href="/privacy"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
+                <QuestionMarkCircledIcon className="w-4 h-4" /> Privacy & Help
+              </Link>
+
+              <Link
+                href="/terms"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
+                <FileTextIcon className="w-4 h-4" /> Terms of Service
+              </Link>
+
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       </div>
     </aside>
   );

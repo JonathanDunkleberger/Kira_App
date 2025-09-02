@@ -104,34 +104,25 @@ export async function playAndAnalyzeAudio(
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
 export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
+  const audio = document.getElementById('tts-player') as HTMLAudioElement | null;
+  if (!audio) throw new Error('Persistent audio element #tts-player not found');
+
   const blob = new Blob([audioData], { type: 'audio/webm' });
   const url = URL.createObjectURL(blob);
-  const audio = new Audio();
   audio.src = url;
-  if (isMobile()) {
-    try { (audio as any).style.display = 'none'; } catch {}
-    try { document.body.appendChild(audio); } catch {}
-  }
 
   const done = new Promise<void>((resolve, reject) => {
     audio.onended = () => {
       try { URL.revokeObjectURL(url); } catch {}
-      if (isMobile()) {
-        try { document.body.removeChild(audio); } catch {}
-      }
       resolve();
     };
     audio.onerror = (err) => {
       try { URL.revokeObjectURL(url); } catch {}
       console.error('Error playing audio:', err);
-      if (isMobile()) {
-        try { document.body.removeChild(audio); } catch {}
-      }
       reject(err as any);
     };
   });
 
-  // Start playback (ignore returned promise, surface errors via onerror)
   try {
     const p = audio.play();
     if (p && typeof (p as any).catch === 'function') (p as any).catch(() => {});

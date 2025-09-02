@@ -5,8 +5,9 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon } from '@radix-ui/react-icons';
-import { openBillingPortal, clearAllConversations } from '@/lib/client-api';
+import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon } from '@radix-ui/react-icons';
+import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
+import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
 export default function Sidebar() {
@@ -114,14 +115,50 @@ export default function Sidebar() {
                       <PinLeftIcon /> Pin
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
-                      onSelect={() => console.log('Renaming:', convo.id)}
+                      onSelect={async () => {
+                        const next = window.prompt('Rename conversation', convo.title || '');
+                        if (next == null) return; // cancelled
+                        const title = next.trim();
+                        if (!title || title === (convo.title || '')) return;
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) { alert('Please sign in to rename.'); return; }
+                        const r = await fetch(`/api/conversations/${convo.id}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${session.access_token}`,
+                          },
+                          body: JSON.stringify({ title }),
+                        });
+                        if (!r.ok) {
+                          try { const j = await r.json(); alert(j?.error || 'Failed to rename'); }
+                          catch { alert('Failed to rename'); }
+                          return;
+                        }
+                        // refresh list to show new title
+                        try { await fetchAllConversations(); } catch {}
+                      }}
                       className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none"
                     >
                       <Pencil2Icon /> Rename
                     </DropdownMenu.Item>
                     <DropdownMenu.Separator className="h-[1px] bg-neutral-700 my-1" />
                     <DropdownMenu.Item
-                      onSelect={() => console.log('Deleting:', convo.id)}
+                      onSelect={async () => {
+                        if (window.confirm('Are you sure you want to delete this conversation?')) {
+                          try {
+                            await deleteConversation(convo.id);
+                            // If the active conversation was deleted, a full reload is simplest
+                            if (activeId === convo.id) {
+                              window.location.reload();
+                              return;
+                            }
+                            await fetchAllConversations();
+                          } catch (e) {
+                            alert('Failed to delete conversation.');
+                          }
+                        }
+                      }}
                       className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none"
                     >
                       <TrashIcon /> Delete
@@ -190,6 +227,13 @@ export default function Sidebar() {
                 className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
               >
                 <QuestionMarkCircledIcon className="w-4 h-4" /> Privacy & Help
+              </Link>
+
+              <Link
+                href="/terms"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
+                <FileTextIcon className="w-4 h-4" /> Terms of Service
               </Link>
 
             </Popover.Content>

@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { openBillingPortal, signOut } from '@/lib/client-api';
-import HeaderUsageChip from '@/components/HeaderUsageChip';
+import HeaderUsageIndicator from '@/components/HeaderUsageIndicator';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
 
@@ -36,7 +36,7 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  // countdown/CTA handled by HeaderUsageChip; no duplicate here
+  // Countdown/CTA handled by HeaderUsageIndicator
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
@@ -52,12 +52,13 @@ export default function Header() {
 
           {!signedIn ? (
             <>
+              <HeaderUsageIndicator />
               <Link href="/sign-in" className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5">Log in</Link>
               <Link href="/sign-up" className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90">Sign up</Link>
             </>
           ) : (
             <>
-              <HeaderUsageChip />
+              <HeaderUsageIndicator />
               <div className="relative" ref={ref}>
                 <button onClick={() => setOpen(v => !v)}
                         className="h-9 w-9 rounded-full bg-white/10 border border-white/15 grid place-items-center">

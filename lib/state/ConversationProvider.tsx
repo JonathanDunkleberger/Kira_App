@@ -69,7 +69,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [micVolume, setMicVolume] = useState(0);
   const [kiraVolume, setKiraVolume] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number>(0);
+  const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
   const [showPaywall, setShowPaywallState] = useState(false);
@@ -312,18 +312,20 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Definitive automatic paywall logic (single source of truth)
   useEffect(() => {
-    // Condition: If the user is NOT pro AND their time is zero or less...
-    if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
-      // If a conversation is currently active, stop it first.
-      // The stopConversation function will then trigger the paywall.
+    const { isLoading } = ent as { isLoading: boolean };
+
+    // Wait for initial entitlement load; avoid running on null/unknown state
+    if (isLoading || dailySecondsRemaining === null) return;
+
+    // Condition: If the user is NOT pro AND their time is definitively zero or less...
+    if (!isPro && dailySecondsRemaining <= 0) {
       if (conversationStatus === 'active') {
         stopConversation('ended_by_limit');
       } else {
-        // If no conversation is active, just show the paywall directly.
         promptPaywall();
       }
     }
-  }, [isPro, dailySecondsRemaining, conversationStatus]);
+  }, [isPro, dailySecondsRemaining, conversationStatus, ent.isLoading, stopConversation, promptPaywall]);
 
   // Proactive upgrade nudge when approaching limit (one-time until reset)
   useEffect(() => {

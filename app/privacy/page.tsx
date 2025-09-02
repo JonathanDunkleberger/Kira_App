@@ -1,38 +1,41 @@
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 text-white/90">
-      <h1 className="text-3xl font-semibold mb-6">Privacy Policy</h1>
-      <div className="space-y-6 text-sm leading-6">
-        <section>
-          <h2 className="text-xl font-semibold mb-2">Data Collection</h2>
-          <p>
-            We collect the email address you sign up with and the content of your conversations with Kira. This
-            may include text and audio transcripts you provide.
-          </p>
-        </section>
-        <section>
-          <h2 className="text-xl font-semibold mb-2">Data Usage</h2>
-          <p>
-            We use your data to provide, maintain, and improve the service, including generating responses, detecting
-            abuse, and enhancing quality. We may use aggregated, anonymized data to improve our models and product
-            experience.
-          </p>
-        </section>
-        <section>
-          <h2 className="text-xl font-semibold mb-2">Data Sharing</h2>
-          <p>
-            To process AI features, we may share data with providers such as OpenAI, Google, or Azure. These
-            providers process the data to generate responses or perform speech-to-text and text-to-speech. We do not
-            sell your personal data.
-          </p>
-        </section>
-        <section>
-          <h2 className="text-xl font-semibold mb-2">User Rights</h2>
-          <p>
-            You can delete your account at any time, which will remove your profile and conversations. To delete
-            your data, go to your profile and use the Delete Account option. If you have any questions, contact us.
-          </p>
-        </section>
+    <main className="min-h-screen bg-[#0b0b12] text-white p-4 md:p-8">
+      <div className="w-full max-w-2xl mx-auto prose prose-invert">
+        <h1>Privacy Policy for Kira AI</h1>
+        <p>Last updated: September 1, 2025</p>
+
+        <h2>1. Data We Collect</h2>
+        <p>To provide our service, we collect the following information:</p>
+        <ul>
+          <li><b>Account Information:</b> Your email address when you register.</li>
+          <li><b>Conversation Data:</b> The content of your voice conversations with Kira, including audio files and their text transcriptions.</li>
+          <li><b>Payment Information:</b> We use Stripe to process payments. We do not store your credit card details on our servers.</li>
+        </ul>
+
+        <h2>2. How We Use Your Data</h2>
+        <p>Your data is used to:</p>
+        <ul>
+          <li>Provide and maintain the Kira AI service.</li>
+          <li>Process your subscription payments through Stripe.</li>
+          <li>Improve the quality and accuracy of our AI models. All data used for improvement is anonymized where possible.</li>
+          <li>Communicate with you for support and service updates.</li>
+        </ul>
+
+        <h2>3. Third-Party Sharing</h2>
+        <p>Kira AI relies on third-party services to function. We share data with the following providers solely for the purpose of operating the application:</p>
+        <ul>
+          <li><b>Supabase:</b> For database hosting and user authentication.</li>
+          <li><b>Stripe:</b> For secure payment processing.</li>
+          <li><b>OpenAI, Google, Microsoft Azure:</b> For Speech-to-Text (STT), AI language model (LLM) responses, and Text-to-Speech (TTS) services.</li>
+        </ul>
+        <p>We do not sell your personal data to any third parties.</p>
+
+        <h2>4. Data Deletion</h2>
+        <p>You can delete your account and all associated conversation data at any time from your account page. This action is irreversible.</p>
+        
+        <h2>5. Contact Us</h2>
+        <p>If you have any questions about this privacy policy, please contact us at <a href="mailto:support@kira-ai.app">support@kira-ai.app</a>.</p>
       </div>
     </main>
   );

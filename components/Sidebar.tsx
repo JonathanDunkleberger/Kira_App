@@ -7,6 +7,7 @@ import * as Popover from '@radix-ui/react-popover';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon } from '@radix-ui/react-icons';
 import { openBillingPortal, clearAllConversations } from '@/lib/client-api';
+import Link from 'next/link';
 
 export default function Sidebar() {
   const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation, session, isPro } = useConversation();
@@ -174,13 +175,22 @@ export default function Sidebar() {
 
               <div className="border-t border-neutral-800 my-1" />
 
-              {/* Generic Links */}
-              <a href="#" className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer">
+              {/* External feedback form */}
+              <a
+                href="https://github.com/JonathanDunkleberger/Kira_AI_2/issues/new/choose"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
                 <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
               </a>
-              <a href="#" className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer">
-                <QuestionMarkCircledIcon className="w-4 h-4" /> Help
-              </a>
+              {/* Privacy & Help page */}
+              <Link
+                href="/privacy"
+                className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+              >
+                <QuestionMarkCircledIcon className="w-4 h-4" /> Privacy & Help
+              </Link>
 
             </Popover.Content>
           </Popover.Portal>

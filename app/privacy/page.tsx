@@ -9,16 +9,15 @@ export default function PrivacyPage() {
         <p>To provide our service, we collect the following information:</p>
         <ul>
           <li><b>Account Information:</b> Your email address when you register.</li>
-          <li><b>Conversation Data:</b> The content of your voice conversations with Kira, including audio files and their text transcriptions.</li>
+          <li><b>Conversation Data:</b> If you are a registered user, we store the text transcripts of your conversations to provide you with a chat history. We do not store your audio files.</li>
           <li><b>Payment Information:</b> We use Stripe to process payments. We do not store your credit card details on our servers.</li>
         </ul>
 
         <h2>2. How We Use Your Data</h2>
-        <p>Your data is used to:</p>
+        <p>Your data is used solely to:</p>
         <ul>
           <li>Provide and maintain the Kira AI service.</li>
           <li>Process your subscription payments through Stripe.</li>
-          <li>Improve the quality and accuracy of our AI models. All data used for improvement is anonymized where possible.</li>
           <li>Communicate with you for support and service updates.</li>
         </ul>
 
@@ -33,9 +32,8 @@ export default function PrivacyPage() {
 
         <h2>4. Data Deletion</h2>
         <p>You can delete your account and all associated conversation data at any time from your account page. This action is irreversible.</p>
-        
         <h2>5. Contact Us</h2>
-        <p>If you have any questions about this privacy policy, please contact us at <a href="mailto:support@kira-ai.app">support@kira-ai.app</a>.</p>
+        <p>If you have any questions about this privacy policy, please contact us at [your-support-email@example.com].</p>
       </div>
     </main>
   );

@@ -32,6 +32,11 @@ export default function TermsPage() {
         <p>
           We reserve the right, at our sole discretion, to modify or replace these Terms at any time.
         </p>
+
+        <h2>Contact Us</h2>
+        <p>
+          If you have any questions about these Terms, please contact us at <a href="mailto:info@elsaresearch.co">info@elsaresearch.co</a>.
+        </p>
       </div>
     </main>
   );

@@ -146,10 +146,26 @@ export async function deleteConversation(conversationId: string) {
 }
 
 export async function clearAllConversations() {
-  const headers = await authHeader();
-  if (!headers) throw new Error('Not signed in');
-  const r = await fetch('/api/conversations', { method: 'DELETE', headers });
-  if (!r.ok) throw new Error('Failed to clear');
+  const confirmed = window.confirm(
+    'Are you sure you want to delete your entire chat history? This action cannot be undone.'
+  );
+
+  if (!confirmed) return;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { alert('You must be logged in to do that.'); return; }
+
+  const r = await fetch('/api/conversations', {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+
+  if (r.ok) {
+    alert('Chat history cleared successfully.');
+    window.location.reload();
+  } else {
+    alert('Failed to clear chat history. Please try again.');
+  }
 }
 
 export async function appendMessage(conversationId: string, role: 'user'|'assistant', content: string) {

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
-import * as Popover from '@radix-ui/react-popover';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
@@ -171,81 +170,79 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Footer: Settings & Help popover */}
-      <div className="p-2 border-t border-white/10">
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button
-              className="flex w-full items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5 transition-colors"
-              title={isCollapsed ? 'Settings' : ''}
+      {/* Footer: Settings & Help menu (DropdownMenu only) */}
+      <div className="p-4 border-t border-neutral-800">
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button 
+              className="flex w-full items-center gap-3 p-2 rounded-lg hover:bg-neutral-800 transition-colors" 
+              title={isCollapsed ? "Settings" : ""}
             >
-              <GearIcon className="h-5 w-5 text-white/70" />
-              {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
+              <GearIcon className="h-5 w-5 text-neutral-400" />
+              {!isCollapsed && <span>Settings & Help</span>}
             </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content 
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content 
               side="top" 
               align="start" 
               sideOffset={10}
               className="w-60 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
             >
-              {/* Wrap in a DropdownMenu.Root to enable submenu behavior */}
-              <DropdownMenu.Root>
-                {/* Manage Subscription (Only for Pro users) */}
-                {isPro && (
-                  <DropdownMenu.Item onSelect={openBillingPortal} className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
-                    <LoopIcon className="w-4 h-4" /> Manage Subscription
-                  </DropdownMenu.Item>
-                )}
-
-                {/* Clear History (Only for logged-in users) */}
-                {session && (
-                  <DropdownMenu.Item onSelect={clearAllConversations} className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none">
-                    <TrashIcon className="w-4 h-4" /> Clear Chat History
-                  </DropdownMenu.Item>
-                )}
-
-                <div className="border-t border-neutral-800 my-1"></div>
-
-                {/* Send Feedback */}
-                <DropdownMenu.Item asChild>
-                  <a href="https://tally.so/r/w7yeRZ" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
-                    <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
-                  </a>
+              {/* Manage Subscription (Only for Pro users) */}
+              {isPro && (
+                <DropdownMenu.Item onSelect={openBillingPortal} className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                  <LoopIcon className="w-4 h-4" /> Manage Subscription
                 </DropdownMenu.Item>
+              )}
 
-                {/* --- NESTED HELP SUBMENU --- */}
-                <DropdownMenu.Sub>
-                  <DropdownMenu.SubTrigger className="flex w-full items-center justify-between gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
-                    <div className="flex items-center gap-3">
-                      <QuestionMarkCircledIcon className="w-4 h-4" /> Help
-                    </div>
-                    <ChevronRightIcon className="w-4 h-4" />
-                  </DropdownMenu.SubTrigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.SubContent 
-                      sideOffset={10} 
-                      alignOffset={-5}
-                      className="w-48 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
-                    >
-                      <DropdownMenu.Item asChild>
-                        <Link href="/privacy" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
-                          <FileTextIcon className="w-4 h-4" /> Privacy Policy
-                        </Link>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item asChild>
-                        <Link href="/terms" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
-                          <FileTextIcon className="w-4 h-4" /> Terms of Service
-                        </Link>
-                      </DropdownMenu.Item>
-                    </DropdownMenu.SubContent>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Sub>
-              </DropdownMenu.Root>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+              {/* Clear History (Only for logged-in users) */}
+              {session && (
+                <DropdownMenu.Item onSelect={clearAllConversations} className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none">
+                  <TrashIcon className="w-4 h-4" /> Clear Chat History
+                </DropdownMenu.Item>
+              )}
+
+              <DropdownMenu.Separator className="h-[1px] bg-neutral-800 my-1" />
+
+              {/* Send Feedback */}
+              <DropdownMenu.Item asChild>
+                <a href="https://tally.so/r/w7yeRZ" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                  <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
+                </a>
+              </DropdownMenu.Item>
+
+              {/* Nested Help Submenu */}
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger className="flex w-full items-center justify-between gap-3 p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+                  <div className="flex items-center gap-3">
+                    <QuestionMarkCircledIcon className="w-4 h-4" /> Help
+                  </div>
+                  <ChevronRightIcon className="w-4 h-4" />
+                </DropdownMenu.SubTrigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.SubContent 
+                    sideOffset={10} 
+                    alignOffset={-5}
+                    className="w-48 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
+                  >
+                    <DropdownMenu.Item asChild>
+                      <Link href="/privacy" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
+                        <FileTextIcon className="w-4 h-4" /> Privacy Policy
+                      </Link>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item asChild>
+                      <Link href="/terms" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
+                        <FileTextIcon className="w-4 h-4" /> Terms of Service
+                      </Link>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.SubContent>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Sub>
+
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </aside>
   );

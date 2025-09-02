@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { Plus, MessageSquare, Menu, Search, Settings } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
+import * as Popover from '@radix-ui/react-popover';
+import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon } from '@radix-ui/react-icons';
+import { openBillingPortal, clearAllConversations } from '@/lib/client-api';
 
 export default function Sidebar() {
-  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation } = useConversation();
+  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation, session, isPro } = useConversation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -89,12 +91,58 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer: Settings & Help popover */}
       <div className="p-2 border-t border-white/10">
-        <Link href="/settings" className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5" title={isCollapsed ? 'Settings & Help' : ''}>
-          <Settings size={16} className="text-white/70" />
-          {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
-        </Link>
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5 transition-colors"
+              title={isCollapsed ? 'Settings' : ''}
+            >
+              <GearIcon className="h-5 w-5 text-white/70" />
+              {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="top"
+              align="start"
+              sideOffset={10}
+              className="w-60 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50"
+            >
+              {/* Manage Subscription (Only for Pro users) */}
+              {isPro && (
+                <div
+                  onClick={openBillingPortal}
+                  className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"
+                >
+                  <LoopIcon className="w-4 h-4" /> Manage Subscription
+                </div>
+              )}
+
+              {/* Clear History (Only for logged-in users) */}
+              {session && (
+                <div
+                  onClick={clearAllConversations}
+                  className="flex items-center gap-3 p-2 m-1 rounded text-red-400 hover:bg-red-500/10 cursor-pointer"
+                >
+                  <TrashIcon className="w-4 h-4" /> Clear Chat History
+                </div>
+              )}
+
+              <div className="border-t border-neutral-800 my-1" />
+
+              {/* Generic Links */}
+              <a href="#" className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer">
+                <ChatBubbleIcon className="w-4 h-4" /> Send Feedback
+              </a>
+              <a href="#" className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer">
+                <QuestionMarkCircledIcon className="w-4 h-4" /> Help
+              </a>
+
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       </div>
     </aside>
   );

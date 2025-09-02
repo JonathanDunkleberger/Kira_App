@@ -104,7 +104,7 @@ export async function playAndAnalyzeAudio(
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
 export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
-  const blob = new Blob([audioData], { type: 'audio/mpeg' });
+  const blob = new Blob([audioData], { type: 'audio/webm' });
   const url = URL.createObjectURL(blob);
   const audio = new Audio();
   audio.src = url;

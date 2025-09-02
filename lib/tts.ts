@@ -21,7 +21,8 @@ export async function synthesizeSpeech(text: string): Promise<string> {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": KEY,
-      "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+  // Switch to WebM Opus output
+  "X-Microsoft-OutputFormat": "webm-24khz-16bit-mono-opus",
       "Content-Type": "application/ssml+xml",
       "User-Agent": "kira-mvp",
       "Cache-Control": "no-cache",

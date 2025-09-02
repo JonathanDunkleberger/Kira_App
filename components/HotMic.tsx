@@ -1,7 +1,8 @@
 "use client";
 
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 import { motion } from 'framer-motion';
 
 // Persistent AudioContext unlock (more reliable on mobile than playing a silent clip)
@@ -39,7 +40,37 @@ export default function HotMic() {
   isPro,
   dailySecondsRemaining,
   promptPaywall,
+  submitAudioChunk,
+  externalMicActive,
+  setExternalMicActive,
   } = useConversation();
+
+  // Mobile mic encoder: produces webm Blobs per utterance and submits to provider
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [lastUtterMs, setLastUtterMs] = useState<number | null>(null);
+  const [lastFrames, setLastFrames] = useState<number | null>(null);
+  const [lastThresh, setLastThresh] = useState<number | null>(null);
+
+  const { start: startMobileMic, stop: stopMobileMic, isListening, setConfig } = useConditionalMicrophone(async (blob) => {
+    try { await submitAudioChunk(blob); } catch (e) { console.error('submitAudioChunk failed', e); }
+  }, (info) => {
+    setLastUtterMs(Math.round(info.durationMs));
+    setLastFrames(info.frames);
+    setLastThresh(info.rmsThreshold);
+  });
+
+  // Live tuning controls (persisted)
+  const [rmsThreshold, setRmsThreshold] = useState<number>(() => {
+    try { return Number(localStorage.getItem('kira.rmsThreshold') ?? '0.02'); } catch { return 0.02; }
+  });
+  const [silenceMs, setSilenceMs] = useState<number>(() => {
+    try { return Number(localStorage.getItem('kira.silenceMs') ?? '500'); } catch { return 500; }
+  });
+  useEffect(() => {
+    setConfig({ rmsThreshold, silenceMs });
+    try { localStorage.setItem('kira.rmsThreshold', String(rmsThreshold)); } catch {}
+    try { localStorage.setItem('kira.silenceMs', String(silenceMs)); } catch {}
+  }, [rmsThreshold, silenceMs, setConfig]);
 
   const isSessionActive = conversationStatus === 'active';
   const handleClick = async () => {
@@ -53,9 +84,26 @@ export default function HotMic() {
       return;
     }
     if (isSessionActive) {
-      stopConversation();
+      try {
+        if (externalMicActive) {
+          try { stopMobileMic(); } catch {}
+          setExternalMicActive(false);
+        }
+      } finally {
+        stopConversation();
+      }
     } else {
       startConversation();
+      // On mobile, prefer external mic path and disable internal VAD
+      try {
+        const isMob = typeof navigator !== 'undefined' && /Mobi/i.test(navigator.userAgent || '');
+        if (isMob) {
+          await startMobileMic();
+          setExternalMicActive(true);
+        }
+      } catch (e) {
+        console.error('Mobile mic start failed:', e);
+      }
     }
   };
 
@@ -114,6 +162,53 @@ export default function HotMic() {
       
       <div className="h-8 text-center">
         <p className="text-gray-400">{subText}</p>
+      </div>
+
+      {/* Debug toggle and panel */}
+      <div className="mt-2 text-xs text-gray-500">
+        <button
+          type="button"
+          className="underline hover:text-gray-300"
+          onClick={() => setDebugOpen(v => !v)}
+        >
+          {debugOpen ? 'Hide audio debug' : 'Show audio debug'}
+        </button>
+        {debugOpen && (
+          <div className="mt-2 rounded bg-black/40 p-3 leading-5">
+            <div>External mic: <span className="font-mono">{externalMicActive ? 'ON' : 'OFF'}</span></div>
+            <div>Mobile mic listening: <span className="font-mono">{isListening ? 'true' : 'false'}</span></div>
+            <div>Last utterance: <span className="font-mono">{lastUtterMs ?? '-'} ms</span> | frames: <span className="font-mono">{lastFrames ?? '-'}</span></div>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
+              <label className="flex items-center gap-2">
+                <span className="w-32">RMS threshold</span>
+                <input
+                  type="range"
+                  min="0.005"
+                  max="0.08"
+                  step="0.001"
+                  value={rmsThreshold}
+                  onChange={(e) => setRmsThreshold(Number(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="font-mono w-16 text-right">{rmsThreshold.toFixed(3)}</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="w-32">Silence (ms)</span>
+                <input
+                  type="range"
+                  min="200"
+                  max="1500"
+                  step="50"
+                  value={silenceMs}
+                  onChange={(e) => setSilenceMs(Number(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="font-mono w-16 text-right">{silenceMs}</span>
+              </label>
+            </div>
+            <div className="mt-1 text-gray-400">Current RMS observed: <span className="font-mono">{lastThresh ?? '-'}</span></div>
+          </div>
+        )}
       </div>
     </div>
   );

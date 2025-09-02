@@ -1,3 +1,7 @@
+function isMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mobi/i.test(navigator.userAgent || '');
+}
 export async function playMp3Base64(b64: string, onEnd?: () => void) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -104,15 +108,25 @@ export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement
   const url = URL.createObjectURL(blob);
   const audio = new Audio();
   audio.src = url;
+  if (isMobile()) {
+    try { (audio as any).style.display = 'none'; } catch {}
+    try { document.body.appendChild(audio); } catch {}
+  }
 
   const done = new Promise<void>((resolve, reject) => {
     audio.onended = () => {
       try { URL.revokeObjectURL(url); } catch {}
+      if (isMobile()) {
+        try { document.body.removeChild(audio); } catch {}
+      }
       resolve();
     };
     audio.onerror = (err) => {
       try { URL.revokeObjectURL(url); } catch {}
       console.error('Error playing audio:', err);
+      if (isMobile()) {
+        try { document.body.removeChild(audio); } catch {}
+      }
       reject(err as any);
     };
   });

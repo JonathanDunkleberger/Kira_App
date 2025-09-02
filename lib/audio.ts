@@ -97,3 +97,37 @@ export async function playAndAnalyzeAudio(
   // Return the source to allow callers to stop if needed
   return source as unknown as HTMLAudioElement;
 }
+
+// Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
+export function playAudioData(audioData: ArrayBuffer): Promise<HTMLAudioElement> {
+  return new Promise((resolve, reject) => {
+    try {
+      const blob = new Blob([audioData], { type: 'audio/mpeg' });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio();
+      audio.src = url;
+
+      audio.onended = () => {
+        try { URL.revokeObjectURL(url); } catch {}
+        resolve(audio);
+      };
+
+      audio.onerror = (err) => {
+        try { URL.revokeObjectURL(url); } catch {}
+        console.error('Error playing audio:', err);
+        reject(err as any);
+      };
+
+      const p = audio.play();
+      if (p && typeof p.then === 'function') {
+        p.catch((err) => {
+          try { URL.revokeObjectURL(url); } catch {}
+          reject(err);
+        });
+      }
+    } catch (error) {
+      console.error('Error setting up audio for playback:', error);
+      reject(error);
+    }
+  });
+}

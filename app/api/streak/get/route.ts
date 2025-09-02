@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
-export async function GET() {
-  return NextResponse.json({ error: 'Deprecated. Use /api/streak (GET).' }, { status: 410 });
-}
+export async function GET() { return NextResponse.json({ error: 'Streak API removed' }, { status: 410 }); }

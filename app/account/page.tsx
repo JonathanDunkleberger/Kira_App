@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { openBillingPortal, signOut } from '@/lib/client-api';
+import { openBillingPortal, signOut, startCheckout } from '@/lib/client-api';
 
 export default function AccountPage() {
   const router = useRouter();
-  const { session, isPro, dailySecondsRemaining, promptPaywall } = useConversation();
+  const { session, isPro, dailySecondsRemaining } = useConversation();
   // Hydration flag to avoid redirecting before provider sets session
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
@@ -41,7 +41,7 @@ export default function AccountPage() {
             </button>
           ) : (
             <button 
-              onClick={() => promptPaywall('proactive_click')}
+              onClick={startCheckout}
               className="px-4 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-700"
             >
               Upgrade

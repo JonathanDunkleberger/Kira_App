@@ -34,7 +34,7 @@ export default function HotMic() {
 
   const { orbText, subText } = useMemo(() => {
     if (!isSessionActive) {
-      return { orbText: 'Start Conversation', subText: 'Click to begin' };
+  return { orbText: 'Start Conversation', subText: '' };
     }
     switch (turnStatus) {
       case 'user_listening':

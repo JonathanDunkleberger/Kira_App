@@ -16,9 +16,7 @@ export default function ConversationView() {
 
   if (conversationStatus === 'idle') {
     return (
-      <div className="text-center text-gray-500 pt-10">
-        Click the orb to start a conversation with Kira.
-      </div>
+  <div className="text-center text-gray-500 pt-10"></div>
     );
   }
 

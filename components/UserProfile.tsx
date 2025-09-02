@@ -2,6 +2,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { signOut, openBillingPortal, startCheckout } from '@/lib/client-api';
+import Link from 'next/link';
 
 export default function UserProfile() {
 	const { session, isPro } = useConversation();
@@ -25,10 +26,14 @@ export default function UserProfile() {
 					sideOffset={10}
 					align="end"
 					className="w-48 bg-neutral-900 border border-neutral-700 rounded-lg shadow-lg text-white text-sm z-50 p-1"
-				>
-					<DropdownMenu.Label className="px-2 py-1 text-xs text-neutral-400">Your Account</DropdownMenu.Label>
+						>
+							<DropdownMenu.Item asChild>
+								<Link href="/account" className="flex w-full items-center p-2 rounded hover:bg-neutral-800 cursor-pointer outline-none">
+									<span className="text-white">Your Account</span>
+								</Link>
+							</DropdownMenu.Item>
 
-					<DropdownMenu.Separator className="h-[1px] bg-neutral-800 my-1" />
+							<DropdownMenu.Separator className="h-[1px] bg-neutral-800 my-1" />
 
 					{isPro ? (
 						<DropdownMenu.Item

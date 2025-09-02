@@ -6,6 +6,7 @@ import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageIndicator from '@/components/HeaderUsageIndicator';
 import { supabase } from '@/lib/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
+import UserProfile from '@/components/UserProfile';
 
 function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 'slate'|'emerald' }) {
   const map = kind === 'emerald'
@@ -16,8 +17,6 @@ function Pill({ children, kind = 'slate' }: { children: React.ReactNode; kind?: 
 
 export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const { isPro } = useConversation();
 
   async function refresh() {
@@ -29,10 +28,7 @@ export default function Header() {
     refresh();
     const onUpdate = () => refresh();
     window.addEventListener('entitlement:updated', onUpdate);
-    document.addEventListener('click', (e) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    });
-    return () => window.removeEventListener('entitlement:updated', onUpdate);
+  return () => window.removeEventListener('entitlement:updated', onUpdate);
   }, []);
 
   const signedIn = !!email;
@@ -59,25 +55,7 @@ export default function Header() {
           ) : (
             <>
               <HeaderUsageIndicator />
-              <div className="relative" ref={ref}>
-                <button onClick={() => setOpen(v => !v)}
-                        className="h-9 w-9 rounded-full bg-white/10 border border-white/15 grid place-items-center">
-                  <span className="text-xs">{email?.[0]?.toUpperCase() ?? 'U'}</span>
-                </button>
-                {open && (
-                  <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-[#12101b] p-1 shadow-xl">
-                    <Link href="/account" className="block px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">Account</Link>
-                    {isPro && (
-                      <button onClick={() => openBillingPortal()} className="w-full text-left px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">
-                        Manage billing
-                      </button>
-                    )}
-                    <button onClick={() => signOut()} className="w-full text-left px-3 py-2 text-sm text-white/90 rounded-lg hover:bg-white/5">
-                      Sign out
-                    </button>
-                  </div>
-                )}
-              </div>
+              <UserProfile />
             </>
           )}
         </div>

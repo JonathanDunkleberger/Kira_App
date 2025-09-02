@@ -239,7 +239,6 @@ export default function Sidebar() {
                   </DropdownMenu.SubContent>
                 </DropdownMenu.Portal>
               </DropdownMenu.Sub>
-
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon } from '@radix-ui/react-icons';
+import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon, LockClosedIcon } from '@radix-ui/react-icons';
 import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
@@ -228,7 +228,7 @@ export default function Sidebar() {
                   >
                     <DropdownMenu.Item asChild>
                       <Link href="/privacy" className="flex items-center gap-3 p-2 rounded hover:bg-fuchsia-600 cursor-pointer outline-none">
-                        <FileTextIcon className="w-4 h-4" /> Privacy Policy
+                        <LockClosedIcon className="w-4 h-4" /> Privacy Policy
                       </Link>
                     </DropdownMenu.Item>
                     <DropdownMenu.Item asChild>

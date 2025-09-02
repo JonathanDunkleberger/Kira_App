@@ -2,6 +2,16 @@ function isMobile(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mobi/i.test(navigator.userAgent || '');
 }
+// Feature detection for MSE with WebM Opus
+export function canUseWebmOpusMSE(): boolean {
+  try {
+    const MS: any = (window as any).MediaSource;
+    if (!MS || typeof MS.isTypeSupported !== 'function') return false;
+    return !!MS.isTypeSupported('audio/webm; codecs="opus"');
+  } catch {
+    return false;
+  }
+}
 export async function playMp3Base64(b64: string, onEnd?: () => void) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -134,7 +144,7 @@ export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement
 // Conditional audio player: uses MSE on mobile for streaming chunks, blob playback on desktop.
 export class AudioPlayer {
   private audio: HTMLAudioElement;
-  private isMobileEnv: boolean;
+  private useMSE: boolean = false;
   // Mobile (MSE)
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
@@ -142,14 +152,16 @@ export class AudioPlayer {
   private objectUrl: string | null = null;
   // Desktop (buffer until end)
   private desktopChunks: ArrayBuffer[] = [];
+  private desktopContentType: string = 'audio/webm';
 
   constructor() {
     const el = document.getElementById('tts-player') as HTMLAudioElement | null;
     if (!el) throw new Error('Persistent audio element #tts-player not found');
     this.audio = el;
-    this.isMobileEnv = isMobile();
+    const useMSE = canUseWebmOpusMSE();
+    this.useMSE = useMSE;
 
-    if (this.isMobileEnv) {
+  if (this.useMSE) {
       const ms = new MediaSource();
       this.mediaSource = ms;
       const url = URL.createObjectURL(ms);
@@ -192,7 +204,7 @@ export class AudioPlayer {
   }
 
   appendChunk(chunk: ArrayBuffer) {
-    if (this.isMobileEnv) {
+  if (this.useMSE) {
       if (!this.sourceBuffer) {
         this.pendingChunks.push(chunk);
         return;
@@ -233,7 +245,7 @@ export class AudioPlayer {
   }
 
   async endStream() {
-    if (this.isMobileEnv) {
+  if (this.useMSE) {
       try {
         // Flush any remaining pending chunks first
         this.flushPending();
@@ -249,7 +261,7 @@ export class AudioPlayer {
       if (!this.desktopChunks.length) return;
       const merged = mergeArrayBuffers(this.desktopChunks);
       this.desktopChunks = [];
-      const blob = new Blob([merged], { type: 'audio/webm' });
+      const blob = new Blob([merged], { type: this.desktopContentType || 'audio/webm' });
       const url = URL.createObjectURL(blob);
       this.audio.src = url;
       try {
@@ -261,6 +273,14 @@ export class AudioPlayer {
   }
 }
 
+// Allow caller to set the content type used for non-MSE blob playback
+// Useful when the server negotiates MP3/MP4 for iOS
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+(AudioPlayer as any).prototype.setContentType = function(mime: string) {
+  if (mime && typeof mime === 'string') {
+    (this as any).desktopContentType = mime;
+  }
+};
 function mergeArrayBuffers(parts: ArrayBuffer[]): ArrayBuffer {
   const total = parts.reduce((n, b) => n + b.byteLength, 0);
   const out = new Uint8Array(total);

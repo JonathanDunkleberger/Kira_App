@@ -22,16 +22,17 @@ export async function POST(req: NextRequest) {
       text = t;
     }
 
-    const audioMp3Base64 = await synthesizeSpeech(text);
+  const audioMp3Base64 = await synthesizeSpeech(text);
     // Convert base64 to ArrayBuffer and return as binary for robust playback
     const binary = atob(audioMp3Base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const ab = bytes.buffer as ArrayBuffer;
-    return new NextResponse(ab, {
+  return new NextResponse(ab, {
       status: 200,
       headers: {
-        'Content-Type': 'audio/mpeg',
+    // Now serving WebM Opus
+    'Content-Type': 'audio/webm',
         'Cache-Control': 'no-store',
       },
     });

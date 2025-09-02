@@ -17,6 +17,7 @@ type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit'
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
 type Convo = { id: string; title: string | null; updated_at: string };
 type ViewMode = 'conversation' | 'history';
+type PaywallSource = 'proactive_click' | 'time_exhausted';
 
 interface ConversationContextType {
   session?: Session | null;
@@ -40,9 +41,9 @@ interface ConversationContextType {
   dailyLimitSeconds: number;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  showPaywall: boolean;
-  setShowPaywall: (open: boolean) => void;
-  promptPaywall: () => void;
+  paywallSource: PaywallSource | null;
+  promptPaywall: (source: PaywallSource) => void;
+  closePaywall: () => void;
   // proactive upgrade nudge
   showUpgradeNudge?: boolean;
   setShowUpgradeNudge?: (open: boolean) => void;
@@ -72,9 +73,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [dailySecondsRemaining, setDailySecondsRemaining] = useState<number | null>(null);
   const [unlockedAchievements, setUnlockedAchievements] = useState<string[]>([]);
   const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<{ id: string; name: string; description?: string | null } | null>(null);
-  const [showPaywall, setShowPaywallState] = useState(false);
-  const setShowPaywall = useCallback((open: boolean) => setShowPaywallState(open), []);
-  const promptPaywall = useCallback(() => setShowPaywall(true), [setShowPaywall]);
+  const [paywallSource, setPaywallSource] = useState<PaywallSource | null>(null);
+  const promptPaywall = useCallback((source: PaywallSource) => setPaywallSource(source), []);
+  const closePaywall = useCallback(() => setPaywallSource(null), []);
   // proactive nudge state
   const [showUpgradeNudge, setShowUpgradeNudge] = useState(false);
   const [hasShownProactiveNudge, setHasShownProactiveNudge] = useState(false);
@@ -231,14 +232,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const startConversation = useCallback(async () => {
     // Gate free users with no remaining time
     if (!isPro && (dailySecondsRemaining ?? 0) <= 0) {
-      promptPaywall();
+  promptPaywall('time_exhausted');
       return;
     }
   // Reset proactive nudge at the start of a new conversation session
   setHasShownProactiveNudge(false);
   setShowUpgradeNudge(false);
     setError(null);
-  setShowPaywall(false);
+  closePaywall();
     setViewMode('conversation');
 
     let currentConvId = session ? conversationId : null;
@@ -303,7 +304,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     setMicVolume(0);
     if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
-      promptPaywall();
+      promptPaywall('time_exhausted');
     }
   }, [promptPaywall]);
 
@@ -320,9 +321,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     // Condition: If the user is NOT pro AND their time is definitively zero or less...
     if (!isPro && dailySecondsRemaining <= 0) {
       if (conversationStatus === 'active') {
-        stopConversation('ended_by_limit');
+    stopConversation('ended_by_limit');
       } else {
-        promptPaywall();
+    promptPaywall('time_exhausted');
       }
     }
   }, [isPro, dailySecondsRemaining, conversationStatus, ent.isLoading, stopConversation, promptPaywall]);
@@ -606,9 +607,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
   dailyLimitSeconds: ent.dailyLimitSeconds,
     viewMode,
     setViewMode,
-    showPaywall,
-    setShowPaywall,
-    promptPaywall,
+  paywallSource,
+  promptPaywall,
+  closePaywall,
   showUpgradeNudge,
   setShowUpgradeNudge,
   upgradeNudgeSource,

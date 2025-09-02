@@ -22,7 +22,7 @@ export default function HotMic() {
     // Always produce a visible result on click
     const remaining = dailySecondsRemaining ?? 0;
     if (!isPro && remaining <= 0) {
-      promptPaywall();
+      promptPaywall('proactive_click');
       return;
     }
     if (isSessionActive) {

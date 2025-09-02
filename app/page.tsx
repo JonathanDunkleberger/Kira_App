@@ -6,21 +6,8 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import Paywall from '@/components/Paywall';
 import AchievementToast from '@/components/AchievementToast';
 
-function ConversationShell() {
-  const { showPaywall, setShowPaywall } = useConversation();
-  return (
-    <div className="flex flex-col items-center gap-8">
-      <div className="scale-125">
-        <HotMic />
-      </div>
-      <ConversationView />
-  <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
-    </div>
-  );
-}
-
 export default function HomePage() {
-  const { error, viewMode, showPaywall, setShowPaywall } = useConversation();
+  const { error, viewMode } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
   <AchievementToast />
@@ -34,14 +21,14 @@ export default function HomePage() {
           </section>
           <ConversationView />
           {/* Mount paywall globally so promptPaywall always renders a modal */}
-          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
+          <Paywall />
         </>
       ) : (
         <section className="w-full h-full flex flex-col items-center pt-8">
           <h2 className="text-2xl font-semibold mb-4">Conversation History</h2>
           <ConversationView />
           {/* Keep paywall available in history view as well */}
-          <Paywall isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
+          <Paywall />
         </section>
       )}
     </main>

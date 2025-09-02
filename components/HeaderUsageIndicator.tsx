@@ -28,7 +28,7 @@ export default function HeaderUsageIndicator() {
 
   return (
     <button 
-      onClick={promptPaywall}
+      onClick={() => promptPaywall('proactive_click')}
       className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm w-48 text-left hover:bg-white/10 transition-colors"
     >
       <div className="flex-1 space-y-1">

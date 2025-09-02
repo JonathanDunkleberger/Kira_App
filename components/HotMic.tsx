@@ -4,20 +4,27 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 
-// Plays a silent audio clip to unlock the browser's audio context on mobile.
+// Persistent AudioContext unlock (more reliable on mobile than playing a silent clip)
+let audioContext: AudioContext | null = null;
 let audioUnlocked = false;
 const unlockMobileAudio = async () => {
   if (audioUnlocked) return;
   try {
-    const silentAudio =
-      'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-    const audio = new Audio(silentAudio);
-    await audio.play();
-    audioUnlocked = true;
-    console.log('Audio context unlocked successfully.');
+    const AC: typeof AudioContext = (typeof window !== 'undefined' && ((window as any).AudioContext || (window as any).webkitAudioContext));
+    if (!AC) return; // Environment without AudioContext (SSR or very old browsers)
+
+    if (!audioContext) {
+      audioContext = new AC();
+    }
+
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    audioUnlocked = audioContext.state === 'running';
+    if (audioUnlocked) console.log('Audio context unlocked successfully.');
   } catch (error) {
     console.error('Failed to unlock audio context:', error);
-    // Do not throw; main functionality can still proceed.
   }
 };
 
@@ -87,6 +94,7 @@ export default function HotMic() {
   <div className="flex flex-col items-center gap-4">
         <motion.button
           onClick={handleClick}
+          onTouchStart={handleClick}
           className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
           // Animate orb scale and glow directly
           animate={{ scale }}

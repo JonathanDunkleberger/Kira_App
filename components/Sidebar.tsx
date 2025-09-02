@@ -177,7 +177,7 @@ export default function Sidebar() {
 
               {/* External feedback form */}
               <a
-                href="https://github.com/JonathanDunkleberger/Kira_AI_2/issues/new/choose"
+                href="https://tally.so/r/w7yeRZ"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-3 p-2 m-1 rounded hover:bg-neutral-800 cursor-pointer"

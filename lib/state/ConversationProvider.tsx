@@ -428,6 +428,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
         }
       } catch {}
 
+      // Robust playback flow: always reset to listening using try/finally
+      setTurnStatus('assistant_speaking');
       try {
         const audioRes = await fetch('/api/synthesize', {
           method: 'POST',
@@ -435,20 +437,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
           body: JSON.stringify({ text: fullAssistantReply })
         });
 
-        if (audioRes.ok) {
-          // Consume binary audio and play via HTMLAudioElement for robust mobile playback
-          const ab = await audioRes.arrayBuffer();
-          const { audio, done } = playAudioData(ab);
-          audioPlayerRef.current = audio as any;
-          await done;
-          // After playback, transition back to listening if still active
-          if (conversationStatus === 'active') setTurnStatus('user_listening');
-        } else {
-          console.error('Speech synthesis failed.');
-          if (conversationStatus === 'active') setTurnStatus('user_listening');
+        if (!audioRes.ok) {
+          throw new Error(`Speech synthesis failed: ${audioRes.status}`);
         }
+
+        const ab = await audioRes.arrayBuffer();
+        const { audio, done } = playAudioData(ab);
+        audioPlayerRef.current = audio as any;
+        await done;
       } catch (ttsError) {
-        console.error('Error during TTS playback:', ttsError);
+        console.error('An error occurred during audio synthesis or playback:', ttsError);
+      } finally {
+        // Ensure we never get stuck; only transition if conversation is still active
         if (conversationStatus === 'active') setTurnStatus('user_listening');
       }
       // Refresh daily seconds after a turn for signed-in users (server truth)

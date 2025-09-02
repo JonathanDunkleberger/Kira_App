@@ -99,35 +99,29 @@ export async function playAndAnalyzeAudio(
 }
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
-export function playAudioData(audioData: ArrayBuffer): Promise<HTMLAudioElement> {
-  return new Promise((resolve, reject) => {
-    try {
-      const blob = new Blob([audioData], { type: 'audio/mpeg' });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio();
-      audio.src = url;
+export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
+  const blob = new Blob([audioData], { type: 'audio/mpeg' });
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio();
+  audio.src = url;
 
-      audio.onended = () => {
-        try { URL.revokeObjectURL(url); } catch {}
-        resolve(audio);
-      };
-
-      audio.onerror = (err) => {
-        try { URL.revokeObjectURL(url); } catch {}
-        console.error('Error playing audio:', err);
-        reject(err as any);
-      };
-
-      const p = audio.play();
-      if (p && typeof p.then === 'function') {
-        p.catch((err) => {
-          try { URL.revokeObjectURL(url); } catch {}
-          reject(err);
-        });
-      }
-    } catch (error) {
-      console.error('Error setting up audio for playback:', error);
-      reject(error);
-    }
+  const done = new Promise<void>((resolve, reject) => {
+    audio.onended = () => {
+      try { URL.revokeObjectURL(url); } catch {}
+      resolve();
+    };
+    audio.onerror = (err) => {
+      try { URL.revokeObjectURL(url); } catch {}
+      console.error('Error playing audio:', err);
+      reject(err as any);
+    };
   });
+
+  // Start playback (ignore returned promise, surface errors via onerror)
+  try {
+    const p = audio.play();
+    if (p && typeof (p as any).catch === 'function') (p as any).catch(() => {});
+  } catch {}
+
+  return { audio, done };
 }

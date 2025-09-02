@@ -9,7 +9,7 @@ export interface PaywallState {
   secondsRemaining: number | null;
   isPro: boolean;
   isLoading: boolean;
-  triggerPaywall: () => void;
+  triggerPaywall: (source?: 'proactive_click' | 'time_exhausted') => void;
   dismissPaywall: () => void;
   checkUsage: () => Promise<void>;
 }
@@ -18,10 +18,10 @@ export function usePaywallBase(params: {
   session: any;
   contextIsPro: boolean;
   dailySecondsRemaining: number | null;
-  promptPaywall: () => void;
-  setShowPaywall: (open: boolean) => void;
+  promptPaywall: (source: 'proactive_click' | 'time_exhausted') => void;
+  closePaywall: () => void;
 }): PaywallState {
-  const { session, contextIsPro, dailySecondsRemaining, promptPaywall, setShowPaywall } = params;
+  const { session, contextIsPro, dailySecondsRemaining, promptPaywall, closePaywall } = params;
   const [isOpen, setIsOpen] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +37,7 @@ export function usePaywallBase(params: {
           setSecondsRemaining(ent.secondsRemaining);
           if (ent.secondsRemaining <= 0 && ent.status !== 'active') {
             setIsOpen(true);
-            setShowPaywall(true);
+            promptPaywall('time_exhausted');
           }
         }
       } else {
@@ -56,7 +56,7 @@ export function usePaywallBase(params: {
             setIsPro(false);
             if (secs <= 0) {
               setIsOpen(true);
-              setShowPaywall(true);
+              promptPaywall('time_exhausted');
             }
           } else {
             setSecondsRemaining(0);
@@ -72,18 +72,17 @@ export function usePaywallBase(params: {
     } finally {
       setIsLoading(false);
     }
-  }, [session, setShowPaywall]);
+  }, [session, promptPaywall]);
 
-  const triggerPaywall = useCallback(() => {
-    // Open both internal and provider flags without re-calling promptPaywall to avoid loops
+  const triggerPaywall = useCallback((source: 'proactive_click' | 'time_exhausted' = 'proactive_click') => {
     setIsOpen(true);
-    setShowPaywall(true);
-  }, [setShowPaywall]);
+    promptPaywall(source);
+  }, [promptPaywall]);
 
   const dismissPaywall = useCallback(() => {
     setIsOpen(false);
-    setShowPaywall(false);
-  }, [setShowPaywall]);
+    closePaywall();
+  }, [closePaywall]);
 
   useEffect(() => { checkUsage(); }, [checkUsage]);
 
@@ -105,6 +104,6 @@ export function usePaywallBase(params: {
 
 // Convenience hook for components: uses ConversationProvider context
 export function usePaywall(): PaywallState {
-  const { session, isPro: contextIsPro, dailySecondsRemaining, promptPaywall, setShowPaywall } = useConversation();
-  return usePaywallBase({ session, contextIsPro, dailySecondsRemaining, promptPaywall, setShowPaywall });
+  const { session, isPro: contextIsPro, dailySecondsRemaining, promptPaywall, closePaywall } = useConversation();
+  return usePaywallBase({ session, contextIsPro, dailySecondsRemaining, promptPaywall, closePaywall });
 }

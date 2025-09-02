@@ -4,15 +4,12 @@ import Link from 'next/link';
 import { startCheckout } from '@/lib/client-api';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { useEffect, useMemo, useState } from 'react';
-import { trackUpgradeClick, trackPaywallTriggered, PaywallEventProperties } from '@/lib/analytics';
+import { trackUpgradeClick, trackPaywallTriggered, trackPaywallDismissed, PaywallEventProperties } from '@/lib/analytics';
 
-interface PaywallProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+interface PaywallProps {}
 
-export default function Paywall({ isOpen, onClose }: PaywallProps) {
-  const { session, conversationId, isPro, dailySecondsRemaining, dailyLimitSeconds } = useConversation();
+export default function Paywall({}: PaywallProps) {
+  const { session, conversationId, isPro, dailySecondsRemaining, dailyLimitSeconds, paywallSource, closePaywall } = useConversation();
   const signedIn = !!session;
   const totalMinutes = useMemo(() => {
     const lim = dailyLimitSeconds;
@@ -28,10 +25,12 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
 
   // All time data now comes from useEntitlement; no local/config fallbacks.
 
+  const isOpen = paywallSource !== null;
+
   // Auto-dismiss if the user becomes Pro while the paywall is open
   useEffect(() => {
-    if (isOpen && isPro) onClose();
-  }, [isOpen, isPro, onClose]);
+    if (isOpen && isPro) closePaywall();
+  }, [isOpen, isPro, closePaywall]);
 
   // Fetch dynamic price when opening the paywall
   useEffect(() => {
@@ -48,17 +47,17 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
 
   useEffect(() => {
   if (isOpen) {
-      const properties: PaywallEventProperties = {
+  const properties: PaywallEventProperties = {
         userId: session?.user?.id,
         userType: session ? 'authenticated' : 'guest',
     plan: isPro ? 'pro' : 'free',
     secondsRemaining: dailySecondsRemaining ?? undefined,
         conversationId: conversationId || undefined,
-        source: 'time_exhaustion',
+    source: paywallSource || undefined,
       };
       trackPaywallTriggered(properties);
     }
-  }, [isOpen, session, isPro, dailySecondsRemaining, conversationId]);
+  }, [isOpen, session, isPro, dailySecondsRemaining, conversationId, paywallSource]);
 
   // No local time formatting state; render directly from provider values when needed.
 
@@ -80,10 +79,19 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12101b] shadow-2xl p-6 text-center" role="dialog" aria-modal="true" aria-label="Paywall">
-        <h2 className="text-2xl font-semibold">You reached today’s free limit</h2>
-        <p className="text-sm text-white/70 my-3">
-          Go unlimited to continue the conversation.
-        </p>
+        {/* Dynamic header messaging based on paywallSource */}
+        {paywallSource === 'time_exhausted' && (
+          <>
+            <h2 className="text-2xl font-semibold">You reached today’s free limit</h2>
+            <p className="text-sm text-white/70 my-3">Go unlimited to continue the conversation.</p>
+          </>
+        )}
+        {paywallSource === 'proactive_click' && (
+          <>
+            <h2 className="text-2xl font-semibold">Go Unlimited with Kira Pro</h2>
+            <p className="text-sm text-white/70 my-3">Unlock unlimited conversations and support Kira's development.</p>
+          </>
+        )}
 
         <div className="mb-6 p-4 rounded-lg bg-white/5 border border-white/10 text-left">
           <ul className="text-sm text-white/80 space-y-1 list-disc pl-5">
@@ -93,11 +101,14 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
           </ul>
         </div>
 
-  {totalMinutes !== null && (
+        {/* Dynamic note under features */}
+        {paywallSource === 'time_exhausted' ? (
           <div className="mb-4 p-3 bg-rose-900/20 border border-rose-700/30 rounded-lg">
-            <p className="text-sm text-rose-200 text-center">
-              You've used all your {totalMinutes} free minutes for today
-            </p>
+            <p className="text-sm text-rose-200 text-center">You've used all your {totalMinutes ?? Math.floor((dailyLimitSeconds || 0)/60)} free minutes for today</p>
+          </div>
+        ) : (
+          <div className="mb-4 p-3 bg-fuchsia-900/20 border border-fuchsia-700/30 rounded-lg">
+            <p className="text-sm text-fuchsia-200 text-center">You have {Math.ceil((dailySecondsRemaining ?? 0) / 60)} minutes remaining today.</p>
           </div>
         )}
 
@@ -116,8 +127,19 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
               </Link>
             </>
           )}
-          <button onClick={onClose} className="text-sm text-white/60 hover:underline">
-            Come back tomorrow
+          <button onClick={() => {
+            const properties: PaywallEventProperties = {
+              userId: session?.user?.id,
+              userType: session ? 'authenticated' : 'guest',
+              plan: isPro ? 'pro' : 'free',
+              secondsRemaining: dailySecondsRemaining ?? undefined,
+              conversationId: conversationId || undefined,
+              source: paywallSource || undefined,
+            };
+            trackPaywallDismissed(properties);
+            closePaywall();
+          }} className="text-sm text-white/60 hover:underline">
+            {paywallSource === 'time_exhausted' ? 'Come back tomorrow' : 'Maybe later'}
           </button>
         </div>
     {Number.isFinite(dailySecondsRemaining) && (dailySecondsRemaining ?? 0) > 0 && (

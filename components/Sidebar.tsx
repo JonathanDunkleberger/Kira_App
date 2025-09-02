@@ -74,8 +74,8 @@ export default function Sidebar() {
               <div
                 key={convo.id}
                 onClick={() => loadConversation(convo.id)}
-                className={`group flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm truncate cursor-pointer ${
-                  activeId === convo.id ? 'bg-white/10' : 'hover:bg-white/5 text-gray-300'
+                className={`group flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm truncate cursor-pointer transition-all duration-200 ease-in-out ${
+                  activeId === convo.id ? 'bg-white/10' : 'hover:bg-white/10 hover:scale-[1.02] text-gray-300'
                 }`}
               >
                 <div className="flex items-center gap-3 truncate">

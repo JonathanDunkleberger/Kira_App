@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { Share2 } from 'lucide-react';
+import { User, Bot } from 'lucide-react';
 
 export default function ConversationView() {
   const { messages, error, conversationStatus } = useConversation();
@@ -28,43 +28,18 @@ export default function ConversationView() {
         {messages.map((m, idx) => {
           const isAssistant = m.role === 'assistant';
           const prevUser = idx > 0 ? messages[idx - 1] : null;
-          const canShare = isAssistant && prevUser?.role === 'user';
-          const handleShare = async () => {
-            try {
-              const res = await fetch('/api/share', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userMessage: prevUser?.content, kiraMessage: m.content })
-              });
-              if (!res.ok) throw new Error('Failed to generate image');
-              const blob = await res.blob();
-              const file = new File([blob], 'kira-share.png', { type: 'image/png' });
-              if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] })) {
-                await (navigator as any).share({ files: [file], title: 'Chat with Kira' });
-              } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = 'kira-share.png'; document.body.appendChild(a); a.click(); a.remove();
-                URL.revokeObjectURL(url);
-              }
-            } catch (e) {
-              console.error(e);
-            }
-          };
+          // Share feature removed
           return (
-            <div key={m.id} className={isAssistant ? 'text-fuchsia-200' : 'text-gray-200'}>
-              <div className={`inline-flex items-start gap-2 px-3 py-2 rounded-lg ${isAssistant ? 'bg-fuchsia-900/30' : 'bg-white/5'}`}>
-                <div>{isAssistant ? 'Kira: ' : 'You: '}{m.content}</div>
-                {canShare && (
-                  <button
-                    onClick={handleShare}
-                    title="Share"
-                    className="ml-2 text-white/70 hover:text-white p-1 rounded hover:bg-white/10"
-                    aria-label="Share this exchange"
-                  >
-                    <Share2 size={16} />
-                  </button>
-                )}
+            <div key={m.id} className="flex items-start gap-4">
+              {/* AVATAR */}
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full grid place-items-center ${isAssistant ? 'bg-fuchsia-800/50' : 'bg-gray-700/50'}`}>
+                {isAssistant ? <Bot size={18} className="text-fuchsia-300" /> : <User size={18} className="text-gray-300" />}
+              </div>
+
+              {/* MESSAGE CONTENT */}
+              <div className="flex-grow pt-1">
+                <div className="font-bold text-sm mb-1">{isAssistant ? 'Kira' : 'You'}</div>
+                <p className="text-white/90 leading-relaxed">{m.content}</p>
               </div>
             </div>
           );

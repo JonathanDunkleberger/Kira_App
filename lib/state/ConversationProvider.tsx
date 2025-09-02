@@ -8,6 +8,7 @@ import { createConversation as apiCreateConversation, listConversations } from '
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
+import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
 
 // Increase minimum size to avoid short/noise causing 400 errors
 const MIN_AUDIO_BLOB_SIZE = 4000;
@@ -63,6 +64,8 @@ const ConversationContext = createContext<ConversationContextType | undefined>(u
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
+  // WebSocket audio streaming (Phase 3/4)
+  const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket();
   const {
     conversationId, setConversationId,
     messages, setMessages,
@@ -513,13 +516,25 @@ export default function ConversationProvider({ children }: { children: React.Rea
     try {
       if (!audio || !(audio instanceof Blob)) return;
       if (audio.size <= MIN_AUDIO_BLOB_SIZE) { setMicVolume(0); return; }
-      await processAudioChunk(audio);
+      // If WS is connected, stream via socket; otherwise, fall back to HTTP pipeline
+      if (connectionStatus === 'connected') {
+        const ab = await audio.arrayBuffer();
+        try { 
+          sendAudioChunk(ab); 
+          try { endUtterance(); } catch {}
+        } catch (e) { 
+          console.error('WS send failed, falling back', e); 
+          await processAudioChunk(audio); 
+        }
+      } else {
+        await processAudioChunk(audio);
+      }
     } catch (e) {
       // Surface a generic error but avoid crashing provider
       const msg = (e as any)?.message || 'Failed to process audio';
       setError(msg);
     }
-  }, [processAudioChunk]);
+  }, [processAudioChunk, connectionStatus, sendAudioChunk]);
 
   // Strictly turn-based VAD: only active during user_listening
   useEffect(() => {
@@ -548,14 +563,30 @@ export default function ConversationProvider({ children }: { children: React.Rea
             mediaRecorderRef.current = null;
             audioChunksRef.current = [];
             mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current.ondataavailable = (event) => {
-              audioChunksRef.current.push(event.data);
+            mediaRecorderRef.current.ondataavailable = async (event) => {
+              // Stream small chunks over WS when available for lower latency
+              try {
+                if (connectionStatus === 'connected' && event.data && event.data.size) {
+                  const ab = await event.data.arrayBuffer();
+                  sendAudioChunk(ab);
+                } else if (event.data && event.data.size) {
+                  audioChunksRef.current.push(event.data);
+                }
+              } catch {
+                // If streaming fails, buffer for fallback
+                if (event.data && event.data.size) audioChunksRef.current.push(event.data);
+              }
             };
             mediaRecorderRef.current.onstop = () => {
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
               if (turnStatus === 'user_listening' && conversationStatus === 'active') {
-                // Delegate to public API for consistency
-                submitAudioChunk(audioBlob);
+                // If WS is connected, we've already streamed chunks; skip HTTP submit.
+                if (connectionStatus === 'connected') {
+                  try { endUtterance(); } catch {}
+                  setMicVolume(0);
+                } else {
+                  submitAudioChunk(audioBlob);
+                }
               } else {
                 setMicVolume(0);
               }

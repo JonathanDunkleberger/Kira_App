@@ -20,6 +20,7 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
     return Math.floor(lim / 60);
   }, [dailyLimitSeconds]);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
+  const [price, setPrice] = useState('...');
   // Get unified guest id (if any) to tag auth links
   const kiraGuestId = typeof window !== 'undefined' ? (localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id')) : null;
   const signUpHref = `/sign-up?next=upgrade${kiraGuestId ? `&guestConvId=${kiraGuestId}` : ''}`;
@@ -31,6 +32,19 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
   useEffect(() => {
     if (isOpen && isPro) onClose();
   }, [isOpen, isPro, onClose]);
+
+  // Fetch dynamic price when opening the paywall
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/stripe/price')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.displayPrice) setPrice(data.displayPrice);
+          else setPrice('$4.99/mo');
+        })
+        .catch(() => setPrice('$4.99/mo'));
+    }
+  }, [isOpen]);
 
   useEffect(() => {
   if (isOpen) {
@@ -90,12 +104,12 @@ export default function Paywall({ isOpen, onClose }: PaywallProps) {
         <div className="space-y-3">
           {signedIn ? (
             <button onClick={() => { setIsLoadingCheckout(true); handleUpgradeClick(); }} className="w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700 disabled:opacity-50" disabled={isLoadingCheckout}>
-              {isLoadingCheckout ? 'Opening Checkout…' : 'Upgrade • $1.99/mo'}
+              {isLoadingCheckout ? 'Opening Checkout…' : `Upgrade • ${price}`}
             </button>
           ) : (
             <>
               <Link href={signUpHref} onClick={() => { setIsLoadingCheckout(true); handleUpgradeClick(); }} className="block w-full rounded-lg bg-fuchsia-600 text-white font-medium py-3 hover:bg-fuchsia-700">
-              Upgrade • $1.99/mo
+              Upgrade • {price}
               </Link>
               <Link href={signInHref} onClick={handleUpgradeClick} className="block w-full rounded-lg border border-white/15 text-white font-medium py-3 hover:bg-white/5">
                 Log in to continue

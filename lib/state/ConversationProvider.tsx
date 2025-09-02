@@ -51,6 +51,11 @@ interface ConversationContextType {
   unlockedAchievements?: string[];
   newlyUnlockedToast?: { id: string; name: string; description?: string | null } | null;
   setNewlyUnlockedToast?: (val: { id: string; name: string; description?: string | null } | null) => void;
+  // External mic integrations submit audio here (webm/ogg/mp3 blob)
+  submitAudioChunk: (audio: Blob) => Promise<void>;
+  // When true, internal VAD/mic capture should be disabled in favor of external source
+  externalMicActive: boolean;
+  setExternalMicActive: (active: boolean) => void;
 }
 
 const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
@@ -91,6 +96,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const vadCleanupRef = useRef<() => void>(() => {});
   const isProcessingRef = useRef(false);
   const inflightAbortRef = useRef<AbortController | null>(null);
+  const [externalMicActive, setExternalMicActive] = useState(false);
 
   // Sync entitlement -> provider state
   useEffect(() => {
@@ -268,6 +274,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
+  setExternalMicActive(false);
     vadCleanupRef.current();
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
@@ -501,6 +508,19 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [session, conversationId, stopConversation, messages, allConversations, conversationStatus]);
 
+  // Public API for external microphone sources to submit encoded audio blobs
+  const submitAudioChunk = useCallback(async (audio: Blob) => {
+    try {
+      if (!audio || !(audio instanceof Blob)) return;
+      if (audio.size <= MIN_AUDIO_BLOB_SIZE) { setMicVolume(0); return; }
+      await processAudioChunk(audio);
+    } catch (e) {
+      // Surface a generic error but avoid crashing provider
+      const msg = (e as any)?.message || 'Failed to process audio';
+      setError(msg);
+    }
+  }, [processAudioChunk]);
+
   // Strictly turn-based VAD: only active during user_listening
   useEffect(() => {
     let vadAndStream: { vad: any; stream: MediaStream } | null = null;
@@ -533,10 +553,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
             };
             mediaRecorderRef.current.onstop = () => {
               const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-              if (audioBlob.size > MIN_AUDIO_BLOB_SIZE) {
-                if (turnStatus === 'user_listening' && conversationStatus === 'active') {
-                  processAudioChunk(audioBlob);
-                }
+              if (turnStatus === 'user_listening' && conversationStatus === 'active') {
+                // Delegate to public API for consistency
+                submitAudioChunk(audioBlob);
               } else {
                 setMicVolume(0);
               }
@@ -564,7 +583,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     };
 
-    if (turnStatus === 'user_listening') {
+  if (turnStatus === 'user_listening' && !externalMicActive) {
       setupVAD();
     }
 
@@ -574,7 +593,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         try { vadAndStream.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch {}
       }
     };
-  }, [turnStatus]);
+  }, [turnStatus, externalMicActive]);
 
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager
@@ -610,6 +629,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     unlockedAchievements,
     newlyUnlockedToast,
     setNewlyUnlockedToast,
+  submitAudioChunk,
+  externalMicActive,
+  setExternalMicActive,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

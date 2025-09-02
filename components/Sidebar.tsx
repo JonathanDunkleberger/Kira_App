@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search, Settings } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Sidebar() {
   const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation } = useConversation();
@@ -90,10 +91,10 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="p-2 border-t border-white/10">
-        <a href="/account" className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5" title={isCollapsed ? 'Settings & Help' : ''}>
+        <Link href="/settings" className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-white/5" title={isCollapsed ? 'Settings & Help' : ''}>
           <Settings size={16} className="text-white/70" />
           {!isCollapsed && <span className="text-sm text-white/90">Settings & Help</span>}
-        </a>
+        </Link>
       </div>
     </aside>
   );

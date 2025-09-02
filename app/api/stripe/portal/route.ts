@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   const userId = userData.user.id;
   const { data: ent } = await sb.from('entitlements').select('stripe_customer_id').eq('user_id', userId).maybeSingle();
-  let stripeCustomerId = ent?.stripe_customer_id as string | undefined;
+  let stripeCustomerId = (ent?.stripe_customer_id as string) || undefined;
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 

@@ -130,3 +130,141 @@ export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement
 
   return { audio, done };
 }
+
+// Conditional audio player: uses MSE on mobile for streaming chunks, blob playback on desktop.
+export class AudioPlayer {
+  private audio: HTMLAudioElement;
+  private isMobileEnv: boolean;
+  // Mobile (MSE)
+  private mediaSource: MediaSource | null = null;
+  private sourceBuffer: SourceBuffer | null = null;
+  private pendingChunks: ArrayBuffer[] = [];
+  private objectUrl: string | null = null;
+  // Desktop (buffer until end)
+  private desktopChunks: ArrayBuffer[] = [];
+
+  constructor() {
+    const el = document.getElementById('tts-player') as HTMLAudioElement | null;
+    if (!el) throw new Error('Persistent audio element #tts-player not found');
+    this.audio = el;
+    this.isMobileEnv = isMobile();
+
+    if (this.isMobileEnv) {
+      const ms = new MediaSource();
+      this.mediaSource = ms;
+      const url = URL.createObjectURL(ms);
+      this.objectUrl = url;
+      this.audio.src = url;
+      ms.addEventListener('sourceopen', () => {
+        try {
+          if (!this.mediaSource || this.mediaSource.readyState !== 'open') return;
+          // MIME type for WebM Opus
+          const sb = this.mediaSource.addSourceBuffer('audio/webm; codecs=opus');
+          this.sourceBuffer = sb;
+          sb.addEventListener('updateend', () => {
+            this.flushPending();
+          });
+          // Attempt to flush any chunks received before buffer was ready
+          this.flushPending();
+        } catch (e) {
+          console.error('Failed to initialize SourceBuffer:', e);
+        }
+      });
+    } else {
+      // Desktop path: no special setup
+      this.desktopChunks = [];
+    }
+  }
+
+  private flushPending() {
+    const sb = this.sourceBuffer;
+    if (!sb || sb.updating) return;
+    const chunk = this.pendingChunks.shift();
+    if (chunk) {
+      try {
+        sb.appendBuffer(chunk);
+      } catch (e) {
+        console.error('appendBuffer failed, re-queueing:', e);
+        // Put it back and retry on next updateend
+        this.pendingChunks.unshift(chunk);
+      }
+    }
+  }
+
+  appendChunk(chunk: ArrayBuffer) {
+    if (this.isMobileEnv) {
+      if (!this.sourceBuffer) {
+        this.pendingChunks.push(chunk);
+        return;
+      }
+      if (this.sourceBuffer.updating) {
+        this.pendingChunks.push(chunk);
+        return;
+      }
+      try {
+        this.sourceBuffer.appendBuffer(chunk);
+      } catch (e) {
+        console.error('appendBuffer failed, queueing:', e);
+        this.pendingChunks.push(chunk);
+      }
+    } else {
+      this.desktopChunks.push(chunk);
+    }
+  }
+
+  async play() {
+    try {
+      await this.audio.play();
+    } catch (e) {
+      // Best-effort, some browsers require user gesture
+      try { (this.audio as any).play?.(); } catch {}
+    }
+  }
+
+  onEnded(callback: () => void) {
+    this.audio.onended = () => {
+      try { callback(); } catch {}
+      // Cleanup object URL on mobile streams
+      if (this.objectUrl) {
+        try { URL.revokeObjectURL(this.objectUrl); } catch {}
+        this.objectUrl = null;
+      }
+    };
+  }
+
+  async endStream() {
+    if (this.isMobileEnv) {
+      try {
+        // Flush any remaining pending chunks first
+        this.flushPending();
+        if (this.mediaSource && this.mediaSource.readyState === 'open') {
+          this.mediaSource.endOfStream();
+        }
+      } catch (e) {
+        console.warn('endOfStream failed:', e);
+      } finally {
+        await this.play();
+      }
+    } else {
+      if (!this.desktopChunks.length) return;
+      const merged = mergeArrayBuffers(this.desktopChunks);
+      this.desktopChunks = [];
+      const blob = new Blob([merged], { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      this.audio.src = url;
+      try {
+        await this.play();
+      } finally {
+        // Release URL after playback ends via onEnded cleanup
+      }
+    }
+  }
+}
+
+function mergeArrayBuffers(parts: ArrayBuffer[]): ArrayBuffer {
+  const total = parts.reduce((n, b) => n + b.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) { out.set(new Uint8Array(p), offset); offset += p.byteLength; }
+  return out.buffer;
+}

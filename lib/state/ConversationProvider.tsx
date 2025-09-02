@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { playMp3Base64, playAndAnalyzeAudio, playAudioData } from '@/lib/audio';
+import { playMp3Base64, playAndAnalyzeAudio, playAudioData, AudioPlayer } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
@@ -65,7 +65,27 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
   // WebSocket audio streaming (Phase 3/4)
-  const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket();
+  const audioStreamPlayerRef = useRef<AudioPlayer | null>(null);
+  useEffect(() => {
+    const player = new AudioPlayer();
+    audioStreamPlayerRef.current = player;
+    player.onEnded(() => {
+      console.log('Audio playback finished, resetting to listening.');
+      setTurnStatus('user_listening');
+    });
+    return () => { audioStreamPlayerRef.current = null; };
+  }, []);
+  const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket({
+    onAudioChunk: (chunk: ArrayBuffer) => {
+      audioStreamPlayerRef.current?.appendChunk(chunk);
+      // Ensure playback begins on first chunk for mobile
+      audioStreamPlayerRef.current?.play();
+    },
+    onAudioEnd: () => {
+      audioStreamPlayerRef.current?.endStream();
+      // Note: turnStatus reset handled elsewhere after TTS completes
+    }
+  });
   const {
     conversationId, setConversationId,
     messages, setMessages,

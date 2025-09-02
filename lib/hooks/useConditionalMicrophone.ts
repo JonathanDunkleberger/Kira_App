@@ -8,10 +8,8 @@ function isMobile(): boolean {
 }
 
 // For mobile: callback receives a complete encoded utterance as a Blob
-// Optional onDebug: emit basic stats for tuning (durationMs, frames, rmsThreshold)
 export function useConditionalMicrophone(
   onUtterance: (blob: Blob) => void,
-  onDebug?: (info: { durationMs: number; frames: number; rmsThreshold: number }) => void,
 ) {
   const ctxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -19,13 +17,9 @@ export function useConditionalMicrophone(
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isListening, setIsListening] = useState(false);
-  // Live tuning
+  // Fixed segmentation thresholds (tuned and no longer runtime-adjustable)
   const rmsThresholdRef = useRef(0.02);
   const silenceMsRef = useRef(500);
-  const setConfig = useCallback((cfg: { rmsThreshold?: number; silenceMs?: number }) => {
-    if (typeof cfg.rmsThreshold === 'number' && isFinite(cfg.rmsThreshold)) rmsThresholdRef.current = cfg.rmsThreshold;
-    if (typeof cfg.silenceMs === 'number' && isFinite(cfg.silenceMs)) silenceMsRef.current = cfg.silenceMs;
-  }, []);
   // Mobile segmentation state
   const chunkQueueRef = useRef<Float32Array[]>([]);
   const silenceCounterRef = useRef(0);
@@ -68,11 +62,9 @@ export function useConditionalMicrophone(
       };
 
       // Segmentation via RMS thresholding
-      const SAMPLE_RATE = ctx.sampleRate || 48000;
       const FRAME_MS = 20; // 20ms frames
-  const RMS_THRESHOLD = rmsThresholdRef.current; // tweakable
+  const RMS_THRESHOLD = rmsThresholdRef.current;
   const SILENCE_FRAMES_TO_END = Math.round((silenceMsRef.current || 500) / FRAME_MS);
-      const MIN_UTTER_MS = 300; // guard very short blips
       let framesCount = 0;
       let startedAt = 0;
 
@@ -102,9 +94,7 @@ export function useConditionalMicrophone(
               // End utterance
               speakingRef.current = false;
               silenceCounterRef.current = 0;
-              const dur = performance.now() - startedAt;
               try { mr.stop(); } catch {}
-              try { onDebug?.({ durationMs: dur, frames: framesCount, rmsThreshold: RMS_THRESHOLD }); } catch {}
               // Reset queue for next utterance
               chunkQueueRef.current = [];
               framesCount = 0;
@@ -171,5 +161,5 @@ export function useConditionalMicrophone(
     setIsListening(false);
   }, []);
 
-  return { start, stop, isListening, setConfig } as const;
+  return { start, stop, isListening } as const;
 }

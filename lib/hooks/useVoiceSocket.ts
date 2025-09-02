@@ -1,9 +1,8 @@
 // Client-side WebSocket connection manager for voice streaming
-// Establishes a WS connection, buffers audio frames between audio_start/audio_end,
-// and exposes sendAudioChunk and endUtterance controls.
+// Establishes a WS connection and forwards audio frames via callbacks.
 
 import { useEffect, useRef, useState } from 'react';
-import { playAudioData } from '@/lib/audio';
+// No direct audio playback here; chunks are emitted via callbacks
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -15,14 +14,32 @@ type ServerMsg =
   | { type: 'audio_end' }
   | { type: 'error'; message: string };
 
-export function useVoiceSocket(urlBase: string = 'ws://localhost:8080') {
+type VoiceSocketOptions = {
+  url?: string;
+  onAudioChunk?: (chunk: ArrayBuffer) => void;
+  onAudioEnd?: () => void;
+};
+
+export function useVoiceSocket(opts: VoiceSocketOptions | string = 'ws://localhost:8080') {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SocketStatus>('connecting');
   const [lastText, setLastText] = useState<string>('');
-  const audioBuffersRef = useRef<Uint8Array[]>([]);
-  const playingRef = useRef<Promise<void> | null>(null);
+  const onAudioChunkRef = useRef<((chunk: ArrayBuffer) => void) | undefined>(undefined);
+  const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
+
+  // Normalize options
+  const urlBase = typeof opts === 'string' ? opts : (opts.url || 'ws://localhost:8080');
+  useEffect(() => {
+    if (typeof opts !== 'string') {
+      onAudioChunkRef.current = opts.onAudioChunk;
+      onAudioEndRef.current = opts.onAudioEnd;
+    } else {
+      onAudioChunkRef.current = undefined;
+      onAudioEndRef.current = undefined;
+    }
+  }, [opts]);
 
   useEffect(() => {
     shuttingDownRef.current = false;
@@ -55,11 +72,11 @@ export function useVoiceSocket(urlBase: string = 'ws://localhost:8080') {
           const data = event.data;
           try {
             if (data instanceof ArrayBuffer) {
-              // Accumulate between audio_start/audio_end
-              audioBuffersRef.current.push(new Uint8Array(data));
+              // Forward chunk immediately
+              try { onAudioChunkRef.current?.(data); } catch {}
             } else if (data instanceof Blob) {
               const ab = await data.arrayBuffer();
-              audioBuffersRef.current.push(new Uint8Array(ab));
+              try { onAudioChunkRef.current?.(ab); } catch {}
             } else if (typeof data === 'string') {
               const maybe = safeParse<ServerMsg>(data);
               if (maybe) {
@@ -70,20 +87,8 @@ export function useVoiceSocket(urlBase: string = 'ws://localhost:8080') {
                   case 'assistant_text':
                     setLastText(maybe.text);
                     break;
-                  case 'audio_start':
-                    audioBuffersRef.current = [];
-                    break;
                   case 'audio_end':
-                    if (audioBuffersRef.current.length) {
-                      const totalLen = audioBuffersRef.current.reduce((n, b) => n + b.byteLength, 0);
-                      const merged = new Uint8Array(totalLen);
-                      let offset = 0;
-                      for (const part of audioBuffersRef.current) { merged.set(part, offset); offset += part.byteLength; }
-                      const { done } = playAudioData(merged.buffer);
-                      playingRef.current = done;
-                      await done; // ensure serial playback
-                      playingRef.current = null;
-                    }
+                    try { onAudioEndRef.current?.(); } catch {}
                     break;
                   case 'error':
                     setLastText('[error] ' + (maybe.message || ''));

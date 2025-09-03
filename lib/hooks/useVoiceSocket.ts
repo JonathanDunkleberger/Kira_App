@@ -20,7 +20,11 @@ type VoiceSocketOptions = {
   onAudioEnd?: () => void;
 };
 
-export function useVoiceSocket(opts: VoiceSocketOptions | string = 'ws://localhost:8080') {
+const WSS_URL = process.env.NODE_ENV === 'production'
+  ? process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
+  : process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+
+export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || '') {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SocketStatus>('connecting');
   const [lastText, setLastText] = useState<string>('');
@@ -30,7 +34,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = 'ws://localho
   const shuttingDownRef = useRef(false);
 
   // Normalize options
-  const urlBase = typeof opts === 'string' ? opts : (opts.url || 'ws://localhost:8080');
+  const urlBase = typeof opts === 'string' ? opts : (opts.url || WSS_URL || '');
   useEffect(() => {
     if (typeof opts !== 'string') {
       onAudioChunkRef.current = opts.onAudioChunk;
@@ -45,6 +49,11 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = 'ws://localho
     shuttingDownRef.current = false;
 
     const connect = async () => {
+      if (!urlBase) {
+        // No URL configured; stay disconnected
+        setStatus('disconnected');
+        return;
+      }
       // Add auth token if available via Supabase client
       let token = '';
       try {

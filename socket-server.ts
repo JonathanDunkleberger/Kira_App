@@ -3,7 +3,7 @@
 
 import 'dotenv/config';
 import http from 'node:http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { transcribeWebmToText } from './lib/server/stt.js';
 import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
@@ -25,6 +25,18 @@ const wss = new WebSocketServer({ server });
 server.listen(PORT, HOST, () => {
   console.log(`HTTP+WS listening on http://${HOST}:${PORT} (Render)`);
 });
+
+// Heartbeat: periodically ping all connected clients to prevent idle timeouts
+const HEARTBEAT_MS = 30_000;
+setInterval(() => {
+  try {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try { (client as any).ping(); } catch {}
+      }
+    });
+  } catch {}
+}, HEARTBEAT_MS);
 
 wss.on('connection', async (ws, req) => {
   const ip = req.socket.remoteAddress;

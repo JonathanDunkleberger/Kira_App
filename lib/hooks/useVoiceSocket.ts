@@ -72,6 +72,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
         setStatus('connecting');
 
         ws.onopen = () => {
+          console.log('WS connected');
           reconnectAttemptsRef.current = 0;
           if (!shuttingDownRef.current) setStatus('connected');
         };
@@ -117,12 +118,14 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
           }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (ev: CloseEvent) => {
+          console.warn('WS closed', { code: ev.code, reason: ev.reason, wasClean: (ev as any).wasClean });
           if (shuttingDownRef.current) return;
           setStatus('disconnected');
           scheduleReconnect();
         };
-        ws.onerror = () => {
+        ws.onerror = (ev: Event) => {
+          console.error('WS error', ev);
           if (shuttingDownRef.current) return;
           setStatus('disconnected');
           scheduleReconnect();

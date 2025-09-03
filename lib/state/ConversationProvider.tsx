@@ -349,10 +349,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     }
 
-    setConversationStatus('active');
-    setTurnStatus('user_listening');
-    // Begin capturing mic after entering listening state
-    try { startMicrophone(); } catch {}
+  setConversationStatus('active');
+  setTurnStatus('user_listening');
   if (isPro) setProConversationTimer(proSessionSeconds);
   }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall, startMicrophone]);
 
@@ -447,6 +445,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [connectionStatus, sendAudioChunk, endUtterance]);
 
   // Removed legacy VAD useEffect; microphone is managed by useConditionalMicrophone
+
+  // Start microphone only when UI is in listening state AND WS is connected
+  useEffect(() => {
+    if (turnStatus === 'user_listening' && connectionStatus === 'connected') {
+      try { startMicrophone(); } catch {}
+    }
+  }, [turnStatus, connectionStatus, startMicrophone]);
 
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager

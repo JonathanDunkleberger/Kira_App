@@ -21,6 +21,8 @@ type VoiceSocketOptions = {
   conversationId?: string | null;
 };
 
+type LastEvent = { type: 'transcript' | 'assistant_text' | 'error' | 'raw'; text: string };
+
 const WSS_URL = process.env.NODE_ENV === 'production'
   ? process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
   : process.env.NEXT_PUBLIC_WEBSOCKET_URL;
@@ -29,6 +31,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SocketStatus>('connecting');
   const [lastText, setLastText] = useState<string>('');
+  const [lastEvent, setLastEvent] = useState<LastEvent | null>(null);
   const onAudioChunkRef = useRef<((chunk: ArrayBuffer) => void) | undefined>(undefined);
   const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
@@ -96,15 +99,18 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                 switch (maybe.type) {
                   case 'transcript':
                     setLastText(maybe.text);
+                    setLastEvent({ type: 'transcript', text: maybe.text || '' });
                     break;
                   case 'assistant_text':
                     setLastText(maybe.text);
+                    setLastEvent({ type: 'assistant_text', text: maybe.text || '' });
                     break;
                   case 'audio_end':
                     try { onAudioEndRef.current?.(); } catch {}
                     break;
                   case 'error':
                     setLastText('[error] ' + (maybe.message || ''));
+                    setLastEvent({ type: 'error', text: maybe.message || '' });
                     break;
                   default:
                     break;
@@ -112,9 +118,11 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
               } else {
                 // Legacy plain text fallback
                 setLastText(data);
+                setLastEvent({ type: 'raw', text: String(data) });
               }
             } else {
               setLastText(String(data));
+              setLastEvent({ type: 'raw', text: String(data) });
             }
           } catch (err) {
             console.error('WS onmessage handler error:', err);
@@ -183,7 +191,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
     }
   };
 
-  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText } as const;
+  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent } as const;
 }
 
 function safeParse<T>(s: string): T | null {

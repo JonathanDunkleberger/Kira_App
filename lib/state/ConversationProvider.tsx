@@ -85,12 +85,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
     viewMode, setViewMode,
     loadConversation, newConversation, fetchAllConversations,
   } = useConversationManager(session);
-  const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket({
+  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance } = useVoiceSocket({
     conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
       // Ensure playback begins on first chunk for mobile
       audioPlayer?.play();
+      // Transition to assistant speaking on first audio
+      setTurnStatus(prev => (prev !== 'assistant_speaking' ? 'assistant_speaking' : prev));
     },
     onAudioEnd: () => {
       audioPlayer?.endStream();
@@ -125,8 +127,57 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // New microphone hook: emits complete utterance blobs
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob: Blob) => {
+    // Mark that we're processing the captured utterance
+    setTurnStatus('processing_speech');
     submitAudioChunk(audioBlob);
   });
+
+  // Track per-turn insertion of user/assistant placeholders
+  const userInsertedForTurnRef = useRef(false);
+  const pendingAssistantIdRef = useRef<string | null>(null);
+
+  // Update messages from server events (transcripts and assistant text)
+  useEffect(() => {
+    if (!lastEvent) return;
+    if (!conversationId) return; // avoid updating when no conversation context
+    const ev = lastEvent;
+    setMessages(prev => {
+      let next = [...prev];
+      if (ev.type === 'transcript') {
+        // First transcript of a turn: insert user + assistant placeholder
+        if (!userInsertedForTurnRef.current) {
+          const userId = `local-user-${Date.now()}`;
+          const asstId = `local-assistant-${Date.now()}`;
+          next = [...next, { id: userId, role: 'user', content: ev.text }, { id: asstId, role: 'assistant', content: '' }];
+          userInsertedForTurnRef.current = true;
+          pendingAssistantIdRef.current = asstId;
+        } else {
+          // Subsequent transcript updates replace last user content
+          for (let i = next.length - 1; i >= 0; i--) {
+            if (next[i].role === 'user') { next[i] = { ...next[i], content: ev.text }; break; }
+          }
+        }
+      } else if (ev.type === 'assistant_text') {
+        // Fill assistant placeholder content as it arrives (we get final text, not streaming)
+        if (pendingAssistantIdRef.current) {
+          const idx = next.findIndex(m => m.id === pendingAssistantIdRef.current);
+          if (idx >= 0) next[idx] = { ...next[idx], content: ev.text };
+        } else {
+          // Fallback: append assistant if missing placeholder
+          const asstId = `local-assistant-${Date.now()}`;
+          next = [...next, { id: asstId, role: 'assistant', content: ev.text }];
+          pendingAssistantIdRef.current = asstId;
+        }
+      }
+      return next;
+    });
+    // When assistant text arrives, we're speaking; reset to listening happens on audio end via player
+    if (ev.type === 'assistant_text') {
+      setTurnStatus('assistant_speaking');
+      // Reset turn refs so next transcript inserts anew
+      userInsertedForTurnRef.current = false;
+    }
+  }, [lastEvent, conversationId, setMessages]);
 
   // Sync entitlement -> provider state
   useEffect(() => {

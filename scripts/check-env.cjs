@@ -1,4 +1,4 @@
-// scripts/check-env.js
+// scripts/check-env.cjs
 require('dotenv').config({ path: '.env.local' }); // <-- load env from .env.local
 const { z } = require('zod');
 
@@ -25,14 +25,13 @@ const EnvSchema = z.object({
   DEV_ALLOW_NOAUTH: z.string().optional()
 });
 
-// In CI/Preview, warn instead of fail. Locally, fail fast.
 const isVercel = !!process.env.VERCEL;
 try {
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('\n - ');
     if (isVercel) {
-  console.warn('⚠️ Environment warnings (continuing on Vercel):\n - ' + issues);
+      console.warn('⚠️ Environment warnings (continuing on Vercel):\n - ' + issues);
       process.exit(0);
     } else {
       console.error('❌ Invalid environment variables:\n - ' + issues);

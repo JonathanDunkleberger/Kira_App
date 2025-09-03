@@ -1,15 +1,16 @@
 {
   "name": "ai-media-companion",
+  "type": "module",
   "private": true,
   "engines": {
     "node": "20.x",
     "npm": ">=9"
   },
   "scripts": {
-  "dev:next": "next dev -p 3000",
-  "dev:ws": "ts-node socket-server.ts",
-  "dev": "npm-run-all --parallel dev:next dev:ws",
-    "build": "node scripts/check-env.js && next build",
+    "dev:next": "next dev -p 3000",
+    "dev:ws": "node --loader ts-node/esm --loader tsconfig-paths/register socket-server.ts",
+    "dev": "npm-run-all --parallel dev:next dev:ws",
+    "build": "node scripts/check-env.cjs && next build",
     "start": "next start"
   },
   "dependencies": {

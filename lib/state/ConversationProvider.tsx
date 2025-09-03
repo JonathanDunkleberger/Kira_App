@@ -78,7 +78,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
       setTurnStatus('user_listening');
     });
   }, []);
+  const {
+    conversationId, setConversationId,
+    messages, setMessages,
+    allConversations, setAllConversations,
+    viewMode, setViewMode,
+    loadConversation, newConversation, fetchAllConversations,
+  } = useConversationManager(session);
   const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket({
+    conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
       // Ensure playback begins on first chunk for mobile
@@ -89,13 +97,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Note: turnStatus reset handled elsewhere after TTS completes
     }
   });
-  const {
-    conversationId, setConversationId,
-    messages, setMessages,
-    allConversations, setAllConversations,
-    viewMode, setViewMode,
-    loadConversation, newConversation, fetchAllConversations,
-  } = useConversationManager(session);
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);

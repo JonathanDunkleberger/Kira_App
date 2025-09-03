@@ -18,6 +18,7 @@ type VoiceSocketOptions = {
   url?: string;
   onAudioChunk?: (chunk: ArrayBuffer) => void;
   onAudioEnd?: () => void;
+  conversationId?: string | null;
 };
 
 const WSS_URL = process.env.NODE_ENV === 'production'
@@ -35,6 +36,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
 
   // Normalize options
   const urlBase = typeof opts === 'string' ? opts : (opts.url || WSS_URL || '');
+  const conversationId = typeof opts === 'string' ? undefined : opts.conversationId;
   useEffect(() => {
     if (typeof opts !== 'string') {
       onAudioChunkRef.current = opts.onAudioChunk;
@@ -62,8 +64,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
         token = data?.session?.access_token || '';
       } catch {}
 
-      const url = new URL(urlBase);
+  const url = new URL(urlBase);
       if (token) url.searchParams.set('token', token);
+  if (conversationId) url.searchParams.set('conversationId', conversationId);
 
       try {
         const ws = new WebSocket(url.toString());
@@ -154,7 +157,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       socketRef.current = null;
       setStatus('disconnected');
     };
-  }, [urlBase]);
+  }, [urlBase, conversationId]);
 
   const sendAudioChunk = (chunk: ArrayBuffer) => {
     const ws = socketRef.current;

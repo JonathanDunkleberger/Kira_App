@@ -45,6 +45,7 @@ wss.on('connection', async (ws, req) => {
   // Basic auth via Supabase access token in query ?token=...
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const token = url.searchParams.get('token') || '';
+  const conversationId = url.searchParams.get('conversationId') || '';
   const allowNoAuth = (process.env.DEV_ALLOW_NOAUTH || '').toLowerCase() === 'true';
   if (!token && !allowNoAuth) {
     try { ws.close(4401, 'Unauthorized'); } catch {}
@@ -74,6 +75,7 @@ wss.on('connection', async (ws, req) => {
   const FLUSH_DEBOUNCE_MS = Number(process.env.WS_UTTERANCE_SILENCE_MS || 700);
   // Node 18+ provides global fetch. If running on older Node, consider importing from 'undici'.
   const fetchFn: typeof fetch = fetch;
+  const supa = getSupabaseServerAdmin();
 
   const scheduleFlush = () => {
     if (flushTimer) clearTimeout(flushTimer);
@@ -92,15 +94,51 @@ wss.on('connection', async (ws, req) => {
       const transcript = await transcribeWebmToText(new Uint8Array(payload));
       console.timeEnd('STT');
       if (transcript) sendJson(ws, { type: 'transcript', text: transcript });
+      // 1b) Save user message if we have a conversationId
+      if (transcript && conversationId) {
+        try {
+          const userId = (ws as any).userId || null;
+          await supa.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript, user_id: userId });
+        } catch (e) {
+          console.warn('Failed to save user message:', e);
+        }
+      }
       // 2) LLM
+      // Fetch memory (last 6 messages) for this conversation
+      let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      if (conversationId) {
+        try {
+          const { data: hist, error } = await supa
+            .from('messages')
+            .select('role, content')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true })
+            .limit(6);
+          if (!error && Array.isArray(hist)) {
+            history = hist.map((m: any) => ({ role: m.role, content: m.content }));
+          }
+        } catch (e) {
+          console.warn('Failed to fetch memory:', e);
+        }
+      }
       const messages = [
         { role: 'system' as const, content: 'You are Kira, a helpful, witty voice companion. Keep responses concise and spoken-friendly.' },
+        ...history,
         { role: 'user' as const, content: transcript || '(no speech captured)' },
       ];
       console.time('LLM');
   const assistant = await runChat(fetchFn, messages);
       console.timeEnd('LLM');
       if (assistant) sendJson(ws, { type: 'assistant_text', text: assistant });
+      // 2b) Save assistant message
+      if (assistant && conversationId) {
+        try {
+          const userId = (ws as any).userId || null;
+          await supa.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: assistant, user_id: userId });
+        } catch (e) {
+          console.warn('Failed to save assistant message:', e);
+        }
+      }
   // 3) TTS (WebM Opus) -> binary frames
   console.log('[TTS]', { /* add signals as needed */ });
       if (assistant) {

@@ -4,9 +4,9 @@
 import 'dotenv/config';
 import { WebSocketServer } from 'ws';
 import OpenAI from 'openai';
-import { transcribeWebmToText } from '@/lib/server/stt';
-import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { transcribeWebmToText } from './lib/server/stt.js';
+import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
+import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
 
 const PORT = Number(process.env.WS_PORT || 8080);
 
@@ -83,7 +83,7 @@ wss.on('connection', async (ws, req) => {
       if (assistant) {
         sendJson(ws, { type: 'audio_start' });
         try {
-          await synthesizeSpeechStream(assistant, async (chunk) => {
+          await synthesizeSpeechStream(assistant, async (chunk: Uint8Array) => {
             try { ws.send(chunk, { binary: true }); } catch (e) { console.error('WS send audio chunk failed:', e); }
           });
         } catch (e) {

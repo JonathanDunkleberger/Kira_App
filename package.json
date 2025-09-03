@@ -12,8 +12,8 @@
     "dev": "npm-run-all --parallel dev:next dev:ws",
   "build": "node scripts/check-env.cjs && next build",
   "build:server": "tsc -p tsconfig.server.json",
-  "start": "node --loader tsconfig-paths/register dist/socket-server.js",
-  "start:server": "node --loader tsconfig-paths/register dist/socket-server.js"
+  "start": "node --loader tsconfig-paths/register dist-server/socket-server.js",
+  "start:server": "node --loader tsconfig-paths/register dist-server/socket-server.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -36,7 +36,8 @@
     "satori": "^0.18.1",
     "sharp": "^0.34.3",
     "stripe": "16.10.0",
-    "ws": "^8.18.3"
+  "ws": "^8.18.3",
+  "zod": "^4.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
@@ -52,7 +53,5 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "5.9.2"
   },
-  "overrides": {
-    "zod": "^4.0.0"
-  }
+  "overrides": {}
 }

@@ -1,39 +1,35 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "outDir": "dist-server",
+    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "target": "ES2022",
     "lib": ["ES2022"],
-  "baseUrl": ".",
-    "paths": { "@/*": ["./*"] },
-  "esModuleInterop": true,
-    "outDir": "./dist",
-    "rootDir": ".",
-    "strict": true,
+    "types": ["node", "undici-types"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleDetection": "force",
-    "allowImportingTsExtensions": false,
-    "noEmit": false
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "socket-server.ts",
     "lib/server/**/*.ts",
-    "lib/usage.ts"
+    "lib/server/**/*.tsx",
+    "lib/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",
+    ".next",
     "dist",
-    "app/**/*",
-    "components/**/*",
-    "tests/**/*",
-    "tests-examples/**/*",
-    "lib/hooks/**/*",
-    "lib/http.ts",
-    "lib/paywall.ts",
-    "lib/realtime.ts",
-    "lib/supabaseClient.ts",
-    "lib/env.client.ts"
+    "app",
+    "components",
+    "pages",
+    "tests",
+    "tests-examples"
   ]
 }

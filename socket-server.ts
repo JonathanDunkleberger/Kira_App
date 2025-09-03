@@ -105,7 +105,7 @@ wss.on('connection', async (ws, req) => {
       }
       // 2) LLM
       // Fetch memory (last 6 messages) for this conversation
-      let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      let chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
       if (conversationId) {
         try {
           const { data: hist, error } = await supa
@@ -115,15 +115,17 @@ wss.on('connection', async (ws, req) => {
             .order('created_at', { ascending: true })
             .limit(6);
           if (!error && Array.isArray(hist)) {
-            history = hist.map((m: any) => ({ role: m.role, content: m.content }));
+            chatHistory = hist.map((m: any) => ({ role: m.role, content: m.content }));
           }
         } catch (e) {
           console.warn('Failed to fetch memory:', e);
         }
       }
+      // Log memory fetch outcome for verification on Render
+      try { console.log({ conversationId, historyLen: chatHistory.length }); } catch {}
       const messages = [
         { role: 'system' as const, content: 'You are Kira, a helpful, witty voice companion. Keep responses concise and spoken-friendly.' },
-        ...history,
+        ...chatHistory,
         { role: 'user' as const, content: transcript || '(no speech captured)' },
       ];
       console.time('LLM');

@@ -17,7 +17,10 @@ type ServerMsg =
 type VoiceSocketOptions = {
   url?: string;
   onAudioChunk?: (chunk: ArrayBuffer) => void;
+  onAudioStart?: () => void;
   onAudioEnd?: () => void;
+  onTranscript?: (text: string) => void;
+  onAssistantText?: (text: string) => void;
   conversationId?: string | null;
 };
 
@@ -33,7 +36,10 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const [lastText, setLastText] = useState<string>('');
   const [lastEvent, setLastEvent] = useState<LastEvent | null>(null);
   const onAudioChunkRef = useRef<((chunk: ArrayBuffer) => void) | undefined>(undefined);
+  const onAudioStartRef = useRef<(() => void) | undefined>(undefined);
   const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
+  const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
+  const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
 
@@ -44,9 +50,15 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
     if (typeof opts !== 'string') {
       onAudioChunkRef.current = opts.onAudioChunk;
       onAudioEndRef.current = opts.onAudioEnd;
+  onAudioStartRef.current = opts.onAudioStart;
+  onTranscriptRef.current = opts.onTranscript;
+  onAssistantRef.current = opts.onAssistantText;
     } else {
       onAudioChunkRef.current = undefined;
       onAudioEndRef.current = undefined;
+  onAudioStartRef.current = undefined;
+  onTranscriptRef.current = undefined;
+  onAssistantRef.current = undefined;
     }
   }, [opts]);
 
@@ -106,10 +118,15 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                   case 'transcript':
                     setLastText(maybe.text);
                     setLastEvent({ type: 'transcript', text: maybe.text || '' });
+                    try { onTranscriptRef.current?.(maybe.text); } catch {}
                     break;
                   case 'assistant_text':
                     setLastText(maybe.text);
                     setLastEvent({ type: 'assistant_text', text: maybe.text || '' });
+                    try { onAssistantRef.current?.(maybe.text); } catch {}
+                    break;
+                  case 'audio_start':
+                    try { onAudioStartRef.current?.(); } catch {}
                     break;
                   case 'audio_end':
                     try { onAudioEndRef.current?.(); } catch {}

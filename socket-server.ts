@@ -3,7 +3,6 @@
 
 import 'dotenv/config';
 import { WebSocketServer } from 'ws';
-import OpenAI from 'openai';
 import { transcribeWebmToText } from './lib/server/stt.js';
 import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
@@ -50,7 +49,8 @@ wss.on('connection', async (ws, req) => {
   let flushTimer: NodeJS.Timeout | null = null;
   let processing = false;
   const FLUSH_DEBOUNCE_MS = Number(process.env.WS_UTTERANCE_SILENCE_MS || 700);
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+  // Node 18+ provides global fetch. If running on older Node, consider importing from 'undici'.
+  const fetchFn: typeof fetch = fetch;
 
   const scheduleFlush = () => {
     if (flushTimer) clearTimeout(flushTimer);
@@ -72,12 +72,7 @@ wss.on('connection', async (ws, req) => {
         { role: 'system' as const, content: 'You are Kira, a helpful, witty voice companion. Keep responses concise and spoken-friendly.' },
         { role: 'user' as const, content: transcript || '(no speech captured)' },
       ];
-      const llm = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages,
-        max_tokens: 300,
-      });
-      const assistant = llm.choices?.[0]?.message?.content?.trim() || '';
+  const assistant = await runChat(fetchFn, messages);
       if (assistant) sendJson(ws, { type: 'assistant_text', text: assistant });
       // 3) TTS (WebM Opus) -> binary frames
       if (assistant) {
@@ -143,4 +138,27 @@ wss.on('error', (err) => {
 
 function sendJson(ws: any, obj: any) {
   try { ws.send(JSON.stringify(obj)); } catch {}
+}
+
+async function runChat(
+  fetcher: typeof fetch,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  if (!apiKey) throw new Error('Missing OPENAI_API_KEY');
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const r = await fetcher('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model, messages, max_tokens: 300 }),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`OpenAI chat failed: ${r.status} ${body}`);
+  }
+  const data: any = await r.json();
+  return (data.choices?.[0]?.message?.content ?? '').trim();
 }

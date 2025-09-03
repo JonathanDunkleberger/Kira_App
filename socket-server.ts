@@ -104,22 +104,15 @@ wss.on('connection', async (ws, req) => {
         }
       }
       // 2) LLM
-      // Fetch memory (last 6 messages) for this conversation
+      // Fetch memory via secure RPC (last few messages) for this conversation
       let chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
       if (conversationId) {
-        try {
-          const { data: hist, error } = await supa
-            .from('messages')
-            .select('role, content')
-            .eq('conversation_id', conversationId)
-            .order('created_at', { ascending: true })
-            .limit(6);
-          if (!error && Array.isArray(hist)) {
-            chatHistory = hist.map((m: any) => ({ role: m.role, content: m.content }));
-          }
-        } catch (e) {
-          console.warn('Failed to fetch memory:', e);
+        const { data: history, error: historyError } = await supa
+          .rpc('get_conversation_history', { p_conversation_id: conversationId });
+        if (historyError) {
+          console.error('Error fetching history via RPC:', historyError);
         }
+        chatHistory = (history as any[]) || [];
       }
       // Log memory fetch outcome for verification on Render
       try { console.log({ conversationId, historyLen: chatHistory.length }); } catch {}

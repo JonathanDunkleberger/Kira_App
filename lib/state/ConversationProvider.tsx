@@ -9,6 +9,7 @@ import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
+import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 
 // Increase minimum size to avoid short/noise causing 400 errors
 const MIN_AUDIO_BLOB_SIZE = 4000;
@@ -113,13 +114,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const [proSessionSeconds, setProSessionSeconds] = useState(1800);
   const proTimerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const ent = useEntitlement();
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  // Removed legacy MediaRecorder/VAD refs in favor of useConditionalMicrophone
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const vadCleanupRef = useRef<() => void>(() => {});
   const isProcessingRef = useRef(false);
   const inflightAbortRef = useRef<AbortController | null>(null);
   const [externalMicActive, setExternalMicActive] = useState(false);
+
+  // New microphone hook: emits complete utterance blobs
+  const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob: Blob) => {
+    submitAudioChunk(audioBlob);
+  });
 
   // Sync entitlement -> provider state
   useEffect(() => {
@@ -293,15 +297,15 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
     setConversationStatus('active');
     setTurnStatus('user_listening');
+    // Begin capturing mic after entering listening state
+    try { startMicrophone(); } catch {}
   if (isPro) setProConversationTimer(proSessionSeconds);
-  }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall]);
+  }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall, startMicrophone]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
-  setExternalMicActive(false);
-    vadCleanupRef.current();
-    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
-    mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-    mediaRecorderRef.current = null;
+    // Stop new microphone pipeline first
+    try { stopMicrophone(); } catch {}
+    setExternalMicActive(false);
     if (audioPlayerRef.current) {
       try {
         if (typeof (audioPlayerRef.current as any).stop === 'function') {
@@ -336,7 +340,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Ensure paywall opens when ending due to limit
       promptPaywall('time_exhausted');
     }
-  }, [promptPaywall]);
+  }, [promptPaywall, stopMicrophone]);
 
   // Removed per-second client countdown for free users. We now trust server updates
   // and refresh after each turn and periodically via checkUsage().
@@ -374,277 +378,21 @@ export default function ConversationProvider({ children }: { children: React.Rea
     return () => clearInterval(id);
   }, [ent]);
 
-  const processAudioChunk = useCallback(async (audioBlob: Blob) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
-    // If conversation is no longer active, drop the chunk
-    if (conversationStatus !== 'active') { isProcessingRef.current = false; return; }
-    setTurnStatus('processing_speech');
-    setMicVolume(0);
-    
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'audio.webm');
-  // No need to pass guest history; guests now have a server conversationId after first turn
-    
-    const url = new URL('/api/utterance', window.location.origin);
-    if (conversationId) url.searchParams.set('conversationId', conversationId);
-    // Prepare abort controller so we can cancel on stop
-    const abort = new AbortController();
-    inflightAbortRef.current = abort;
-    
-    try {
-  const response = await fetch(url.toString(), {
-        method: 'POST',
-        headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {},
-        body: formData,
-        signal: abort.signal,
-      });
-
-      // Improved error handling
-      if (response.status === 402) {
-        // Server paywall enforcement; centralize paywall via stopConversation
-        stopConversation('ended_by_limit');
-        throw new Error('Daily time limit exceeded.');
-      }
-      if (!response.ok || !response.body) {
-          const errorText = await response.text();
-          if(response.status === 401 && !session) {
-              throw new Error('Guest session expired or invalid. Please sign in to continue.');
-          }
-          throw new Error(errorText || `API Error (${response.status})`);
-      }
-      
-  const userTranscript = decodeURIComponent(response.headers.get('X-User-Transcript') || '');
-  setMessages(prev => [...prev, { role: 'user', content: userTranscript, id: crypto.randomUUID() }]);
-      
-  const assistantMessageId = crypto.randomUUID();
-  setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
-      if (conversationStatus !== 'active') { throw new Error('Conversation inactive'); }
-      setTurnStatus('assistant_speaking');
-  // Legacy last-turn nudge removed; automatic paywall watcher now handles gating
-      
-      let fullAssistantReply = '';
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-  while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        fullAssistantReply += chunk;
-        setMessages(prev => prev.map(msg => msg.id === assistantMessageId ? { ...msg, content: fullAssistantReply } : msg));
-      }
-
-      // Auto-title after second turn for signed-in users with untitled conversations
-      try {
-        if (session && conversationId) {
-          const userCount = [...messages, { role: 'assistant', content: fullAssistantReply, id: 'tmp' } as Message]
-            .filter(m => m.role === 'user').length;
-          if (userCount >= 2) {
-            // Title based on the first user message
-            const firstUser = [...messages].find(m => m.role === 'user');
-            const base = firstUser?.content || userTranscript;
-            const title = base.trim().slice(0, 60).replace(/\s+/g, ' ');
-            // Only patch if currently generic
-            const current = allConversations.find(c => c.id === conversationId)?.title || '';
-            if (!current || /new chat|new conversation/i.test(current)) {
-              await fetch(`/api/conversations/${conversationId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-                body: JSON.stringify({ title })
-              }).catch(() => {});
-              listConversations().then(setAllConversations).catch(() => {});
-            }
-          }
-        }
-      } catch {}
-
-      // Robust playback flow: always reset to listening using try/finally
-      setTurnStatus('assistant_speaking');
-      try {
-        const audioRes = await fetch('/api/synthesize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: fullAssistantReply })
-        });
-
-        if (!audioRes.ok) {
-          throw new Error(`Speech synthesis failed: ${audioRes.status}`);
-        }
-
-        const ab = await audioRes.arrayBuffer();
-        const { audio, done } = playAudioData(ab);
-        audioPlayerRef.current = audio as any;
-        await done;
-      } catch (ttsError) {
-        console.error('An error occurred during audio synthesis or playback:', ttsError);
-      } finally {
-        // Ensure we never get stuck; only transition if conversation is still active
-        if (conversationStatus === 'active') setTurnStatus('user_listening');
-      }
-      // Refresh daily seconds after a turn for signed-in users (server truth)
-      if (session) {
-        // Refresh entitlement from server after a completed turn
-        try { (ent as any).refresh?.(); } catch {}
-        // Achievements: compute and persist newly unlocked
-        try {
-          const messagesCount = [...messages, { role: 'assistant', content: fullAssistantReply, id: 'tmp' } as any].length;
-          const conversationCount = allConversations.length;
-          // memoryCount requires a server call; approximate via dedicated API
-          let memoryCount = 0;
-          try {
-            const res = await fetch('/api/memory', { method: 'GET', headers: { Authorization: `Bearer ${session.access_token}` } });
-            if (res.ok) {
-              const j = await res.json();
-              memoryCount = Number(j?.count ?? 0);
-            }
-          } catch {}
-          const newly = checkAchievements({ messagesCount, conversationCount, memoryCount, unlockedAchievements });
-          if (newly.length) {
-            setUnlockedAchievements(prev => Array.from(new Set([...prev, ...newly])));
-            // best-effort insert
-            await fetch('/api/user/achievements', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ ids: newly })
-            }).catch(() => {});
-            // TODO: show toast UI here in a future pass
-          }
-        } catch {}
-      } else {
-        // Guests: entitlement hook will refresh on interval; optionally force refresh
-        try { (ent as any).refresh?.(); } catch {}
-      }
-      
-    } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        // Silently ignore aborted requests
-      } else {
-        setError(e.message || 'Audio processing failed');
-      }
-      // Ensure we return to idle/listening state appropriately
-      if (conversationStatus === 'active') {
-        setTurnStatus('user_listening');
-      }
-    } finally {
-      isProcessingRef.current = false;
-      inflightAbortRef.current = null;
-    }
-  }, [session, conversationId, stopConversation, messages, allConversations, conversationStatus]);
+  // Removed legacy HTTP pipeline; WebSocket handles STT/LLM/TTS. processAudioChunk deleted.
 
   // Public API for external microphone sources to submit encoded audio blobs
   const submitAudioChunk = useCallback(async (audio: Blob) => {
-    try {
-      if (!audio || !(audio instanceof Blob)) return;
-      if (audio.size <= MIN_AUDIO_BLOB_SIZE) { setMicVolume(0); return; }
-      // If WS is connected, stream via socket; otherwise, fall back to HTTP pipeline
-      if (connectionStatus === 'connected') {
-        const ab = await audio.arrayBuffer();
-        try { 
-          sendAudioChunk(ab); 
-          try { endUtterance(); } catch {}
-        } catch (e) { 
-          console.error('WS send failed, falling back', e); 
-          await processAudioChunk(audio); 
-        }
-      } else {
-        await processAudioChunk(audio);
-      }
-    } catch (e) {
-      // Surface a generic error but avoid crashing provider
-      const msg = (e as any)?.message || 'Failed to process audio';
-      setError(msg);
+    if (connectionStatus === 'connected' && audio && audio.size > MIN_AUDIO_BLOB_SIZE) {
+      const ab = await audio.arrayBuffer();
+      sendAudioChunk(ab);
+      endUtterance();
+    } else if (connectionStatus !== 'connected') {
+      console.error('Cannot send audio: WebSocket is not connected.');
+      setError('Not connected to the conversation server.');
     }
-  }, [processAudioChunk, connectionStatus, sendAudioChunk]);
+  }, [connectionStatus, sendAudioChunk, endUtterance]);
 
-  // Strictly turn-based VAD: only active during user_listening
-  useEffect(() => {
-    let vadAndStream: { vad: any; stream: MediaStream } | null = null;
-
-    const setupVAD = async () => {
-      try {
-        const { MicVAD } = await import('@ricky0123/vad-web');
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const vad = await MicVAD.new({
-          stream,
-          minSpeechFrames: 6,
-          redemptionFrames: 30,
-          positiveSpeechThreshold: 0.6,
-          negativeSpeechThreshold: 0.35,
-          preSpeechPadFrames: 4,
-          // @ts-expect-error level provided at runtime
-          onVADMisfire: (level: number) => {
-            const v = typeof level === 'number' && isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
-            setMicVolume(v);
-          },
-          onSpeechStart: () => {
-            if (mediaRecorderRef.current?.state === 'recording') {
-              try { mediaRecorderRef.current.stop(); } catch {}
-            }
-            mediaRecorderRef.current = null;
-            audioChunksRef.current = [];
-            mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current.ondataavailable = async (event) => {
-              // Stream small chunks over WS when available for lower latency
-              try {
-                if (connectionStatus === 'connected' && event.data && event.data.size) {
-                  const ab = await event.data.arrayBuffer();
-                  sendAudioChunk(ab);
-                } else if (event.data && event.data.size) {
-                  audioChunksRef.current.push(event.data);
-                }
-              } catch {
-                // If streaming fails, buffer for fallback
-                if (event.data && event.data.size) audioChunksRef.current.push(event.data);
-              }
-            };
-            mediaRecorderRef.current.onstop = () => {
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-              if (turnStatus === 'user_listening' && conversationStatus === 'active') {
-                // If WS is connected, we've already streamed chunks; skip HTTP submit.
-                if (connectionStatus === 'connected') {
-                  try { endUtterance(); } catch {}
-                  setMicVolume(0);
-                } else {
-                  submitAudioChunk(audioBlob);
-                }
-              } else {
-                setMicVolume(0);
-              }
-            };
-            mediaRecorderRef.current.start();
-          },
-          onSpeechEnd: () => {
-            if (mediaRecorderRef.current?.state === 'recording') {
-              mediaRecorderRef.current.stop();
-            }
-            setMicVolume(0);
-          },
-        });
-        vad.start();
-        vadAndStream = { vad, stream };
-        vadCleanupRef.current = () => {
-          try { vad.destroy(); } catch {}
-          try { stream.getTracks().forEach((t) => t.stop()); } catch {}
-          setMicVolume(0);
-        };
-      } catch (err) {
-        console.error('VAD or Microphone setup failed:', err);
-        setError('Microphone access was denied. Please check your browser settings.');
-        stopConversation('ended_by_user');
-      }
-    };
-
-  if (turnStatus === 'user_listening' && !externalMicActive) {
-      setupVAD();
-    }
-
-    return () => {
-      if (vadAndStream) {
-        try { vadAndStream.vad.destroy(); } catch {}
-        try { vadAndStream.stream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch {}
-      }
-    };
-  }, [turnStatus, externalMicActive]);
+  // Removed legacy VAD useEffect; microphone is managed by useConditionalMicrophone
 
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager

@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { decrementDailySeconds, decrementDailyMessages, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
-import OpenAI from 'openai';
+import OpenAI from '@/lib/server/openai-compat';
 import { transcribeWebmToText } from '@/lib/stt';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { ChatCompletionMessageParam } from 'openai/resources/index.mjs';
+type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 
 export const runtime = 'edge';
 
@@ -45,18 +45,18 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Lightweight streaming helpers compatible with OpenAI SDK
 type OpenAIStreamOptions = { onCompletion?: (completion: string) => void | Promise<void> };
-function OpenAIStream(response: AsyncIterable<any>, opts: OpenAIStreamOptions) {
+function OpenAIStream(response: any, opts: OpenAIStreamOptions) {
   const encoder = new TextEncoder();
   let full = '';
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const part of response as any) {
-          const delta: string = part?.choices?.[0]?.delta?.content || '';
-          if (delta) {
-            full += delta;
-            controller.enqueue(encoder.encode(delta));
-          }
+        // Our compat wrapper returns a single JSON object (not an async iterator)
+        // Emit the full completion as a single chunk for simplicity
+        const delta: string = response?.choices?.[0]?.message?.content || '';
+        if (delta) {
+          full += delta;
+          controller.enqueue(encoder.encode(delta));
         }
         if (opts.onCompletion) await opts.onCompletion(full);
         controller.close();
@@ -219,7 +219,6 @@ export async function POST(req: NextRequest) {
   try {
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      stream: true,
       messages,
       max_tokens: 400,
     });

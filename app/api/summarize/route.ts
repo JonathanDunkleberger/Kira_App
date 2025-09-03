@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import OpenAI from 'openai';
+import OpenAI from '@/lib/server/openai-compat';
 
 export const runtime = 'nodejs';
 

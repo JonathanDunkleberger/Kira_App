@@ -31,7 +31,7 @@ const FEW_SHOTS: Array<{user:string;assistant:string}> = [
 ];
 // Use type-only imports so they don't affect bundling
 import type { Content } from "@google/generative-ai";
-import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
+type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 
 function postProcess(text: string) {
@@ -48,9 +48,9 @@ export async function generateReply(userText: string): Promise<string> {
   // Prefer OpenAI if available or explicitly selected
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
-  // Lazy-load OpenAI SDK
-  const { default: OpenAI } = await import('openai');
-  const openai = new OpenAI({ apiKey: openaiKey });
+      // Use fetch-based compat wrapper to avoid SDK dependency
+      const { default: OpenAI } = await import('@/lib/server/openai-compat');
+      const openai = new OpenAI({ apiKey: openaiKey });
 
       // Properly structured message history
       const messages: ChatCompletionMessageParam[] = [
@@ -62,7 +62,7 @@ export async function generateReply(userText: string): Promise<string> {
         { role: 'user', content: userText },
       ];
 
-      const resp = await openai.chat.completions.create({
+  const resp = await openai.chat.completions.create({
         model: openaiModel,
         messages,
         temperature: 0.7,
@@ -153,8 +153,8 @@ export async function generateReplyWithHistory(
 
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
-      const { default: OpenAI } = await import('openai');
-      const openai = new OpenAI({ apiKey: openaiKey });
+  const { default: OpenAI } = await import('@/lib/server/openai-compat');
+  const openai = new OpenAI({ apiKey: openaiKey });
 
       const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: finalSystemPrompt },

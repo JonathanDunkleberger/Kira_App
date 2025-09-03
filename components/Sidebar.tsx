@@ -6,7 +6,7 @@ import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon, LockClosedIcon } from '@radix-ui/react-icons';
 import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/client/supabaseClient';
 import Link from 'next/link';
 
 export default function Sidebar() {

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/client/supabaseClient";
 import { envClient } from "@/lib/env.client";
 import { loadStripe } from "@stripe/stripe-js";
 // Note: We include CardElement for UX parity, but payment is completed on Stripe Checkout after redirect.

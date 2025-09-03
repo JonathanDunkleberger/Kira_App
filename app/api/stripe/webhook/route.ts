@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { envServer as env } from '@/lib/env.server';
+import { envServer as env } from '@/lib/server/env.server';
 import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';

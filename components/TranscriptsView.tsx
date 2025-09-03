@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/client/supabaseClient';
 import { subscribeToConversation, unsubscribeFromConversation } from '@/lib/realtime';
 import { AnimatedMessage } from '@/components/AnimatedTranscript';
 

@@ -22,7 +22,7 @@ export default function Banner() {
           });
           const j = await r.json();
           if (j.access_token && j.refresh_token) {
-            const { supabase } = await import('@/lib/supabaseClient');
+            const { supabase } = await import('@/lib/client/supabaseClient');
             await supabase.auth.setSession({
               access_token: j.access_token,
               refresh_token: j.refresh_token,

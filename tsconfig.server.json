@@ -19,9 +19,7 @@
   },
   "include": [
     "socket-server.ts",
-    "lib/stt.ts",
-    "lib/tts.ts",
-    "lib/supabaseAdmin.ts",
+    "lib/server/**/*.ts",
     "lib/usage.ts"
   ],
   "exclude": [

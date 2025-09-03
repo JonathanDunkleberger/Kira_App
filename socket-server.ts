@@ -4,9 +4,9 @@
 import 'dotenv/config';
 import { WebSocketServer } from 'ws';
 import OpenAI from 'openai';
-import { transcribeWebmToText } from './lib/stt.js';
-import { synthesizeSpeech, synthesizeSpeechStream } from './lib/tts.js';
-import { getSupabaseServerAdmin } from './lib/supabaseAdmin.js';
+import { transcribeWebmToText } from '@/lib/server/stt';
+import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 
 const PORT = Number(process.env.WS_PORT || 8080);
 

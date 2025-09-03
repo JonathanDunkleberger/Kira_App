@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { synthesizeSpeech } from '@/lib/tts';
+import { synthesizeSpeech } from '@/lib/server/tts';
 
 export const runtime = 'nodejs';
 

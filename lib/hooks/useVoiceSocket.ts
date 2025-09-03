@@ -48,7 +48,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = 'ws://localho
       // Add auth token if available via Supabase client
       let token = '';
       try {
-        const { supabase } = await import('@/lib/supabaseClient');
+  const { supabase } = await import('@/lib/client/supabaseClient');
         const { data } = await (supabase as any).auth.getSession();
         token = data?.session?.access_token || '';
       } catch {}

@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/client/supabaseClient';
 import { playMp3Base64, playAndAnalyzeAudio, playAudioData, AudioPlayer } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';

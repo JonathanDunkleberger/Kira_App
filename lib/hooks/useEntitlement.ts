@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/client/supabaseClient';
 
 export type Entitlement = {
   userStatus: 'guest' | 'free' | 'pro';

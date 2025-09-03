@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Supabase session for this user via Admin API
-    const { getSupabaseServerAdmin } = await import('@/lib/supabaseAdmin');
+  const { getSupabaseServerAdmin } = await import('@/lib/server/supabaseAdmin');
     const sbAdmin = getSupabaseServerAdmin();
 
     // Look up user email

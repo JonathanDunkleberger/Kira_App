@@ -3,7 +3,7 @@ import { decrementDailySeconds, decrementDailyMessages, getDailySecondsRemaining
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from 'openai';
 import { transcribeWebmToText } from '@/lib/stt';
-import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { ChatCompletionMessageParam } from 'openai/resources/index.mjs';
 
 export const runtime = 'edge';

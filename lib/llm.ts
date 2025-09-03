@@ -32,7 +32,7 @@ const FEW_SHOTS: Array<{user:string;assistant:string}> = [
 // Use type-only imports so they don't affect bundling
 import type { Content } from "@google/generative-ai";
 import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
-import { getSupabaseServerAdmin } from '@/lib/supabaseAdmin';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 
 function postProcess(text: string) {
   return text.trim().replace(/\*[^*]+\*/g, "").replace(/\([^)]+\)/g, "");

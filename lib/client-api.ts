@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/client/supabaseClient';
 
 export async function sendUtterance(payload: { text: string }) {
   const r = await fetch("/api/utterance", {

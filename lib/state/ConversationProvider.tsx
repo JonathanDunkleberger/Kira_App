@@ -14,6 +14,9 @@ import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 // Increase minimum size to avoid short/noise causing 400 errors
 const MIN_AUDIO_BLOB_SIZE = 4000;
 
+// Singleton AudioPlayer instance for the entire session
+let audioPlayer: AudioPlayer | null = null;
+
 type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
@@ -65,25 +68,24 @@ const ConversationContext = createContext<ConversationContextType | undefined>(u
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
-  // WebSocket audio streaming (Phase 3/4)
-  const audioStreamPlayerRef = useRef<AudioPlayer | null>(null);
+  // WebSocket audio streaming (Phase 3/4) - initialize singleton player once
   useEffect(() => {
-    const player = new AudioPlayer();
-    audioStreamPlayerRef.current = player;
-    player.onEnded(() => {
+    if (!audioPlayer) {
+      audioPlayer = new AudioPlayer();
+    }
+    audioPlayer.onEnded(() => {
       console.log('Audio playback finished, resetting to listening.');
       setTurnStatus('user_listening');
     });
-    return () => { audioStreamPlayerRef.current = null; };
   }, []);
   const { connectionStatus, sendAudioChunk, lastText, endUtterance } = useVoiceSocket({
     onAudioChunk: (chunk: ArrayBuffer) => {
-      audioStreamPlayerRef.current?.appendChunk(chunk);
+      audioPlayer?.appendChunk(chunk);
       // Ensure playback begins on first chunk for mobile
-      audioStreamPlayerRef.current?.play();
+      audioPlayer?.play();
     },
     onAudioEnd: () => {
-      audioStreamPlayerRef.current?.endStream();
+      audioPlayer?.endStream();
       // Note: turnStatus reset handled elsewhere after TTS completes
     }
   });

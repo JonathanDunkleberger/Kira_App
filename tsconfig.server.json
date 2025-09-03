@@ -1,15 +1,41 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-  "module": "NodeNext",
-  "moduleResolution": "NodeNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "lib": ["ES2022"],
   "baseUrl": ".",
+    "paths": { "@/*": ["./*"] },
   "esModuleInterop": true,
     "outDir": "./dist",
+    "rootDir": ".",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": false,
     "noEmit": false
   },
   "include": [
     "socket-server.ts",
-    "lib/**/*.ts"
+    "lib/stt.ts",
+    "lib/tts.ts",
+    "lib/supabaseAdmin.ts",
+    "lib/usage.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "app/**/*",
+    "components/**/*",
+    "tests/**/*",
+    "tests-examples/**/*",
+    "lib/hooks/**/*",
+    "lib/http.ts",
+    "lib/paywall.ts",
+    "lib/realtime.ts",
+    "lib/supabaseClient.ts",
+    "lib/env.client.ts"
   ]
 }

@@ -9,7 +9,9 @@ export async function transcribeWebmToText(bytes: Uint8Array): Promise<string> {
   // Use native File in modern Node runtimes; ensure BlobPart typing compatibility by copying into a fresh ArrayBuffer
   const ab = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(ab).set(bytes);
-  const file: any = new File([ab], 'audio.webm', { type: 'audio/webm' });
+  // Avoid DOM type requirements in TS by using a dynamic File constructor
+  const FileCtor: any = (globalThis as any).File;
+  const file: any = new FileCtor([ab], 'audio.webm', { type: 'audio/webm' });
   const result = await openai.audio.transcriptions.create({
     file,
     model: 'whisper-1'

@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: kira-voice-ws
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: |
+      npm ci --no-audit --no-fund --progress=false
+      npm run build:server
+    startCommand: npm run start:server
+    envVars:
+      - key: NODE_VERSION
+        value: 18.20.3
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AZURE_SPEECH_KEY
+        sync: false
+      - key: AZURE_SPEECH_REGION
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DEV_ALLOW_NOAUTH
+        value: "false"
+    healthCheckPath: /healthz

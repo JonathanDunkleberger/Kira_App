@@ -2,17 +2,28 @@
 // Run alongside Next.js during development
 
 import 'dotenv/config';
+import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { transcribeWebmToText } from './lib/server/stt.js';
 import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
 
-const PORT = Number(process.env.WS_PORT || 8080);
+const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
+const HOST = '0.0.0.0';
 
-const wss = new WebSocketServer({ port: PORT });
+const server = http.createServer((req, res) => {
+  if (req.url === '/healthz') {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('ok');
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/plain' });
+  res.end('kira-voice-ws');
+});
 
-wss.on('listening', () => {
-  console.log(`WS server listening on ws://localhost:${PORT}`);
+const wss = new WebSocketServer({ server });
+server.listen(PORT, HOST, () => {
+  console.log(`HTTP+WS listening on http://${HOST}:${PORT} (Render)`);
 });
 
 wss.on('connection', async (ws, req) => {
@@ -74,7 +85,8 @@ wss.on('connection', async (ws, req) => {
       ];
   const assistant = await runChat(fetchFn, messages);
       if (assistant) sendJson(ws, { type: 'assistant_text', text: assistant });
-      // 3) TTS (WebM Opus) -> binary frames
+  // 3) TTS (WebM Opus) -> binary frames
+  console.log('[TTS]', { /* add signals as needed */ });
       if (assistant) {
         sendJson(ws, { type: 'audio_start' });
         try {

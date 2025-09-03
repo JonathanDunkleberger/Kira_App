@@ -39,9 +39,9 @@
   ],
   "exclude": [
     "node_modules",
-  ".next",
-  "dist-server",
-  "lib/server",
-  "socket-server.ts"
+    ".next",
+    "dist",
+    "lib/server",
+    "socket-server.ts"
   ]
 }

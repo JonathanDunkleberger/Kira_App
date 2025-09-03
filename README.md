@@ -6,7 +6,7 @@ Live Demo: [kira-ai-2.vercel.app](https://kira-ai-2.vercel.app)
 
 <!-- Demo screenshot -->
 <p align="center">
-  <img src="ai-media-companion/public/KIRA%202%20README%20PICv2.png" alt="Kira – voice companion demo" width="900">
+  <img src="public/KIRA%202%20README%20PICv2.png" alt="Kira – voice companion demo" width="900">
 </p>
 
 ---

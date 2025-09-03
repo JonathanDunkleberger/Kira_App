@@ -76,19 +76,24 @@ wss.on('connection', async (ws, req) => {
     chunkBuffers = [];
     try {
       // 1) STT
+      console.time('STT');
       const transcript = await transcribeWebmToText(new Uint8Array(payload));
+      console.timeEnd('STT');
       if (transcript) sendJson(ws, { type: 'transcript', text: transcript });
       // 2) LLM
       const messages = [
         { role: 'system' as const, content: 'You are Kira, a helpful, witty voice companion. Keep responses concise and spoken-friendly.' },
         { role: 'user' as const, content: transcript || '(no speech captured)' },
       ];
+      console.time('LLM');
   const assistant = await runChat(fetchFn, messages);
+      console.timeEnd('LLM');
       if (assistant) sendJson(ws, { type: 'assistant_text', text: assistant });
   // 3) TTS (WebM Opus) -> binary frames
   console.log('[TTS]', { /* add signals as needed */ });
       if (assistant) {
         sendJson(ws, { type: 'audio_start' });
+        console.time('TTS');
         try {
           await synthesizeSpeechStream(assistant, async (chunk: Uint8Array) => {
             try { ws.send(chunk, { binary: true }); } catch (e) { console.error('WS send audio chunk failed:', e); }
@@ -103,6 +108,7 @@ wss.on('connection', async (ws, req) => {
             console.error('TTS send failed:', e2);
           }
         } finally {
+          console.timeEnd('TTS');
           sendJson(ws, { type: 'audio_end' });
         }
       }

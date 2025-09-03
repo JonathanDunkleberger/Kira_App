@@ -29,14 +29,15 @@ The goal was to take the core concept of a voice‑first AI companion and re‑a
 
 ## 🛠️ Tech Stack & Architecture
 
-Built on a modern serverless architecture for reliability and a high‑quality UX. The server enforces business logic (entitlements, usage, plans); the UI uses centralized state for predictability.
+Modern web architecture with a dedicated real‑time voice server. Business logic (entitlements, usage, plans) is server‑authoritative; the UI uses centralized state for predictability.
 
 | Category | Technology |
 |---|---|
 | Frontend | Next.js, React, Tailwind CSS, Framer Motion |
-| Backend | Next.js API Routes (Vercel Serverless) |
+| Voice backend (real‑time) | Node WebSocket server (ws) on Render |
+| App APIs | Next.js API Routes (Vercel or any Node host) |
 | Database | Supabase (Postgres), Supabase Auth, Row‑Level Security |
-| AI | OpenAI Whisper (STT), OpenAI/Gemini (LLM), Microsoft Azure (TTS) |
+| AI | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
 | Payments | Stripe Checkout & Webhooks |
 
 ---
@@ -59,6 +60,16 @@ Required categories:
 - Stripe API & webhook secret
 - OpenAI & Azure API keys
 - Public app URL & free‑trial configuration
+- WebSocket URL(s) for the voice server
+
+Key client/server vars (non‑exhaustive):
+
+- NEXT_PUBLIC_WEBSOCKET_URL (e.g. ws://localhost:8080 for dev)
+- NEXT_PUBLIC_WEBSOCKET_URL_PROD (wss://your-render-service.onrender.com)
+- OPENAI_API_KEY, OPENAI_MODEL
+- SUPABASE_URL, SUPABASE_ANON_KEY (client)
+- SUPABASE_SERVICE_ROLE_KEY (server, on Render), SUPABASE_URL
+- AZURE_* for TTS
 
 ---
 
@@ -70,7 +81,7 @@ Required categories:
 cp .env.example .env.local
 ```
 
-2) Install dependencies and run the dev server
+1) Install dependencies and run both Next.js and the voice WS server
 
 ```bash
 npm install
@@ -78,6 +89,12 @@ npm run dev
 ```
 
 The app runs at [http://localhost:3000](http://localhost:3000)
+
+Notes:
+
+- `npm run dev` runs Next (port 3000) and the WS server (default port 8080) in parallel.
+- Set `NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8080` in `.env.local` for the client to connect.
+- The WS server exposes `/healthz` and requires a Supabase auth token via `?token=`; the client attaches it automatically. Active conversation id is sent as `?conversationId=`.
 
 ---
 
@@ -91,7 +108,18 @@ npx playwright test
 
 ---
 
-## � Notes
+## 📦 Build & Deploy
 
-- Production builds use `npm run build` and deploy on Vercel.
-- Entitlement resets are server‑authoritative and configured via environment variables.
+- Frontend (Next.js)
+	- Build: `npm run build`
+	- Host on Vercel or any Node host.
+
+- Voice server (WebSocket on Render)
+	- Build: `npm run build:server`
+	- Start: `npm run start:server` (runs `dist/socket-server.js`)
+	- Render deployment supported via `render.yaml` (binds to `PORT`, exposes `/healthz`).
+
+## 📝 Notes
+
+- The WS pipeline is STT → memory fetch (last 6 messages) → LLM → TTS streaming back to the client.
+- Entitlements/limits are enforced server‑side; the UI reflects state from server responses.

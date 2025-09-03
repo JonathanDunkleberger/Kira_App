@@ -51,6 +51,11 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   }, [opts]);
 
   useEffect(() => {
+    // Require a conversationId before connecting
+    if (!conversationId) {
+      setStatus('disconnected');
+      return;
+    }
     shuttingDownRef.current = false;
 
     const connect = async () => {
@@ -79,6 +84,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
 
         ws.onopen = () => {
           console.log('WS connected');
+          console.log('✅ WebSocket connected for conversation:', conversationId);
           reconnectAttemptsRef.current = 0;
           if (!shuttingDownRef.current) setStatus('connected');
         };

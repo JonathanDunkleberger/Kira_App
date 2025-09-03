@@ -1,6 +1,7 @@
 // In hooks/useConditionalMicrophone.ts
 
 import { useCallback, useRef, useState } from 'react';
+import { MicVAD } from '@ricky0123/vad-web';
 
 function isMobile(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -27,11 +28,15 @@ export function useConditionalMicrophone(
   const encodedChunksRef = useRef<BlobPart[]>([]);
   const encoderStreamRef = useRef<MediaStream | null>(null);
   const encoderSourceRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  // Throttled debug logging for frame-level metrics
+  const lastLogAtRef = useRef(0);
+  // Desktop VAD instance
+  const vadRef = useRef<any | null>(null);
 
   const start = useCallback(async () => {
     if (isListening) return;
 
-    if (isMobile()) {
+  if (isMobile()) {
       // Mobile path: AudioWorklet for reliable real-time capture
   const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!AC) throw new Error('AudioContext not supported');
@@ -60,10 +65,17 @@ export function useConditionalMicrophone(
       mediaRecorderRef.current = mr;
       encoderStreamRef.current = dest.stream;
       encodedChunksRef.current = [];
-      mr.ondataavailable = (e) => { if (e.data && e.data.size) encodedChunksRef.current.push(e.data); };
+      console.log('[mic] Mobile path init: mimeType=%s', mimeType || '(default)');
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size) {
+          encodedChunksRef.current.push(e.data);
+          console.debug('[mic] ondataavailable: size=%d type=%s', e.data.size, e.data.type);
+        }
+      };
     mr.onstop = () => {
         try {
       const blob = new Blob(encodedChunksRef.current, { type: mimeType || 'audio/mp4' });
+          console.log('[mic] MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', encodedChunksRef.current.length, blob.size, blob.type);
           if (blob.size) onUtterance(blob);
         } finally {
           encodedChunksRef.current = [];
@@ -88,12 +100,32 @@ export function useConditionalMicrophone(
         chunkQueueRef.current.push(buf);
         framesCount += 1;
 
+        // Throttled per-frame debug
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        if (!lastLogAtRef.current || now - lastLogAtRef.current > 200) {
+          lastLogAtRef.current = now;
+          console.debug(
+            '[mic] frame=%d len=%d rms=%s speak=%s silence=%d/%d',
+            framesCount,
+            buf.length,
+            rms.toFixed(4),
+            speaking,
+            silenceCounterRef.current,
+            SILENCE_FRAMES_TO_END,
+          );
+        }
+
         if (!speakingRef.current && speaking) {
           // Start utterance
           speakingRef.current = true;
           silenceCounterRef.current = 0;
           startedAt = performance.now();
-          try { mr.start(); } catch {}
+          try {
+            mr.start();
+            console.log('[mic] Utterance start: frame=%d, rms=%s', framesCount, rms.toFixed(4));
+          } catch (e) {
+            console.warn('[mic] mr.start() failed', e);
+          }
         } else if (speakingRef.current) {
           if (speaking) {
             silenceCounterRef.current = 0;
@@ -103,7 +135,13 @@ export function useConditionalMicrophone(
               // End utterance
               speakingRef.current = false;
               silenceCounterRef.current = 0;
-              try { mr.stop(); } catch {}
+              try {
+                const dur = Math.round((performance.now() - startedAt) || 0);
+                console.log('[mic] Utterance end: duration=%dms, frames=%d -> mr.stop()', dur, framesCount);
+                mr.stop();
+              } catch (e) {
+                console.warn('[mic] mr.stop() failed', e);
+              }
               // Reset queue for next utterance
               chunkQueueRef.current = [];
               framesCount = 0;
@@ -122,9 +160,10 @@ export function useConditionalMicrophone(
       return;
     }
 
-    // Desktop path: use existing MediaRecorder-based logic
+    // Desktop path: integrate VAD to segment speech and control MediaRecorder
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
+
     // Choose supported MIME on desktop as well
     let mimeType: string | undefined = undefined;
     try {
@@ -134,25 +173,72 @@ export function useConditionalMicrophone(
         else if (MR.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
       }
     } catch {}
+
     const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     mediaRecorderRef.current = mr;
-    const chunks: BlobPart[] = [];
+    let chunks: BlobPart[] = [];
 
     mr.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunks.push(e.data);
+      if (e.data && e.data.size > 0) {
+        chunks.push(e.data);
+      }
     };
-    mr.onstop = async () => {
-      const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-  try { onUtterance(blob); } catch {}
+    mr.onstop = () => {
+      try {
+        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+        console.log('[mic] Desktop MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', chunks.length, blob.size, blob.type);
+        if (blob.size) onUtterance(blob);
+      } finally {
+        chunks = [];
+      }
     };
 
-    mr.start();
+    // Initialize VAD
+    const vad = await MicVAD.new({
+      stream,
+      // Reasonable defaults; adjust as needed
+      minSpeechFrames: 6,
+      redemptionFrames: 30,
+      positiveSpeechThreshold: 0.6,
+      negativeSpeechThreshold: 0.35,
+      preSpeechPadFrames: 4,
+      onSpeechStart: () => {
+        try {
+          if (mr.state !== 'recording') {
+            chunks = [];
+            mr.start();
+            console.log('[mic] VAD onSpeechStart -> mr.start()');
+          }
+        } catch (e) {
+          console.warn('[mic] mr.start() failed', e);
+        }
+      },
+      onSpeechEnd: () => {
+        try {
+          if (mr.state === 'recording') {
+            console.log('[mic] VAD onSpeechEnd -> mr.stop()');
+            mr.stop();
+          }
+        } catch (e) {
+          console.warn('[mic] mr.stop() failed', e);
+        }
+      },
+    });
+
+    vadRef.current = vad;
+    vad.start();
     setIsListening(true);
   }, [isListening, onUtterance]);
 
   const stop = useCallback(() => {
     try { mediaRecorderRef.current?.stop(); } catch {}
     mediaRecorderRef.current = null;
+
+    // Destroy desktop VAD if active
+    if (vadRef.current) {
+      try { vadRef.current.destroy(); } catch {}
+      vadRef.current = null;
+    }
 
     if (sourceNodeRef.current) {
       try { sourceNodeRef.current.disconnect(); } catch {}

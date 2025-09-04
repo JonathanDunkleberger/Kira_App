@@ -1,44 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { checkUsage } from '@/lib/server/usage';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const sb = getSupabaseServerAdmin();
-  const { data: userData } = await sb.auth.getUser(token);
-  const userId = userData?.user?.id;
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
+export async function POST(req: Request) {
   try {
-    // Get user's entitlement and usage
-    const { data: entitlement, error } = await sb
-      .from('entitlements')
-      .select('plan, status, trial_seconds_remaining, trial_last_reset')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { guestId } = (await req.json()) as { guestId?: string };
 
-    if (error) throw error;
-
-    if (!entitlement) {
-      return NextResponse.json({ 
-        plan: 'free',
-        status: 'inactive',
-        secondsRemaining: 0,
-        lastReset: new Date().toISOString().split('T')[0]
-      });
+    const sb = getSupabaseServerAdmin();
+    const auth = req.headers.get('authorization') || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    let userId: string | null = null;
+    if (token) {
+      const { data } = await sb.auth.getUser(token);
+      userId = data?.user?.id ?? null;
     }
 
-    return NextResponse.json({
-      plan: entitlement.plan === 'supporter' ? 'pro' : (entitlement.plan ?? 'free'),
-      status: entitlement.status ?? 'inactive',
-      secondsRemaining: entitlement.trial_seconds_remaining || 0,
-      lastReset: entitlement.trial_last_reset || new Date().toISOString().split('T')[0]
-    });
-  } catch (error) {
-    console.error('Usage API error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  const secondsRemaining = await checkUsage(userId, guestId ?? null);
+  return NextResponse.json({ secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS });
+  } catch (e) {
+    return new NextResponse('Error fetching usage', { status: 500 });
   }
 }

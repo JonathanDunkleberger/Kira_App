@@ -46,14 +46,23 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       let res: Response;
+      const guestId = getGuestId();
       if (session?.access_token) {
-        res = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
+        res = await fetch('/api/usage', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ guestId })
+        });
       } else {
-        const guestId = getGuestId();
-        const url = new URL('/api/session', window.location.origin);
-        url.searchParams.set('guestId', guestId);
-        res = await fetch(url.toString());
-  }
+        res = await fetch('/api/usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestId })
+        });
+      }
   if (!res.ok) {
         setEntitlement(prev => ({ ...prev, isLoading: false }));
         return;
@@ -61,13 +70,13 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
   const data = await res.json();
   // Debug: log new usage data received from server
   try { console.log('[Entitlement] New usage data received:', data); } catch {}
-  const status = String(data?.status ?? 'inactive');
-      const sessionPresent = !!(await supabase.auth.getSession()).data.session;
-      const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? (status === 'active' ? 'pro' : 'free') : 'guest';
+  // We no longer return full plan/status here; compute userStatus locally
+  const sessionPresent = !!(await supabase.auth.getSession()).data.session;
+  const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? 'free' : 'guest';
   const secondsRemaining = Number(data?.secondsRemaining ?? 0);
-  const dailyLimitSeconds = Number(data?.dailyLimitSeconds ?? data?.trialPerDay ?? 0);
-  const trialPerDay = Number(data?.trialPerDay ?? 0);
-  const proSessionLimit = Number(data?.proSessionLimit ?? 0);
+  const dailyLimitSeconds = Number(data?.dailyLimitSeconds ?? 0);
+  const trialPerDay = dailyLimitSeconds; // for compatibility with UI that expects trialPerDay
+  const proSessionLimit = 0; // not provided by this endpoint
     setEntitlement({ userStatus, secondsRemaining, dailyLimitSeconds, trialPerDay, proSessionLimit, isLoading: false });
       try { localStorage.setItem('kira:secondsRemaining', String(secondsRemaining)); } catch {}
     } catch {

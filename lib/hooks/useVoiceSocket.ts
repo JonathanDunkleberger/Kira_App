@@ -12,6 +12,7 @@ type ServerMsg =
   | { type: 'assistant_text'; text: string }
   | { type: 'audio_start' }
   | { type: 'audio_end' }
+  | { type: 'usage_update' }
   | { type: 'error'; message: string };
 
 type VoiceSocketOptions = {

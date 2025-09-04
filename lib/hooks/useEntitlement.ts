@@ -43,7 +43,8 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
   const fetchEnt = useCallback(async () => {
     console.log('[Entitlement] Refreshing usage...');
     try {
-      const guestId = getGuestId();
+  const guestId = getGuestId();
+  console.log('[Entitlement] Using guestId for refresh:', guestId);
       const res = await fetch('/api/usage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

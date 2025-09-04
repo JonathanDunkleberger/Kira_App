@@ -20,7 +20,10 @@ export async function POST(req: Request) {
 
     const secondsRemaining = await checkUsage(userId, guestId || null);
 
-    return NextResponse.json({ secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS });
+    return NextResponse.json(
+      { secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage Error:', error.message);

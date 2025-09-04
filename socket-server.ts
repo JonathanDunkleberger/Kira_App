@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { transcribeWebmToText } from './lib/server/stt.js';
 import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
+import { deductUsage } from './lib/server/usage.js';
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const HOST = '0.0.0.0';
@@ -185,8 +186,8 @@ wss.on('connection', async (ws, req) => {
   // Total usage duration for the turn in seconds (approx: STT + LLM + TTS wall time)
   const totalSeconds = (Date.now() - turnStart) / 1000;
   console.log(`[Usage] Deducting ${totalSeconds.toFixed(2)} seconds for conversation ${conversationId || '(none)'}`);
-  // Here is where you'd persist the deduction to your database / billing system.
-  // e.g., await supa.rpc('deduct_usage_seconds', { conversation_id: conversationId, seconds: totalSeconds })
+  // Persist usage deduction via Supabase RPC
+  try { await deductUsage(conversationId, totalSeconds); } catch (e) { console.error('Usage deduction failed:', e); }
 
   // Notify client to refresh usage after each turn
   try { sendJson(ws, { type: 'usage_update' }); } catch {}

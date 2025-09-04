@@ -102,6 +102,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Ensure we return to listening after TTS finishes
       setTimeout(() => setTurnStatus('user_listening'), 150);
     },
+  onUsageUpdate: () => { try { (ent as any).refresh?.(); } catch {} },
     onTranscript: (text: string) => {
       if (!text) return;
       setMessages(prev => [...prev, { id: `user-${Date.now()}`, role: 'user', content: text }]);

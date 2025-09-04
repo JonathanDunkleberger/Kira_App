@@ -159,7 +159,7 @@ wss.on('connection', async (ws, req) => {
       try { console.log({ conversationId: conversationId || '(none)', historyLen: historyMem.length }); } catch {}
   // 3) TTS (WebM Opus) -> binary frames
   console.log('[TTS]', { /* add signals as needed */ });
-      if (assistant) {
+  if (assistant) {
         sendJson(ws, { type: 'audio_start' });
         console.time('TTS');
         try {
@@ -180,6 +180,8 @@ wss.on('connection', async (ws, req) => {
           sendJson(ws, { type: 'audio_end' });
         }
       }
+  // Notify client to refresh usage after each turn
+  try { sendJson(ws, { type: 'usage_update' }); } catch {}
     } catch (err) {
       console.error('WS pipeline error:', err);
       sendJson(ws, { type: 'error', message: 'Processing error' });

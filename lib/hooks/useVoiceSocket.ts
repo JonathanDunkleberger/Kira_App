@@ -21,6 +21,7 @@ type VoiceSocketOptions = {
   onAudioEnd?: () => void;
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
+  onUsageUpdate?: () => void;
   conversationId?: string | null;
 };
 
@@ -40,6 +41,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
   const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
   const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
+  const onUsageUpdateRef = useRef<(() => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
 
@@ -53,12 +55,14 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   onAudioStartRef.current = opts.onAudioStart;
   onTranscriptRef.current = opts.onTranscript;
   onAssistantRef.current = opts.onAssistantText;
+  onUsageUpdateRef.current = opts.onUsageUpdate;
     } else {
       onAudioChunkRef.current = undefined;
       onAudioEndRef.current = undefined;
   onAudioStartRef.current = undefined;
   onTranscriptRef.current = undefined;
   onAssistantRef.current = undefined;
+  onUsageUpdateRef.current = undefined;
     }
   }, [opts]);
 
@@ -130,6 +134,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                     break;
                   case 'audio_end':
                     try { onAudioEndRef.current?.(); } catch {}
+                    break;
+                  case 'usage_update':
+                    try { onUsageUpdateRef.current?.(); } catch {}
                     break;
                   case 'error':
                     setLastText('[error] ' + (maybe.message || ''));

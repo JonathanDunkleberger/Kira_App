@@ -3,25 +3,27 @@ import { checkUsage } from '@/lib/server/usage';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 
-export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
     const { guestId } = (await req.json()) as { guestId?: string };
-
-    const sb = getSupabaseServerAdmin();
-    const auth = req.headers.get('authorization') || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    const supa = getSupabaseServerAdmin();
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.split('Bearer ')[1];
     let userId: string | null = null;
+    
     if (token) {
-      const { data } = await sb.auth.getUser(token);
-      userId = data?.user?.id ?? null;
+      const { data: { user } } = await supa.auth.getUser(token);
+      userId = user?.id || null;
     }
 
-  const secondsRemaining = await checkUsage(userId, guestId ?? null);
-  return NextResponse.json({ secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS });
+    const secondsRemaining = await checkUsage(userId, guestId || null);
+
+    return NextResponse.json({ secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS });
   } catch (e) {
+    const error = e as Error;
+    console.error('/api/usage Error:', error.message);
     return new NextResponse('Error fetching usage', { status: 500 });
   }
 }

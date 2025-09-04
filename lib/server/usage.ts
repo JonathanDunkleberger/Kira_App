@@ -1,7 +1,6 @@
 // In lib/server/usage.ts
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
-// (no import of entitlement helpers; this module directly checks usage columns)
 
 // Returns seconds remaining for a signed-in user or a guest conversation
 export async function checkUsage(userId: string | null, guestId: string | null): Promise<number> {
@@ -11,44 +10,38 @@ export async function checkUsage(userId: string | null, guestId: string | null):
   // Logic for SIGNED-IN users
   if (userId) {
     try {
-      // Look at the 'daily_seconds_used' column in the 'profiles' table
       const { data, error } = await supa
         .from('profiles')
         .select('daily_seconds_used')
         .eq('id', userId)
         .single();
-
       if (error) throw error;
-
       const secondsUsed = (data as any)?.daily_seconds_used || 0;
       return Math.max(0, dailyLimit - secondsUsed);
     } catch (e) {
-      console.error('checkUsage user error:', e);
-      return dailyLimit; // Fallback on error
+      console.error('checkUsage for signed-in user failed:', e);
+      return dailyLimit;
     }
   }
 
   // Logic for GUEST users
   if (guestId) {
     try {
-      // Look at the 'guest_seconds_used' column in the 'conversations' table
       const { data, error } = await supa
         .from('conversations')
         .select('guest_seconds_used')
         .eq('id', guestId)
         .single();
-
       if (error) throw error;
-
       const secondsUsed = (data as any)?.guest_seconds_used || 0;
       return Math.max(0, dailyLimit - secondsUsed);
     } catch (e) {
-      console.error('checkUsage guest error:', e);
-      return dailyLimit; // Fallback on error
+      console.error('checkUsage for guest failed:', e);
+      return dailyLimit;
     }
   }
 
-  // If neither user nor guest, return the full limit
+  // If no one is identified, return the full limit
   return dailyLimit;
 }
 

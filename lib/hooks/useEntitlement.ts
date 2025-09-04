@@ -41,6 +41,8 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
   });
 
   const fetchEnt = useCallback(async () => {
+    // Debug: mark start of entitlement refresh
+    try { console.log('[Entitlement] Refreshing usage...'); } catch {}
     try {
       const { data: { session } } = await supabase.auth.getSession();
       let res: Response;
@@ -51,12 +53,14 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
         const url = new URL('/api/session', window.location.origin);
         url.searchParams.set('guestId', guestId);
         res = await fetch(url.toString());
-      }
-      if (!res.ok) {
+  }
+  if (!res.ok) {
         setEntitlement(prev => ({ ...prev, isLoading: false }));
         return;
       }
-    const data = await res.json();
+  const data = await res.json();
+  // Debug: log new usage data received from server
+  try { console.log('[Entitlement] New usage data received:', data); } catch {}
   const status = String(data?.status ?? 'inactive');
       const sessionPresent = !!(await supabase.auth.getSession()).data.session;
       const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? (status === 'active' ? 'pro' : 'free') : 'guest';

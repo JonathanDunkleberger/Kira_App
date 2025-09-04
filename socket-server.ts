@@ -112,6 +112,8 @@ wss.on('connection', async (ws, req) => {
     const payload = Buffer.concat(chunkBuffers);
     chunkBuffers = [];
     try {
+  // Track total turn duration from start of processing to end of TTS
+  const turnStart = Date.now();
       // 1) STT
       console.time('STT');
       const transcript = await transcribeWebmToText(new Uint8Array(payload));
@@ -180,6 +182,12 @@ wss.on('connection', async (ws, req) => {
           sendJson(ws, { type: 'audio_end' });
         }
       }
+  // Total usage duration for the turn in seconds (approx: STT + LLM + TTS wall time)
+  const totalSeconds = (Date.now() - turnStart) / 1000;
+  console.log(`[Usage] Deducting ${totalSeconds.toFixed(2)} seconds for conversation ${conversationId || '(none)'}`);
+  // Here is where you'd persist the deduction to your database / billing system.
+  // e.g., await supa.rpc('deduct_usage_seconds', { conversation_id: conversationId, seconds: totalSeconds })
+
   // Notify client to refresh usage after each turn
   try { sendJson(ws, { type: 'usage_update' }); } catch {}
     } catch (err) {

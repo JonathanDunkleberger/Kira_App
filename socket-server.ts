@@ -185,7 +185,6 @@ wss.on('connection', async (ws, req) => {
       }
   // Total usage duration for the turn in seconds (approx: STT + LLM + TTS wall time)
   const totalSeconds = (Date.now() - turnStart) / 1000;
-  console.log(`[Usage] Deducting ${totalSeconds.toFixed(2)} seconds for conversation ${conversationId || '(none)'}`);
   // Persist usage deduction via Supabase RPC
   try { await deductUsage(conversationId, totalSeconds); } catch (e) { console.error('Usage deduction failed:', e); }
 

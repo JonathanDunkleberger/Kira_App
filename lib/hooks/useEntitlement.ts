@@ -41,45 +41,23 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
   });
 
   const fetchEnt = useCallback(async () => {
-    // Debug: mark start of entitlement refresh
-    try { console.log('[Entitlement] Refreshing usage...'); } catch {}
+    console.log('[Entitlement] Refreshing usage...');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      let res: Response;
       const guestId = getGuestId();
-      if (session?.access_token) {
-        res = await fetch('/api/usage', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ guestId })
-        });
-      } else {
-        res = await fetch('/api/usage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guestId })
-        });
-      }
-  if (!res.ok) {
-        setEntitlement(prev => ({ ...prev, isLoading: false }));
-        return;
-      }
-  const data = await res.json();
-  // Debug: log new usage data received from server
-  try { console.log('[Entitlement] New usage data received:', data); } catch {}
-  // We no longer return full plan/status here; compute userStatus locally
-  const sessionPresent = !!(await supabase.auth.getSession()).data.session;
-  const userStatus: 'guest' | 'free' | 'pro' = sessionPresent ? 'free' : 'guest';
-  const secondsRemaining = Number(data?.secondsRemaining ?? 0);
-  const dailyLimitSeconds = Number(data?.dailyLimitSeconds ?? 0);
-  const trialPerDay = dailyLimitSeconds; // for compatibility with UI that expects trialPerDay
-  const proSessionLimit = 0; // not provided by this endpoint
-    setEntitlement({ userStatus, secondsRemaining, dailyLimitSeconds, trialPerDay, proSessionLimit, isLoading: false });
-      try { localStorage.setItem('kira:secondsRemaining', String(secondsRemaining)); } catch {}
-    } catch {
+      const res = await fetch('/api/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestId })
+      });
+
+      if (!res.ok) throw new Error('Failed to fetch usage');
+
+      const data = await res.json();
+      console.log('[Entitlement] New usage data received:', data);
+      setEntitlement(prev => ({ ...prev, ...data, isLoading: false }));
+      try { localStorage.setItem('kira:secondsRemaining', String(data?.secondsRemaining ?? 0)); } catch {}
+    } catch(e) {
+      console.error('Entitlement fetch failed', e);
       setEntitlement(prev => ({ ...prev, isLoading: false }));
     }
   }, []);

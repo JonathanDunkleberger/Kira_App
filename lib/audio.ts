@@ -136,6 +136,8 @@ export class AudioPlayer {
   private audio: HTMLAudioElement;
   private desktopChunks: ArrayBuffer[] = [];
   private desktopContentType: string = 'audio/webm';
+  // In previous iterations we had an MSE-based player. We now use blob playback,
+  // but keep a reset() to clear state and avoid stutter on some mobile browsers.
 
   constructor() {
     const el = document.getElementById('tts-player') as HTMLAudioElement | null;
@@ -168,6 +170,8 @@ export class AudioPlayer {
           URL.revokeObjectURL(src);
         }
       } catch {}
+  // Ensure player state is reset to prevent stutter on next playback
+  try { this.reset(); } catch {}
     };
   }
 
@@ -183,6 +187,22 @@ export class AudioPlayer {
     } finally {
       // Release URL after playback ends via onEnded cleanup
     }
+  }
+
+  // Reset player state; on current blob-based path this revokes any blob URL,
+  // clears buffered chunks, and detaches the source so next play starts cleanly.
+  public reset() {
+    try {
+      const src = this.audio.src;
+      if (src && typeof src === 'string' && src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(src); } catch {}
+      }
+      // Stop/pause just in case, then clear source
+      try { (this.audio as any).pause?.(); } catch {}
+      this.audio.src = '';
+    } catch {}
+    // Clear any accumulated chunks
+    this.desktopChunks = [];
   }
 }
 

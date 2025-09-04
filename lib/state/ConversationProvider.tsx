@@ -68,14 +68,18 @@ const ConversationContext = createContext<ConversationContextType | undefined>(u
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isPro, setIsPro] = useState(false);
+  const conversationStatusRef = useRef<ConversationStatus>('idle');
   // WebSocket audio streaming (Phase 3/4) - initialize singleton player once
   useEffect(() => {
     if (!audioPlayer) {
       audioPlayer = new AudioPlayer();
     }
     audioPlayer.onEnded(() => {
-      console.log('Audio playback finished, resetting to listening.');
-      setTurnStatus('user_listening');
+      // Only return to listening if the conversation is still active.
+      if (conversationStatusRef.current === 'active') {
+        console.log('Audio playback finished, resetting to listening.');
+        setTurnStatus('user_listening');
+      }
     });
   }, []);
   const {
@@ -115,6 +119,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   });
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
+  // Keep a live ref of conversation status to avoid stale values in callbacks
+  useEffect(() => { conversationStatusRef.current = conversationStatus; }, [conversationStatus]);
   const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
   const [micVolume, setMicVolume] = useState(0);
   const [kiraVolume, setKiraVolume] = useState(0);

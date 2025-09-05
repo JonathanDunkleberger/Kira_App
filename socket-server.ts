@@ -4,10 +4,10 @@
 import 'dotenv/config';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { transcribeWebmToText } from './lib/server/stt.js';
-import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
-import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
-import { deductUsage } from './lib/server/usage.js';
+import { transcribeWebmToText } from '@/lib/server/stt';
+import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { deductUsage } from '@/lib/server/usage';
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const HOST = '0.0.0.0';

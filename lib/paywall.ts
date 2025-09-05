@@ -1,5 +1,5 @@
-import { getSupabaseServerAdmin } from './supabaseAdmin.js';
-import { FREE_TRIAL_SECONDS } from './env.server.js';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 import { NextResponse } from 'next/server';
 
 export class PaywallError extends Error {

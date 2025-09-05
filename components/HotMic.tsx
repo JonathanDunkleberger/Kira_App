@@ -58,11 +58,11 @@ export default function HotMic() {
     try { await submitAudioChunk(blob); } catch (e) { console.error('submitAudioChunk failed', e); }
   });
 
-  // Stop conversation immediately when tab becomes hidden to avoid stray playback
+  // Stop conversation immediately when tab becomes hidden to avoid stray playback (skip tail flush)
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'hidden' && conversationStatus === 'active') {
-        try { stopMobileMic(); } catch {}
+        try { (stopMobileMic as any)({ skipFinalFlush: true }); } catch {}
         stopConversation();
       }
     };
@@ -96,8 +96,8 @@ export default function HotMic() {
       try {
         const isMob = typeof navigator !== 'undefined' && /Mobi/i.test(navigator.userAgent || '');
         if (isMob) {
+          setExternalMicActive(true); // set flag first to gate provider internal mic
           await startMobileMic();
-          setExternalMicActive(true);
         }
       } catch (e) {
         console.error('Mobile mic start failed:', e);

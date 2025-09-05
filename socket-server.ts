@@ -4,10 +4,12 @@
 import 'dotenv/config';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { transcribeWebmToText } from '@/lib/server/stt';
-import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { deductUsage } from '@/lib/server/usage';
+import { transcribeWebmToText } from './lib/server/stt.js';
+import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
+import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
+import { deductUsage } from './lib/server/usage.js';
+import { getDailySecondsRemaining, decrementDailySeconds } from './lib/usage.js';
+import { envServer as env } from './lib/server/env.server.js';
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const HOST = '0.0.0.0';
@@ -47,6 +49,7 @@ wss.on('connection', async (ws, req) => {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const token = url.searchParams.get('token') || '';
   const conversationId = url.searchParams.get('conversationId') || '';
+  const cid = url.searchParams.get('cid') || '';
   const allowNoAuth = (process.env.DEV_ALLOW_NOAUTH || '').toLowerCase() === 'true';
   if (!token && !allowNoAuth) {
     try { ws.close(4401, 'Unauthorized'); } catch {}
@@ -100,6 +103,27 @@ wss.on('connection', async (ws, req) => {
       console.error('[DB] seed select threw', e);
     }
   }
+
+  // Emit an initial usage update so clients can refresh without waiting for the first turn
+  try {
+    const userId = (ws as any).userId as string | undefined;
+    let secondsRemaining: number | undefined;
+    if (userId) {
+      try { secondsRemaining = await getDailySecondsRemaining(userId); } catch {}
+    } else if (conversationId) {
+      try {
+        const { data } = await supa
+          .from('conversations')
+          .select('seconds_remaining')
+          .eq('id', conversationId)
+          .maybeSingle();
+        secondsRemaining = Number(data?.seconds_remaining ?? env.FREE_TRIAL_SECONDS);
+      } catch {}
+    } else {
+      secondsRemaining = Number(env.FREE_TRIAL_SECONDS);
+    }
+    sendJson(ws, { type: 'usage_update', secondsRemaining });
+  } catch {}
 
   const scheduleFlush = () => {
     if (flushTimer) clearTimeout(flushTimer);
@@ -185,11 +209,33 @@ wss.on('connection', async (ws, req) => {
       }
   // Total usage duration for the turn in seconds (approx: STT + LLM + TTS wall time)
   const totalSeconds = (Date.now() - turnStart) / 1000;
-  // Persist usage deduction via Supabase RPC
-  try { await deductUsage(conversationId, totalSeconds); } catch (e) { console.error('Usage deduction failed:', e); }
-
-  // Notify client to refresh usage after each turn
-  try { sendJson(ws, { type: 'usage_update' }); } catch {}
+  // Persist usage deduction and compute new remaining seconds
+  try {
+    const userId = (ws as any).userId as string | undefined;
+    let secondsRemaining: number | undefined;
+    if (userId) {
+      // For signed-in users, decrement daily entitlements
+      const newRem = await decrementDailySeconds(userId, Math.ceil(totalSeconds));
+      if (typeof newRem === 'number') secondsRemaining = newRem;
+      else secondsRemaining = await getDailySecondsRemaining(userId);
+    } else if (conversationId) {
+      // Guests: deduct from conversation seconds_remaining via RPC
+      await deductUsage(conversationId, totalSeconds);
+      try {
+        const { data } = await supa
+          .from('conversations')
+          .select('seconds_remaining')
+          .eq('id', conversationId)
+          .maybeSingle();
+        secondsRemaining = Number(data?.seconds_remaining ?? env.FREE_TRIAL_SECONDS);
+      } catch {}
+    }
+    // Notify client (include secondsRemaining when known)
+    sendJson(ws, { type: 'usage_update', secondsRemaining });
+  } catch (e) {
+    console.error('Usage deduction failed:', e);
+    try { sendJson(ws, { type: 'usage_update' }); } catch {}
+  }
     } catch (err) {
       console.error('WS pipeline error:', err);
       sendJson(ws, { type: 'error', message: 'Processing error' });

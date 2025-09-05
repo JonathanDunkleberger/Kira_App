@@ -114,10 +114,20 @@ export default function ConversationProvider({ children }: { children: React.Rea
       turnOpenRef.current = false;
       setTimeout(() => setTurnStatus('listening'), 150);
     },
-    onUsageUpdate: async () => {
-      // Authoritative refresh from server on usage updates; no local math
+    onUsageUpdate: async (secondsRemaining?: number) => {
+      // Prefer server-pushed value; fallback to POST
+      if (typeof secondsRemaining === 'number') {
+        setDailySecondsRemaining(secondsRemaining);
+        return;
+      }
       try {
-        const res = await fetch('/api/usage', { credentials: 'include' });
+        const guestId = (typeof window !== 'undefined' && (localStorage.getItem('kiraGuestId') || null)) || null;
+        const res = await fetch('/api/usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestId }),
+          credentials: 'include',
+        });
         if (res.ok) {
           const data = await res.json().catch(() => null);
           const secs = typeof data?.secondsRemaining === 'number' ? data.secondsRemaining : null;
@@ -229,7 +239,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/usage', { credentials: 'include' });
+        // Try to send a guestId if we have one
+        const guestId = (typeof window !== 'undefined' && (localStorage.getItem('kiraGuestId') || null)) || null;
+
+        const res = await fetch('/api/usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guestId }),
+          credentials: 'include',
+        });
+
         if (res.ok) {
           const data = await res.json().catch(() => null);
           if (!cancelled && typeof data?.secondsRemaining === 'number') {
@@ -499,12 +518,19 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Removed legacy VAD useEffect; microphone is managed by useConditionalMicrophone
 
-  // Start microphone only when UI is in listening state AND WS is connected
+  // Start microphone only when UI is in listening state AND WS is connected AND no external mic
   useEffect(() => {
-    if (turnStatus === 'listening' && connectionStatus === 'connected') {
+    if (turnStatus === 'listening' && connectionStatus === 'connected' && !externalMicActive) {
       try { startMicrophone(); } catch {}
     }
-  }, [turnStatus, connectionStatus, startMicrophone]);
+  }, [turnStatus, connectionStatus, startMicrophone, externalMicActive]);
+
+  // If we switch to external mic, stop the internal one and skip tail flush
+  useEffect(() => {
+    if (externalMicActive) {
+      try { (stopMicrophone as any)({ skipFinalFlush: true }); } catch {}
+    }
+  }, [externalMicActive, stopMicrophone]);
 
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager

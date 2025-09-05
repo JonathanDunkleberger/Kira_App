@@ -12,7 +12,7 @@ type ServerMsg =
   | { type: 'assistant_text'; text: string }
   | { type: 'audio_start' }
   | { type: 'audio_end' }
-  | { type: 'usage_update' }
+  | { type: 'usage_update'; secondsRemaining?: number }
   | { type: 'error'; message: string };
 
 type VoiceSocketOptions = {
@@ -22,7 +22,7 @@ type VoiceSocketOptions = {
   onAudioEnd?: () => void;
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
-  onUsageUpdate?: () => void;
+  onUsageUpdate?: (secondsRemaining?: number) => void;
   conversationId?: string | null;
 };
 
@@ -42,7 +42,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
   const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
   const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
-  const onUsageUpdateRef = useRef<(() => void) | undefined>(undefined);
+  const onUsageUpdateRef = useRef<((s?: number) => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
   // Fencing to ignore late audio packets and end playback immediately on halt()
@@ -95,9 +95,31 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
         token = data?.session?.access_token || '';
       } catch {}
 
+      // Generate/persist a stable client id (cid) for anonymous usage tracking
+      let cid = '';
+      try {
+        if (typeof window !== 'undefined') {
+          const migrate = () => {
+            const legacy = localStorage.getItem('kira_cid')
+              || localStorage.getItem('kiraGuestId')
+              || localStorage.getItem('guestConversationId')
+              || localStorage.getItem('kira_guest_id');
+            if (legacy) {
+              try { localStorage.setItem('kira_cid', legacy); } catch {}
+              return legacy;
+            }
+            const newId = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+            try { localStorage.setItem('kira_cid', newId); } catch {}
+            return newId;
+          };
+          cid = localStorage.getItem('kira_cid') || migrate();
+        }
+      } catch {}
+
   const url = new URL(urlBase);
       if (token) url.searchParams.set('token', token);
   if (conversationId) url.searchParams.set('conversationId', conversationId);
+      if (cid) url.searchParams.set('cid', cid);
 
       try {
         const ws = new WebSocket(url.toString());
@@ -158,7 +180,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                     streamOpenRef.current = false;
                     break;
                   case 'usage_update':
-                    try { onUsageUpdateRef.current?.(); } catch {}
+                    try { onUsageUpdateRef.current?.(maybe.secondsRemaining); } catch {}
                     break;
                   case 'error':
                     setLastText('[error] ' + (maybe.message || ''));

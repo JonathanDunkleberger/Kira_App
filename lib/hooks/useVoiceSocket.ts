@@ -15,6 +15,7 @@ type ServerMsg =
   | { type: 'audio_end' }
   | { type: 'audio_format'; format: 'webm' | 'mp3' }
   | { type: 'usage_update'; secondsRemaining?: number }
+  | { type: 'title_update'; title: string }
   | { type: 'error'; message: string };
 
 type VoiceSocketOptions = {
@@ -26,6 +27,7 @@ type VoiceSocketOptions = {
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
   onUsageUpdate?: (secondsRemaining?: number) => void;
+  onTitleUpdate?: (title: string) => void;
   conversationId?: string | null;
 };
 
@@ -47,6 +49,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
   const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
   const onUsageUpdateRef = useRef<((s?: number) => void) | undefined>(undefined);
+  const onTitleUpdateRef = useRef<((t: string) => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
   // Fencing to ignore late audio packets and end playback immediately on halt()
@@ -68,6 +71,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   onTranscriptRef.current = opts.onTranscript;
   onAssistantRef.current = opts.onAssistantText;
   onUsageUpdateRef.current = opts.onUsageUpdate;
+  onTitleUpdateRef.current = opts.onTitleUpdate;
     } else {
       onAudioChunkRef.current = undefined;
       onAudioEndRef.current = undefined;
@@ -76,6 +80,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   onTranscriptRef.current = undefined;
   onAssistantRef.current = undefined;
   onUsageUpdateRef.current = undefined;
+  onTitleUpdateRef.current = undefined;
     }
   }, [opts]);
 
@@ -195,6 +200,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                     break;
                   case 'usage_update':
                     try { onUsageUpdateRef.current?.(maybe.secondsRemaining); } catch {}
+                    break;
+                  case 'title_update':
+                    try { onTitleUpdateRef.current?.(maybe.title); } catch {}
                     break;
                   case 'error':
                     setLastText('[error] ' + (maybe.message || ''));

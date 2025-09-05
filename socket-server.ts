@@ -182,8 +182,42 @@ wss.on('connection', async (ws, req) => {
             .from('messages')
             .insert({ conversation_id: conversationId, role: 'assistant', content: assistant, user_id: userId })
             .select('id') as any;
-          if (insErrA) console.error('[DB] insert assistant failed', { conversationId, insErrA });
-          else try { console.log('[DB] inserted assistant', { conversationId, id: insA?.[0]?.id }); } catch {}
+          if (insErrA) {
+            console.error('[DB] insert assistant failed', { conversationId, insErrA });
+          } else {
+            try { console.log('[DB] inserted assistant', { conversationId, id: insA?.[0]?.id }); } catch {}
+            // Touch parent conversation timestamp so lists re-order
+            try {
+              const { error: updateErr } = await supa
+                .from('conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', conversationId);
+              if (updateErr) console.error('[DB] Failed to update conversation timestamp', { conversationId, updateErr });
+            } catch (e) {
+              console.error('[DB] Exception updating conversation timestamp', e);
+            }
+            // Generate a title after first user message
+            try {
+              const userCount = historyMem.filter(m => m.role === 'user').length;
+              if (userCount === 1) {
+                const title = await generateConversationTitle(historyMem);
+                if (title) {
+                  sendJson(ws, { type: 'title_update', title });
+                  try {
+                    await supa
+                      .from('conversations')
+                      .update({ title })
+                      .eq('id', conversationId);
+                    console.log(`[DB] Set title for conversation ${conversationId}: ${title}`);
+                  } catch (te) {
+                    console.error('[DB] Failed to set title', te);
+                  }
+                }
+              }
+            } catch (te) {
+              console.error('Title generation failed', te);
+            }
+          }
         }
       }
 
@@ -309,4 +343,16 @@ async function runChat(
   }
   const data: any = await r.json();
   return (data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+async function generateConversationTitle(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<string> {
+  const convo = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+  const sys = 'Summarize the following conversation into a short, catchy title of 5 words or less. Only return the title.';
+  const title = await runChat(fetch, [
+    { role: 'system', content: sys },
+    { role: 'user', content: convo }
+  ]);
+  return (title || '').replace(/["\\]/g, '').trim();
 }

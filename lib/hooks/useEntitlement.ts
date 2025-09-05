@@ -30,7 +30,7 @@ const getGuestId = (): string => {
   }
 };
 
-export function useEntitlement(): Entitlement & { refresh: () => Promise<void> } {
+export function useEntitlement(): Entitlement & { refresh: () => Promise<void>; setSecondsRemaining: (seconds: number) => void } {
   const [entitlement, setEntitlement] = useState<Entitlement>({
     userStatus: 'guest',
   secondsRemaining: 0,
@@ -63,6 +63,14 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
     }
   }, []);
 
+  // Allow other parts of the app (e.g., WebSocket updates) to manually set remaining seconds
+  const setSecondsRemaining = useCallback((seconds: number) => {
+    console.log('[Entitlement] Manually setting seconds remaining:', seconds);
+    setEntitlement(prev => ({ ...prev, secondsRemaining: seconds, isLoading: false }));
+    try { localStorage.setItem('kira:secondsRemaining', String(seconds ?? 0)); } catch {}
+    try { window.dispatchEvent(new Event('entitlement:updated')); } catch {}
+  }, []);
+
   useEffect(() => {
     fetchEnt();
     const id = setInterval(fetchEnt, 5 * 60 * 1000);
@@ -79,5 +87,5 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void> }
     return () => { sub?.subscription?.unsubscribe(); };
   }, [fetchEnt]);
 
-  return { ...entitlement, refresh: fetchEnt };
+  return { ...entitlement, refresh: fetchEnt, setSecondsRemaining };
 }

@@ -118,10 +118,11 @@ export default function ConversationProvider({ children }: { children: React.Rea
         (audioPlayer as any)?.setContentType?.(mime);
       } catch {}
     },
-    onUsageUpdate: async (secondsRemaining?: number) => {
+  onUsageUpdate: async (secondsRemaining?: number) => {
       // Prefer server-pushed value; fallback to POST
       if (typeof secondsRemaining === 'number') {
         setDailySecondsRemaining(secondsRemaining);
+    try { (ent as any)?.setSecondsRemaining?.(secondsRemaining); } catch {}
         return;
       }
       try {

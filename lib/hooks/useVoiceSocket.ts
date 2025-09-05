@@ -45,6 +45,12 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onUsageUpdateRef = useRef<(() => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
+  // Fencing to ignore late audio packets and end playback immediately on halt()
+  const acceptFenceRef = useRef(0); // increment to reject any in-flight audio
+  const currentStreamFenceRef = useRef(-1); // fence associated with current audio_start/end window
+  const streamOpenRef = useRef(false);
+  // Debounce for halt() to avoid double "end" transitions
+  const haltedAtRef = useRef(0);
 
   // Normalize options
   const urlBase = typeof opts === 'string' ? opts : (opts.url || WSS_URL || '');
@@ -112,10 +118,15 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
           try {
             if (data instanceof ArrayBuffer) {
               // Forward chunk immediately
-              try { onAudioChunkRef.current?.(data); } catch {}
+              // Only forward if this binary belongs to the currently accepted stream
+              if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
+                try { onAudioChunkRef.current?.(data); } catch {}
+              }
             } else if (data instanceof Blob) {
               const ab = await data.arrayBuffer();
-              try { onAudioChunkRef.current?.(ab); } catch {}
+              if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
+                try { onAudioChunkRef.current?.(ab); } catch {}
+              }
             } else if (typeof data === 'string') {
               const maybe = safeParse<ServerMsg>(data);
               if (maybe) {
@@ -131,10 +142,20 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                     try { onAssistantRef.current?.(maybe.text); } catch {}
                     break;
                   case 'audio_start':
-                    try { onAudioStartRef.current?.(); } catch {}
+                    // Start a new audio stream window with the current accept fence snapshot
+                    currentStreamFenceRef.current = acceptFenceRef.current;
+                    streamOpenRef.current = true;
+                    // If this stream is accepted, notify start
+                    if (currentStreamFenceRef.current === acceptFenceRef.current) {
+                      try { onAudioStartRef.current?.(); } catch {}
+                    }
                     break;
                   case 'audio_end':
-                    try { onAudioEndRef.current?.(); } catch {}
+                    // Only end and flush if the stream matches the accepted fence
+                    if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
+                      try { onAudioEndRef.current?.(); } catch {}
+                    }
+                    streamOpenRef.current = false;
                     break;
                   case 'usage_update':
                     try { onUsageUpdateRef.current?.(); } catch {}
@@ -195,6 +216,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       try { socketRef.current?.close(); } catch {}
       socketRef.current = null;
       setStatus('disconnected');
+  // Reset stream state
+  streamOpenRef.current = false;
+  currentStreamFenceRef.current = -1;
     };
   }, [urlBase, conversationId]);
 
@@ -222,7 +246,22 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
     }
   };
 
-  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent } as const;
+  // Immediately stop audio and ignore any late packets for the in-flight stream
+  const halt = () => {
+  const now = Date.now();
+  // Ignore rapid re-halts or late audio_end cascades within 300ms
+  if (now - haltedAtRef.current < 300) return;
+  haltedAtRef.current = now;
+    // Advance the accept fence to invalidate any current stream.
+    acceptFenceRef.current += 1;
+    // Close any open stream locally and notify consumer to end playback.
+    if (streamOpenRef.current) {
+      streamOpenRef.current = false;
+      try { onAudioEndRef.current?.(); } catch {}
+    }
+  };
+
+  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent, halt } as const;
 }
 
 function safeParse<T>(s: string): T | null {

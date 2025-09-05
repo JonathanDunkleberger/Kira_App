@@ -35,20 +35,32 @@ export default function HotMic() {
     turnStatus, 
     startConversation, 
     stopConversation,
-  micVolume,
-  kiraVolume,
-  isPro,
-  dailySecondsRemaining,
-  promptPaywall,
-  submitAudioChunk,
-  externalMicActive,
-  setExternalMicActive,
+    micVolume,
+    kiraVolume,
+    isPro,
+    dailySecondsRemaining,
+    promptPaywall,
+    submitAudioChunk,
+    externalMicActive,
+    setExternalMicActive,
   } = useConversation();
 
   // Mobile mic encoder: produces webm Blobs per utterance and submits to provider
   const { start: startMobileMic, stop: stopMobileMic } = useConditionalMicrophone(async (blob) => {
     try { await submitAudioChunk(blob); } catch (e) { console.error('submitAudioChunk failed', e); }
   });
+
+  // Stop conversation immediately when tab becomes hidden to avoid stray playback
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden' && conversationStatus === 'active') {
+        try { stopMobileMic(); } catch {}
+        stopConversation();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [conversationStatus, stopConversation, stopMobileMic]);
 
   const isSessionActive = conversationStatus === 'active';
   const handleClick = async () => {
@@ -87,7 +99,7 @@ export default function HotMic() {
 
   const { orbText, subText } = useMemo(() => {
     if (!isSessionActive) {
-  return { orbText: 'Start Conversation', subText: 'Click to begin' };
+      return { orbText: 'Start Conversation', subText: 'Click to begin' };
     }
     switch (turnStatus) {
       case 'user_listening':
@@ -117,32 +129,32 @@ export default function HotMic() {
   // --- END ANIMATION LOGIC ---
 
   return (
-  <div className="flex flex-col items-center gap-4">
-        <motion.button
-          onClick={handleClick}
-          onTouchStart={handleClick}
-          className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
-          // Animate orb scale and glow directly
-          animate={{ scale }}
-          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-          aria-disabled={false}
-          style={{
-            background: turnStatus === 'processing_speech'
-              ? 'radial-gradient(circle, #fcd34d, #b45309)'
-              : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
-            boxShadow: (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking')
-              ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
-              : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
-          }}
-        >
-          {orbText}
-        </motion.button>
+    <div className="flex flex-col items-center gap-4">
+      <motion.button
+        onClick={handleClick}
+        onTouchStart={handleClick}
+        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
+        // Animate orb scale and glow directly
+        animate={{ scale }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        aria-disabled={false}
+        style={{
+          background: turnStatus === 'processing_speech'
+            ? 'radial-gradient(circle, #fcd34d, #b45309)'
+            : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
+          boxShadow: (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking')
+            ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
+            : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
+        }}
+      >
+        {orbText}
+      </motion.button>
       
       <div className="h-8 text-center">
         <p className="text-gray-400">{subText}</p>
       </div>
 
-  {/* Debug panel removed */}
+      {/* Debug panel removed */}
     </div>
   );
 }

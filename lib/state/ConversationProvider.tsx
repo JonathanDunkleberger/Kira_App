@@ -89,7 +89,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     viewMode, setViewMode,
     loadConversation, newConversation, fetchAllConversations,
   } = useConversationManager(session);
-  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance } = useVoiceSocket({
+  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance, halt } = useVoiceSocket({
     conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
@@ -106,7 +106,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Ensure we return to listening after TTS finishes
       setTimeout(() => setTurnStatus('user_listening'), 150);
     },
-  onUsageUpdate: () => { try { (ent as any).refresh?.(); } catch {} },
+    onUsageUpdate: () => { try { (ent as any).refresh?.(); } catch {} },
     onTranscript: (text: string) => {
       if (!text) return;
       setMessages(prev => [...prev, { id: `user-${Date.now()}`, role: 'user', content: text }]);
@@ -334,6 +334,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
     // Stop new microphone pipeline first
     try { stopMicrophone(); } catch {}
     setExternalMicActive(false);
+    // Halt any in-flight audio immediately and fence off late packets
+    try { halt?.(); } catch {}
     if (audioPlayerRef.current) {
       try {
         if (typeof (audioPlayerRef.current as any).stop === 'function') {
@@ -361,14 +363,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
         }).catch(() => {});
       }
     } catch {}
-  setConversationStatus(reason);
-  setTurnStatus('idle');
+    setConversationStatus(reason);
+    setTurnStatus('idle');
     setMicVolume(0);
     if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
       promptPaywall('time_exhausted');
     }
-  }, [promptPaywall, stopMicrophone]);
+  }, [promptPaywall, stopMicrophone, halt]);
 
   // Removed per-second client countdown for free users. We now trust server updates
   // and refresh after each turn and periodically via checkUsage().

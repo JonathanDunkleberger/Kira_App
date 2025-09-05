@@ -1,287 +1,247 @@
-// Simple WebSocket server for streaming audio frames and responses
-// Run alongside Next.js during development
+// WebSocket server for realtime voice chat. Supports both the existing
+// URL-parameter mode (conversationId in query) and a command-based flow
+// (auth, load_conversation, create_conversation, end_utterance).
 
 import 'dotenv/config';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { transcribeWebmToText } from '@/lib/server/stt';
-import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
+import { synthesizeSpeechStream } from '@/lib/server/tts';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { deductUsage } from '@/lib/server/usage';
-import { saveMessage, generateConversationTitle as generateTitle } from '@/lib/server/conversations';
 import { generateReplyWithHistory } from '@/lib/llm';
-import { getDailySecondsRemaining, decrementDailySeconds } from '@/lib/usage';
-import { envServer as env } from '@/lib/server/env.server';
+import { createConversation, saveMessage, generateAndSaveTitle } from '@/lib/server/conversation-logic';
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const HOST = '0.0.0.0';
 
 const server = http.createServer((req, res) => {
   if (req.url === '/healthz') {
-    res.writeHead(200, { 'content-type': 'text/plain' });
-    res.end('ok');
-    return;
+    res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
+  } else {
+    res.writeHead(200, { 'content-type': 'text/plain' }).end('kira-voice-ws');
   }
-  res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end('kira-voice-ws');
 });
 
 const wss = new WebSocketServer({ server });
 server.listen(PORT, HOST, () => {
-  console.log(`HTTP+WS listening on http://${HOST}:${PORT} (Render)`);
+  console.log(`HTTP+WS listening on http://${HOST}:${PORT}`);
 });
 
-// Heartbeat: periodically ping all connected clients to prevent idle timeouts
-const HEARTBEAT_MS = 30_000;
+type HistoryMsg = { role: 'user' | 'assistant'; content: string };
+type ConnState = {
+  userId: string | null;
+  conversationId: string | null;
+  historyMem: HistoryMsg[];
+  chunkBuffers: Buffer[];
+  flushTimer: NodeJS.Timeout | null;
+  isProcessing: boolean;
+  ttsFmt: 'webm' | 'mp3';
+};
+
+const MAX_TURNS = 12;
+const FLUSH_DEBOUNCE_MS = Number(process.env.WS_UTTERANCE_SILENCE_MS || 700);
+
+const stateMap = new Map<WebSocket, ConnState>();
+
+// Heartbeat to keep connections alive
 setInterval(() => {
   try {
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
-        try { (client as any).ping(); } catch {}
+        try { (client as any).ping?.(); } catch {}
       }
     });
   } catch {}
-}, HEARTBEAT_MS);
+}, 30_000);
 
 wss.on('connection', async (ws, req) => {
-  const ip = req.socket.remoteAddress;
-  console.log(`WS client connected${ip ? ` from ${ip}` : ''}`);
-
-  // Basic auth via Supabase access token in query ?token=...
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const token = url.searchParams.get('token') || '';
-  const conversationId = url.searchParams.get('conversationId');
-  // Client-advertised preferred TTS container (webm|mp3); default to webm
-  const ttsPref = (url.searchParams.get('tts') || 'webm').toLowerCase();
+  const urlConversationId = url.searchParams.get('conversationId');
+  const tts = (url.searchParams.get('tts') || 'webm').toLowerCase() as 'webm' | 'mp3';
   const allowNoAuth = (process.env.DEV_ALLOW_NOAUTH || '').toLowerCase() === 'true';
 
-  if (!conversationId) {
-    console.warn('WS connection rejected: Missing conversationId');
-    try { ws.close(1008, 'Missing conversationId'); } catch {}
-    return;
-  }
-
-  if (!token && !allowNoAuth) {
+  const supa = getSupabaseServerAdmin();
+  let userId: string | null = null;
+  if (token) {
+    try {
+      const { data, error } = await supa.auth.getUser(token);
+      if (error) throw error;
+      userId = data?.user?.id ?? null;
+    } catch (e) {
+      if (!allowNoAuth) {
+        try { ws.close(4401, 'Invalid token'); } catch {}
+        return;
+      }
+    }
+  } else if (!allowNoAuth) {
     try { ws.close(4401, 'Unauthorized'); } catch {}
     return;
   }
 
-  let userId: string | undefined;
-  const supa = getSupabaseServerAdmin();
-  if (token) {
-    try {
-      const { data, error } = await supa.auth.getUser(token);
-      if (error || !data?.user?.id) {
-        try { ws.close(4401, 'Invalid token'); } catch {}
-        return;
-      }
-      userId = data.user.id;
-      (ws as any).userId = userId;
-    } catch (e) {
-      console.error('WS auth error:', e);
-      try { ws.close(1011, 'Auth error'); } catch {}
+  stateMap.set(ws, {
+    userId,
+    conversationId: urlConversationId || null,
+    historyMem: [],
+    chunkBuffers: [],
+    flushTimer: null,
+    isProcessing: false,
+    ttsFmt: tts === 'mp3' ? 'mp3' : 'webm',
+  });
+
+  // If a conversationId is provided in URL, seed history for compatibility
+  if (urlConversationId) {
+    await seedHistory(ws);
+  }
+
+  ws.on('message', async (message: WebSocket.RawData, isBinary) => {
+    const state = stateMap.get(ws);
+    if (!state) return;
+    if (isBinary || Buffer.isBuffer(message)) {
+      // Binary audio data
+      state.chunkBuffers.push(Buffer.isBuffer(message) ? message : Buffer.from(message as any));
+      scheduleFlush(ws);
       return;
     }
-  }
-
-  // Per-connection state
-  let chunkBuffers: Buffer[] = [];
-  let flushTimer: NodeJS.Timeout | null = null;
-  let processing = false;
-  // Ephemeral per-connection memory to ensure continuity even if DB ops fail
-  let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  const MAX_TURNS = 12;
-  const FLUSH_DEBOUNCE_MS = Number(process.env.WS_UTTERANCE_SILENCE_MS || 700);
-
-  // Seed in-memory history from DB once
-  try {
-    const { data: hist, error: selErr } = await supa
-      .from('messages')
-      .select('role, content')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .limit(MAX_TURNS);
-    if (selErr) {
-      console.error('[DB] seed select failed', { conversationId, selErr });
-    } else {
-      historyMem = (hist || []).map((m: any) => ({ role: m.role, content: m.content }));
-      try { console.log({ conversationId, seedHistoryLen: historyMem.length }); } catch {}
-    }
-  } catch (e) {
-    console.error('[DB] seed select threw', e);
-  }
-
-  // Emit an initial usage update so clients can refresh without waiting for the first turn
-  try {
-    let secondsRemaining: number | undefined;
-    if (userId) {
-      try { secondsRemaining = await getDailySecondsRemaining(userId); } catch {}
-    } else {
-      try {
-        const { data } = await supa
-          .from('conversations')
-          .select('seconds_remaining')
-          .eq('id', conversationId)
-          .maybeSingle();
-        secondsRemaining = Number(data?.seconds_remaining ?? env.FREE_TRIAL_SECONDS);
-      } catch {}
-    }
-    sendJson(ws, { type: 'usage_update', secondsRemaining });
-    // Inform client of audio format being used for this connection
-    sendJson(ws, { type: 'audio_format', format: (ttsPref === 'mp3' ? 'mp3' : 'webm') });
-  } catch {}
-
-  const scheduleFlush = () => {
-    if (flushTimer) clearTimeout(flushTimer);
-    flushTimer = setTimeout(flushNow, FLUSH_DEBOUNCE_MS);
-  };
-
-  const flushNow = async () => {
-    if (processing) return;
-    if (!chunkBuffers.length) return;
-    processing = true;
-    const payload = Buffer.concat(chunkBuffers);
-    chunkBuffers = [];
+    // JSON control messages
     try {
-      // Track total turn duration from start of processing to end of TTS
-      const turnStart = Date.now();
-
-      // 1) STT
-      const transcript = await transcribeWebmToText(new Uint8Array(payload));
-      if (transcript) sendJson(ws, { type: 'transcript', text: transcript });
-      // 1b) Update in-memory history and persist user message
-      if (transcript) {
-        historyMem.push({ role: 'user', content: transcript });
-        if (historyMem.length > MAX_TURNS) historyMem.splice(0, historyMem.length - MAX_TURNS);
-      }
-      if (transcript) {
-        await saveMessage(conversationId, 'user', transcript, userId ?? null);
-      }
-
-      // 2) LLM — build from in-memory history (already includes last user)
-      const prior = transcript ? historyMem.slice(0, -1) : historyMem;
-      const userText = transcript || historyMem[historyMem.length - 1]?.content || '';
-      const assistant = await generateReplyWithHistory(prior as any, userText, /* isPro */ undefined, userId || undefined);
-      if (assistant) {
-        sendJson(ws, { type: 'assistant_text', text: assistant });
-        // update in-memory and persist
-        historyMem.push({ role: 'assistant', content: assistant });
-        if (historyMem.length > MAX_TURNS) historyMem.splice(0, historyMem.length - MAX_TURNS);
-  await saveMessage(conversationId, 'assistant', assistant, userId ?? null);
-        // Generate a title after first user message
-        try {
-          const userCount = historyMem.filter(m => m.role === 'user').length;
-          if (userCount === 1) {
-            const title = await generateTitle(conversationId, historyMem);
-            if (title) {
-              sendJson(ws, { type: 'title_update', title });
-            }
-          }
-        } catch (te) {
-          console.error('Title generation failed', te);
-        }
-      }
-
-      try { console.log({ conversationId: conversationId || '(none)', historyLen: historyMem.length }); } catch {}
-      // 3) TTS -> binary frames (format negotiated per client capability)
-      if (assistant) {
-        sendJson(ws, { type: 'audio_start' });
-        try {
-          // Select output format: WebM Opus (default) or MP3 for Safari/iOS clients
-          const useMp3 = ttsPref === 'mp3';
-          await new Promise<void>((resolve, reject) => {
-            synthesizeSpeechStream(
-              assistant,
-              (chunk: Uint8Array) => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(chunk, { binary: true }, (err) => {
-                    if (err) {
-                      console.error('WS send audio chunk failed:', err);
-                      // Do not reject; continue streaming
-                    }
-                  });
-                }
-              },
-              useMp3 ? 'mp3' : 'webm'
-            ).then(resolve).catch(reject);
-          });
-        } catch (e) {
-          // fallback to non-streaming single send
-          try {
-            const b64 = await synthesizeSpeech(assistant, ttsPref === 'mp3' ? 'mp3' : 'webm');
-            const buf = Buffer.from(b64, 'base64');
-            ws.send(buf, { binary: true });
-          } catch (e2) {
-            console.error('TTS send failed:', e2);
-          }
-        } finally {
-          sendJson(ws, { type: 'audio_end' });
-        }
-      }
-
-      // 4) Usage deduction (wall-time approximation per turn)
-      try {
-        const totalSeconds = (Date.now() - turnStart) / 1000;
-        let secondsRemaining: number | undefined;
-        if (userId) {
-          const newRem = await decrementDailySeconds(userId, Math.ceil(totalSeconds));
-          if (typeof newRem === 'number') secondsRemaining = newRem;
-          else secondsRemaining = await getDailySecondsRemaining(userId);
-        } else {
-          await deductUsage(conversationId, totalSeconds);
-          const { data } = await supa
-            .from('conversations')
-            .select('seconds_remaining')
-            .eq('id', conversationId)
-            .maybeSingle();
-          secondsRemaining = Number(data?.seconds_remaining ?? env.FREE_TRIAL_SECONDS);
-        }
-        sendJson(ws, { type: 'usage_update', secondsRemaining });
-      } catch (e) {
-        console.error('Usage deduction failed:', e);
-        try { sendJson(ws, { type: 'usage_update' }); } catch {}
-      }
-    } catch (err) {
-      console.error('WS pipeline error:', err);
-      sendJson(ws, { type: 'error', message: 'Processing error' });
-    } finally {
-      processing = false;
-    }
-  };
-
-  ws.on('message', (data: Buffer, isBinary) => {
-    const size = data?.byteLength ?? 0;
-    if (isBinary && size) {
-      chunkBuffers.push(Buffer.from(data));
-      scheduleFlush();
-    } else if (size) {
-      // JSON-framed control messages
-      try {
-        const msg = JSON.parse(data.toString('utf8')) as any;
-        if (msg?.type === 'utterance_end' || msg?.type === 'end_utterance') {
-          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-          void flushNow();
-        }
-      } catch {
-        // ignore non-JSON
-      }
+      const buf = Buffer.isBuffer(message)
+        ? message
+        : Array.isArray(message)
+          ? Buffer.concat(message as Buffer[])
+          : Buffer.from(message as ArrayBuffer);
+      const msg = JSON.parse(buf.toString('utf8')) as any;
+      await handleControl(ws, msg);
+    } catch (e) {
+      console.warn('Invalid JSON from client');
     }
   });
 
   ws.on('close', () => {
-    if (flushTimer) clearTimeout(flushTimer);
-    console.log(`WS client disconnected for conv ${conversationId}`);
+    const s = stateMap.get(ws);
+    if (s?.flushTimer) clearTimeout(s.flushTimer);
+    stateMap.delete(ws);
   });
-  ws.on('error', (err) => console.error(`WS client error for conv ${conversationId}:`, err));
+
+  ws.on('error', (err) => console.error('WS client error:', err));
 });
 
-wss.on('error', (err) => {
-  console.error('WS server error:', err);
-});
+async function seedHistory(ws: WebSocket) {
+  const s = stateMap.get(ws);
+  if (!s?.conversationId) return;
+  try {
+    const supa = getSupabaseServerAdmin();
+    const { data } = await supa
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', s.conversationId)
+      .order('created_at', { ascending: true })
+      .limit(MAX_TURNS);
+    s.historyMem = (data || []).map((m: any) => ({ role: m.role, content: m.content }));
+  } catch (e) {
+    console.warn('Seed history failed:', e);
+  }
+}
 
-function sendJson(ws: WebSocket, obj: any) {
+async function handleControl(ws: WebSocket, msg: any) {
+  const s = stateMap.get(ws)!;
+  switch (msg?.type) {
+    case 'auth': {
+      // Optional auth after connect
+      try {
+        const supa = getSupabaseServerAdmin();
+        const { data } = await supa.auth.getUser(String(msg?.token || ''));
+        s.userId = data?.user?.id ?? null;
+      } catch {}
+      break;
+    }
+    case 'load_conversation': {
+      s.conversationId = String(msg?.conversationId || '') || null;
+      s.historyMem = [];
+      await seedHistory(ws);
+      break;
+    }
+    case 'create_conversation': {
+      const conv = await createConversation(s.userId);
+      s.conversationId = conv.id;
+      s.historyMem = [];
+      sendJson(ws, { type: 'conversation_created', conversation: conv });
+      break;
+    }
+    case 'end_utterance':
+    case 'utterance_end': {
+      const st = stateMap.get(ws);
+      if (st?.flushTimer) { clearTimeout(st.flushTimer); st.flushTimer = null; }
+      await flushNow(ws);
+      break;
+    }
+  }
+}
+
+function scheduleFlush(ws: WebSocket) {
+  const s = stateMap.get(ws);
+  if (!s) return;
+  if (s.flushTimer) clearTimeout(s.flushTimer);
+  s.flushTimer = setTimeout(() => { void flushNow(ws); }, FLUSH_DEBOUNCE_MS);
+}
+
+async function flushNow(ws: WebSocket) {
+  const s = stateMap.get(ws)!;
+  if (s.isProcessing || s.chunkBuffers.length === 0) return;
+  if (!s.conversationId) {
+    sendJson(ws, { type: 'error', message: 'No conversation loaded' });
+    s.chunkBuffers = [];
+    return;
+  }
+  s.isProcessing = true;
+  const payload = Buffer.concat(s.chunkBuffers);
+  s.chunkBuffers = [];
+
+  try {
+    // 1) STT
+    const transcript = await transcribeWebmToText(new Uint8Array(payload));
+    if (!transcript) return;
+    sendJson(ws, { type: 'transcript', text: transcript });
+    s.historyMem.push({ role: 'user', content: transcript });
+    await saveMessage(s.conversationId, 'user', transcript, s.userId);
+
+    // 2) LLM (use in-memory history for context)
+    const prior = s.historyMem.slice(0, -1);
+    const lastUser = transcript;
+    const assistant = await generateReplyWithHistory(prior as any, lastUser, /* isPro */ undefined, s.userId || undefined);
+    sendJson(ws, { type: 'assistant_text', text: assistant });
+    s.historyMem.push({ role: 'assistant', content: assistant });
+    if (s.historyMem.length > MAX_TURNS) s.historyMem.splice(0, s.historyMem.length - MAX_TURNS);
+    await saveMessage(s.conversationId, 'assistant', assistant, s.userId);
+
+    // 3) Title generation (early)
+    try {
+      const title = await generateAndSaveTitle(s.conversationId, s.historyMem);
+      if (title) sendJson(ws, { type: 'title_update', title, conversationId: s.conversationId });
+    } catch {}
+
+    // 4) TTS streaming
+    sendJson(ws, { type: 'audio_start' });
+    await new Promise<void>((resolve, reject) => {
+      synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk), s.ttsFmt).then(resolve).catch(reject);
+    });
+  } catch (err) {
+    console.error('Pipeline error:', err);
+    sendJson(ws, { type: 'error', message: 'Processing error' });
+  } finally {
+    sendJson(ws, { type: 'audio_end' });
+    s.isProcessing = false;
+  }
+}
+
+function sendJson(ws: WebSocket, data: object) {
   if (ws.readyState === WebSocket.OPEN) {
-    try { ws.send(JSON.stringify(obj)); } catch {}
+    try { ws.send(JSON.stringify(data)); } catch {}
+  }
+}
+function sendBinary(ws: WebSocket, data: Uint8Array) {
+  if (ws.readyState === WebSocket.OPEN) {
+    try { ws.send(data, { binary: true }); } catch {}
   }
 }
 

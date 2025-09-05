@@ -47,6 +47,14 @@ export default function HotMic() {
 
   // Mobile mic encoder: produces webm Blobs per utterance and submits to provider
   const { start: startMobileMic, stop: stopMobileMic } = useConditionalMicrophone(async (blob) => {
+    // Guard: if the server says you're out, don't send
+    if (!isPro) {
+      const remaining = dailySecondsRemaining ?? 0;
+      if (dailySecondsRemaining !== null && remaining <= 0) {
+        // Optional: could surface a toast/snackbar here
+        return;
+      }
+    }
     try { await submitAudioChunk(blob); } catch (e) { console.error('submitAudioChunk failed', e); }
   });
 
@@ -73,10 +81,10 @@ export default function HotMic() {
       promptPaywall('proactive_click');
       return;
     }
-    if (isSessionActive) {
+  if (isSessionActive) {
       try {
         if (externalMicActive) {
-          try { stopMobileMic(); } catch {}
+      try { stopMobileMic({ skipFinalFlush: true } as any); } catch {}
           setExternalMicActive(false);
         }
       } finally {
@@ -102,11 +110,11 @@ export default function HotMic() {
       return { orbText: 'Start Conversation', subText: 'Click to begin' };
     }
     switch (turnStatus) {
-      case 'user_listening':
+      case 'listening':
         return { orbText: 'Listening...', subText: 'Just start talking' };
-      case 'processing_speech':
+      case 'processing':
         return { orbText: 'Processing...', subText: 'Kira is thinking' };
-      case 'assistant_speaking':
+      case 'speaking':
         return { orbText: 'Speaking...', subText: 'Kira is responding' };
       default:
         return { orbText: 'Click to End', subText: '' };
@@ -116,11 +124,11 @@ export default function HotMic() {
   // --- START ANIMATION LOGIC ---
   const baseScale = 1;
   const scale = (() => {
-    if (turnStatus === 'user_listening') {
+    if (turnStatus === 'listening') {
       // A more sensitive curve: low volume has little effect, high volume has a big effect.
       return baseScale + Math.pow(micVolume, 2) * 0.7;
     }
-    if (turnStatus === 'assistant_speaking') {
+    if (turnStatus === 'speaking') {
       // Drive the scale with Kira's real-time audio volume
       return baseScale + Math.pow(kiraVolume || 0, 2) * 0.5;
     }
@@ -139,10 +147,10 @@ export default function HotMic() {
         transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         aria-disabled={false}
         style={{
-          background: turnStatus === 'processing_speech'
+          background: turnStatus === 'processing'
             ? 'radial-gradient(circle, #fcd34d, #b45309)'
             : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
-          boxShadow: (turnStatus === 'user_listening' || turnStatus === 'assistant_speaking')
+          boxShadow: (turnStatus === 'listening' || turnStatus === 'speaking')
             ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
             : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
         }}

@@ -28,6 +28,7 @@ export function useConditionalMicrophone(
   const encodedChunksRef = useRef<BlobPart[]>([]);
   const encoderStreamRef = useRef<MediaStream | null>(null);
   const encoderSourceRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const skipFinalFlushRef = useRef(false);
   // Throttled debug logging for frame-level metrics
   const lastLogAtRef = useRef(0);
   // Desktop VAD instance
@@ -74,11 +75,16 @@ export function useConditionalMicrophone(
       };
     mr.onstop = () => {
         try {
-      const blob = new Blob(encodedChunksRef.current, { type: mimeType || 'audio/mp4' });
-          console.log('[mic] MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', encodedChunksRef.current.length, blob.size, blob.type);
-          if (blob.size) onUtterance(blob);
+          if (!skipFinalFlushRef.current) {
+            const blob = new Blob(encodedChunksRef.current, { type: mimeType || 'audio/mp4' });
+            console.log('[mic] MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', encodedChunksRef.current.length, blob.size, blob.type);
+            if (blob.size) onUtterance(blob);
+          } else {
+            console.log('[mic] Skipping final flush on stop (mobile path)');
+          }
         } finally {
           encodedChunksRef.current = [];
+          skipFinalFlushRef.current = false;
         }
       };
 
@@ -185,11 +191,16 @@ export function useConditionalMicrophone(
     };
     mr.onstop = () => {
       try {
-        const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-        console.log('[mic] Desktop MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', chunks.length, blob.size, blob.type);
-        if (blob.size) onUtterance(blob);
+        if (!skipFinalFlushRef.current) {
+          const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+          console.log('[mic] Desktop MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', chunks.length, blob.size, blob.type);
+          if (blob.size) onUtterance(blob);
+        } else {
+          console.log('[mic] Skipping final flush on stop (desktop path)');
+        }
       } finally {
         chunks = [];
+        skipFinalFlushRef.current = false;
       }
     };
 
@@ -230,7 +241,8 @@ export function useConditionalMicrophone(
     setIsListening(true);
   }, [isListening, onUtterance]);
 
-  const stop = useCallback(() => {
+  const stop = useCallback((opts?: { skipFinalFlush?: boolean }) => {
+    skipFinalFlushRef.current = !!opts?.skipFinalFlush;
     try { mediaRecorderRef.current?.stop(); } catch {}
     mediaRecorderRef.current = null;
 

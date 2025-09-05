@@ -17,7 +17,7 @@ const MIN_AUDIO_BLOB_SIZE = 4000;
 // Singleton AudioPlayer instance for the entire session
 let audioPlayer: AudioPlayer | null = null;
 
-type TurnStatus = 'idle' | 'user_listening' | 'processing_speech' | 'assistant_speaking';
+type TurnStatus = 'idle' | 'listening' | 'processing' | 'speaking';
 type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
 type Convo = { id: string; title: string | null; updated_at: string };
@@ -78,7 +78,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Only return to listening if the conversation is still active.
       if (conversationStatusRef.current === 'active') {
         console.log('Audio playback finished, resetting to listening.');
-        setTurnStatus('user_listening');
+        setTurnStatus('listening');
       }
     });
   }, []);
@@ -89,33 +89,88 @@ export default function ConversationProvider({ children }: { children: React.Rea
     viewMode, setViewMode,
     loadConversation, newConversation, fetchAllConversations,
   } = useConversationManager(session);
-  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance, halt } = useVoiceSocket({
+  const turnOpenRef = useRef(false);
+  const firstAssistantForTurnRef = useRef(true);
+  const lastAssistantIdRef = useRef<string | null>(null);
+  const userDraftIdRef = useRef<string | null>(null);
+  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance, halt, disconnect } = useVoiceSocket({
     conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
       // Ensure playback begins on first chunk for mobile
       audioPlayer?.play();
       // Transition to assistant speaking on first audio
-      setTurnStatus(prev => (prev !== 'assistant_speaking' ? 'assistant_speaking' : prev));
+      setTurnStatus(prev => (prev !== 'speaking' ? 'speaking' : prev));
     },
     onAudioStart: () => {
-      setTurnStatus('assistant_speaking');
+      firstAssistantForTurnRef.current = true;
+      lastAssistantIdRef.current = null;
+      turnOpenRef.current = true;
+      setTurnStatus('speaking');
     },
     onAudioEnd: () => {
       audioPlayer?.endStream();
       // Ensure we return to listening after TTS finishes
-      setTimeout(() => setTurnStatus('user_listening'), 150);
+      turnOpenRef.current = false;
+      setTimeout(() => setTurnStatus('listening'), 150);
     },
-    onUsageUpdate: () => { try { (ent as any).refresh?.(); } catch {} },
+    onUsageUpdate: async () => {
+      // Authoritative refresh from server on usage updates; no local math
+      try {
+        const res = await fetch('/api/usage', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const secs = typeof data?.secondsRemaining === 'number' ? data.secondsRemaining : null;
+          if (secs !== null) setDailySecondsRemaining(secs);
+        }
+      } catch {}
+    },
     onTranscript: (text: string) => {
       if (!text) return;
-      setMessages(prev => [...prev, { id: `user-${Date.now()}`, role: 'user', content: text }]);
-      setTurnStatus('processing_speech');
+      // Replace user transcript draft within the current turn
+      if (!userDraftIdRef.current) {
+        const id = `user-${Date.now()}`;
+        userDraftIdRef.current = id;
+        setMessages(prev => [...prev, { id, role: 'user', content: text }]);
+      } else {
+        const id = userDraftIdRef.current;
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === id);
+          if (idx === -1) return [...prev, { id, role: 'user', content: text }];
+          const next = prev.slice();
+          next[idx] = { ...next[idx], content: text };
+          return next;
+        });
+      }
+      // Do not change turnStatus here; we swap to 'processing' only on utterance submit
     },
     onAssistantText: (text: string) => {
       if (!text) return;
-      setMessages(prev => [...prev, { id: `assistant-${Date.now()}`, role: 'assistant', content: text }]);
-      // speaking state driven by audio_start/audio_end
+      if (!turnOpenRef.current) {
+        // Defensive: treat stray assistant text as a new turn
+        firstAssistantForTurnRef.current = true;
+        turnOpenRef.current = true;
+      }
+      // Replace assistant buffer per turn; do not append multiple messages
+      if (firstAssistantForTurnRef.current || !lastAssistantIdRef.current) {
+        const id = `assistant-${Date.now()}`;
+        lastAssistantIdRef.current = id;
+        firstAssistantForTurnRef.current = false;
+        setMessages(prev => [...prev, { id, role: 'assistant', content: text }]);
+      } else {
+        const targetId = lastAssistantIdRef.current;
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === targetId);
+          if (idx === -1) {
+            return [...prev, { id: targetId!, role: 'assistant', content: text }];
+          }
+          const next = prev.slice();
+          next[idx] = { ...next[idx], content: text };
+          return next;
+        });
+      }
+      // Optionally hint processing; speaking state handled by audio start/end
+      // setTurnStatus('processing_speech');
     }
   });
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
@@ -149,24 +204,42 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // New microphone hook: emits complete utterance blobs
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob: Blob) => {
     // Mark that we're processing the captured utterance
-    setTurnStatus('processing_speech');
+    setTurnStatus('processing');
     submitAudioChunk(audioBlob);
+    // Reset user transcript draft for the next turn
+    userDraftIdRef.current = null;
   });
 
   // Removed lastEvent-based placeholder logic in favor of optimistic callbacks above
 
-  // Sync entitlement -> provider state
+  // Sync entitlement -> provider state (but do NOT set dailySecondsRemaining here)
   useEffect(() => {
     if (!ent.isLoading) {
       const pro = ent.userStatus === 'pro';
       setIsPro(pro);
-      setDailySecondsRemaining(ent.secondsRemaining);
       setProSessionSeconds(ent.proSessionLimit || 1800);
       if (pro && conversationStatus === 'active') {
         setProConversationTimer(ent.proSessionLimit || 1800);
       }
     }
-  }, [ent.isLoading, ent.userStatus, ent.secondsRemaining, ent.proSessionLimit, conversationStatus]);
+  }, [ent.isLoading, ent.userStatus, ent.proSessionLimit, conversationStatus]);
+
+  // Hydrate dailySecondsRemaining once from the server (authoritative)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/usage', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (!cancelled && typeof data?.secondsRemaining === 'number') {
+            setDailySecondsRemaining(data.secondsRemaining);
+          }
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const getProfile = async (currentSession: Session | null) => {
@@ -326,16 +399,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
 
   setConversationStatus('active');
-  setTurnStatus('user_listening');
+  setTurnStatus('listening');
   if (isPro) setProConversationTimer(proSessionSeconds);
   }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall, startMicrophone]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
-    // Stop new microphone pipeline first
-    try { stopMicrophone(); } catch {}
-    setExternalMicActive(false);
-    // Halt any in-flight audio immediately and fence off late packets
+    // 1) Halt playback and fence late packets
     try { halt?.(); } catch {}
+    // 2) Disconnect WebSocket first to prevent late server replies
+    try { (disconnect as any)?.(); } catch {}
+    // 3) Stop microphone and skip final flush so no tail blob is sent
+    try { (stopMicrophone as any)({ skipFinalFlush: true }); } catch {}
+    setExternalMicActive(false);
     if (audioPlayerRef.current) {
       try {
         if (typeof (audioPlayerRef.current as any).stop === 'function') {
@@ -364,7 +439,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       }
     } catch {}
     setConversationStatus(reason);
-    setTurnStatus('idle');
+  setTurnStatus('idle');
     setMicVolume(0);
     if (reason === 'ended_by_limit') {
       // Ensure paywall opens when ending due to limit
@@ -426,7 +501,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Start microphone only when UI is in listening state AND WS is connected
   useEffect(() => {
-    if (turnStatus === 'user_listening' && connectionStatus === 'connected') {
+    if (turnStatus === 'listening' && connectionStatus === 'connected') {
       try { startMicrophone(); } catch {}
     }
   }, [turnStatus, connectionStatus, startMicrophone]);

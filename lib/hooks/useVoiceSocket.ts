@@ -261,7 +261,19 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
     }
   };
 
-  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent, halt } as const;
+  const disconnect = () => {
+    try {
+      shuttingDownRef.current = true;
+      try { socketRef.current?.close(); } catch {}
+      socketRef.current = null;
+      setStatus('disconnected');
+      // Reset stream state
+      streamOpenRef.current = false;
+      currentStreamFenceRef.current = -1;
+    } catch {}
+  };
+
+  return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent, halt, disconnect } as const;
 }
 
 function safeParse<T>(s: string): T | null {

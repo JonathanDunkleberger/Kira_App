@@ -98,55 +98,7 @@ export async function ensureAnonSession(): Promise<void> {
   if (session) return;
 }
 
-// --- Conversations API helpers ---
-async function authHeader() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null as null | Record<string, string>;
-  return { Authorization: `Bearer ${session.access_token}` };
-}
-
-// Conversations are now handled via WebSocket + Supabase client queries (see hooks)
-
-export async function deleteConversation(conversationId: string) {
-  const headers = await authHeader();
-  if (!headers) throw new Error('Not signed in');
-  const r = await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE', headers });
-  if (!r.ok) throw new Error('Failed to delete');
-}
-
-export async function clearAllConversations() {
-  const confirmed = window.confirm(
-    'Are you sure you want to delete your entire chat history? This action cannot be undone.'
-  );
-
-  if (!confirmed) return;
-
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) { alert('You must be logged in to do that.'); return; }
-
-  const r = await fetch('/api/conversations', {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
-
-  if (r.ok) {
-    alert('Chat history cleared successfully.');
-    window.location.reload();
-  } else {
-    alert('Failed to clear chat history. Please try again.');
-  }
-}
-
-export async function appendMessage(conversationId: string, role: 'user'|'assistant', content: string) {
-  const headers = await authHeader();
-  if (!headers) throw new Error('Not signed in');
-  const r = await fetch('/api/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ conversationId, role, content })
-  });
-  if (!r.ok) throw new Error('Failed to append message');
-}
+// (Legacy conversation HTTP helpers removed – conversation lifecycle now handled via WebSocket + direct Supabase queries.)
 
 // --- Account deletion ---
 export async function deleteAccount() {

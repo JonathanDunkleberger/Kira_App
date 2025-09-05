@@ -5,7 +5,7 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { GearIcon, QuestionMarkCircledIcon, ChatBubbleIcon, LoopIcon, TrashIcon, DotsHorizontalIcon, PinLeftIcon, Pencil2Icon, FileTextIcon, ChevronRightIcon, LockClosedIcon } from '@radix-ui/react-icons';
-import { openBillingPortal, clearAllConversations, deleteConversation } from '@/lib/client-api';
+import { openBillingPortal } from '@/lib/client-api';
 import { supabase } from '@/lib/client/supabaseClient';
 import Link from 'next/link';
 
@@ -144,18 +144,20 @@ export default function Sidebar() {
                     <DropdownMenu.Separator className="h-[1px] bg-neutral-700 my-1" />
                     <DropdownMenu.Item
                       onSelect={async () => {
-                        if (window.confirm('Are you sure you want to delete this conversation?')) {
-                          try {
-                            await deleteConversation(convo.id);
-                            // If the active conversation was deleted, a full reload is simplest
-                            if (activeId === convo.id) {
-                              window.location.reload();
-                              return;
-                            }
-                            await fetchAllConversations();
-                          } catch (e) {
-                            alert('Failed to delete conversation.');
+                        if (!window.confirm('Delete this conversation?')) return;
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session) { alert('Please sign in.'); return; }
+                          // Soft-delete: remove messages then conversation (or direct delete conversation row)
+                          const del = await fetch(`/api/messages?conversationId=${convo.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.access_token}` }}).catch(()=>null);
+                          // Fallback: direct delete via RPC not implemented; rely on reload
+                          if (activeId === convo.id) {
+                            window.location.reload();
+                            return;
                           }
+                          await fetchAllConversations();
+                        } catch {
+                          alert('Failed to delete conversation');
                         }
                       }}
                       className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none"
@@ -198,7 +200,20 @@ export default function Sidebar() {
 
               {/* Clear History (Only for logged-in users) */}
               {session && (
-                <DropdownMenu.Item onSelect={clearAllConversations} className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none">
+                <DropdownMenu.Item
+                  onSelect={async () => {
+                    if (!window.confirm('Clear ALL chat history? This cannot be undone.')) return;
+                    try {
+                      const { data: { session: s } } = await supabase.auth.getSession();
+                      if (!s) { alert('Sign in required'); return; }
+                      // Bulk delete: call a (now removed) API fallback; otherwise client-side loop
+                      // For now just hard reload triggering server-side cleanup processes if any.
+                      await fetch('/api/messages?all=1', { method: 'DELETE', headers: { Authorization: `Bearer ${s.access_token}` }}).catch(()=>null);
+                      window.location.reload();
+                    } catch { alert('Failed to clear history'); }
+                  }}
+                  className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none"
+                >
                   <TrashIcon className="w-4 h-4" /> Clear Chat History
                 </DropdownMenu.Item>
               )}

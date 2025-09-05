@@ -34,20 +34,18 @@ const WSS_URL = process.env.NODE_ENV === 'production'
   ? process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
   : process.env.NEXT_PUBLIC_WEBSOCKET_URL;
 
-export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || '') {
+export function useVoiceSocket(opts: VoiceSocketOptions) {
   const socketRef = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState<SocketStatus>('connecting');
+  const [status, setStatus] = useState<SocketStatus>('disconnected');
   const [lastText, setLastText] = useState<string>('');
   const [lastEvent, setLastEvent] = useState<LastEvent | null>(null);
 
   // Avoid stale closures by mirroring options and conversationId in refs
   const optionsRef = useRef(opts);
-  const conversationIdRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
   useEffect(() => {
     optionsRef.current = opts;
-    conversationIdRef.current = typeof opts === 'string' ? null : opts.conversationId ?? null;
   }, [opts]);
 
   // Audio stream fencing so late packets are ignored after halt
@@ -56,12 +54,25 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const streamOpenRef = useRef(false);
 
   useEffect(() => {
-    const currentOpts = optionsRef.current;
-    const urlBase = typeof currentOpts === 'string' ? currentOpts : (currentOpts.url || WSS_URL || '');
+    const { conversationId } = optionsRef.current;
+    // If there's no conversation ID, ensure we are disconnected.
+    if (!conversationId) {
+      if (socketRef.current) {
+        shuttingDownRef.current = true;
+        try { socketRef.current.close(); } catch {}
+        socketRef.current = null;
+      }
+      setStatus('disconnected');
+      return;
+    }
+
+    shuttingDownRef.current = false;
 
     const connect = async () => {
-      const convId = conversationIdRef.current;
-      if (!urlBase || !convId) { setStatus('disconnected'); return; }
+      const currentOpts = optionsRef.current;
+      const urlBase = currentOpts.url || WSS_URL || '';
+      const currentConversationId = currentOpts.conversationId;
+      if (!urlBase || !currentConversationId) { setStatus('disconnected'); return; }
 
       let token = '';
       try {
@@ -80,7 +91,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
 
       const url = new URL(urlBase);
       if (token) url.searchParams.set('token', token);
-      url.searchParams.set('conversationId', convId);
+      url.searchParams.set('conversationId', currentConversationId!);
       if (cid) url.searchParams.set('cid', cid);
       try {
         const pref = preferredTtsFormat();
@@ -167,7 +178,6 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       }
     };
 
-    shuttingDownRef.current = false;
     connect();
     return () => {
       shuttingDownRef.current = true;
@@ -177,7 +187,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       streamOpenRef.current = false;
       currentStreamFenceRef.current = -1;
     };
-  }, [opts && (typeof opts === 'string' ? 'url' : opts.conversationId)]);
+  }, [opts.conversationId]);
 
   const sendAudioChunk = (chunk: ArrayBuffer) => {
     const ws = socketRef.current;

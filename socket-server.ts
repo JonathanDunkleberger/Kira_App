@@ -8,6 +8,8 @@ import { transcribeWebmToText } from './lib/server/stt.js';
 import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
 import { deductUsage } from './lib/server/usage.js';
+import { createNewConversation, saveMessage, generateConversationTitle as generateTitle } from './lib/server/conversations.js';
+import { generateReplyWithHistory } from './lib/llm.js';
 import { getDailySecondsRemaining, decrementDailySeconds } from './lib/usage.js';
 import { envServer as env } from './lib/server/env.server.js';
 
@@ -48,7 +50,7 @@ wss.on('connection', async (ws, req) => {
   // Basic auth via Supabase access token in query ?token=...
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const token = url.searchParams.get('token') || '';
-  const conversationId = url.searchParams.get('conversationId') || '';
+  let conversationId: string | null = url.searchParams.get('conversationId') || null;
   const cid = url.searchParams.get('cid') || '';
   const allowNoAuth = (process.env.DEV_ALLOW_NOAUTH || '').toLowerCase() === 'true';
   // Client-advertised preferred TTS container (webm|mp3); default to webm
@@ -143,6 +145,20 @@ wss.on('connection', async (ws, req) => {
     try {
   // Track total turn duration from start of processing to end of TTS
   const turnStart = Date.now();
+      const userId = (ws as any).userId || null;
+
+      // If this is the first message and there's no conversationId, create one now
+      if (!conversationId) {
+        try {
+          const newConv = await createNewConversation(userId);
+          conversationId = newConv.id;
+          (ws as any).conversationId = newConv.id;
+          sendJson(ws, { type: 'conversation_created', conversationId: newConv.id });
+          console.log(`[DB] Created new conversation ${newConv.id}`);
+        } catch (e) {
+          console.error('Failed to create conversation:', e);
+        }
+      }
       // 1) STT
       console.time('STT');
       const transcript = await transcribeWebmToText(new Uint8Array(payload));
@@ -154,22 +170,14 @@ wss.on('connection', async (ws, req) => {
         if (historyMem.length > MAX_TURNS) historyMem.splice(0, historyMem.length - MAX_TURNS);
       }
       if (transcript && conversationId) {
-        const userId = (ws as any).userId || null;
-        const { data: ins, error: insErr } = await supa
-          .from('messages')
-          .insert({ conversation_id: conversationId, role: 'user', content: transcript, user_id: userId })
-          .select('id') as any;
-        if (insErr) console.error('[DB] insert user failed', { conversationId, insErr });
-        else try { console.log('[DB] inserted user', { conversationId, id: ins?.[0]?.id }); } catch {}
+        await saveMessage(conversationId, 'user', transcript, userId);
       }
 
       // 2) LLM — build from in-memory history (already includes last user)
-      const messages = [
-        { role: 'system' as const, content: 'You are Kira, a helpful, witty voice companion. Keep responses concise and spoken-friendly.' },
-        ...historyMem,
-      ];
-      console.time('LLM');
-  const assistant = await runChat(fetchFn, messages);
+  console.time('LLM');
+  const prior = transcript ? historyMem.slice(0, -1) : historyMem;
+  const userText = transcript || historyMem[historyMem.length - 1]?.content || '';
+  const assistant = await generateReplyWithHistory(prior as any, userText, /* isPro */ undefined, (ws as any).userId || undefined);
       console.timeEnd('LLM');
       if (assistant) {
         sendJson(ws, { type: 'assistant_text', text: assistant });
@@ -177,46 +185,18 @@ wss.on('connection', async (ws, req) => {
         historyMem.push({ role: 'assistant', content: assistant });
         if (historyMem.length > MAX_TURNS) historyMem.splice(0, historyMem.length - MAX_TURNS);
         if (conversationId) {
-          const userId = (ws as any).userId || null;
-          const { data: insA, error: insErrA } = await supa
-            .from('messages')
-            .insert({ conversation_id: conversationId, role: 'assistant', content: assistant, user_id: userId })
-            .select('id') as any;
-          if (insErrA) {
-            console.error('[DB] insert assistant failed', { conversationId, insErrA });
-          } else {
-            try { console.log('[DB] inserted assistant', { conversationId, id: insA?.[0]?.id }); } catch {}
-            // Touch parent conversation timestamp so lists re-order
-            try {
-              const { error: updateErr } = await supa
-                .from('conversations')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', conversationId);
-              if (updateErr) console.error('[DB] Failed to update conversation timestamp', { conversationId, updateErr });
-            } catch (e) {
-              console.error('[DB] Exception updating conversation timestamp', e);
-            }
-            // Generate a title after first user message
-            try {
-              const userCount = historyMem.filter(m => m.role === 'user').length;
-              if (userCount === 1) {
-                const title = await generateConversationTitle(historyMem);
-                if (title) {
-                  sendJson(ws, { type: 'title_update', title });
-                  try {
-                    await supa
-                      .from('conversations')
-                      .update({ title })
-                      .eq('id', conversationId);
-                    console.log(`[DB] Set title for conversation ${conversationId}: ${title}`);
-                  } catch (te) {
-                    console.error('[DB] Failed to set title', te);
-                  }
-                }
+          await saveMessage(conversationId, 'assistant', assistant, userId);
+          // Generate a title after first user message
+          try {
+            const userCount = historyMem.filter(m => m.role === 'user').length;
+            if (userCount === 1) {
+              const title = await generateTitle(conversationId, historyMem);
+              if (title) {
+                sendJson(ws, { type: 'title_update', title });
               }
-            } catch (te) {
-              console.error('Title generation failed', te);
             }
+          } catch (te) {
+            console.error('Title generation failed', te);
           }
         }
       }
@@ -276,7 +256,7 @@ wss.on('connection', async (ws, req) => {
     console.error('Usage deduction failed:', e);
     try { sendJson(ws, { type: 'usage_update' }); } catch {}
   }
-    } catch (err) {
+  } catch (err) {
       console.error('WS pipeline error:', err);
       sendJson(ws, { type: 'error', message: 'Processing error' });
     } finally {
@@ -322,37 +302,3 @@ function sendJson(ws: any, obj: any) {
   try { ws.send(JSON.stringify(obj)); } catch {}
 }
 
-async function runChat(
-  fetcher: typeof fetch,
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY || '';
-  if (!apiKey) throw new Error('Missing OPENAI_API_KEY');
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const r = await fetcher('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: 300 }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`OpenAI chat failed: ${r.status} ${body}`);
-  }
-  const data: any = await r.json();
-  return (data.choices?.[0]?.message?.content ?? '').trim();
-}
-
-async function generateConversationTitle(
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
-): Promise<string> {
-  const convo = messages.map(m => `${m.role}: ${m.content}`).join('\n');
-  const sys = 'Summarize the following conversation into a short, catchy title of 5 words or less. Only return the title.';
-  const title = await runChat(fetch, [
-    { role: 'system', content: sys },
-    { role: 'user', content: convo }
-  ]);
-  return (title || '').replace(/["\\]/g, '').trim();
-}

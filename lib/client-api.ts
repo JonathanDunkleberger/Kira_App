@@ -105,38 +105,7 @@ async function authHeader() {
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
-export async function listConversations() {
-  const headers = await authHeader();
-  if (!headers) return [] as Array<{id:string; title:string; updated_at:string}>;
-  const r = await fetch('/api/conversations', { headers });
-  const j = await r.json();
-  return j.conversations ?? [];
-}
-
-export async function createConversation(title?: string) {
-  const headers = await authHeader();
-  const r = await fetch('/api/conversations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(headers || {}) },
-    body: JSON.stringify({ title })
-  });
-  if (!r.ok) {
-    // Try to extract server error for clarity
-    let msg = 'Failed to create conversation';
-    try { const j = await r.json(); msg = j?.error || msg; } catch {}
-    throw new Error(msg);
-  }
-  const j = await r.json();
-  return j.conversation as { id: string; title: string; updated_at: string };
-}
-
-export async function getConversation(conversationId: string) {
-  const headers = await authHeader();
-  if (!headers) throw new Error('Not signed in');
-  const r = await fetch(`/api/conversations/${conversationId}`, { headers });
-  if (!r.ok) throw new Error('Failed to load conversation');
-  return r.json();
-}
+// Conversations are now handled via WebSocket + Supabase client queries (see hooks)
 
 export async function deleteConversation(conversationId: string) {
   const headers = await authHeader();

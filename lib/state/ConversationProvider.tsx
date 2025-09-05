@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import { supabase } from '@/lib/client/supabaseClient';
 import { playMp3Base64, playAndAnalyzeAudio, playAudioData, AudioPlayer, preferredTtsFormat } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
-import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
+// conversations list is fetched via Supabase in useConversationManager
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
@@ -94,7 +94,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const lastAssistantIdRef = useRef<string | null>(null);
   const userDraftIdRef = useRef<string | null>(null);
   const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance, halt, disconnect } = useVoiceSocket({
-    conversationId,
+  conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
       // Transition to assistant speaking on first audio
@@ -117,6 +117,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
         const mime = fmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
         (audioPlayer as any)?.setContentType?.(mime);
       } catch {}
+    },
+    onConversationCreated: (newId: string) => {
+      setConversationId(newId);
+      // Persist guest identity for free trial tracking
+      try { if (!session) localStorage.setItem('kiraGuestId', newId); } catch {}
+      // Refresh list for signed-in users
+  if (session) fetchAllConversations().catch(() => {});
+    },
+    onTitleUpdate: () => {
+      if (session) fetchAllConversations().catch(() => {});
     },
   onUsageUpdate: async (secondsRemaining?: number) => {
       // Prefer server-pushed value; fallback to POST
@@ -268,7 +278,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   useEffect(() => {
     const getProfile = async (currentSession: Session | null) => {
       setSession(currentSession);
-      if (currentSession) {
+    if (currentSession) {
         // Attempt to claim a guest conversation if present in URL or session
         try {
           const urlParams = new URLSearchParams(window.location.search);
@@ -299,7 +309,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
           setProConversationTimer(proSessionSeconds);
         }
         // Preload user's conversations
-  listConversations().then(setAllConversations).catch(() => setAllConversations([]));
+  fetchAllConversations().catch(() => setAllConversations([]));
         // Realtime updates
         if (conversationsChannelRef.current) {
           try { supabase.removeChannel(conversationsChannelRef.current); } catch {}
@@ -307,7 +317,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         conversationsChannelRef.current = supabase
           .channel('conversations-provider')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => {
-            listConversations().then(setAllConversations).catch(() => {});
+            fetchAllConversations().catch(() => {});
           })
           .subscribe();
 
@@ -402,25 +412,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   closePaywall();
     setViewMode('conversation');
 
-    let currentConvId = session ? conversationId : null;
-
-    if (!currentConvId) {
-      try {
-        const newConversation = await apiCreateConversation('New Conversation');
-        setConversationId(newConversation.id);
-        currentConvId = newConversation.id;
-        setMessages([]);
-        // Persist guest identity so we can fetch remaining time and later claim it after signup
-        if (!session) {
-          try { localStorage.setItem('kiraGuestId', newConversation.id); } catch {}
-        }
-        // refresh list for signed-in users only
-        if (session) listConversations().then(setAllConversations).catch(() => {});
-      } catch (e: any) {
-        setError(`Failed to create conversation: ${e.message}`);
-        return;
-      }
-    }
+  // With WS auto-creation, we no longer create via HTTP here.
+  if (!conversationId) setMessages([]);
 
   setConversationStatus('active');
   setTurnStatus('listening');
@@ -450,18 +443,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     // Cancel any in-flight utterance processing to prevent stray replies
     try { inflightAbortRef.current?.abort(); } catch {}
     inflightAbortRef.current = null;
-    // Fire-and-forget summarization of the conversation just before idling
-    try {
-      // Only summarize when authenticated to avoid 401 noise
-      if (conversationId && session?.access_token) {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` };
-        fetch('/api/summarize', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ conversationId }),
-        }).catch(() => {});
-      }
-    } catch {}
+  // Summarization removed; titles and metadata handled server-side via WebSocket
     setConversationStatus(reason);
   setTurnStatus('idle');
     setMicVolume(0);

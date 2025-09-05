@@ -4,6 +4,7 @@ import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 
 export const runtime = 'nodejs';
 
+// Deprecated for reads: prefer Supabase client queries in the app
 export async function GET(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ conversations: data ?? [] });
 }
 
+// Deprecated: WS server now creates conversations on first message
 export async function POST(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
   const sb = getSupabaseServerAdmin();

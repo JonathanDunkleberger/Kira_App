@@ -15,6 +15,7 @@ type ServerMsg =
   | { type: 'audio_end' }
   | { type: 'audio_format'; format: 'webm' | 'mp3' }
   | { type: 'usage_update'; secondsRemaining?: number }
+  | { type: 'conversation_created'; conversationId: string }
   | { type: 'title_update'; title: string }
   | { type: 'error'; message: string };
 
@@ -27,6 +28,7 @@ type VoiceSocketOptions = {
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
   onUsageUpdate?: (secondsRemaining?: number) => void;
+  onConversationCreated?: (id: string) => void;
   onTitleUpdate?: (title: string) => void;
   conversationId?: string | null;
 };
@@ -49,6 +51,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
   const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
   const onUsageUpdateRef = useRef<((s?: number) => void) | undefined>(undefined);
+  const onConversationCreatedRef = useRef<((id: string) => void) | undefined>(undefined);
   const onTitleUpdateRef = useRef<((t: string) => void) | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
@@ -71,6 +74,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   onTranscriptRef.current = opts.onTranscript;
   onAssistantRef.current = opts.onAssistantText;
   onUsageUpdateRef.current = opts.onUsageUpdate;
+  onConversationCreatedRef.current = opts.onConversationCreated;
   onTitleUpdateRef.current = opts.onTitleUpdate;
     } else {
       onAudioChunkRef.current = undefined;
@@ -85,11 +89,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   }, [opts]);
 
   useEffect(() => {
-    // Require a conversationId before connecting
-    if (!conversationId) {
-      setStatus('disconnected');
-      return;
-    }
+  // Allow connection without a conversationId; server may auto-create on first turn
     shuttingDownRef.current = false;
 
     const connect = async () => {
@@ -200,6 +200,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                     break;
                   case 'usage_update':
                     try { onUsageUpdateRef.current?.(maybe.secondsRemaining); } catch {}
+                    break;
+                  case 'conversation_created':
+                    try { onConversationCreatedRef.current?.(maybe.conversationId); } catch {}
                     break;
                   case 'title_update':
                     try { onTitleUpdateRef.current?.(maybe.title); } catch {}

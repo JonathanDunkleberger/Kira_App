@@ -11,9 +11,9 @@
     "dev:server": "tsx socket-server.ts",
     "dev": "npm-run-all --parallel dev:next dev:server",
     "build": "node scripts/check-env.cjs && next build",
-  "build:server": "tsc -p tsconfig.server.json",
-  "start": "node --loader tsconfig-paths/register dist/socket-server.js",
-  "start:server": "node dist/socket-server.js"
+    "build:server": "tsc -p tsconfig.server.json && tsc-alias -p tsconfig.server.json",
+    "start": "node --loader tsconfig-paths/register dist/socket-server.js",
+    "start:server": "node dist/socket-server.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -49,6 +49,7 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.9",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.2"
   },

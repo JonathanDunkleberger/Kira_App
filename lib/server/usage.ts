@@ -1,6 +1,6 @@
 // In lib/server/usage.ts
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
+import { getSupabaseServerAdmin } from './supabaseAdmin.js';
+import { FREE_TRIAL_SECONDS } from './env.server.js';
 
 // Returns seconds remaining for a signed-in user or a guest conversation
 export async function checkUsage(userId: string | null, guestId: string | null): Promise<number> {

@@ -76,6 +76,13 @@ wss.on('connection', async (ws, req) => {
     }
   }
 
+  // Require an existing conversationId for hybrid architecture
+  if (!conversationId) {
+    console.warn('WS connection rejected: Missing conversationId');
+    try { ws.close(1008, 'Missing conversationId'); } catch {}
+    return;
+  }
+
   // Per-connection state
   let chunkBuffers: Buffer[] = [];
   let flushTimer: NodeJS.Timeout | null = null;
@@ -147,18 +154,7 @@ wss.on('connection', async (ws, req) => {
   const turnStart = Date.now();
       const userId = (ws as any).userId || null;
 
-      // If this is the first message and there's no conversationId, create one now
-      if (!conversationId) {
-        try {
-          const newConv = await createNewConversation(userId);
-          conversationId = newConv.id;
-          (ws as any).conversationId = newConv.id;
-          sendJson(ws, { type: 'conversation_created', conversationId: newConv.id });
-          console.log(`[DB] Created new conversation ${newConv.id}`);
-        } catch (e) {
-          console.error('Failed to create conversation:', e);
-        }
-      }
+  // Conversation must already exist; no lazy creation here
       // 1) STT
       console.time('STT');
       const transcript = await transcribeWebmToText(new Uint8Array(payload));
@@ -286,8 +282,8 @@ wss.on('connection', async (ws, req) => {
     } else if (size) {
       // JSON-framed control messages
       try {
-        const msg = JSON.parse(data.toString('utf8')) as any;
-        if (msg?.type === 'utterance_end') {
+  const msg = JSON.parse(data.toString('utf8')) as any;
+  if (msg?.type === 'utterance_end' || msg?.type === 'end_utterance') {
           if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
           void flushNow();
         }

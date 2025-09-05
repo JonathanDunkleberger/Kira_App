@@ -98,7 +98,50 @@ export async function ensureAnonSession(): Promise<void> {
   if (session) return;
 }
 
-// (Legacy conversation HTTP helpers removed – conversation lifecycle now handled via WebSocket + direct Supabase queries.)
+// --- Conversations (HTTP) ---
+async function getAuthHeaders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return {} as Record<string, string>;
+  return { Authorization: `Bearer ${session.access_token}` } as Record<string, string>;
+}
+
+export async function listConversations() {
+  const headers = await getAuthHeaders();
+  if (!('Authorization' in headers)) return [] as Array<{ id: string; title: string | null; created_at: string; updated_at: string }>;
+  const res = await fetch('/api/conversations', { headers });
+  if (!res.ok) throw new Error('Failed to fetch conversations');
+  const data = await res.json().catch(() => ({}));
+  return (data?.conversations ?? []) as Array<{ id: string; title: string | null; created_at: string; updated_at: string }>;
+}
+
+export async function createConversation(title?: string) {
+  const headers = await getAuthHeaders();
+  const res = await fetch('/api/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ title: title || 'New Conversation' }),
+  });
+  if (!res.ok) throw new Error('Failed to create conversation');
+  const data = await res.json().catch(() => ({}));
+  return data?.conversation as { id: string; title: string | null; created_at: string; updated_at: string };
+}
+
+export async function deleteConversation(id: string) {
+  const headers = await getAuthHeaders();
+  if (!('Authorization' in headers)) throw new Error('Unauthorized');
+  const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE', headers });
+  if (!res.ok) throw new Error('Failed to delete conversation');
+}
+
+export async function clearAllConversations() {
+  const confirmed = window.confirm('Are you sure you want to delete your entire chat history? This cannot be undone.');
+  if (!confirmed) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Unauthorized');
+  const { error } = await supabase.from('conversations').delete().eq('user_id', user.id);
+  if (error) throw new Error(error.message);
+  window.location.reload();
+}
 
 // --- Account deletion ---
 export async function deleteAccount() {

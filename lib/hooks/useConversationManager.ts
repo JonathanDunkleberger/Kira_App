@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/client/supabaseClient';
+import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
 
 type Message = { role: 'user' | 'assistant'; content: string; id: string };
 type Convo = { id: string; title: string | null; updated_at: string };
@@ -15,35 +16,33 @@ export function useConversationManager(session: Session | null) {
   const [viewMode, setViewMode] = useState<ViewMode>('conversation');
 
   const loadConversation = useCallback(async (id: string) => {
-    if (!session) return;
-    // Fetch messages directly from Supabase for the selected conversation
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('id, role, content, created_at')
-      .eq('conversation_id', id)
-      .order('created_at', { ascending: true });
+    // Keep simple: set the active conversation and clear messages;
+    // WebSocket flow will populate messages on demand.
     setConversationId(id);
-    setMessages((msgs || []).map((m: any) => ({ id: m.id, role: m.role, content: m.content })));
-    setViewMode('conversation');
-  }, [session]);
-
-  const newConversation = useCallback(async () => {
-    // No HTTP create; WS server will auto-create on first turn.
-    setConversationId(null);
     setMessages([]);
+    setViewMode('conversation');
   }, []);
 
   const fetchAllConversations = useCallback(async () => {
     if (!session) { setAllConversations([]); return; }
     try {
-      const { data } = await supabase
-        .from('conversations')
-        .select('id, title, updated_at')
-        .eq('user_id', session.user.id)
-        .order('updated_at', { ascending: false });
-      setAllConversations((data as any) || []);
-    } catch {}
+      const list = await listConversations();
+      setAllConversations(list as any);
+    } catch (e) {
+      console.error('Failed to fetch conversations', e);
+      setAllConversations([]);
+    }
   }, [session]);
+
+  const newConversation = useCallback(async () => {
+    try {
+      const convo = await apiCreateConversation();
+      await fetchAllConversations();
+      loadConversation(convo.id);
+    } catch (e) {
+      console.error('Failed to create conversation', e);
+    }
+  }, [fetchAllConversations, loadConversation]);
 
   return {
     conversationId, setConversationId,

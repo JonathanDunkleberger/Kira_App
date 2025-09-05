@@ -119,16 +119,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
         (audioPlayer as any)?.setContentType?.(mime);
       } catch {}
     },
-    onConversationCreated: (newId: string) => {
-      setConversationId(newId);
-      // Persist guest identity for free trial tracking
-      try { if (!session) localStorage.setItem('kiraGuestId', newId); } catch {}
-      // Refresh list for signed-in users
-  if (session) fetchAllConversations().catch(() => {});
-    },
-    onTitleUpdate: () => {
-      if (session) fetchAllConversations().catch(() => {});
-    },
+  // Conversation creation and title updates now occur via HTTP; no WS handlers needed here
   onUsageUpdate: async (secondsRemaining?: number) => {
       // Prefer server-pushed value; fallback to POST
       if (typeof secondsRemaining === 'number') {

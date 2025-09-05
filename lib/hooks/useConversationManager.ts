@@ -16,11 +16,23 @@ export function useConversationManager(session: Session | null) {
   const [viewMode, setViewMode] = useState<ViewMode>('conversation');
 
   const loadConversation = useCallback(async (id: string) => {
-    // Keep simple: set the active conversation and clear messages;
-    // WebSocket flow will populate messages on demand.
     setConversationId(id);
     setMessages([]);
     setViewMode('conversation');
+    try {
+      const { data: { session: sess } } = await supabase.auth.getSession();
+      if (!sess) return;
+      const res = await fetch(`/api/conversations/${id}/messages`, {
+        headers: { Authorization: `Bearer ${sess.access_token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      if (Array.isArray(data?.messages)) {
+        setMessages(data.messages.map((m: any) => ({ id: m.id, role: m.role, content: m.content })));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch messages for conversation', id, e);
+    }
   }, []);
 
   const fetchAllConversations = useCallback(async () => {

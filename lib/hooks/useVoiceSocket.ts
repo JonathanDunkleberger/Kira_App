@@ -3,7 +3,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { preferredTtsFormat } from '@/lib/audio';
-// No direct audio playback here; chunks are emitted via callbacks
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -15,8 +14,6 @@ type ServerMsg =
   | { type: 'audio_end' }
   | { type: 'audio_format'; format: 'webm' | 'mp3' }
   | { type: 'usage_update'; secondsRemaining?: number }
-  | { type: 'conversation_created'; conversationId: string }
-  | { type: 'title_update'; title: string }
   | { type: 'error'; message: string };
 
 type VoiceSocketOptions = {
@@ -28,8 +25,6 @@ type VoiceSocketOptions = {
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
   onUsageUpdate?: (secondsRemaining?: number) => void;
-  onConversationCreated?: (id: string) => void;
-  onTitleUpdate?: (title: string) => void;
   conversationId?: string | null;
 };
 
@@ -44,94 +39,49 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const [status, setStatus] = useState<SocketStatus>('connecting');
   const [lastText, setLastText] = useState<string>('');
   const [lastEvent, setLastEvent] = useState<LastEvent | null>(null);
-  const onAudioChunkRef = useRef<((chunk: ArrayBuffer) => void) | undefined>(undefined);
-  const onAudioStartRef = useRef<(() => void) | undefined>(undefined);
-  const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
-  const onAudioFormatRef = useRef<((f: 'webm' | 'mp3') => void) | undefined>(undefined);
-  const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
-  const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
-  const onUsageUpdateRef = useRef<((s?: number) => void) | undefined>(undefined);
-  const onConversationCreatedRef = useRef<((id: string) => void) | undefined>(undefined);
-  const onTitleUpdateRef = useRef<((t: string) => void) | undefined>(undefined);
+
+  // Avoid stale closures by mirroring options and conversationId in refs
+  const optionsRef = useRef(opts);
+  const conversationIdRef = useRef<string | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const shuttingDownRef = useRef(false);
-  // Fencing to ignore late audio packets and end playback immediately on halt()
-  const acceptFenceRef = useRef(0); // increment to reject any in-flight audio
-  const currentStreamFenceRef = useRef(-1); // fence associated with current audio_start/end window
-  const streamOpenRef = useRef(false);
-  // Debounce for halt() to avoid double "end" transitions
-  const haltedAtRef = useRef(0);
-
-  // Normalize options
-  const urlBase = typeof opts === 'string' ? opts : (opts.url || WSS_URL || '');
-  const conversationId = typeof opts === 'string' ? undefined : opts.conversationId;
   useEffect(() => {
-    if (typeof opts !== 'string') {
-      onAudioChunkRef.current = opts.onAudioChunk;
-      onAudioEndRef.current = opts.onAudioEnd;
-  onAudioStartRef.current = opts.onAudioStart;
-  onAudioFormatRef.current = opts.onAudioFormat;
-  onTranscriptRef.current = opts.onTranscript;
-  onAssistantRef.current = opts.onAssistantText;
-  onUsageUpdateRef.current = opts.onUsageUpdate;
-  onConversationCreatedRef.current = opts.onConversationCreated;
-  onTitleUpdateRef.current = opts.onTitleUpdate;
-    } else {
-      onAudioChunkRef.current = undefined;
-      onAudioEndRef.current = undefined;
-  onAudioStartRef.current = undefined;
-  onAudioFormatRef.current = undefined;
-  onTranscriptRef.current = undefined;
-  onAssistantRef.current = undefined;
-  onUsageUpdateRef.current = undefined;
-  onTitleUpdateRef.current = undefined;
-    }
+    optionsRef.current = opts;
+    conversationIdRef.current = typeof opts === 'string' ? null : opts.conversationId ?? null;
   }, [opts]);
 
+  // Audio stream fencing so late packets are ignored after halt
+  const acceptFenceRef = useRef(0);
+  const currentStreamFenceRef = useRef(-1);
+  const streamOpenRef = useRef(false);
+
   useEffect(() => {
-  // Allow connection without a conversationId; server may auto-create on first turn
-    shuttingDownRef.current = false;
+    const currentOpts = optionsRef.current;
+    const urlBase = typeof currentOpts === 'string' ? currentOpts : (currentOpts.url || WSS_URL || '');
 
     const connect = async () => {
-      if (!urlBase) {
-        // No URL configured; stay disconnected
-        setStatus('disconnected');
-        return;
-      }
-      // Add auth token if available via Supabase client
+      const convId = conversationIdRef.current;
+      if (!urlBase || !convId) { setStatus('disconnected'); return; }
+
       let token = '';
       try {
-  const { supabase } = await import('@/lib/client/supabaseClient');
+        const { supabase } = await import('@/lib/client/supabaseClient');
         const { data } = await (supabase as any).auth.getSession();
         token = data?.session?.access_token || '';
       } catch {}
 
-      // Generate/persist a stable client id (cid) for anonymous usage tracking
       let cid = '';
       try {
         if (typeof window !== 'undefined') {
-          const migrate = () => {
-            const legacy = localStorage.getItem('kira_cid')
-              || localStorage.getItem('kiraGuestId')
-              || localStorage.getItem('guestConversationId')
-              || localStorage.getItem('kira_guest_id');
-            if (legacy) {
-              try { localStorage.setItem('kira_cid', legacy); } catch {}
-              return legacy;
-            }
-            const newId = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
-            try { localStorage.setItem('kira_cid', newId); } catch {}
-            return newId;
-          };
-          cid = localStorage.getItem('kira_cid') || migrate();
+          cid = localStorage.getItem('kira_cid') || (crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+          localStorage.setItem('kira_cid', cid);
         }
       } catch {}
 
-  const url = new URL(urlBase);
+      const url = new URL(urlBase);
       if (token) url.searchParams.set('token', token);
-  if (conversationId) url.searchParams.set('conversationId', conversationId);
+      url.searchParams.set('conversationId', convId);
       if (cid) url.searchParams.set('cid', cid);
-      // Advertise client playback preference so server can choose TTS format
       try {
         const pref = preferredTtsFormat();
         url.searchParams.set('tts', pref.fmt);
@@ -144,167 +94,113 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
         setStatus('connecting');
 
         ws.onopen = () => {
-          console.log('WS connected');
-          console.log('✅ WebSocket connected for conversation:', conversationId);
           reconnectAttemptsRef.current = 0;
           if (!shuttingDownRef.current) setStatus('connected');
         };
 
-        ws.onmessage = async (event: MessageEvent) => {
-          if (shuttingDownRef.current) return;
-          const data = event.data;
+        ws.onmessage = (ev: MessageEvent) => {
+          const latest = optionsRef.current;
+          if (shuttingDownRef.current || typeof latest === 'string') return;
+          const d = ev.data;
           try {
-            if (data instanceof ArrayBuffer) {
-              // Forward chunk immediately
-              // Only forward if this binary belongs to the currently accepted stream
+            if (d instanceof ArrayBuffer) {
               if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
-                try { onAudioChunkRef.current?.(data); } catch {}
+                latest.onAudioChunk?.(d);
               }
-            } else if (data instanceof Blob) {
-              const ab = await data.arrayBuffer();
-              if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
-                try { onAudioChunkRef.current?.(ab); } catch {}
-              }
-            } else if (typeof data === 'string') {
-              const maybe = safeParse<ServerMsg>(data);
-              if (maybe) {
-                switch (maybe.type) {
-                  case 'transcript':
-                    setLastText(maybe.text);
-                    setLastEvent({ type: 'transcript', text: maybe.text || '' });
-                    try { onTranscriptRef.current?.(maybe.text); } catch {}
-                    break;
-                  case 'assistant_text':
-                    setLastText(maybe.text);
-                    setLastEvent({ type: 'assistant_text', text: maybe.text || '' });
-                    try { onAssistantRef.current?.(maybe.text); } catch {}
-                    break;
-                  case 'audio_start':
-                    // Start a new audio stream window with the current accept fence snapshot
-                    currentStreamFenceRef.current = acceptFenceRef.current;
-                    streamOpenRef.current = true;
-                    // If this stream is accepted, notify start
-                    if (currentStreamFenceRef.current === acceptFenceRef.current) {
-                      try { onAudioStartRef.current?.(); } catch {}
-                    }
-                    break;
-                  case 'audio_end':
-                    // Only end and flush if the stream matches the accepted fence
-                    if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
-                      try { onAudioEndRef.current?.(); } catch {}
-                    }
-                    streamOpenRef.current = false;
-                    break;
-                  case 'audio_format':
-                    try { onAudioFormatRef.current?.(maybe.format === 'mp3' ? 'mp3' : 'webm'); } catch {}
-                    break;
-                  case 'usage_update':
-                    try { onUsageUpdateRef.current?.(maybe.secondsRemaining); } catch {}
-                    break;
-                  case 'conversation_created':
-                    try { onConversationCreatedRef.current?.(maybe.conversationId); } catch {}
-                    break;
-                  case 'title_update':
-                    try { onTitleUpdateRef.current?.(maybe.title); } catch {}
-                    break;
-                  case 'error':
-                    setLastText('[error] ' + (maybe.message || ''));
-                    setLastEvent({ type: 'error', text: maybe.message || '' });
-                    break;
-                  default:
-                    break;
-                }
-              } else {
-                // Legacy plain text fallback
-                setLastText(data);
-                setLastEvent({ type: 'raw', text: String(data) });
-              }
-            } else {
-              setLastText(String(data));
-              setLastEvent({ type: 'raw', text: String(data) });
+              return;
             }
-          } catch (err) {
-            console.error('WS onmessage handler error:', err);
-          }
+            const maybe = safeParse<ServerMsg>(d as string);
+            if (!maybe) { setLastEvent({ type: 'raw', text: String(d) }); return; }
+            switch (maybe.type) {
+              case 'audio_start':
+                currentStreamFenceRef.current = acceptFenceRef.current;
+                streamOpenRef.current = true;
+                latest.onAudioStart?.();
+                break;
+              case 'audio_end':
+                if (streamOpenRef.current && currentStreamFenceRef.current === acceptFenceRef.current) {
+                  latest.onAudioEnd?.();
+                }
+                streamOpenRef.current = false;
+                break;
+              case 'audio_format':
+                latest.onAudioFormat?.(maybe.format);
+                break;
+              case 'transcript':
+                setLastText(maybe.text); setLastEvent({ type: 'transcript', text: maybe.text || '' });
+                latest.onTranscript?.(maybe.text);
+                break;
+              case 'assistant_text':
+                setLastText(maybe.text); setLastEvent({ type: 'assistant_text', text: maybe.text || '' });
+                latest.onAssistantText?.(maybe.text);
+                break;
+              case 'usage_update':
+                latest.onUsageUpdate?.(maybe.secondsRemaining);
+                break;
+              case 'error':
+                setLastText('[error] ' + (maybe.message || '')); setLastEvent({ type: 'error', text: maybe.message || '' });
+                break;
+              case 'ready':
+                // no-op
+                break;
+            }
+          } catch (e) { console.error('[ws] message error', e); }
         };
 
-        ws.onclose = (ev: CloseEvent) => {
-          console.warn('WS closed', { code: ev.code, reason: ev.reason, wasClean: (ev as any).wasClean });
+        const scheduleReconnect = () => {
           if (shuttingDownRef.current) return;
           setStatus('disconnected');
-          scheduleReconnect();
+          const attempt = ++reconnectAttemptsRef.current;
+          const delay = Math.min(10_000, 500 * 2 ** attempt);
+          setTimeout(() => { if (!shuttingDownRef.current) connect(); }, delay);
         };
-        ws.onerror = (ev: Event) => {
-          console.error('WS error', ev);
-          if (shuttingDownRef.current) return;
-          setStatus('disconnected');
-          scheduleReconnect();
-        };
-      } catch (e) {
+
+        ws.onclose = scheduleReconnect;
+        ws.onerror = scheduleReconnect;
+      } catch {
         if (!shuttingDownRef.current) {
           setStatus('disconnected');
-          scheduleReconnect();
+          const attempt = ++reconnectAttemptsRef.current;
+          const delay = Math.min(10_000, 500 * 2 ** attempt);
+          setTimeout(() => { if (!shuttingDownRef.current) connect(); }, delay);
         }
       }
     };
 
-    const scheduleReconnect = () => {
-      const attempt = ++reconnectAttemptsRef.current;
-      const base = Math.min(30000, 1000 * Math.pow(2, attempt)); // cap 30s
-      const jitter = Math.floor(Math.random() * 500);
-      const delay = base + jitter;
-      setTimeout(() => { if (!shuttingDownRef.current) connect(); }, delay);
-    };
-
+    shuttingDownRef.current = false;
     connect();
-
     return () => {
       shuttingDownRef.current = true;
       try { socketRef.current?.close(); } catch {}
       socketRef.current = null;
       setStatus('disconnected');
-  // Reset stream state
-  streamOpenRef.current = false;
-  currentStreamFenceRef.current = -1;
+      streamOpenRef.current = false;
+      currentStreamFenceRef.current = -1;
     };
-  }, [urlBase, conversationId]);
+  }, [opts && (typeof opts === 'string' ? 'url' : opts.conversationId)]);
 
   const sendAudioChunk = (chunk: ArrayBuffer) => {
     const ws = socketRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    try {
-      ws.send(chunk);
-      return true;
-    } catch (e) {
-      console.error('Failed to send chunk:', e);
-      return false;
-    }
+    try { ws.send(chunk); return true; } catch { return false; }
   };
 
   const endUtterance = () => {
     const ws = socketRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    try {
-      ws.send(JSON.stringify({ type: 'utterance_end' }));
-      return true;
-    } catch (e) {
-      console.error('Failed to signal end of utterance:', e);
-      return false;
-    }
+    try { ws.send(JSON.stringify({ type: 'end_utterance' })); return true; } catch { return false; }
   };
 
   // Immediately stop audio and ignore any late packets for the in-flight stream
   const halt = () => {
-  const now = Date.now();
-  // Ignore rapid re-halts or late audio_end cascades within 300ms
-  if (now - haltedAtRef.current < 300) return;
-  haltedAtRef.current = now;
-    // Advance the accept fence to invalidate any current stream.
     acceptFenceRef.current += 1;
-    // Close any open stream locally and notify consumer to end playback.
+    const ws = socketRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: 'halt' })); } catch {}
+    }
+    // Locally mark the stream closed so UI can stop playback promptly
     if (streamOpenRef.current) {
       streamOpenRef.current = false;
-      try { onAudioEndRef.current?.(); } catch {}
     }
   };
 
@@ -314,7 +210,6 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       try { socketRef.current?.close(); } catch {}
       socketRef.current = null;
       setStatus('disconnected');
-      // Reset stream state
       streamOpenRef.current = false;
       currentStreamFenceRef.current = -1;
     } catch {}
@@ -323,6 +218,4 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   return { connectionStatus: status, sendAudioChunk, endUtterance, lastText, lastEvent, halt, disconnect } as const;
 }
 
-function safeParse<T>(s: string): T | null {
-  try { return JSON.parse(s) as T; } catch { return null; }
-}
+function safeParse<T>(s: string): T | null { try { return JSON.parse(s) as T; } catch { return null; } }

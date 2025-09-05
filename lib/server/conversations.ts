@@ -1,5 +1,5 @@
-import { getSupabaseServerAdmin } from './supabaseAdmin.js';
-import { FREE_TRIAL_SECONDS } from './env.server.js';
+import { getSupabaseServerAdmin } from './supabaseAdmin';
+import { FREE_TRIAL_SECONDS } from './env.server';
 // Local minimal runChat helper for title generation (kept lightweight)
 async function runChat(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>

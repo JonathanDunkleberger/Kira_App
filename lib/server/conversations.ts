@@ -1,7 +1,6 @@
-import { getSupabaseServerAdmin } from './supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from '../env.server';
-
-// Minimal chat helper for title generation; avoids importing persona-specific logic
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin.js';
+import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server.js';
+// Local minimal runChat helper for title generation (kept lightweight)
 async function runChat(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
 ): Promise<string> {

@@ -210,9 +210,22 @@ wss.on('connection', async (ws, req) => {
         try {
           // Select output format: WebM Opus (default) or MP3 for Safari/iOS clients
           const useMp3 = ttsPref === 'mp3';
-          await synthesizeSpeechStream(assistant, async (chunk: Uint8Array) => {
-            try { ws.send(chunk, { binary: true }); } catch (e) { console.error('WS send audio chunk failed:', e); }
-          }, useMp3 ? 'mp3' : 'webm');
+          await new Promise<void>((resolve, reject) => {
+            synthesizeSpeechStream(
+              assistant,
+              (chunk: Uint8Array) => {
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(chunk, { binary: true }, (err) => {
+                    if (err) {
+                      console.error('WS send audio chunk failed:', err);
+                      // Do not reject; continue streaming
+                    }
+                  });
+                }
+              },
+              useMp3 ? 'mp3' : 'webm'
+            ).then(resolve).catch(reject);
+          });
         } catch (e) {
           // fallback to non-streaming single send
           try {

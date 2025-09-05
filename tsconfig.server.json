@@ -1,19 +1,18 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "baseUrl": ".",
-  "paths": { "@/*": ["./*.ts", "./*"] },
-  "noEmit": false,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-  "strict": false,
-  "plugins": []
+    "noEmit": false,
+    "isolatedModules": false,
+    "strict": false
   },
-  "include": ["socket-server.ts", "lib/server/**/*.ts"],
-  "exclude": [".next", "node_modules", "dist"]
+  "include": [
+    "socket-server.ts",
+    "lib/server/**/*.ts",
+    "lib/usage.ts",
+    "lib/llm.ts"
+  ],
+  "exclude": ["node_modules"]
 }

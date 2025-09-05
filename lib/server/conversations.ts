@@ -1,27 +1,6 @@
-import { getSupabaseServerAdmin } from './supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from './env.server';
-// Local minimal runChat helper for title generation (kept lightweight)
-async function runChat(
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY || '';
-  if (!apiKey) throw new Error('Missing OPENAI_API_KEY');
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, messages, max_tokens: 64, temperature: 0.2 }),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => '');
-    throw new Error(`OpenAI chat failed: ${r.status} ${body}`);
-  }
-  const data: any = await r.json();
-  return (data.choices?.[0]?.message?.content ?? '').trim();
-}
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
+import { runChat } from '@/lib/llm';
 
 const supa = getSupabaseServerAdmin();
 

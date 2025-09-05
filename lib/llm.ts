@@ -49,7 +49,7 @@ export async function generateReply(userText: string): Promise<string> {
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
       // Use fetch-based compat wrapper to avoid SDK dependency
-      const { default: OpenAI } = await import('@/lib/server/openai-compat');
+  const { default: OpenAI } = await import('@/lib/server/openai-compat');
       const openai = new OpenAI({ apiKey: openaiKey });
 
       // Properly structured message history
@@ -209,4 +209,45 @@ export async function generateReplyWithHistory(
   }
 
   throw new Error('No LLM configured. Set OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY');
+}
+
+/**
+ * Minimal chat function for title generation or other small tasks.
+ * Uses OpenAI or Gemini based on configuration, very limited context.
+ */
+export async function runChat(messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>): Promise<string> {
+  const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'gemini';
+  const openaiKey = process.env.OPENAI_API_KEY || '';
+  const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  if ((provider === 'openai') && openaiKey) {
+    try {
+  const { default: OpenAI } = await import('@/lib/server/openai-compat');
+      const openai = new OpenAI({ apiKey: openaiKey });
+      const resp = await openai.chat.completions.create({
+        model: openaiModel,
+        messages: messages as any,
+        temperature: 0.2,
+        max_tokens: 96,
+      });
+      return (resp.choices?.[0]?.message?.content || '').trim();
+    } catch (e) {
+      console.warn('runChat OpenAI failed:', e);
+    }
+  }
+  // Fallback: if Gemini configured, very small call
+  const geminiKey = process.env.GOOGLE_GEMINI_API_KEY || '';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  if (geminiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: geminiModel });
+      const prompt = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+      const result = await model.generateContent(prompt + '\nTITLE ONLY:');
+      return (result.response.text() || '').trim();
+    } catch (e) {
+      console.warn('runChat Gemini failed:', e);
+    }
+  }
+  throw new Error('No LLM configured for runChat');
 }

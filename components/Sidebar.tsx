@@ -10,7 +10,7 @@ import { supabase } from '@/lib/client/supabaseClient';
 import Link from 'next/link';
 
 export default function Sidebar() {
-  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation, session, isPro } = useConversation();
+  const { allConversations, currentConversationId, loadConversation, newConversation, fetchAllConversations, startConversation, session, isPro, clearCurrentConversation } = useConversation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -146,16 +146,16 @@ export default function Sidebar() {
                       onSelect={async () => {
                         if (!window.confirm('Delete this conversation?')) return;
                         try {
-                          const { data: { session } } = await supabase.auth.getSession();
-                          if (!session) { alert('Please sign in.'); return; }
-                          // Soft-delete: remove messages then conversation (or direct delete conversation row)
-                          const del = await fetch(`/api/messages?conversationId=${convo.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.access_token}` }}).catch(()=>null);
-                          // Fallback: direct delete via RPC not implemented; rely on reload
+                          // Direct Supabase delete (removes conversation; rely on FK cascade for messages if configured)
+                          const { error: delErr } = await supabase
+                            .from('conversations')
+                            .delete()
+                            .eq('id', convo.id);
+                          if (delErr) throw delErr;
                           if (activeId === convo.id) {
-                            window.location.reload();
-                            return;
+                            clearCurrentConversation();
                           }
-                          await fetchAllConversations();
+                          await fetchAllConversations(); // refresh list
                         } catch {
                           alert('Failed to delete conversation');
                         }
@@ -204,13 +204,13 @@ export default function Sidebar() {
                   onSelect={async () => {
                     if (!window.confirm('Clear ALL chat history? This cannot be undone.')) return;
                     try {
-                      const { data: { session: s } } = await supabase.auth.getSession();
-                      if (!s) { alert('Sign in required'); return; }
-                      // Bulk delete: call a (now removed) API fallback; otherwise client-side loop
-                      // For now just hard reload triggering server-side cleanup processes if any.
-                      await fetch('/api/messages?all=1', { method: 'DELETE', headers: { Authorization: `Bearer ${s.access_token}` }}).catch(()=>null);
-                      window.location.reload();
-                    } catch { alert('Failed to clear history'); }
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) { alert('Sign in required'); return; }
+                      const { error } = await supabase.from('conversations').delete().eq('user_id', user.id);
+                      if (error) throw error;
+                      clearCurrentConversation();
+                      await fetchAllConversations();
+                    } catch (e) { alert('Failed to clear history'); }
                   }}
                   className="flex items-center gap-3 p-2 rounded text-red-400 hover:bg-red-500/20 cursor-pointer outline-none"
                 >

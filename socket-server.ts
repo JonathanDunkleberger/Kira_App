@@ -4,14 +4,14 @@
 import 'dotenv/config';
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { transcribeWebmToText } from './lib/server/stt.js';
-import { synthesizeSpeech, synthesizeSpeechStream } from './lib/server/tts.js';
-import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin.js';
-import { deductUsage } from './lib/server/usage.js';
-import { createNewConversation, saveMessage, generateConversationTitle as generateTitle } from './lib/server/conversations.js';
-import { generateReplyWithHistory } from './lib/llm.js';
-import { getDailySecondsRemaining, decrementDailySeconds } from './lib/usage.js';
-import { envServer as env } from './lib/server/env.server.js';
+import { transcribeWebmToText } from '@/lib/server/stt';
+import { synthesizeSpeech, synthesizeSpeechStream } from '@/lib/server/tts';
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { deductUsage } from '@/lib/server/usage';
+import { createNewConversation, saveMessage, generateConversationTitle as generateTitle } from '@/lib/server/conversations';
+import { generateReplyWithHistory } from '@/lib/llm';
+import { getDailySecondsRemaining, decrementDailySeconds } from '@/lib/usage';
+import { envServer as env } from '@/lib/server/env.server';
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const HOST = '0.0.0.0';

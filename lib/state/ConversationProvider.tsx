@@ -29,6 +29,7 @@ interface ConversationContextType {
   conversationId: string | null;
   currentConversationId?: string | null;
   messages: Message[];
+  clearCurrentConversation: () => void;
   conversationStatus: ConversationStatus;
   turnStatus: TurnStatus;
   startConversation: () => void;
@@ -522,11 +523,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // Load a conversation's messages into provider
   // Note: loadConversation/newConversation/fetchAllConversations now provided by useConversationManager
 
+  // Reset active conversation view (used after deletion) without full page reload
+  const clearCurrentConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+  }, [setConversationId, setMessages]);
+
   const value = {
     session,
     conversationId,
     currentConversationId: conversationId,
     messages,
+  clearCurrentConversation,
     conversationStatus,
     turnStatus,
     startConversation,

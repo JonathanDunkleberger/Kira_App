@@ -1,11 +1,11 @@
-// In lib/server/usage.ts
-import { getSupabaseServerAdmin } from './supabaseAdmin.js';
-import { FREE_TRIAL_SECONDS } from './env.server.js';
+// In lib/server/usage.ts (shared by Next build)
+import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+import { envServer as env } from '@/lib/server/env.server';
 
 // Returns seconds remaining for a signed-in user or a guest conversation
 export async function checkUsage(userId: string | null, guestId: string | null): Promise<number> {
   const supa = getSupabaseServerAdmin();
-  const dailyLimit = FREE_TRIAL_SECONDS;
+  const dailyLimit = parseInt(env.FREE_TRIAL_SECONDS, 10);
 
   // Logic for SIGNED-IN users
   if (userId) {

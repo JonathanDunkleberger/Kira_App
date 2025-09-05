@@ -51,6 +51,8 @@ wss.on('connection', async (ws, req) => {
   const conversationId = url.searchParams.get('conversationId') || '';
   const cid = url.searchParams.get('cid') || '';
   const allowNoAuth = (process.env.DEV_ALLOW_NOAUTH || '').toLowerCase() === 'true';
+  // Client-advertised preferred TTS container (webm|mp3); default to webm
+  const ttsPref = (url.searchParams.get('tts') || 'webm').toLowerCase();
   if (!token && !allowNoAuth) {
     try { ws.close(4401, 'Unauthorized'); } catch {}
     return;
@@ -122,7 +124,9 @@ wss.on('connection', async (ws, req) => {
     } else {
       secondsRemaining = Number(env.FREE_TRIAL_SECONDS);
     }
-    sendJson(ws, { type: 'usage_update', secondsRemaining });
+  sendJson(ws, { type: 'usage_update', secondsRemaining });
+  // Inform client of audio format being used for this connection
+  sendJson(ws, { type: 'audio_format', format: (ttsPref === 'mp3' ? 'mp3' : 'webm') });
   } catch {}
 
   const scheduleFlush = () => {
@@ -184,19 +188,21 @@ wss.on('connection', async (ws, req) => {
       }
 
       try { console.log({ conversationId: conversationId || '(none)', historyLen: historyMem.length }); } catch {}
-  // 3) TTS (WebM Opus) -> binary frames
+  // 3) TTS -> binary frames (format negotiated per client capability)
   console.log('[TTS]', { /* add signals as needed */ });
   if (assistant) {
         sendJson(ws, { type: 'audio_start' });
         console.time('TTS');
         try {
+          // Select output format: WebM Opus (default) or MP3 for Safari/iOS clients
+          const useMp3 = ttsPref === 'mp3';
           await synthesizeSpeechStream(assistant, async (chunk: Uint8Array) => {
             try { ws.send(chunk, { binary: true }); } catch (e) { console.error('WS send audio chunk failed:', e); }
-          });
+          }, useMp3 ? 'mp3' : 'webm');
         } catch (e) {
           // fallback to non-streaming single send
           try {
-            const b64 = await synthesizeSpeech(assistant);
+            const b64 = await synthesizeSpeech(assistant, ttsPref === 'mp3' ? 'mp3' : 'webm');
             const buf = Buffer.from(b64, 'base64');
             ws.send(buf, { binary: true });
           } catch (e2) {

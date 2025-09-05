@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/client/supabaseClient';
-import { playMp3Base64, playAndAnalyzeAudio, playAudioData, AudioPlayer } from '@/lib/audio';
+import { playMp3Base64, playAndAnalyzeAudio, playAudioData, AudioPlayer, preferredTtsFormat } from '@/lib/audio';
 import { Session } from '@supabase/supabase-js';
 import { createConversation as apiCreateConversation, listConversations } from '@/lib/client-api';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
@@ -97,8 +97,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
     conversationId,
     onAudioChunk: (chunk: ArrayBuffer) => {
       audioPlayer?.appendChunk(chunk);
-      // Ensure playback begins on first chunk for mobile
-      audioPlayer?.play();
       // Transition to assistant speaking on first audio
       setTurnStatus(prev => (prev !== 'speaking' ? 'speaking' : prev));
     },
@@ -113,6 +111,12 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Ensure we return to listening after TTS finishes
       turnOpenRef.current = false;
       setTimeout(() => setTurnStatus('listening'), 150);
+    },
+    onAudioFormat: (fmt: 'webm' | 'mp3') => {
+      try {
+        const mime = fmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
+        (audioPlayer as any)?.setContentType?.(mime);
+      } catch {}
     },
     onUsageUpdate: async (secondsRemaining?: number) => {
       // Prefer server-pushed value; fallback to POST
@@ -447,9 +451,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     inflightAbortRef.current = null;
     // Fire-and-forget summarization of the conversation just before idling
     try {
-      if (conversationId) {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+      // Only summarize when authenticated to avoid 401 noise
+      if (conversationId && session?.access_token) {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` };
         fetch('/api/summarize', {
           method: 'POST',
           headers,

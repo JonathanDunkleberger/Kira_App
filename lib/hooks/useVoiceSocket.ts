@@ -2,6 +2,7 @@
 // Establishes a WS connection and forwards audio frames via callbacks.
 
 import { useEffect, useRef, useState } from 'react';
+import { preferredTtsFormat } from '@/lib/audio';
 // No direct audio playback here; chunks are emitted via callbacks
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -12,6 +13,7 @@ type ServerMsg =
   | { type: 'assistant_text'; text: string }
   | { type: 'audio_start' }
   | { type: 'audio_end' }
+  | { type: 'audio_format'; format: 'webm' | 'mp3' }
   | { type: 'usage_update'; secondsRemaining?: number }
   | { type: 'error'; message: string };
 
@@ -20,6 +22,7 @@ type VoiceSocketOptions = {
   onAudioChunk?: (chunk: ArrayBuffer) => void;
   onAudioStart?: () => void;
   onAudioEnd?: () => void;
+  onAudioFormat?: (format: 'webm' | 'mp3') => void;
   onTranscript?: (text: string) => void;
   onAssistantText?: (text: string) => void;
   onUsageUpdate?: (secondsRemaining?: number) => void;
@@ -40,6 +43,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
   const onAudioChunkRef = useRef<((chunk: ArrayBuffer) => void) | undefined>(undefined);
   const onAudioStartRef = useRef<(() => void) | undefined>(undefined);
   const onAudioEndRef = useRef<(() => void) | undefined>(undefined);
+  const onAudioFormatRef = useRef<((f: 'webm' | 'mp3') => void) | undefined>(undefined);
   const onTranscriptRef = useRef<((t: string) => void) | undefined>(undefined);
   const onAssistantRef = useRef<((t: string) => void) | undefined>(undefined);
   const onUsageUpdateRef = useRef<((s?: number) => void) | undefined>(undefined);
@@ -60,6 +64,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       onAudioChunkRef.current = opts.onAudioChunk;
       onAudioEndRef.current = opts.onAudioEnd;
   onAudioStartRef.current = opts.onAudioStart;
+  onAudioFormatRef.current = opts.onAudioFormat;
   onTranscriptRef.current = opts.onTranscript;
   onAssistantRef.current = opts.onAssistantText;
   onUsageUpdateRef.current = opts.onUsageUpdate;
@@ -67,6 +72,7 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       onAudioChunkRef.current = undefined;
       onAudioEndRef.current = undefined;
   onAudioStartRef.current = undefined;
+  onAudioFormatRef.current = undefined;
   onTranscriptRef.current = undefined;
   onAssistantRef.current = undefined;
   onUsageUpdateRef.current = undefined;
@@ -120,6 +126,11 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
       if (token) url.searchParams.set('token', token);
   if (conversationId) url.searchParams.set('conversationId', conversationId);
       if (cid) url.searchParams.set('cid', cid);
+      // Advertise client playback preference so server can choose TTS format
+      try {
+        const pref = preferredTtsFormat();
+        url.searchParams.set('tts', pref.fmt);
+      } catch {}
 
       try {
         const ws = new WebSocket(url.toString());
@@ -178,6 +189,9 @@ export function useVoiceSocket(opts: VoiceSocketOptions | string = WSS_URL || ''
                       try { onAudioEndRef.current?.(); } catch {}
                     }
                     streamOpenRef.current = false;
+                    break;
+                  case 'audio_format':
+                    try { onAudioFormatRef.current?.(maybe.format === 'mp3' ? 'mp3' : 'webm'); } catch {}
                     break;
                   case 'usage_update':
                     try { onUsageUpdateRef.current?.(maybe.secondsRemaining); } catch {}

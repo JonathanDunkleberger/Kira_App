@@ -214,6 +214,23 @@ export class AudioPlayer {
     (this as any).desktopContentType = mime;
   }
 };
+
+// Decide the preferred TTS container/codec for the current browser.
+// Returns both the Azure format hint (via caller) and the MIME for the HTMLAudioElement blob.
+export function preferredTtsFormat(): { fmt: 'webm' | 'mp3'; mime: string } {
+  try {
+    if (typeof document !== 'undefined') {
+      const audio = document.createElement('audio');
+      const canWebm = audio.canPlayType('audio/webm; codecs=opus');
+      // Prefer WebM Opus when supported (Chrome/Edge/Firefox). Safari returns '' (unsupported).
+      if (canWebm === 'probably' || canWebm === 'maybe') {
+        return { fmt: 'webm', mime: 'audio/webm' };
+      }
+    }
+  } catch {}
+  // Fallback to MP3 (widely supported incl. Safari/iOS)
+  return { fmt: 'mp3', mime: 'audio/mpeg' };
+}
 function mergeArrayBuffers(parts: ArrayBuffer[]): ArrayBuffer {
   const total = parts.reduce((n, b) => n + b.byteLength, 0);
   const out = new Uint8Array(total);

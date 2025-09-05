@@ -1,4 +1,4 @@
-export async function synthesizeSpeech(text: string): Promise<string> {
+export async function synthesizeSpeech(text: string, format: 'webm' | 'mp3' = 'webm'): Promise<string> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
   const VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
@@ -16,11 +16,13 @@ export async function synthesizeSpeech(text: string): Promise<string> {
   </speak>`.trim();
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  // Choose output format based on client preference
+  const outFmt = format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
   const r = await fetch(url, {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": KEY,
-      "X-Microsoft-OutputFormat": "webm-24khz-16bit-mono-opus",
+      "X-Microsoft-OutputFormat": outFmt,
       "Content-Type": "application/ssml+xml",
       "User-Agent": "kira-mvp",
       "Cache-Control": "no-cache",
@@ -41,7 +43,8 @@ export async function synthesizeSpeech(text: string): Promise<string> {
 
 export async function synthesizeSpeechStream(
   text: string,
-  onChunk: (chunk: Uint8Array) => void | Promise<void>
+  onChunk: (chunk: Uint8Array) => void | Promise<void>,
+  format: 'webm' | 'mp3' = 'webm'
 ): Promise<void> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
@@ -60,11 +63,12 @@ export async function synthesizeSpeechStream(
   </speak>`.trim();
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  const outFmt = format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
   const r = await fetch(url, {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": KEY,
-      "X-Microsoft-OutputFormat": "webm-24khz-16bit-mono-opus",
+      "X-Microsoft-OutputFormat": outFmt,
       "Content-Type": "application/ssml+xml",
       "User-Agent": "kira-mvp",
       "Cache-Control": "no-cache",

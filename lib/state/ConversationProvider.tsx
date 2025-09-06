@@ -10,6 +10,7 @@ import { checkAchievements } from '@/lib/achievements';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
+import { listConversations } from '@/lib/client-api';
 
 // Increase minimum size to avoid short/noise causing 400 errors
 const MIN_AUDIO_BLOB_SIZE = 4000;
@@ -88,107 +89,103 @@ export default function ConversationProvider({ children }: { children: React.Rea
     messages, setMessages,
     allConversations, setAllConversations,
     viewMode, setViewMode,
-    loadConversation, newConversation, fetchAllConversations,
   } = useConversationManager(session);
   const turnOpenRef = useRef(false);
   const firstAssistantForTurnRef = useRef(true);
   const lastAssistantIdRef = useRef<string | null>(null);
   const userDraftIdRef = useRef<string | null>(null);
-  const { connectionStatus, sendAudioChunk, lastText, lastEvent, endUtterance, halt, disconnect } = useVoiceSocket({
-  conversationId,
-    onAudioChunk: (chunk: ArrayBuffer) => {
-      audioPlayer?.appendChunk(chunk);
-      // Transition to assistant speaking on first audio
-      setTurnStatus(prev => (prev !== 'speaking' ? 'speaking' : prev));
-    },
-    onAudioStart: () => {
-      firstAssistantForTurnRef.current = true;
-      lastAssistantIdRef.current = null;
-      turnOpenRef.current = true;
-      setTurnStatus('speaking');
-    },
-    onAudioEnd: () => {
-      audioPlayer?.endStream();
-      // Ensure we return to listening after TTS finishes
-      turnOpenRef.current = false;
-      setTimeout(() => setTurnStatus('listening'), 150);
-    },
-    onAudioFormat: (fmt: 'webm' | 'mp3') => {
+  const { status: wsStatus, send: wsSend, disconnect: wsDisconnect } = useVoiceSocket((msg: any) => {
+    // Binary audio chunk
+    if (msg instanceof ArrayBuffer) {
       try {
-        const mime = fmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
-        (audioPlayer as any)?.setContentType?.(mime);
+        audioPlayer?.appendChunk(msg);
+        setTurnStatus(prev => (prev !== 'speaking' ? 'speaking' : prev));
       } catch {}
-    },
-  // Conversation creation and title updates now occur via HTTP; no WS handlers needed here
-  onUsageUpdate: async (secondsRemaining?: number) => {
-      // Prefer server-pushed value; fallback to POST
-      if (typeof secondsRemaining === 'number') {
-        setDailySecondsRemaining(secondsRemaining);
-    try { (ent as any)?.setSecondsRemaining?.(secondsRemaining); } catch {}
-        return;
-      }
-      try {
-        const guestId = (typeof window !== 'undefined' && (localStorage.getItem('kiraGuestId') || null)) || null;
-        const res = await fetch('/api/usage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guestId }),
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const secs = typeof data?.secondsRemaining === 'number' ? data.secondsRemaining : null;
-          if (secs !== null) setDailySecondsRemaining(secs);
-        }
-      } catch {}
-    },
-    onTranscript: (text: string) => {
-      if (!text) return;
-      // Replace user transcript draft within the current turn
-      if (!userDraftIdRef.current) {
-        const id = `user-${Date.now()}`;
-        userDraftIdRef.current = id;
-        setMessages(prev => [...prev, { id, role: 'user', content: text }]);
-      } else {
-        const id = userDraftIdRef.current;
-        setMessages(prev => {
-          const idx = prev.findIndex(m => m.id === id);
-          if (idx === -1) return [...prev, { id, role: 'user', content: text }];
-          const next = prev.slice();
-          next[idx] = { ...next[idx], content: text };
-          return next;
-        });
-      }
-      // Do not change turnStatus here; we swap to 'processing' only on utterance submit
-    },
-    onAssistantText: (text: string) => {
-      if (!text) return;
-      if (!turnOpenRef.current) {
-        // Defensive: treat stray assistant text as a new turn
-        firstAssistantForTurnRef.current = true;
-        turnOpenRef.current = true;
-      }
-      // Replace assistant buffer per turn; do not append multiple messages
-      if (firstAssistantForTurnRef.current || !lastAssistantIdRef.current) {
-        const id = `assistant-${Date.now()}`;
-        lastAssistantIdRef.current = id;
-        firstAssistantForTurnRef.current = false;
-        setMessages(prev => [...prev, { id, role: 'assistant', content: text }]);
-      } else {
-        const targetId = lastAssistantIdRef.current;
-        setMessages(prev => {
-          const idx = prev.findIndex(m => m.id === targetId);
-          if (idx === -1) {
-            return [...prev, { id: targetId!, role: 'assistant', content: text }];
-          }
-          const next = prev.slice();
-          next[idx] = { ...next[idx], content: text };
-          return next;
-        });
-      }
-      // Optionally hint processing; speaking state handled by audio start/end
-      // setTurnStatus('processing_speech');
+      return;
     }
+    // JSON messages
+    try {
+      switch (msg?.type) {
+        case 'audio_start': {
+          firstAssistantForTurnRef.current = true;
+          lastAssistantIdRef.current = null;
+          turnOpenRef.current = true;
+          setTurnStatus('speaking');
+          break;
+        }
+        case 'audio_end': {
+          try { audioPlayer?.endStream(); } catch {}
+          turnOpenRef.current = false;
+          setTimeout(() => setTurnStatus('listening'), 150);
+          break;
+        }
+        case 'transcript': {
+          const text = String(msg?.text || '');
+          if (!text) break;
+          if (!userDraftIdRef.current) {
+            const id = `user-${Date.now()}`;
+            userDraftIdRef.current = id;
+            setMessages(prev => [...prev, { id, role: 'user', content: text }]);
+          } else {
+            const id = userDraftIdRef.current;
+            setMessages(prev => {
+              const idx = prev.findIndex(m => m.id === id);
+              if (idx === -1) return [...prev, { id, role: 'user', content: text }];
+              const next = prev.slice();
+              next[idx] = { ...next[idx], content: text };
+              return next;
+            });
+          }
+          break;
+        }
+        case 'assistant_text': {
+          const text = String(msg?.text || '');
+          if (!text) break;
+          if (!turnOpenRef.current) {
+            firstAssistantForTurnRef.current = true;
+            turnOpenRef.current = true;
+          }
+          if (firstAssistantForTurnRef.current || !lastAssistantIdRef.current) {
+            const id = `assistant-${Date.now()}`;
+            lastAssistantIdRef.current = id;
+            firstAssistantForTurnRef.current = false;
+            setMessages(prev => [...prev, { id, role: 'assistant', content: text }]);
+          } else {
+            const targetId = lastAssistantIdRef.current;
+            setMessages(prev => {
+              const idx = prev.findIndex(m => m.id === targetId);
+              if (idx === -1) return [...prev, { id: targetId!, role: 'assistant', content: text }];
+              const next = prev.slice();
+              next[idx] = { ...next[idx], content: text };
+              return next;
+            });
+          }
+          break;
+        }
+        case 'conversation_created': {
+          const conv = msg?.conversation;
+          if (conv?.id) {
+            setConversationId(conv.id);
+            // Optimistically add to list
+            setAllConversations(prev => [{ id: conv.id, title: conv.title ?? null, updated_at: new Date().toISOString() }, ...prev]);
+          }
+          break;
+        }
+        case 'title_update': {
+          const { conversationId: cid, title } = msg || {};
+          if (cid && title) {
+            setAllConversations(prev => prev.map(c => c.id === cid ? { ...c, title } : c));
+          }
+          break;
+        }
+        case 'error': {
+          setError(String(msg?.message || 'Server error'));
+          break;
+        }
+        default:
+          break;
+      }
+    } catch {}
   });
   const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
   // Keep a live ref of conversation status to avoid stale values in callbacks
@@ -218,11 +215,22 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const inflightAbortRef = useRef<AbortController | null>(null);
   const [externalMicActive, setExternalMicActive] = useState(false);
 
+  // Local conversations fetcher (HTTP) used until WS fully replaces it
+  const fetchAllConversations = useCallback(async () => {
+    try {
+      const list = await listConversations();
+      setAllConversations(list as any);
+    } catch (e) {
+      console.error('Failed to fetch conversations', e);
+      setAllConversations([]);
+    }
+  }, [setAllConversations]);
+
   // New microphone hook: emits complete utterance blobs
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob: Blob) => {
     // Mark that we're processing the captured utterance
     setTurnStatus('processing');
-    submitAudioChunk(audioBlob);
+  submitAudioChunk(audioBlob);
     // Reset user transcript draft for the next turn
     userDraftIdRef.current = null;
   });
@@ -300,8 +308,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
         if (isPro) {
           setProConversationTimer(proSessionSeconds);
         }
-        // Preload user's conversations
-  fetchAllConversations().catch(() => setAllConversations([]));
+  // Preload user's conversations
+  try { await fetchAllConversations(); } catch { setAllConversations([]); }
         // Realtime updates
         if (conversationsChannelRef.current) {
           try { supabase.removeChannel(conversationsChannelRef.current); } catch {}
@@ -404,19 +412,24 @@ export default function ConversationProvider({ children }: { children: React.Rea
   closePaywall();
     setViewMode('conversation');
 
-  // With WS auto-creation, we no longer create via HTTP here.
-  if (!conversationId) setMessages([]);
+  // Ensure the server has a loaded conversation
+  if (conversationId) {
+    try { wsSend({ type: 'load_conversation', conversationId }); } catch {}
+  } else {
+    // Reset messages locally and ask server to create one
+    setMessages([]);
+    try { wsSend({ type: 'create_conversation' }); } catch {}
+  }
 
   setConversationStatus('active');
   setTurnStatus('listening');
   if (isPro) setProConversationTimer(proSessionSeconds);
-  }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall, startMicrophone]);
+  }, [session, isPro, conversationId, dailySecondsRemaining, promptPaywall, wsSend, proSessionSeconds]);
 
   const stopConversation = useCallback((reason: ConversationStatus = 'ended_by_user') => {
     // 1) Halt playback and fence late packets
-    try { halt?.(); } catch {}
     // 2) Disconnect WebSocket first to prevent late server replies
-    try { (disconnect as any)?.(); } catch {}
+    try { (wsDisconnect as any)?.(); } catch {}
     // 3) Stop microphone and skip final flush so no tail blob is sent
     try { (stopMicrophone as any)({ skipFinalFlush: true }); } catch {}
     setExternalMicActive(false);
@@ -443,7 +456,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       // Ensure paywall opens when ending due to limit
       promptPaywall('time_exhausted');
     }
-  }, [promptPaywall, stopMicrophone, halt]);
+  }, [promptPaywall, stopMicrophone, wsDisconnect]);
 
   // Removed per-second client countdown for free users. We now trust server updates
   // and refresh after each turn and periodically via checkUsage().
@@ -485,24 +498,24 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   // Public API for external microphone sources to submit encoded audio blobs
   const submitAudioChunk = useCallback(async (audio: Blob) => {
-    if (connectionStatus === 'connected' && audio && audio.size > MIN_AUDIO_BLOB_SIZE) {
+    if (wsStatus === 'connected' && audio && audio.size > MIN_AUDIO_BLOB_SIZE) {
       const ab = await audio.arrayBuffer();
-      sendAudioChunk(ab);
-      endUtterance();
-    } else if (connectionStatus !== 'connected') {
+      wsSend(ab);
+      wsSend({ type: 'end_utterance' });
+    } else if (wsStatus !== 'connected') {
       console.error('Cannot send audio: WebSocket is not connected.');
       setError('Not connected to the conversation server.');
     }
-  }, [connectionStatus, sendAudioChunk, endUtterance]);
+  }, [wsStatus, wsSend]);
 
   // Removed legacy VAD useEffect; microphone is managed by useConditionalMicrophone
 
   // Start microphone only when UI is in listening state AND WS is connected AND no external mic
   useEffect(() => {
-    if (turnStatus === 'listening' && connectionStatus === 'connected' && !externalMicActive) {
+    if (turnStatus === 'listening' && wsStatus === 'connected' && !externalMicActive) {
       try { startMicrophone(); } catch {}
     }
-  }, [turnStatus, connectionStatus, startMicrophone, externalMicActive]);
+  }, [turnStatus, wsStatus, startMicrophone, externalMicActive]);
 
   // If we switch to external mic, stop the internal one and skip tail flush
   useEffect(() => {
@@ -536,9 +549,44 @@ export default function ConversationProvider({ children }: { children: React.Rea
   kiraVolume,
     error,
     allConversations,
-    loadConversation,
-    newConversation,
-    fetchAllConversations,
+    loadConversation: async (id: string) => {
+      // Load messages via HTTP for UI, and tell WS to seed context
+      try {
+        setConversationId(id);
+        setMessages([]);
+        setViewMode('conversation');
+        try { wsSend({ type: 'load_conversation', conversationId: id }); } catch {}
+        const { data: { session: sess } } = await supabase.auth.getSession();
+        if (!sess) return;
+        const res = await fetch(`/api/conversations/${id}/messages`, { headers: { Authorization: `Bearer ${sess.access_token}` } });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data?.messages)) {
+          setMessages(data.messages.map((m: any) => ({ id: m.id, role: m.role, content: m.content })));
+        }
+      } catch (e) {
+        console.warn('Failed to load conversation', id, e);
+      }
+    },
+    newConversation: async () => {
+      try {
+        setConversationId(null);
+        setMessages([]);
+        setViewMode('conversation');
+        wsSend({ type: 'create_conversation' });
+      } catch (e) {
+        console.error('Failed to create conversation via WS', e);
+      }
+    },
+    fetchAllConversations: async () => {
+      try {
+        const list = await listConversations();
+        setAllConversations(list as any);
+      } catch (e) {
+        console.error('Failed to fetch conversations', e);
+        setAllConversations([]);
+      }
+    },
     dailySecondsRemaining,
   dailyLimitSeconds: ent.dailyLimitSeconds,
     viewMode,

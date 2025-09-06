@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/client/supabaseClient';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
-import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
+import { useVoiceSocket, SocketStatus } from '@/lib/hooks/useVoiceSocket';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { checkAchievements } from '@/lib/achievements';
@@ -17,6 +17,7 @@ type ConversationContextType = {
   messages: Message[];
   turnStatus: 'idle' | 'listening' | 'processing' | 'speaking';
   conversationStatus: 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit';
+  connectionStatus: SocketStatus;
   allConversations: Array<{ id: string; title: string | null; updated_at: string }>;
   fetchAllConversations: () => Promise<void>;
   loadConversation: (id: string) => Promise<void>;
@@ -27,6 +28,8 @@ type ConversationContextType = {
   isPro: boolean;
   dailySecondsRemaining: number | null;
   dailyLimitSeconds: number;
+  usageRemaining: number | null; // alias of dailySecondsRemaining for UI components
+  refreshUsage: () => Promise<void>;
   // Paywall
   paywallSource: 'proactive_click' | 'time_exhausted' | null;
   promptPaywall: (source: 'proactive_click' | 'time_exhausted') => void;
@@ -81,9 +84,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   } = useConversationManager(session);
 
   // Entitlement
-  const { userStatus, secondsRemaining, dailyLimitSeconds, setSecondsRemaining } = useEntitlement() as any;
+  const { userStatus, secondsRemaining, dailyLimitSeconds, setSecondsRemaining, refresh } = useEntitlement() as any;
   const isPro = userStatus === 'pro';
   const dailySecondsRemaining = Number.isFinite(secondsRemaining) ? Number(secondsRemaining) : null;
+  const usageRemaining = dailySecondsRemaining;
 
   const handleServerMessage = useCallback((msg: any) => {
     if (msg instanceof ArrayBuffer) {
@@ -206,6 +210,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     messages,
   turnStatus,
   conversationStatus,
+  connectionStatus: wsStatus,
     allConversations,
     fetchAllConversations,
     loadConversation,
@@ -215,6 +220,8 @@ export default function ConversationProvider({ children }: { children: React.Rea
   isPro,
   dailySecondsRemaining,
   dailyLimitSeconds,
+  usageRemaining,
+  refreshUsage: refresh,
   paywallSource,
   promptPaywall,
   closePaywall,

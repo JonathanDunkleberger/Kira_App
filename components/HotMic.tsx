@@ -1,168 +1,48 @@
-"use client";
+// In components/HotMic.tsx
 
+'use client';
+import PulsingOrb from '@/components/PulsingOrb';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import { useEffect, useMemo, useState } from 'react';
-import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
-import { motion } from 'framer-motion';
-
-// Persistent AudioContext unlock (more reliable on mobile than playing a silent clip)
-let audioContext: AudioContext | null = null;
-let audioUnlocked = false;
-const unlockMobileAudio = async () => {
-  if (audioUnlocked) return;
-  try {
-    const AC: typeof AudioContext = (typeof window !== 'undefined' && ((window as any).AudioContext || (window as any).webkitAudioContext));
-    if (!AC) return; // Environment without AudioContext (SSR or very old browsers)
-
-    if (!audioContext) {
-      audioContext = new AC();
-    }
-
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
-    }
-
-    audioUnlocked = audioContext.state === 'running';
-    if (audioUnlocked) console.log('Audio context unlocked successfully.');
-  } catch (error) {
-    console.error('Failed to unlock audio context:', error);
-  }
-};
+import MicButton from './MicButton';
 
 export default function HotMic() {
-  const { 
-    conversationStatus, 
-    turnStatus, 
-    startConversation, 
-    stopConversation,
-    micVolume,
-    kiraVolume,
-    isPro,
-    dailySecondsRemaining,
-    promptPaywall,
-    submitAudioChunk,
-    externalMicActive,
-    setExternalMicActive,
-  } = useConversation();
+  const { turnStatus, startConversation, stopConversation } = useConversation();
 
-  // Mobile mic encoder: produces webm Blobs per utterance and submits to provider
-  const { start: startMobileMic, stop: stopMobileMic } = useConditionalMicrophone(async (blob) => {
-    // Guard: if the server says you're out, don't send
-    if (!isPro) {
-      const remaining = dailySecondsRemaining ?? 0;
-      if (dailySecondsRemaining !== null && remaining <= 0) {
-        // Optional: could surface a toast/snackbar here
-        return;
-      }
-    }
-    try { await submitAudioChunk(blob); } catch (e) { console.error('submitAudioChunk failed', e); }
-  });
+  const isListening = turnStatus === 'listening';
+  const isProcessing = turnStatus === 'processing';
+  const isSpeaking = turnStatus === 'speaking';
 
-  // Stop conversation immediately when tab becomes hidden to avoid stray playback (skip tail flush)
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden' && conversationStatus === 'active') {
-        try { (stopMobileMic as any)({ skipFinalFlush: true }); } catch {}
-        stopConversation();
-      }
-    };
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, [conversationStatus, stopConversation, stopMobileMic]);
-
-  const isSessionActive = conversationStatus === 'active';
-  const handleClick = async () => {
-    // Ensure audio context is unlocked on first user interaction (mobile browsers)
-    await unlockMobileAudio();
-
-    // Always produce a visible result on click
-    const remaining = dailySecondsRemaining ?? 0;
-    if (!isPro && remaining <= 0) {
-      promptPaywall('proactive_click');
-      return;
-    }
-  if (isSessionActive) {
-      try {
-        if (externalMicActive) {
-      try { stopMobileMic({ skipFinalFlush: true } as any); } catch {}
-          setExternalMicActive(false);
-        }
-      } finally {
-        stopConversation();
-      }
+  // This is the function that will be called when the orb is clicked.
+  const handleMicClick = () => {
+    if (isListening || isProcessing || isSpeaking) {
+      stopConversation();
     } else {
       startConversation();
-      // On mobile, prefer external mic path and disable internal VAD
-      try {
-        const isMob = typeof navigator !== 'undefined' && /Mobi/i.test(navigator.userAgent || '');
-        if (isMob) {
-          setExternalMicActive(true); // set flag first to gate provider internal mic
-          await startMobileMic();
-        }
-      } catch (e) {
-        console.error('Mobile mic start failed:', e);
-      }
     }
   };
 
-  const { orbText, subText } = useMemo(() => {
-    if (!isSessionActive) {
-      return { orbText: 'Start Conversation', subText: 'Click to begin' };
-    }
-    switch (turnStatus) {
-      case 'listening':
-        return { orbText: 'Listening...', subText: 'Just start talking' };
-      case 'processing':
-        return { orbText: 'Processing...', subText: 'Kira is thinking' };
-      case 'speaking':
-        return { orbText: 'Speaking...', subText: 'Kira is responding' };
-      default:
-        return { orbText: 'Click to End', subText: '' };
-    }
-  }, [isSessionActive, turnStatus]);
-
-  // --- START ANIMATION LOGIC ---
-  const baseScale = 1;
-  const scale = (() => {
-    if (turnStatus === 'listening') {
-      // A more sensitive curve: low volume has little effect, high volume has a big effect.
-      return baseScale + Math.pow(micVolume, 2) * 0.7;
-    }
-    if (turnStatus === 'speaking') {
-      // Drive the scale with Kira's real-time audio volume
-      return baseScale + Math.pow(kiraVolume || 0, 2) * 0.5;
-    }
-    return baseScale;
-  })();
-  // --- END ANIMATION LOGIC ---
-
-  return (
-    <div className="flex flex-col items-center gap-4">
-      <motion.button
-        onClick={handleClick}
-        onTouchStart={handleClick}
-        className="relative inline-flex items-center justify-center h-40 w-40 rounded-full text-white text-lg font-semibold text-center leading-snug select-none"
-        // Animate orb scale and glow directly
-        animate={{ scale }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-        aria-disabled={false}
-        style={{
-          background: turnStatus === 'processing'
-            ? 'radial-gradient(circle, #fcd34d, #b45309)'
-            : 'radial-gradient(circle, #d8b4fe, #7e22ce)',
-          boxShadow: (turnStatus === 'listening' || turnStatus === 'speaking')
-            ? '0 0 70px #a855f7, 0 0 30px #a855f7 inset'
-            : '0 0 50px #a855f7, 0 0 20px #a855f7 inset',
-        }}
+  if (isListening || isProcessing || isSpeaking) {
+    return (
+      <div
+        onClick={handleMicClick}
+        className="cursor-pointer relative w-48 h-48 flex items-center justify-center"
+        aria-label="Stop conversation"
       >
-        {orbText}
-      </motion.button>
-      
-      <div className="h-8 text-center">
-        <p className="text-gray-400">{subText}</p>
+        <PulsingOrb
+          isProcessing={isProcessing}
+          isSpeaking={isSpeaking}
+        />
+        <span className="absolute text-white font-medium text-lg capitalize">
+          {isProcessing ? 'Processing...' : isSpeaking ? 'Speaking...' : 'Listening...'}
+        </span>
       </div>
+    );
+  }
 
-      {/* Debug panel removed */}
+  // When idle, render the clickable MicButton
+  return (
+    <div onClick={handleMicClick} aria-label="Start conversation">
+      <MicButton />
     </div>
   );
 }

@@ -1,23 +1,55 @@
 "use client";
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { listConversations, createConversation as apiCreateConversation, getMessagesForConversation } from '@/lib/client-api';
 
-type Message = { role: 'user' | 'assistant'; content: string; id: string };
+type Message = { id: string; role: 'user' | 'assistant'; content: string };
 type Convo = { id: string; title: string | null; updated_at: string };
 
-type ViewMode = 'conversation' | 'history';
-
-// Final refactor: state-only manager; server interactions happen in the provider via WebSocket/HTTP.
-export function useConversationManager(_session: Session | null) {
+export function useConversationManager(session: Session | null) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allConversations, setAllConversations] = useState<Convo[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>('conversation');
+
+  const fetchAllConversations = useCallback(async () => {
+    if (!session) { setAllConversations([]); return; }
+    try {
+      const convos = await listConversations();
+      setAllConversations(convos as any);
+    } catch (e) {
+      console.error('Failed to fetch conversations', e);
+      setAllConversations([]);
+    }
+  }, [session]);
+
+  useEffect(() => { void fetchAllConversations(); }, [fetchAllConversations]);
+
+  const loadConversation = useCallback(async (id: string) => {
+    setConversationId(id);
+    setMessages([]);
+    try {
+      const msgs = await getMessagesForConversation(id);
+      const arr = Array.isArray(msgs) ? msgs : (msgs?.messages ?? []);
+      setMessages(arr as any);
+    } catch (e) {
+      console.error('Failed to load messages', e);
+    }
+  }, []);
+
+  const newConversation = useCallback(async () => {
+    try {
+      const convo = await apiCreateConversation();
+      setAllConversations(prev => [convo as any, ...prev]);
+      await loadConversation((convo as any).id);
+    } catch (e) {
+      console.error('Failed to create conversation', e);
+    }
+  }, [loadConversation]);
 
   return {
     conversationId, setConversationId,
     messages, setMessages,
-    allConversations, setAllConversations,
-    viewMode, setViewMode,
+    allConversations, fetchAllConversations,
+    loadConversation, newConversation,
   };
 }

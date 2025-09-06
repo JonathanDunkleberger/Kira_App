@@ -12,8 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const conversationId = params.id;
-
-  // Ensure the conversation belongs to the user before fetching messages
+  // Ensure ownership
   const { data: convo, error: convoErr } = await sb
     .from('conversations')
     .select('id,user_id')
@@ -33,6 +32,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
   }
 
-  return NextResponse.json({ messages: data ?? [] });
+  return NextResponse.json(data ?? []);
 }
 // Deprecated: handled by WebSocket + Supabase client queries

@@ -8,23 +8,32 @@ export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
 const WSS_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || process.env.NEXT_PUBLIC_WEBSOCKET_URL;
 
-export function useVoiceSocket(onMessage: (msg: any) => void) {
+export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessage: (msg: any) => void; conversationId?: string | null }) {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SocketStatus>('disconnected');
-  const onMessageRef = useRef(onMessage);
+  const onMessageRef = useRef<(msg: any) => void>(typeof onMessageOrOpts === 'function' ? onMessageOrOpts : onMessageOrOpts.onMessage);
+  const convIdRef = useRef<string | null>(typeof onMessageOrOpts === 'function' ? null : (onMessageOrOpts.conversationId ?? null));
 
   useEffect(() => {
-    onMessageRef.current = onMessage;
-  }, [onMessage]);
+    if (typeof onMessageOrOpts === 'function') {
+      onMessageRef.current = onMessageOrOpts;
+    } else {
+      onMessageRef.current = onMessageOrOpts.onMessage;
+      convIdRef.current = onMessageOrOpts.conversationId ?? null;
+    }
+  }, [onMessageOrOpts]);
 
   const connect = useCallback(async () => {
     if (socketRef.current || !WSS_URL) return;
+    if (!convIdRef.current) return; // require conversationId in hybrid mode
 
     console.log('[WS] Attempting to connect...');
     // Attach token and tts preference in the URL for server-side auth/format
     let url = WSS_URL;
     try {
       const u = new URL(WSS_URL);
+      // conversationId
+      try { if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current); } catch {}
       // token
       try {
         const { data } = await supabase.auth.getSession();
@@ -96,11 +105,13 @@ export function useVoiceSocket(onMessage: (msg: any) => void) {
   }, []);
 
   useEffect(() => {
-    void connect(); // Initial connection
-    return () => {
-      try { socketRef.current?.close(); } catch {}
-    };
-  }, [connect]);
+    // reconnect when conversationId changes
+    try { socketRef.current?.close(); } catch {}
+    socketRef.current = null;
+    setStatus('disconnected');
+    void connect();
+    return () => { try { socketRef.current?.close(); } catch {}; };
+  }, [connect, (typeof onMessageOrOpts === 'function') ? null : onMessageOrOpts.conversationId]);
 
   return { status, send, disconnect } as const;
 }

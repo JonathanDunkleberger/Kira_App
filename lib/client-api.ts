@@ -107,11 +107,9 @@ async function getAuthHeaders() {
 
 export async function listConversations() {
   const headers = await getAuthHeaders();
-  if (!('Authorization' in headers)) return [] as Array<{ id: string; title: string | null; created_at: string; updated_at: string }>;
   const res = await fetch('/api/conversations', { headers });
   if (!res.ok) throw new Error('Failed to fetch conversations');
-  const data = await res.json().catch(() => ({}));
-  return (data?.conversations ?? []) as Array<{ id: string; title: string | null; created_at: string; updated_at: string }>;
+  return res.json();
 }
 
 export async function createConversation(title?: string) {
@@ -122,8 +120,7 @@ export async function createConversation(title?: string) {
     body: JSON.stringify({ title: title || 'New Conversation' }),
   });
   if (!res.ok) throw new Error('Failed to create conversation');
-  const data = await res.json().catch(() => ({}));
-  return data?.conversation as { id: string; title: string | null; created_at: string; updated_at: string };
+  return res.json();
 }
 
 export async function deleteConversation(id: string) {
@@ -131,6 +128,24 @@ export async function deleteConversation(id: string) {
   if (!('Authorization' in headers)) throw new Error('Unauthorized');
   const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE', headers });
   if (!res.ok) throw new Error('Failed to delete conversation');
+}
+
+export async function getMessagesForConversation(id: string) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`/api/conversations/${id}/messages`, { headers });
+  if (!res.ok) throw new Error('Failed to fetch messages');
+  return res.json();
+}
+
+export async function renameConversation(id: string, title: string) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ title })
+  });
+  if (!res.ok) throw new Error('Failed to rename conversation');
+  return res.json();
 }
 
 export async function clearAllConversations() {

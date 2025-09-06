@@ -20,34 +20,26 @@ export async function GET(req: NextRequest) {
     .order('updated_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ conversations: data ?? [] });
+  return NextResponse.json(data ?? []);
 }
 
 // POST to create a new conversation
 export async function POST(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '');
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const sb = getSupabaseServerAdmin();
-  let userId: string | null = null;
+  const { data: { user } } = await sb.auth.getUser(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (token) {
-    const { data: { user } } = await sb.auth.getUser(token);
-    userId = user?.id ?? null;
-  }
-
-  const { title } = await req.json().catch(() => ({} as any));
-  const isGuest = !userId;
+  const { title } = await req.json().catch(() => ({}));
 
   const { data, error } = await sb
     .from('conversations')
-    .insert({
-      user_id: userId,
-      title: title || 'New Conversation',
-      is_guest: isGuest,
-      seconds_remaining: isGuest ? FREE_TRIAL_SECONDS : null,
-    })
+    .insert({ user_id: user.id, title: title || 'New Conversation' })
     .select('id, title, created_at, updated_at')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ conversation: data });
+  return NextResponse.json(data);
 }

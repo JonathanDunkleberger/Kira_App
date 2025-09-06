@@ -36,12 +36,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
   }
 
-  const { error } = await sb
+  const { data, error } = await sb
     .from('conversations')
     .update({ title })
     .eq('id', params.id)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select('id, title, created_at, updated_at')
+    .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+  return NextResponse.json(data);
 }

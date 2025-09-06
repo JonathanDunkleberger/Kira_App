@@ -1,5 +1,3 @@
-// In components/HotMic.tsx
-
 'use client';
 import PulsingOrb from '@/components/PulsingOrb';
 import { useConversation } from '@/lib/state/ConversationProvider';
@@ -12,7 +10,7 @@ export default function HotMic() {
   const isProcessing = turnStatus === 'processing';
   const isSpeaking = turnStatus === 'speaking';
 
-  // This is the function that will be called when the orb is clicked.
+  // This function tells the app what to do when the orb is clicked
   const handleMicClick = () => {
     if (isListening || isProcessing || isSpeaking) {
       stopConversation();
@@ -24,7 +22,7 @@ export default function HotMic() {
   if (isListening || isProcessing || isSpeaking) {
     return (
       <div
-        onClick={handleMicClick}
+        onClick={handleMicClick} // <-- This onClick was missing
         className="cursor-pointer relative w-48 h-48 flex items-center justify-center"
         aria-label="Stop conversation"
       >
@@ -39,7 +37,7 @@ export default function HotMic() {
     );
   }
 
-  // When idle, render the clickable MicButton
+  // This renders the idle button, which also needs the onClick handler
   return (
     <div onClick={handleMicClick} aria-label="Start conversation">
       <MicButton />

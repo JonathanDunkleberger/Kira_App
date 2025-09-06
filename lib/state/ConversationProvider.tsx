@@ -21,7 +21,7 @@ type ConversationContextType = {
   fetchAllConversations: () => Promise<void>;
   loadConversation: (id: string) => Promise<void>;
   newConversation: () => Promise<void>;
-  startConversation: () => void;
+  startConversation: () => Promise<void>;
   stopConversation: (reason?: 'ended_by_user' | 'ended_by_limit') => void;
   // Entitlement
   isPro: boolean;
@@ -77,6 +77,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     messages, setMessages,
     allConversations, fetchAllConversations,
     loadConversation, newConversation,
+    newConversationAndGetId,
   } = useConversationManager(session);
 
   // Entitlement
@@ -128,12 +129,18 @@ export default function ConversationProvider({ children }: { children: React.Rea
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  const startConversation = useCallback(() => {
-    if (conversationId && wsStatus === 'connected') {
-      setConversationStatus('active');
-      setTurnStatus('listening');
+  const startConversation = useCallback(async () => {
+    // Ensure we have a conversation in hybrid mode
+    let cid = conversationId;
+    if (!cid) {
+      cid = await newConversationAndGetId();
     }
-  }, [conversationId, wsStatus]);
+    // Mark active; a separate effect will flip to 'listening' once WS connects
+    if (cid) {
+      setConversationStatus('active');
+      setTurnStatus('idle');
+    }
+  }, [conversationId, newConversationAndGetId]);
 
   const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
     setTurnStatus('idle');
@@ -150,6 +157,13 @@ export default function ConversationProvider({ children }: { children: React.Rea
       stopMicrophone({ skipFinalFlush: true } as any);
     }
   }, [turnStatus, startMicrophone, stopMicrophone, externalMicActive]);
+
+  // Auto-enter listening once WS is connected and we are active
+  useEffect(() => {
+    if (conversationStatus === 'active' && conversationId && wsStatus === 'connected' && turnStatus === 'idle') {
+      setTurnStatus('listening');
+    }
+  }, [conversationStatus, conversationId, wsStatus, turnStatus]);
 
   // Evaluate achievements on message/conversation changes
   useEffect(() => {

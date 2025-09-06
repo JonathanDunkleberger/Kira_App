@@ -46,10 +46,26 @@ export function useConversationManager(session: Session | null) {
     }
   }, [loadConversation]);
 
+  // Helper variant that returns the created ID for callers that need it immediately
+  const newConversationAndGetId = useCallback(async (): Promise<string | null> => {
+    try {
+      const convo = await apiCreateConversation();
+      const id = (convo as any).id as string | undefined;
+      if (!id) return null;
+      setAllConversations(prev => [convo as any, ...prev]);
+      await loadConversation(id);
+      return id;
+    } catch (e) {
+      console.error('Failed to create conversation', e);
+      return null;
+    }
+  }, [loadConversation]);
+
   return {
     conversationId, setConversationId,
     messages, setMessages,
     allConversations, fetchAllConversations,
-    loadConversation, newConversation,
+  loadConversation, newConversation,
+  newConversationAndGetId,
   };
 }

@@ -11,11 +11,11 @@ export default function HotMic() {
   const isSpeaking = turnStatus === 'speaking';
 
   // This function tells the app what to do when the orb is clicked
-  const handleMicClick = () => {
+  const handleMicClick = async () => {
     if (isListening || isProcessing || isSpeaking) {
       stopConversation();
     } else {
-      startConversation();
+      await Promise.resolve(startConversation());
     }
   };
 

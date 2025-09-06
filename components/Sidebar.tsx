@@ -42,7 +42,7 @@ export default function Sidebar() {
         </button>
         {!isCollapsed && (
           <button
-            onClick={async () => { await newConversation(); startConversation(); }}
+            onClick={async () => { await newConversation(); await startConversation(); }}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-white bg-fuchsia-600 hover:bg-fuchsia-700 transition-colors"
           >
             <Plus size={18} />

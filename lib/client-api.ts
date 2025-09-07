@@ -101,8 +101,14 @@ export async function ensureAnonSession(): Promise<void> {
 // --- Conversations (HTTP) ---
 async function getAuthHeaders() {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return {} as Record<string, string>;
-  return { Authorization: `Bearer ${session.access_token}` } as Record<string, string>;
+  // Guests: no auth header, but keep JSON content-type by default
+  if (!session) {
+    return { 'Content-Type': 'application/json' } as Record<string, string>;
+  }
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${session.access_token}`,
+  } as Record<string, string>;
 }
 
 export async function listConversations() {

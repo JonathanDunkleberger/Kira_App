@@ -15,6 +15,13 @@ export default function UpgradeSnackbarPortal() {
     isPro,
   } = useConversation();
 
+  const mappedSource: 'last_turn' | 'proactive_threshold' | undefined =
+    upgradeNudgeSource === 'time_exhausted'
+      ? 'last_turn'
+      : upgradeNudgeSource === 'proactive_click'
+      ? 'proactive_threshold'
+      : undefined;
+
   return (
     <UpgradeSnackbar
       open={!!showUpgradeNudge}
@@ -26,7 +33,7 @@ export default function UpgradeSnackbarPortal() {
       conversationId={currentConversationId}
       userType={session ? 'authenticated' : 'guest'}
       plan={mapPlan(isPro ? 'supporter' : 'free')}
-  source={upgradeNudgeSource}
+      source={mappedSource}
     />
   );
 }

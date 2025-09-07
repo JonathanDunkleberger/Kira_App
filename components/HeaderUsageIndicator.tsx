@@ -12,8 +12,8 @@ const formatTime = (seconds: number) => {
 export default function HeaderUsageIndicator() {
   const { isPro, dailySecondsRemaining, dailyLimitSeconds, promptPaywall } = useConversation();
 
-  // Show nothing if the user is Pro or if the time hasn't loaded yet
-  if (isPro || dailySecondsRemaining === null) {
+  // Show nothing if the user is Pro
+  if (isPro) {
     return null;
   }
   
@@ -28,7 +28,7 @@ export default function HeaderUsageIndicator() {
 
   return (
     <button 
-      onClick={() => promptPaywall('proactive_click')}
+      onClick={() => promptPaywall?.('proactive_click')}
       className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm w-48 text-left hover:bg-white/10 transition-colors"
     >
       <div className="flex-1 space-y-1">

@@ -1,170 +1,249 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/client/supabaseClient';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
+import { AudioPlayer } from '@/lib/audio';
 
-// ... (Keep your existing type definitions: ConversationContextType, Message, etc.)
+// --- TYPE DEFINITIONS ---
+// (Keep your existing type definitions: Message, etc.)
+type TurnStatus = 'idle' | 'listening' | 'processing' | 'speaking';
 
-const ConversationContext = createContext<any>(undefined);
+type ConversationStatus = 'idle' | 'active' | 'ended_by_user' | 'ended_by_limit'
+
+export interface ConversationContextType {
+  session: Session | null;
+  turnStatus: TurnStatus;
+  conversationStatus: ConversationStatus;
+  isConversationActive: boolean;
+  messages: any[]; // Replace with your Message type
+  startConversation: () => void;
+  stopConversation: () => void;
+  // Commonly used app fields (subset for compatibility)
+  isPro: boolean;
+  dailySecondsRemaining: number; // seconds, 0 if unknown
+  dailyLimitSeconds: number; // seconds, 0 if unknown
+  usageRemaining: number; // alias of dailySecondsRemaining
+  refreshUsage: () => Promise<void> | void;
+  paywallSource?: 'proactive_click' | 'time_exhausted' | null;
+  promptPaywall: (s: 'proactive_click' | 'time_exhausted') => void;
+  closePaywall: () => void;
+  // Alias for components expecting an upgrade nudge source
+  upgradeNudgeSource?: 'proactive_click' | 'time_exhausted' | null;
+  viewMode?: 'conversation' | 'history';
+  setViewMode?: (v: 'conversation' | 'history') => void;
+  error?: string | null;
+  showUpgradeNudge?: boolean;
+  setShowUpgradeNudge?: (v: boolean) => void;
+  // Achievements toast
+  newlyUnlockedToast?: any | null;
+  setNewlyUnlockedToast?: (v: any | null) => void;
+  externalMicActive?: boolean;
+  setExternalMicActive?: (v: boolean) => void;
+  connectionStatus?: 'connecting' | 'connected' | 'disconnected';
+  submitAudioChunk?: (blob: Blob) => Promise<void>;
+  // Conversations list/controls used by Sidebar and others
+  allConversations: any[];
+  fetchAllConversations: () => Promise<void>;
+  loadConversation: (id: string) => Promise<void>;
+  newConversation: () => Promise<string | null>;
+  clearCurrentConversation: () => void;
+  currentConversationId: string | null;
+  conversationId: string | null;
+}
+
+const ConversationContext = createContext<ConversationContextType | undefined>(undefined);
 
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [turnStatus, setTurnStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  const [conversationStatus, setConversationStatus] = useState<'idle' | 'active' | 'ended_by_user' | 'ended_by_limit'>('idle');
+  const [turnStatus, setTurnStatus] = useState<TurnStatus>('idle');
+  const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('idle');
   const [viewMode, setViewMode] = useState<'conversation' | 'history'>('conversation');
   const [error, setError] = useState<string | null>(null);
   const [paywallSource, setPaywallSource] = useState<'proactive_click' | 'time_exhausted' | null>(null);
   const [showUpgradeNudge, setShowUpgradeNudge] = useState<boolean>(false);
   const [externalMicActive, setExternalMicActive] = useState<boolean>(false);
-
+  const [newlyUnlockedToast, setNewlyUnlockedToast] = useState<any | null>(null);
+  
   const {
     conversationId,
-    messages, setMessages,
+    messages,
+    setMessages,
+    newConversation,
+    clearCurrentConversation,
     allConversations,
     fetchAllConversations,
     loadConversation,
-    newConversation,
-    clearCurrentConversation,
   } = useConversationManager(session);
 
+  // Entitlement fields used widely across UI
   const { userStatus, secondsRemaining, dailyLimitSeconds, refresh: refreshUsage } = useEntitlement() as any;
   const isPro = userStatus === 'pro';
-  const dailySecondsRemaining = Number.isFinite(secondsRemaining) ? Number(secondsRemaining) : null;
-  const usageRemaining = dailySecondsRemaining;
+  const dailySecondsRemainingRaw = Number.isFinite(secondsRemaining) ? Number(secondsRemaining) : 0;
+  const dailyLimitSecondsRaw = Number.isFinite(dailyLimitSeconds) ? Number(dailyLimitSeconds) : 0;
+  const usageRemainingRaw = dailySecondsRemainingRaw;
 
+  // --- AUDIO PLAYER MANAGEMENT ---
+  // Create a ref to hold the AudioPlayer instance. This is critical.
+  const audioPlayerRef = useRef<AudioPlayer | null>(null);
+
+  // This effect ensures we have an AudioPlayer instance when the component mounts.
+  useEffect(() => {
+    if (!audioPlayerRef.current) {
+      audioPlayerRef.current = new AudioPlayer();
+      // When audio playback finishes, return to listening within an active session
+      audioPlayerRef.current.onEnded(() => {
+        setTurnStatus('listening');
+      });
+    }
+  }, []);
+
+
+  // --- SERVER MESSAGE HANDLING ---
   const handleServerMessage = useCallback((msg: any) => {
-    if (msg instanceof ArrayBuffer) return; // Audio is handled by the audio player
+    // If the message is audio data, send it to the player.
+    if (msg instanceof ArrayBuffer) {
+      try { audioPlayerRef.current?.appendChunk(msg); } catch {}
+      return;
+    }
 
+    // Handle JSON messages from the server
     switch (msg.type) {
       case 'transcript':
-        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: msg.text }]);
+        setMessages((prev: any[]) => [...prev, { id: Date.now().toString(), role: 'user', content: msg.text }]);
         setTurnStatus('processing');
         break;
       case 'assistant_text':
-        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: msg.text }]);
+        setMessages((prev: any[]) => [...prev, { id: Date.now().toString(), role: 'assistant', content: msg.text }]);
         break;
       case 'audio_start':
         setTurnStatus('speaking');
+        try { audioPlayerRef.current?.reset(); } catch {}
         break;
       case 'audio_end':
-        setTurnStatus('listening');
+        try { void audioPlayerRef.current?.endStream(); } catch {}
         break;
       case 'usage_update':
-        refreshUsage(); // Tell the entitlement hook to refresh its data
+        try { refreshUsage?.(); } catch {}
         break;
     }
   }, [setMessages, refreshUsage]);
-
-  const { status: connectionStatus, send, disconnect } = useVoiceSocket({ onMessage: handleServerMessage, conversationId });
-
-  const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
-    // This callback is fired by the microphone's VAD when an utterance is complete
-    audioBlob.arrayBuffer().then(send);
+  
+  const { status: connectionStatus, send, disconnect } = useVoiceSocket({ 
+    onMessage: handleServerMessage, 
+    conversationId 
   });
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      // On login/logout, reset the conversation state
-      setMessages([]);
-      setTurnStatus('idle');
-    });
-    return () => authListener.subscription.unsubscribe();
-  }, []);
-
-  const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
-    console.log('Stopping conversation, performing hard reset...');
-    try { disconnect(); } catch {}
-    try { stopMicrophone(); } catch {}
-    setTurnStatus('idle');
-    setConversationStatus(reason || 'ended_by_user');
-    // MOST IMPORTANT: clear active conversation and messages
-    clearCurrentConversation();
-  }, [disconnect, stopMicrophone, clearCurrentConversation]);
-
-  const startConversation = useCallback(async () => {
-    if (turnStatus !== 'idle') return;
-
-    let activeConvoId = conversationId;
-    if (!activeConvoId) {
-      const newId = await newConversation();
-      if (!newId) {
-        console.error("Failed to create a new conversation.");
-        return;
-      }
-      activeConvoId = newId;
-    }
-    
-  // Once we have a conversation ID, we can start the microphone
-    startMicrophone();
-  setTurnStatus('listening');
-  setConversationStatus('active');
-
-  }, [turnStatus, conversationId, newConversation, startMicrophone]);
-
-  // This is the only change. We no longer have the complex useEffect that was
-  // causing the race condition. The start/stop logic is now cleanly handled
-  // by the startConversation and stopConversation functions.
-
+  const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
+    audioBlob.arrayBuffer().then(send);
+  });
+  
   const submitAudioChunk = useCallback(async (blob: Blob) => {
     try { send(await blob.arrayBuffer()); } catch (e) { console.error('submitAudioChunk failed', e); }
   }, [send]);
 
+  // --- CORE CONVERSATION LOGIC ---
+  const startConversation = useCallback(async () => {
+    // Prevent starting if already active
+    if (conversationId || turnStatus !== 'idle') return;
+
+    // 1. Create a new conversation record in the database
+    const newId = await newConversation();
+    if (!newId) {
+      console.error("Failed to create a new conversation.");
+      return;
+    }
+    
+    // 2. Start the microphone
+    startMicrophone();
+
+    // 3. Set the initial state for the active conversation
+    setTurnStatus('listening');
+    setConversationStatus('active');
+
+  }, [conversationId, turnStatus, newConversation, startMicrophone]);
+
+  const stopConversation = useCallback(() => {
+    console.log('Stopping conversation, performing hard reset...');
+    try { disconnect(); } catch {}
+    try { stopMicrophone(); } catch {}
+    try { audioPlayerRef.current?.reset(); } catch {}
+    clearCurrentConversation();
+    setTurnStatus('idle');
+    setConversationStatus('ended_by_user');
+  }, [disconnect, stopMicrophone, clearCurrentConversation]);
+
+  // --- AUTH ---
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      // If user logs out, perform a hard reset
+      stopConversation();
+    });
+    return () => authListener.subscription.unsubscribe();
+  }, [stopConversation]);
+
   const promptPaywall = useCallback((source: 'proactive_click' | 'time_exhausted') => setPaywallSource(source), []);
   const closePaywall = useCallback(() => setPaywallSource(null), []);
 
-  const value = {
-    // Auth/session
+  // --- CONTEXT VALUE ---
+  const value: ConversationContextType = {
     session,
-    // Conversation state
-    conversationId,
-    currentConversationId: conversationId,
-    messages,
     turnStatus,
     conversationStatus,
-    // New: boolean flag for active session based on conversationId
     isConversationActive: !!conversationId,
-    // WS
-    connectionStatus,
-    submitAudioChunk,
-    // Conversations list
-    allConversations,
-    fetchAllConversations,
-    loadConversation,
-    newConversation,
-    clearCurrentConversation,
-    // Controls
+    messages,
     startConversation,
     stopConversation,
     // Entitlement
     isPro,
-    dailySecondsRemaining,
-    dailyLimitSeconds,
-    usageRemaining,
+    dailySecondsRemaining: dailySecondsRemainingRaw,
+    dailyLimitSeconds: dailyLimitSecondsRaw,
+    usageRemaining: usageRemainingRaw,
     refreshUsage,
     // Paywall
     paywallSource,
+  upgradeNudgeSource: paywallSource,
     promptPaywall,
     closePaywall,
     // UI
     viewMode,
     setViewMode,
     error,
-    // Upgrade nudge
+    // Nudge
     showUpgradeNudge,
     setShowUpgradeNudge,
+    // Achievements
+    newlyUnlockedToast,
+    setNewlyUnlockedToast,
     // External mic
     externalMicActive,
     setExternalMicActive,
-  };
+    // WS
+    connectionStatus,
+    submitAudioChunk,
+    // Conversations list
+    allConversations: allConversations ?? [],
+    fetchAllConversations: fetchAllConversations!,
+    loadConversation: loadConversation!,
+    newConversation: newConversation!,
+    clearCurrentConversation: clearCurrentConversation!,
+    currentConversationId: conversationId ?? null,
+    conversationId: conversationId ?? null,
+  } as any;
 
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }
 
-export const useConversation = () => useContext(ConversationContext);
+export const useConversation = () => {
+  const context = useContext(ConversationContext);
+  if (context === undefined) {
+    throw new Error('useConversation must be used within a ConversationProvider');
+  }
+  return context;
+};

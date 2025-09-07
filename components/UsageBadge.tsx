@@ -7,7 +7,7 @@ export default function UsageBadge() {
 
   // Auto-refresh every 60s when idle
   useEffect(() => {
-    const id = setInterval(() => { refreshUsage().catch(() => {}); }, 60000);
+    const id = setInterval(() => { Promise.resolve(refreshUsage()).catch(() => {}); }, 60000);
     return () => clearInterval(id);
   }, [refreshUsage]);
 
@@ -26,7 +26,7 @@ export default function UsageBadge() {
         <span className="text-white/80">{turnText}</span>
       </span>
       <button
-        onClick={() => refreshUsage()}
+        onClick={() => { void Promise.resolve(refreshUsage()); }}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10"
         title="Refresh remaining time"
       >

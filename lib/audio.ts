@@ -116,12 +116,11 @@ export async function playAndAnalyzeAudio(
 }
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
-export function playAudioData(audioData: ArrayBuffer): {
-  audio: HTMLAudioElement;
-  done: Promise<void>;
-} {
-  const audio = document.getElementById('tts-player') as HTMLAudioElement | null;
-  if (!audio) throw new Error('Persistent audio element #tts-player not found');
+export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
+  const a = document.getElementById('tts-player-a') as HTMLAudioElement | null;
+  const b = document.getElementById('tts-player-b') as HTMLAudioElement | null;
+  const audio = a || b;
+  if (!audio) throw new Error('Persistent audio element #tts-player-a/#tts-player-b not found');
 
   const blob = new Blob([audioData], { type: 'audio/webm' });
   const url = URL.createObjectURL(blob);
@@ -153,10 +152,15 @@ export function playAudioData(audioData: ArrayBuffer): {
 
 // Simple blob-based audio player: buffers chunks and plays a single blob when the stream ends.
 export class AudioPlayer {
-  private audio: HTMLAudioElement;
+  // Double buffer elements
+  private audioA: HTMLAudioElement;
+  private audioB: HTMLAudioElement;
+  private active: 'a' | 'b' = 'a';
+  private preloaded: boolean = false;
+  // Legacy single-blob buffer
   private desktopChunks: ArrayBuffer[] = [];
   private desktopContentType: string = 'audio/webm';
-  // Segment queue playback state
+  // Segment queue playback state (URLs preloaded into the inactive element)
   private segmentQueue: Array<{ url: string; mime: string }> = [];
   private currentSegmentChunks: ArrayBuffer[] = [];
   private streamClosed = false;
@@ -166,11 +170,13 @@ export class AudioPlayer {
   // but keep a reset() to clear state and avoid stutter on some mobile browsers.
 
   constructor() {
-    const el = document.getElementById('tts-player') as HTMLAudioElement | null;
-    if (!el) throw new Error('Persistent audio element #tts-player not found');
-    this.audio = el;
-    // Initialize chunk buffer
-    this.desktopChunks = [];
+  const a = document.getElementById('tts-player-a') as HTMLAudioElement | null;
+  const b = document.getElementById('tts-player-b') as HTMLAudioElement | null;
+  if (!a || !b) throw new Error('Persistent audio elements #tts-player-a/#tts-player-b not found');
+  this.audioA = a;
+  this.audioB = b;
+  // Initialize chunk buffer
+  this.desktopChunks = [];
   this.installOnEndedHandler();
   }
 
@@ -180,17 +186,17 @@ export class AudioPlayer {
 
   async play() {
     try {
-      await this.audio.play();
+      await this.getActive().play();
     } catch (e) {
       // Best-effort, some browsers require user gesture
       try {
-        (this.audio as any).play?.();
+        (this.getActive() as any).play?.();
       } catch {}
     }
   }
 
   onEnded(callback: () => void) {
-  this.turnEndedCallback = callback;
+    this.turnEndedCallback = callback;
   }
 
   async endStream() {
@@ -199,7 +205,7 @@ export class AudioPlayer {
     this.desktopChunks = [];
     const blob = new Blob([merged], { type: this.desktopContentType || 'audio/webm' });
     const url = URL.createObjectURL(blob);
-    this.audio.src = url;
+    this.getActive().src = url;
     try {
       await this.play();
     } finally {
@@ -211,17 +217,19 @@ export class AudioPlayer {
   // clears buffered chunks, and detaches the source so next play starts cleanly.
   public reset() {
     try {
-      const src = this.audio.src;
-      if (src && typeof src === 'string' && src.startsWith('blob:')) {
+      for (const el of [this.audioA, this.audioB]) {
+        const src = el.src;
+        if (src && typeof src === 'string' && src.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(src);
+          } catch {}
+        }
         try {
-          URL.revokeObjectURL(src);
+          (el as any).pause?.();
         } catch {}
+        el.src = '';
       }
       // Stop/pause just in case, then clear source
-      try {
-        (this.audio as any).pause?.();
-      } catch {}
-      this.audio.src = '';
     } catch {}
     // Clear any accumulated chunks
     this.desktopChunks = [];
@@ -238,6 +246,8 @@ export class AudioPlayer {
     this.currentSegmentChunks = [];
     this.streamClosed = false;
     this.isPlaying = false;
+  this.active = 'a';
+  this.preloaded = false;
   }
 
   // Segment-aware playback API (progressive queue)
@@ -261,7 +271,8 @@ export class AudioPlayer {
     // otherwise immediately signal turn end.
     if (!this.isPlaying) {
       if ((this.segmentQueue || []).length > 0) {
-        this.playNextSegment();
+        // Try to start any queued segment immediately
+        this.preloadIfIdle();
       } else {
         try {
           this.turnEndedCallback?.();
@@ -288,56 +299,111 @@ export class AudioPlayer {
     const merged = mergeArrayBuffers(chunks);
     const blob = new Blob([merged], { type: this.desktopContentType || 'audio/webm' });
     const url = URL.createObjectURL(blob);
-  this.segmentQueue.push({ url, mime: this.desktopContentType });
-    if (!this.isPlaying) {
-      this.playNextSegment();
-    }
+    this.segmentQueue.push({ url, mime: this.desktopContentType });
+    this.preloadIfIdle();
   }
 
   // Internal: install onended handler to auto-advance queue and fire turn end when done
   private installOnEndedHandler() {
-    this.audio.onended = () => {
+    const handleEnded = () => {
+      // Revoke the URL that just played from the formerly active element
       try {
-        // Revoke the just-played URL
-        const src = this.audio.src;
+        const justPlayed = this.getActive();
+        const src = justPlayed.src;
         if (src && typeof src === 'string' && src.startsWith('blob:')) {
           URL.revokeObjectURL(src);
         }
       } catch {}
-      // Advance queue if any
-  if ((this.segmentQueue || []).length > 0) {
-        this.playNextSegment();
+      // If the other buffer has been preloaded, swap immediately and play it
+      const other = this.getInactive();
+      const hasNext = !!other.src;
+      if (hasNext) {
+        // swap active flag first, then play to minimize any race
+        this.active = this.active === 'a' ? 'b' : 'a';
+        this.isPlaying = true;
+        try {
+          const p = other.play();
+          if (p && typeof (p as any).catch === 'function') p.catch(() => {});
+        } catch {}
+        // Preload the subsequent segment into the now-inactive element
+        this.preloadNextIntoInactive();
         return;
       }
-      // No more queued items
-      this.isPlaying = false;
-      if (this.streamClosed) {
-        try {
-          this.turnEndedCallback?.();
-        } catch {}
-        // Ensure clean state for next turn
-        try {
-          this.reset();
-        } catch {}
-      }
+      // No preloaded next; try to preload one now (in case it arrived late)
+      this.preloadNextIntoInactive(() => {
+        const late = this.getInactive();
+        if (late.src) {
+          this.active = this.active === 'a' ? 'b' : 'a';
+          this.isPlaying = true;
+          try {
+            const p = late.play();
+            if (p && typeof (p as any).catch === 'function') p.catch(() => {});
+          } catch {}
+          this.preloadNextIntoInactive();
+          return;
+        }
+        // Truly no more items
+        this.isPlaying = false;
+        if (this.streamClosed) {
+          try {
+            this.turnEndedCallback?.();
+          } catch {}
+          try {
+            this.reset();
+          } catch {}
+        }
+      });
     };
+    this.audioA.onended = handleEnded;
+    this.audioB.onended = handleEnded;
   }
 
-  // Internal: play next queued segment
-  private async playNextSegment() {
-  const next = (this.segmentQueue || []).shift() as any;
+  // Preload the next queued item into the inactive element if possible.
+  private preloadIfIdle() {
+    // If nothing is playing, start by preloading inactive and then start active immediately
+    if (!this.isPlaying) {
+      // Move one item to inactive
+      const next = this.segmentQueue.shift();
+      if (next) {
+        const inactive = this.getInactive();
+        inactive.src = next.url;
+        // Start playback on that element immediately by swapping
+        this.active = this.active === 'a' ? 'b' : 'a';
+        this.isPlaying = true;
+        try {
+          const p = inactive.play();
+          if (p && typeof (p as any).catch === 'function') p.catch(() => {});
+        } catch {}
+        // Preload subsequent into the newly inactive
+        this.preloadNextIntoInactive();
+      }
+    } else {
+      // If already playing, ensure the other buffer is preloaded
+      this.preloadNextIntoInactive();
+    }
+  }
+
+  private preloadNextIntoInactive(onDone?: () => void) {
+    const next = this.segmentQueue[0];
     if (!next) {
-      this.isPlaying = false;
+      onDone?.();
       return;
     }
-    try {
-      this.audio.src = next.url;
-    } catch {}
-    this.isPlaying = true;
-    try {
-      const p = (this.audio as any).play?.();
-      if (p && typeof p.catch === 'function') await p.catch(() => {});
-    } catch {}
+    const inactive = this.getInactive();
+    if (!inactive.src) {
+      // Set src for instant start on swap
+      inactive.src = next.url;
+      // Remove it from queue now that it's assigned
+      this.segmentQueue.shift();
+    }
+    onDone?.();
+  }
+
+  private getActive(): HTMLAudioElement {
+    return this.active === 'a' ? this.audioA : this.audioB;
+  }
+  private getInactive(): HTMLAudioElement {
+    return this.active === 'a' ? this.audioB : this.audioA;
   }
 }
 
@@ -349,7 +415,6 @@ export class AudioPlayer {
     (this as any).desktopContentType = mime;
   }
 };
-
 
 // Decide the preferred TTS container/codec for the current browser.
 // Returns both the Azure format hint (via caller) and the MIME for the HTMLAudioElement blob.

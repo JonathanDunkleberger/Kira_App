@@ -114,7 +114,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // --- SERVER MESSAGE HANDLING ---
   const handleServerMessage = useCallback(
     (msg: any) => {
-    // If the message is audio data, send it to the current segment buffer.
+      // If the message is audio data, send it to the current segment buffer.
       if (msg instanceof ArrayBuffer) {
         try {
           if (segmentedModeRef.current) {

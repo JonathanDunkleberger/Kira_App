@@ -79,8 +79,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     conversationId,
     messages, setMessages,
     allConversations, fetchAllConversations,
-    loadConversation, newConversation,
-    newConversationAndGetId,
+  loadConversation, newConversation,
   } = useConversationManager(session);
 
   // Entitlement
@@ -137,14 +136,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
     // Ensure we have a conversation in hybrid mode
     let cid = conversationId;
     if (!cid) {
-      cid = await newConversationAndGetId();
+      cid = await (newConversation() as Promise<string | null>);
     }
     // Mark active; a separate effect will flip to 'listening' once WS connects
     if (cid) {
       setConversationStatus('active');
       setTurnStatus('idle');
     }
-  }, [conversationId, newConversationAndGetId]);
+  }, [conversationId, newConversation]);
 
   const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
     setTurnStatus('idle');

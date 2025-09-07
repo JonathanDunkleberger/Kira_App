@@ -42,22 +42,25 @@ export default function UpgradeSnackbar({
     }
   }, []);
 
-  const dismiss = useCallback((reason: 'timeout' | 'click') => {
-    try {
-      sessionStorage.setItem(TODAY_KEY(), '1');
-    } catch {}
-    setVisible(false);
-    onClose?.();
-    if (reason === 'click') {
-      trackPaywallEvent('upgrade_nudge_dismiss', {
-        userType,
-        plan,
-        secondsRemaining: secondsRemaining ?? undefined,
-        conversationId: conversationId ?? undefined,
-        source,
-      });
-    }
-  }, [onClose, userType, plan, secondsRemaining, conversationId, source]);
+  const dismiss = useCallback(
+    (reason: 'timeout' | 'click') => {
+      try {
+        sessionStorage.setItem(TODAY_KEY(), '1');
+      } catch {}
+      setVisible(false);
+      onClose?.();
+      if (reason === 'click') {
+        trackPaywallEvent('upgrade_nudge_dismiss', {
+          userType,
+          plan,
+          secondsRemaining: secondsRemaining ?? undefined,
+          conversationId: conversationId ?? undefined,
+          source,
+        });
+      }
+    },
+    [onClose, userType, plan, secondsRemaining, conversationId, source],
+  );
 
   // show/hide with per-day suppression
   useEffect(() => {

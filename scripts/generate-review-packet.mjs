@@ -16,7 +16,9 @@ try {
     const lines = [];
     function walk(dir, depth = 0) {
       if (depth > 2) return;
-      const entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = fs
+        .readdirSync(dir, { withFileTypes: true })
+        .sort((a, b) => a.name.localeCompare(b.name));
       for (const e of entries) {
         if (ignore.has(e.name)) continue;
         lines.push(`${'  '.repeat(depth)}- ${e.name}${e.isDirectory() ? '/' : ''}`);
@@ -38,48 +40,66 @@ try {
 
 // dead/unused code & deps
 try {
-  await $`npm run -s deadcode`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/tsprune.txt', p.stdout ?? ''));
+  await $`npm run -s deadcode`
+    .stdio('pipe')
+    .then((p) => fs.writeFileSync('artifacts/tsprune.txt', p.stdout ?? ''));
 } catch {}
 try {
-  await $`npx knip --reporter json`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/knip.json', p.stdout ?? ''));
+  await $`npx knip --reporter json`
+    .stdio('pipe')
+    .then((p) => fs.writeFileSync('artifacts/knip.json', p.stdout ?? ''));
 } catch {}
 try {
-  await $`npm run -s deps:unused`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/depcheck.txt', p.stdout ?? ''));
+  await $`npm run -s deps:unused`
+    .stdio('pipe')
+    .then((p) => fs.writeFileSync('artifacts/depcheck.txt', p.stdout ?? ''));
 } catch {}
 
 // lint & typecheck
 try {
-  await $`npx eslint . -f json`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/eslint.json', p.stdout ?? ''));
+  await $`npx eslint . -f json`
+    .stdio('pipe')
+    .then((p) => fs.writeFileSync('artifacts/eslint.json', p.stdout ?? ''));
 } catch {}
 try {
-  await $`npx tsc --noEmit --pretty false`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/tsc.txt', p.stdout ?? ''));
+  await $`npx tsc --noEmit --pretty false`
+    .stdio('pipe')
+    .then((p) => fs.writeFileSync('artifacts/tsc.txt', p.stdout ?? ''));
 } catch {}
 
 // routes (Next.js 13+/App Router)
 try {
   if (await which('rg').catch(() => null)) {
-    await $`rg -n "createRouteHandler|generateStaticParams|metadata|export const dynamic|export const revalidate" app`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/routes_signals.txt', p.stdout ?? ''));
+    await $`rg -n "createRouteHandler|generateStaticParams|metadata|export const dynamic|export const revalidate" app`
+      .stdio('pipe')
+      .then((p) => fs.writeFileSync('artifacts/routes_signals.txt', p.stdout ?? ''));
   }
 } catch {}
 
 // API endpoints (Next.js route handlers)
 try {
   if (await which('rg').catch(() => null)) {
-    await $`rg -n "/api/.*(GET|POST|PUT|DELETE|PATCH)" app`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/endpoints_guess.txt', p.stdout ?? ''));
+    await $`rg -n "/api/.*(GET|POST|PUT|DELETE|PATCH)" app`
+      .stdio('pipe')
+      .then((p) => fs.writeFileSync('artifacts/endpoints_guess.txt', p.stdout ?? ''));
   }
 } catch {}
 
 // TODO / flags
 try {
   if (await which('rg').catch(() => null)) {
-    await $`rg -n "(TODO|FIXME|@deprecated|featureFlag|killSwitch)"`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/todos.txt', p.stdout ?? ''));
+    await $`rg -n "(TODO|FIXME|@deprecated|featureFlag|killSwitch)"`
+      .stdio('pipe')
+      .then((p) => fs.writeFileSync('artifacts/todos.txt', p.stdout ?? ''));
   }
 } catch {}
 
 // env usage (uppercase vars) vs example file
 try {
   if (await which('rg').catch(() => null)) {
-    await $`rg -oN "[A-Z][A-Z0-9_]{2,}" app lib components | sort -u`.stdio('pipe').then((p) => fs.writeFileSync('artifacts/env_in_code.txt', p.stdout ?? ''));
+    await $`rg -oN "[A-Z][A-Z0-9_]{2,}" app lib components | sort -u`
+      .stdio('pipe')
+      .then((p) => fs.writeFileSync('artifacts/env_in_code.txt', p.stdout ?? ''));
   } else {
     // simple fallback: scan files with a regex in Node
     const globs = ['app', 'lib', 'components'];

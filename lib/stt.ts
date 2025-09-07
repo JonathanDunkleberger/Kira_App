@@ -12,6 +12,8 @@ export async function transcribeWebmToText(bytes: Uint8Array): Promise<string> {
   // Provide a filename when appending a Blob to ensure proper multipart handling
   form.append('file', blob, 'audio.webm');
   form.append('model', 'whisper-1');
+  form.append('language', 'en');
+  form.append('temperature', '0');
 
   const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',

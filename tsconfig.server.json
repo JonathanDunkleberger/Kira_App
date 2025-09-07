@@ -11,7 +11,8 @@
     "socket-server.ts",
     "lib/server/**/*.ts",
     "lib/usage.ts",
-    "lib/llm.ts"
+  "lib/llm.ts",
+  "types/**/*.d.ts"
   ],
   "exclude": ["node_modules"]
 }

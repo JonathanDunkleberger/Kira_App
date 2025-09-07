@@ -15,16 +15,26 @@ const ConversationContext = createContext<any>(undefined);
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [turnStatus, setTurnStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
+  const [conversationStatus, setConversationStatus] = useState<'idle' | 'active' | 'ended_by_user' | 'ended_by_limit'>('idle');
+  const [viewMode, setViewMode] = useState<'conversation' | 'history'>('conversation');
+  const [error, setError] = useState<string | null>(null);
+  const [paywallSource, setPaywallSource] = useState<'proactive_click' | 'time_exhausted' | null>(null);
+  const [showUpgradeNudge, setShowUpgradeNudge] = useState<boolean>(false);
+  const [externalMicActive, setExternalMicActive] = useState<boolean>(false);
 
   const {
     conversationId,
     messages, setMessages,
     allConversations,
+    fetchAllConversations,
     loadConversation,
     newConversation,
   } = useConversationManager(session);
 
-  const { secondsRemaining, refresh: refreshUsage } = useEntitlement();
+  const { userStatus, secondsRemaining, dailyLimitSeconds, refresh: refreshUsage } = useEntitlement() as any;
+  const isPro = userStatus === 'pro';
+  const dailySecondsRemaining = Number.isFinite(secondsRemaining) ? Number(secondsRemaining) : null;
+  const usageRemaining = dailySecondsRemaining;
 
   const handleServerMessage = useCallback((msg: any) => {
     if (msg instanceof ArrayBuffer) return; // Audio is handled by the audio player
@@ -49,7 +59,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [setMessages, refreshUsage]);
 
-  const { send } = useVoiceSocket({ onMessage: handleServerMessage, conversationId });
+  const { status: connectionStatus, send } = useVoiceSocket({ onMessage: handleServerMessage, conversationId });
 
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
     // This callback is fired by the microphone's VAD when an utterance is complete
@@ -67,9 +77,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  const stopConversation = useCallback(() => {
+  const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
     stopMicrophone(); // Manually stop the mic
     setTurnStatus('idle');
+    setConversationStatus(reason || 'ended_by_user');
   }, [stopMicrophone]);
 
   const startConversation = useCallback(async () => {
@@ -85,9 +96,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
       activeConvoId = newId;
     }
     
-    // Once we have a conversation ID, we can start the microphone
+  // Once we have a conversation ID, we can start the microphone
     startMicrophone();
-    setTurnStatus('listening');
+  setTurnStatus('listening');
+  setConversationStatus('active');
 
   }, [turnStatus, conversationId, newConversation, startMicrophone]);
 
@@ -95,17 +107,56 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // causing the race condition. The start/stop logic is now cleanly handled
   // by the startConversation and stopConversation functions.
 
+  const submitAudioChunk = useCallback(async (blob: Blob) => {
+    try { send(await blob.arrayBuffer()); } catch (e) { console.error('submitAudioChunk failed', e); }
+  }, [send]);
+
+  const promptPaywall = useCallback((source: 'proactive_click' | 'time_exhausted') => setPaywallSource(source), []);
+  const closePaywall = useCallback(() => setPaywallSource(null), []);
+
+  const clearCurrentConversation = useCallback(() => setMessages([]), [setMessages]);
+
   const value = {
+    // Auth/session
     session,
+    // Conversation state
     conversationId,
+    currentConversationId: conversationId,
     messages,
     turnStatus,
+    conversationStatus,
+    // WS
+    connectionStatus,
+    submitAudioChunk,
+    // Conversations list
     allConversations,
+    fetchAllConversations,
     loadConversation,
     newConversation,
+    clearCurrentConversation,
+    // Controls
     startConversation,
     stopConversation,
-    secondsRemaining
+    // Entitlement
+    isPro,
+    dailySecondsRemaining,
+    dailyLimitSeconds,
+    usageRemaining,
+    refreshUsage,
+    // Paywall
+    paywallSource,
+    promptPaywall,
+    closePaywall,
+    // UI
+    viewMode,
+    setViewMode,
+    error,
+    // Upgrade nudge
+    showUpgradeNudge,
+    setShowUpgradeNudge,
+    // External mic
+    externalMicActive,
+    setExternalMicActive,
   };
 
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;

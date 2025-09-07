@@ -70,7 +70,7 @@
     "supabase": "^2.39.2",
     "eslint": "^8.57.0",
     "eslint-config-next": "^15.5.2",
-    "eslint-config-prettier": "^9.1.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-unused-imports": "^4.1.4",
     "jsdom": "^25.0.1",

@@ -98,6 +98,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // --- AUDIO PLAYER MANAGEMENT ---
   // Create a ref to hold the AudioPlayer instance. This is critical.
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
+  const segmentedModeRef = useRef<boolean>(false);
 
   // This effect ensures we have an AudioPlayer instance when the component mounts.
   useEffect(() => {
@@ -113,10 +114,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // --- SERVER MESSAGE HANDLING ---
   const handleServerMessage = useCallback(
     (msg: any) => {
-      // If the message is audio data, send it to the player.
+    // If the message is audio data, send it to the current segment buffer.
       if (msg instanceof ArrayBuffer) {
         try {
-          audioPlayerRef.current?.appendChunk(msg);
+          if (segmentedModeRef.current) {
+            // Segmented path: append to active segment only
+            (audioPlayerRef.current as any)?.appendChunkToSegment?.(msg);
+          } else {
+            // Legacy single-blob path
+            audioPlayerRef.current?.appendChunk(msg);
+          }
         } catch {}
         return;
       }
@@ -136,15 +143,37 @@ export default function ConversationProvider({ children }: { children: React.Rea
             { id: Date.now().toString(), role: 'assistant', content: msg.text },
           ]);
           break;
+        case 'assistant_text_chunk':
+          // Segment-aware TTS: begin a segment when first chunk, end on punctuation server-side.
+          // We rely on server to flush segments; here we can optionally signal segment boundaries if needed.
+          break;
         case 'audio_start':
           setTurnStatus('speaking');
           try {
+            segmentedModeRef.current = false; // reset at the start of each turn
+            // Initialize a new turn; set server-provided mime if available
+            (audioPlayerRef.current as any)?.beginTurn?.(msg?.mime);
+            // Also reset legacy buffer to avoid mixing modes
             audioPlayerRef.current?.reset();
+          } catch {}
+          break;
+        case 'segment_start':
+          try {
+            segmentedModeRef.current = true;
+            (audioPlayerRef.current as any)?.beginSegment?.();
+          } catch {}
+          break;
+        case 'segment_end':
+          try {
+            (audioPlayerRef.current as any)?.endSegment?.();
           } catch {}
           break;
         case 'audio_end':
           try {
-            void audioPlayerRef.current?.endStream();
+            // Close the turn; segments should already be flushed
+            (audioPlayerRef.current as any)?.closeTurn?.();
+            // Legacy path: finalize single-blob stream (only if segmented not used)
+            if (!segmentedModeRef.current) void audioPlayerRef.current?.endStream();
           } catch {}
           break;
         case 'usage_update': {

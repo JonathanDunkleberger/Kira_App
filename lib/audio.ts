@@ -156,6 +156,12 @@ export class AudioPlayer {
   private audio: HTMLAudioElement;
   private desktopChunks: ArrayBuffer[] = [];
   private desktopContentType: string = 'audio/webm';
+  // Segment queue playback state
+  private segmentQueue: Array<{ url: string; mime: string }> = [];
+  private currentSegmentChunks: ArrayBuffer[] = [];
+  private streamClosed = false;
+  private isPlaying = false;
+  private turnEndedCallback?: () => void;
   // In previous iterations we had an MSE-based player. We now use blob playback,
   // but keep a reset() to clear state and avoid stutter on some mobile browsers.
 
@@ -165,6 +171,7 @@ export class AudioPlayer {
     this.audio = el;
     // Initialize chunk buffer
     this.desktopChunks = [];
+  this.installOnEndedHandler();
   }
 
   appendChunk(chunk: ArrayBuffer) {
@@ -183,22 +190,7 @@ export class AudioPlayer {
   }
 
   onEnded(callback: () => void) {
-    this.audio.onended = () => {
-      try {
-        callback();
-      } catch {}
-      // Cleanup object URL used for blob playback
-      try {
-        const src = this.audio.src;
-        if (src && typeof src === 'string' && src.startsWith('blob:')) {
-          URL.revokeObjectURL(src);
-        }
-      } catch {}
-      // Ensure player state is reset to prevent stutter on next playback
-      try {
-        this.reset();
-      } catch {}
-    };
+  this.turnEndedCallback = callback;
   }
 
   async endStream() {
@@ -233,6 +225,119 @@ export class AudioPlayer {
     } catch {}
     // Clear any accumulated chunks
     this.desktopChunks = [];
+    // Revoke and clear any queued segments
+    try {
+      for (const item of this.segmentQueue) {
+        try {
+          const url = (item as any)?.url;
+          if (url && typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url);
+        } catch {}
+      }
+    } catch {}
+    this.segmentQueue = [];
+    this.currentSegmentChunks = [];
+    this.streamClosed = false;
+    this.isPlaying = false;
+  }
+
+  // Segment-aware playback API (progressive queue)
+  // Begin a new audio turn (e.g., on 'audio_start'). Resets player and sets MIME.
+  public beginTurn(mime?: string) {
+    try {
+      this.reset();
+    } catch {}
+    if (mime) {
+      try {
+        (this as any).setContentType?.(mime);
+      } catch {}
+    }
+    this.streamClosed = false;
+  }
+
+  // Mark that no more segments will be enqueued for this turn (e.g., on 'audio_end').
+  public closeTurn() {
+    this.streamClosed = true;
+    // If nothing is currently playing, kick off playback if queue has items,
+    // otherwise immediately signal turn end.
+    if (!this.isPlaying) {
+      if ((this.segmentQueue || []).length > 0) {
+        this.playNextSegment();
+      } else {
+        try {
+          this.turnEndedCallback?.();
+        } catch {}
+      }
+    }
+  }
+
+  // Start a new segment (e.g., sentence)
+  public beginSegment() {
+    this.currentSegmentChunks = [];
+  }
+
+  // Append binary audio chunk to the current segment
+  public appendChunkToSegment(chunk: ArrayBuffer) {
+    this.currentSegmentChunks.push(chunk);
+  }
+
+  // Finalize current segment and enqueue for playback. If idle, start immediately.
+  public async endSegment() {
+    const chunks: ArrayBuffer[] = this.currentSegmentChunks || [];
+    if (!chunks.length) return;
+    this.currentSegmentChunks = [];
+    const merged = mergeArrayBuffers(chunks);
+    const blob = new Blob([merged], { type: this.desktopContentType || 'audio/webm' });
+    const url = URL.createObjectURL(blob);
+  this.segmentQueue.push({ url, mime: this.desktopContentType });
+    if (!this.isPlaying) {
+      this.playNextSegment();
+    }
+  }
+
+  // Internal: install onended handler to auto-advance queue and fire turn end when done
+  private installOnEndedHandler() {
+    this.audio.onended = () => {
+      try {
+        // Revoke the just-played URL
+        const src = this.audio.src;
+        if (src && typeof src === 'string' && src.startsWith('blob:')) {
+          URL.revokeObjectURL(src);
+        }
+      } catch {}
+      // Advance queue if any
+  if ((this.segmentQueue || []).length > 0) {
+        this.playNextSegment();
+        return;
+      }
+      // No more queued items
+      this.isPlaying = false;
+      if (this.streamClosed) {
+        try {
+          this.turnEndedCallback?.();
+        } catch {}
+        // Ensure clean state for next turn
+        try {
+          this.reset();
+        } catch {}
+      }
+    };
+  }
+
+  // Internal: play next queued segment
+  private async playNextSegment() {
+  const next = (this.segmentQueue || []).shift() as any;
+    if (!next) {
+      this.isPlaying = false;
+      return;
+    }
+    try {
+      this.audio.src = next.url;
+    } catch {}
+    this.isPlaying = true;
+    try {
+      const p = (this.audio as any).play?.();
+      if (p && typeof p.catch === 'function') await p.catch(() => {});
+    } catch {}
   }
 }
 
@@ -244,6 +349,7 @@ export class AudioPlayer {
     (this as any).desktopContentType = mime;
   }
 };
+
 
 // Decide the preferred TTS container/codec for the current browser.
 // Returns both the Azure format hint (via caller) and the MIME for the HTMLAudioElement blob.

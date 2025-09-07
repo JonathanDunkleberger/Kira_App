@@ -121,6 +121,7 @@ wss.on('connection', async (ws, req) => {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const conversationId = url.searchParams.get('conversationId');
   const token = url.searchParams.get('token') || '';
+  const ttsFmt = (url.searchParams.get('tts') as 'webm' | 'mp3' | null) || 'webm';
   if (!conversationId) return ws.close(1008, 'Missing conversationId');
 
   const supa = getSupabaseServerAdmin();
@@ -144,6 +145,7 @@ wss.on('connection', async (ws, req) => {
   let ttsProcessing = false;
   let ttsProcessPromise: Promise<void> | null = null;
   let audioStarted = false;
+  const mime = ttsFmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
   const enqueueTts = (text: string) => {
     ttsQueue.push(text);
     if (!ttsProcessing) {
@@ -158,15 +160,22 @@ wss.on('connection', async (ws, req) => {
         if (!next) continue;
         if (!audioStarted) {
           try {
-            sendJson(ws, { type: 'audio_start' });
+            sendJson(ws, { type: 'audio_start', mime });
           } catch {}
           audioStarted = true;
         }
+        // Mark segment lifecycle for client queuing
+        try {
+          sendJson(ws, { type: 'segment_start' });
+        } catch {}
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk))
+          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        try {
+          sendJson(ws, { type: 'segment_end' });
+        } catch {}
       }
     } finally {
       ttsProcessing = false;
@@ -252,13 +261,20 @@ wss.on('connection', async (ws, req) => {
         audioStarted = false;
       } else {
         // Non-streaming fallback: synthesize the full reply as before
-        sendJson(ws, { type: 'audio_start' });
+        sendJson(ws, { type: 'audio_start', mime });
         console.time(`[srv] tts`);
+        // Single segment for full reply
+        try {
+          sendJson(ws, { type: 'segment_start' });
+        } catch {}
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk))
+          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        try {
+          sendJson(ws, { type: 'segment_end' });
+        } catch {}
         console.timeEnd(`[srv] tts`);
         sendJson(ws, { type: 'audio_end' });
       }

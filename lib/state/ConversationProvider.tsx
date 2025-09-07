@@ -114,16 +114,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // --- SERVER MESSAGE HANDLING ---
   const handleServerMessage = useCallback(
     (msg: any) => {
-      // If the message is audio data, send it to the current segment buffer.
+    // If the message is audio data, buffer for single-blob playback.
       if (msg instanceof ArrayBuffer) {
         try {
-          if (segmentedModeRef.current) {
-            // Segmented path: append to active segment only
-            (audioPlayerRef.current as any)?.appendChunkToSegment?.(msg);
-          } else {
-            // Legacy single-blob path
-            audioPlayerRef.current?.appendChunk(msg);
-          }
+      audioPlayerRef.current?.appendChunk(msg);
         } catch {}
         return;
       }
@@ -144,34 +138,25 @@ export default function ConversationProvider({ children }: { children: React.Rea
           ]);
           break;
         case 'assistant_text_chunk':
-          // Segment-aware TTS: begin a segment when first chunk, end on punctuation server-side.
-          // We rely on server to flush segments; here we can optionally signal segment boundaries if needed.
+          // Ignored for single-blob audio playback
           break;
         case 'audio_start':
           setTurnStatus('speaking');
           try {
-            segmentedModeRef.current = false; // reset at the start of each turn
-            // Initialize a new turn; set server-provided mime if available
-            (audioPlayerRef.current as any)?.beginTurn?.(msg?.mime);
+            segmentedModeRef.current = false;
+            // Set content type if provided
+            (audioPlayerRef.current as any)?.setContentType?.(msg?.mime);
+            audioPlayerRef.current?.reset();
           } catch {}
           break;
         case 'segment_start':
-          try {
-            segmentedModeRef.current = true;
-            (audioPlayerRef.current as any)?.beginSegment?.();
-          } catch {}
-          break;
         case 'segment_end':
-          try {
-            (audioPlayerRef.current as any)?.endSegment?.();
-          } catch {}
+          // No-op in single-blob mode
           break;
         case 'audio_end':
           try {
-            // Close the turn; segments should already be flushed
-            (audioPlayerRef.current as any)?.closeTurn?.();
-            // Legacy path: finalize single-blob stream (only if segmented not used)
-            if (!segmentedModeRef.current) void audioPlayerRef.current?.endStream();
+            // Finalize single-blob stream
+            void audioPlayerRef.current?.endStream();
           } catch {}
           break;
         case 'usage_update': {

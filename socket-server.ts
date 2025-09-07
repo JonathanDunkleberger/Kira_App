@@ -140,10 +140,7 @@ wss.on('connection', async (ws, req) => {
   let isProcessing = false;
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  // Progressive TTS state (robust sequential queue)
-  let ttsQueue: string[] = [];
-  let ttsProcessing = false;
-  let ttsProcessPromise: Promise<void> | null = null;
+  // Single-blob TTS state
   let audioStarted = false;
   const mime = ttsFmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
   // Backpressure-aware WS binary sending
@@ -176,59 +173,7 @@ wss.on('connection', async (ws, req) => {
       binaryFlushing = false;
     }
   }
-  const enqueueTts = (text: string) => {
-    const toSpeak = (text || '').trim();
-    if (!toSpeak) return;
-    ttsQueue.push(toSpeak);
-    if (!ttsProcessing) {
-      ttsProcessPromise = processTtsQueue();
-    }
-  };
-
-  async function processTtsQueue(): Promise<void> {
-    ttsProcessing = true;
-    try {
-      while (ttsQueue.length > 0 && ws.readyState === 1) {
-        const next = (ttsQueue.shift() || '').trim();
-        if (!next) continue;
-        if (!audioStarted) {
-          try {
-            sendJson(ws, { type: 'audio_start', mime });
-          } catch {}
-          audioStarted = true;
-        }
-        try {
-          sendJson(ws, { type: 'segment_start' });
-        } catch {}
-        try {
-          console.log('[SERVER-DEBUG] Sending sentence to TTS...');
-        } catch {}
-        await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(next, (chunk) => enqueueBinary(chunk), ttsFmt)
-            .then(resolve)
-            .catch(reject);
-        });
-        // Ensure all chunks for this sentence are flushed over WS before signaling end
-        if (binaryFlushPromise) {
-          try {
-            await binaryFlushPromise;
-          } catch {}
-        }
-        try {
-          console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
-        } catch {}
-        try {
-          sendJson(ws, { type: 'segment_end' });
-        } catch {}
-      }
-    } catch (e) {
-      try {
-        console.warn('[TTS] Queue processing error:', e);
-      } catch {}
-    } finally {
-      ttsProcessing = false;
-    }
-  }
+  // No sentence queue: we'll synthesize once per assistant reply
 
   // Seed history from DB
   try {
@@ -261,26 +206,11 @@ wss.on('connection', async (ws, req) => {
         ...historyMem,
       ];
       console.time(`[srv] llm`);
-      // Streaming path: buffer chunks and flush to TTS every 800ms
+      // Streaming path: accumulate full assistant text; no progressive TTS
       let usedStreaming = true;
-      let textBuffer = '';
-      const FLUSH_MS = Number(process.env.TTS_FLUSH_INTERVAL_MS || 800);
-      const flushBufferedText = () => {
-        const toSpeak = textBuffer.trim();
-        if (!toSpeak) return;
-        textBuffer = '';
-        try {
-          console.log('[SERVER-DEBUG] Flushing buffered segment:', toSpeak);
-        } catch {}
-        enqueueTts(toSpeak);
-      };
-      let flushTicker: ReturnType<typeof setInterval> | null = setInterval(
-        flushBufferedText,
-        FLUSH_MS,
-      );
+      let fullText = '';
       const assistant = await streamAssistantReply(messages as any, ws, (chunk: string) => {
-        // Accumulate raw text; segmentation is purely timer-driven
-        textBuffer += chunk;
+        fullText += chunk;
       }).catch(async (e: unknown) => {
         // Fallback to non-streaming on error
         try {
@@ -304,59 +234,26 @@ wss.on('connection', async (ws, req) => {
         if (newTitle) sendJson(ws, { type: 'title_update', title: newTitle, conversationId });
       } catch {}
 
-      if (usedStreaming) {
-        // Stop the periodic flusher and immediately flush any remaining text
-        if (flushTicker) {
-          clearInterval(flushTicker);
-          flushTicker = null;
-        }
-        if (textBuffer.trim()) {
-          flushBufferedText();
-        }
-        // Wait for TTS queue to drain fully (sequential)
-        if (ttsProcessPromise) {
-          try {
-            await ttsProcessPromise;
-          } catch {}
-        }
-        // Ensure any outstanding WS binary sends are flushed
-        if (binaryFlushPromise) {
-          try {
-            await binaryFlushPromise;
-          } catch {}
-        }
-        sendJson(ws, { type: 'audio_end' });
-        audioStarted = false;
-      } else {
-        // Non-streaming fallback: synthesize the full reply as before
-        sendJson(ws, { type: 'audio_start', mime });
+      // Regardless of streaming vs fallback, we have the full assistant text; synthesize once
+      const textToSpeak = usedStreaming ? fullText : assistant;
+      if (textToSpeak && ws.readyState === 1) {
+        try {
+          sendJson(ws, { type: 'audio_start', mime });
+        } catch {}
         console.time(`[srv] tts`);
-        // Single segment for full reply
-        try {
-          sendJson(ws, { type: 'segment_start' });
-        } catch {}
-        try {
-          console.log('[SERVER-DEBUG] Sending sentence to TTS...');
-        } catch {}
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(assistant, (chunk) => enqueueBinary(chunk), ttsFmt)
+          synthesizeSpeechStream(textToSpeak, (chunk) => enqueueBinary(chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
-        // Ensure all chunks are flushed before segment_end and audio_end
         if (binaryFlushPromise) {
           try {
             await binaryFlushPromise;
           } catch {}
         }
-        try {
-          console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
-        } catch {}
-        try {
-          sendJson(ws, { type: 'segment_end' });
-        } catch {}
         console.timeEnd(`[srv] tts`);
         sendJson(ws, { type: 'audio_end' });
+        audioStarted = false;
       }
 
       if (userId) {

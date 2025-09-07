@@ -227,10 +227,10 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
       // Load model/worklet from CDN to avoid local asset issues
       baseAssetPath: 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web/dist/',
       onnxWASMBasePath: 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
-      // Optimized settings
-      redemptionMs: 1800,
+  // Optimized settings
+  redemptionMs: 2000,
       minSpeechMs: 150,
-      preSpeechPadMs: 100,
+  preSpeechPadMs: 400,
       positiveSpeechThreshold: 0.85,
       negativeSpeechThreshold: 0.7,
       onSpeechStart: () => {

@@ -5,7 +5,7 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import { User, Bot } from 'lucide-react';
 
 export default function ConversationView() {
-  const { messages, error, conversationId, uiState } = useConversation();
+  const { messages, error, conversationStatus } = useConversation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -14,7 +14,11 @@ export default function ConversationView() {
     }
   }, [messages]);
 
-  // Always render the container; show a hint when no conversation is selected yet
+  if (conversationStatus === 'idle') {
+    return (
+  <div className="text-center text-gray-500 pt-10"></div>
+    );
+  }
 
   return (
     <div ref={scrollRef} className="w-full max-w-4xl mx-auto p-4 h-[calc(100vh-350px)] overflow-y-auto custom-scrollbar">
@@ -38,7 +42,7 @@ export default function ConversationView() {
             </div>
           );
         })}
-  {messages.length === 0 && conversationId && uiState === 'LISTENING' && (
+        {messages.length === 0 && conversationStatus === 'active' && (
           <div className="text-center text-gray-400">Listening... Say something!</div>
         )}
         {error && <div className="text-red-400 text-sm">{error}</div>}

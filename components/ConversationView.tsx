@@ -23,7 +23,7 @@ export default function ConversationView() {
   return (
     <div ref={scrollRef} className="w-full max-w-4xl mx-auto p-4 h-[calc(100vh-350px)] overflow-y-auto custom-scrollbar">
       <div className="space-y-3">
-        {messages.map((m, idx) => {
+  {messages.map((m: { id: string; role: 'user' | 'assistant'; content: string }, idx: number) => {
           const isAssistant = m.role === 'assistant';
           const prevUser = idx > 0 ? messages[idx - 1] : null;
           // Share feature removed

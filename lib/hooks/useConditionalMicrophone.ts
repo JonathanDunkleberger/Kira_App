@@ -39,7 +39,7 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
       // Mobile path: AudioWorklet for reliable real-time capture
       const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!AC) throw new Error('AudioContext not supported');
-      if (!ctxRef.current) ctxRef.current = new AC();
+      if (!ctxRef.current) ctxRef.current = new AC({ latencyHint: 'interactive' } as any);
       const ctx = ctxRef.current!;
       if (ctx.state === 'suspended') await ctx.resume();
 
@@ -224,12 +224,11 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
 
     // Initialize VAD (let the library acquire the mic internally)
     const vad = await MicVAD.new({
-      // Reasonable defaults; adjust as needed
-      minSpeechFrames: 6,
-      redemptionFrames: 30,
+      // timing in milliseconds (replaces *Frames*)
+      minSpeechMs: 200, // ~0.2s for quicker start
+      redemptionMs: 500, // grace period after speech ends
       positiveSpeechThreshold: 0.6,
       negativeSpeechThreshold: 0.35,
-      preSpeechPadFrames: 4,
       onSpeechStart: () => {
         try {
           if (mr.state !== 'recording') {

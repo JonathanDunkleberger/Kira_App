@@ -254,11 +254,13 @@ wss.on('connection', async (ws, req) => {
       let usedStreaming = true;
       let pendingText = '';
       const assistant = await streamAssistantReply(messages as any, ws, (chunk: string) => {
-        // Aggregate small tokens until punctuation or reasonable length, then enqueue for TTS
+        // Append new text and split into full sentences ending with . ! ? only
         pendingText += chunk;
-        if (/([\.\!\?])\s$/.test(pendingText) || pendingText.length >= 120) {
-          const toSpeak = pendingText;
-          pendingText = '';
+        const { sentences, remainder } = extractStrictSentences(pendingText);
+        pendingText = remainder;
+        for (const s of sentences) {
+          const toSpeak = s.trim();
+          if (!toSpeak) continue;
           try {
             console.log('[SERVER-DEBUG] Identified sentence:', toSpeak);
           } catch {}
@@ -290,7 +292,7 @@ wss.on('connection', async (ws, req) => {
       if (usedStreaming) {
         // Flush any remaining pending text to TTS
         if (pendingText.trim()) {
-          enqueueTts(pendingText);
+          enqueueTts(pendingText.trim());
           pendingText = '';
         }
         // Wait for all sentences in the chain to finish (sequential)
@@ -378,6 +380,22 @@ wss.on('connection', async (ws, req) => {
 
 function sendJson(ws: WebSocket, data: object) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+// Split text into natural sentences ending with ., !, or ? followed by whitespace or end-of-string.
+// Ignores commas, colons, and does not attempt to split on markdown punctuation.
+function extractStrictSentences(text: string): { sentences: string[]; remainder: string } {
+  const sentences: string[] = [];
+  // Use a minimal, dotall regex to capture up to the first terminal punctuation
+  const re = /(.+?[.!?])(?=\s|$)/gms;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const segment = (match[1] || '').trim();
+    if (segment) sentences.push(segment);
+    lastIndex = re.lastIndex;
+  }
+  const remainder = text.slice(lastIndex);
+  return { sentences, remainder };
 }
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

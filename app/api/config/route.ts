@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+
 import { FREE_TRIAL_SECONDS, PRO_SESSION_SECONDS } from '@/lib/server/env.server';
 
 export const runtime = 'edge';

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+
 import { trackUpgradeSuccess } from '@/lib/analytics';
 import { useConversation } from '@/lib/state/ConversationProvider';
 

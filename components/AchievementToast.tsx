@@ -1,6 +1,7 @@
 'use client';
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+
 import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function AchievementToast() {

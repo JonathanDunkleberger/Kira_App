@@ -1,8 +1,9 @@
 'use client';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import Link from 'next/link';
+
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { signOut, openBillingPortal, startCheckout } from '@/lib/client-api';
-import Link from 'next/link';
 
 export default function UserProfile() {
   const { session, isPro } = useConversation();

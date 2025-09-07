@@ -2,6 +2,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+
 import { openBillingPortal, signOut } from '@/lib/client-api';
 import HeaderUsageIndicator from '@/components/HeaderUsageIndicator';
 import { supabase } from '@/lib/client/supabaseClient';

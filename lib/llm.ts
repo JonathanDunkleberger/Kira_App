@@ -33,6 +33,7 @@ const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
 ];
 // Use type-only imports so they don't affect bundling
 import type { Content } from '@google/generative-ai';
+
 type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 

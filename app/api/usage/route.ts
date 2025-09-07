@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+
 import { checkUsage } from '@/lib/server/usage';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';

@@ -1,8 +1,9 @@
 import './globals.css';
+import { Suspense } from 'react';
+
 import Header from '@/components/Header';
 import Banner from '@/components/Banner';
 import Sidebar from '@/components/Sidebar'; // <-- Add this import
-import { Suspense } from 'react';
 import ConversationProvider from '@/lib/state/ConversationProvider';
 import UpgradeSnackbarPortal from '@/components/UpgradeSnackbarPortal';
 

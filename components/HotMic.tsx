@@ -1,7 +1,8 @@
 'use client';
+import MicButton from './MicButton';
+
 import PulsingOrb from '@/components/PulsingOrb';
 import { useConversation } from '@/lib/state/ConversationProvider';
-import MicButton from './MicButton';
 
 export default function HotMic() {
   const { turnStatus, isConversationActive, startConversation, stopConversation } =

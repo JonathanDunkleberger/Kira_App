@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+
 import { startCheckout } from '@/lib/client-api';
 import { trackPaywallEvent, trackUpgradeNudged, trackUpgradeNudgeClick } from '@/lib/analytics';
 

@@ -27,11 +27,6 @@
     "tests-examples/**",
     "public/microphoneWorklet.js"
   ],
-  "ignoreDependencies": [
-    "postcss",
-    "autoprefixer",
-    "dependency-cruiser",
-    "tsconfig-paths"
-  ],
+  "ignoreDependencies": ["postcss", "autoprefixer", "dependency-cruiser", "tsconfig-paths"],
   "rules": { "classMembers": "off" }
 }

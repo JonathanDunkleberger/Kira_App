@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
+
 import { envClient } from '@/lib/client/env.client';
 
 export const supabase = createBrowserClient(

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect } from 'react';
+
 import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function UsageBadge() {

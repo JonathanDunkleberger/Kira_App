@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+
 import { supabase } from '@/lib/client/supabaseClient';
 
 export type Entitlement = {

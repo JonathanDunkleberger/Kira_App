@@ -1,6 +1,7 @@
 // lib/hooks/useSimpleVoiceSocket.ts
 'use client';
 import { useEffect, useRef } from 'react';
+
 import { useConversationStore } from '@/lib/state/conversation-store';
 
 export const useSimpleVoiceSocket = () => {

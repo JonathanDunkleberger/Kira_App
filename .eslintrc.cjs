@@ -22,5 +22,13 @@ module.exports = {
     'react/no-unescaped-entities': 'off',
     'prefer-const': 'off',
   },
+  overrides: [
+    {
+      files: ['**/*.test.{ts,tsx}'],
+      rules: {
+        'react-hooks/exhaustive-deps': 'off',
+      },
+    },
+  ],
   ignorePatterns: ['.next', 'node_modules', 'dist', 'build', 'artifacts'],
 };

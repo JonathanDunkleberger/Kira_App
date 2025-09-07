@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useConversation } from '@/lib/state/ConversationProvider';
 import { Plus, MessageSquare, Menu, Search } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
@@ -17,9 +16,11 @@ import {
   ChevronRightIcon,
   LockClosedIcon,
 } from '@radix-ui/react-icons';
+import Link from 'next/link';
+
 import { openBillingPortal } from '@/lib/client-api';
 import { supabase } from '@/lib/client/supabaseClient';
-import Link from 'next/link';
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function Sidebar() {
   const {

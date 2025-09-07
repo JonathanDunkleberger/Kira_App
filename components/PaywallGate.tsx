@@ -1,5 +1,6 @@
 'use client';
 import { ReactNode, useMemo } from 'react';
+
 import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function PaywallGate({ children }: { children: ReactNode }) {

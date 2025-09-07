@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
+
 import { supabase } from '@/lib/client/supabaseClient';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';

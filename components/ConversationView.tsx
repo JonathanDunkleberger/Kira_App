@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useConversation } from '@/lib/state/ConversationProvider';
 import { User, Bot } from 'lucide-react';
+
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function ConversationView() {
   const { messages, error, conversationStatus } = useConversation();

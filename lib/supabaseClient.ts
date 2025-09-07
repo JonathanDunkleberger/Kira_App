@@ -1,6 +1,7 @@
 // lib/supabaseClient.ts
 
 import { createBrowserClient } from '@supabase/ssr';
+
 import { envClient } from './env.client';
 
 // The new, recommended way to create a browser client for Next.js App Router

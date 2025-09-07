@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { fetchEntitlement } from '@/lib/client-api';
 

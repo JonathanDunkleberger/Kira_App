@@ -1,6 +1,7 @@
 // lib/hooks/useSimpleMicrophone.ts
 'use client';
 import { useCallback, useEffect, useRef } from 'react';
+
 import { useConversationStore } from '@/lib/state/conversation-store';
 
 export const useSimpleMicrophone = () => {

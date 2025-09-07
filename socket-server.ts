@@ -2,7 +2,9 @@
 
 import 'dotenv/config';
 import http from 'node:http';
+
 import { WebSocketServer, WebSocket } from 'ws';
+
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { transcribeWebmToText } from '@/lib/server/stt';
 import { synthesizeSpeechStream, warmAzureTtsConnection } from '@/lib/server/tts';

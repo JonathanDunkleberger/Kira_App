@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
+
+import { NextRequest, NextResponse } from 'next/server';
+
 import { envServer as env, FREE_TRIAL_SECONDS, PRO_SESSION_SECONDS } from '@/lib/server/env.server';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { ensureEntitlements, getEntitlement, getDailySecondsRemaining } from '@/lib/usage';

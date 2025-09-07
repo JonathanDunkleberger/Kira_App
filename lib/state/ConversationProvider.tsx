@@ -127,9 +127,20 @@ export default function ConversationProvider({ children }: { children: React.Rea
       case 'audio_end':
         try { void audioPlayerRef.current?.endStream(); } catch {}
         break;
-      case 'usage_update':
-        try { refreshUsage?.(); } catch {}
+      case 'usage_update': {
+        // Optimistically set remaining seconds when provided by WS
+        const secs = Number((msg as any)?.secondsRemaining);
+        if (Number.isFinite(secs)) {
+          try {
+            // useEntitlement returns setSecondsRemaining via closure captured in refreshUsage
+            // but we don't have it here directly; trigger a custom event and rely on hook listener
+            window.dispatchEvent(new CustomEvent('entitlement:update:secondsRemaining', { detail: secs }));
+          } catch {}
+        } else {
+          try { refreshUsage?.(); } catch {}
+        }
         break;
+      }
     }
   }, [setMessages, refreshUsage]);
   

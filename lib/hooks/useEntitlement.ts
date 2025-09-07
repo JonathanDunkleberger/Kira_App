@@ -77,6 +77,19 @@ export function useEntitlement(): Entitlement & { refresh: () => Promise<void>; 
     return () => clearInterval(id);
   }, [fetchEnt]);
 
+  // Listen for WS-propagated seconds remaining updates
+  useEffect(() => {
+    const onWsUpdate = (e: Event) => {
+      try {
+        const custom = e as CustomEvent<number>;
+        const secs = Number(custom.detail);
+        if (Number.isFinite(secs)) setSecondsRemaining(secs);
+      } catch {}
+    };
+    try { window.addEventListener('entitlement:update:secondsRemaining', onWsUpdate as any); } catch {}
+    return () => { try { window.removeEventListener('entitlement:update:secondsRemaining', onWsUpdate as any); } catch {} };
+  }, [setSecondsRemaining]);
+
   // Re-validate entitlement immediately on auth changes (login/logout/token refresh)
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {

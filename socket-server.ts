@@ -227,7 +227,9 @@ wss.on('connection', async (ws, req) => {
         const secondsUsed = (Date.now() - turnStart) / 1000;
         try {
           const secondsRemaining = await decrementDailySeconds(userId, secondsUsed);
-          if (typeof secondsRemaining === 'number') sendJson(ws, { type: 'usage_update', secondsRemaining });
+          if (typeof secondsRemaining === 'number') {
+            sendJson(ws, { type: 'usage_update', secondsUsed, secondsRemaining });
+          }
         } catch {}
       }
     } catch (err) {

@@ -15,8 +15,7 @@ const ConversationContext = createContext<any>(undefined);
 
 export default function ConversationProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [turnStatus, setTurnStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking'>('idle');
-  const [conversationStatus, setConversationStatus] = useState<'idle' | 'active' | 'ended_by_user' | 'ended_by_limit'>('idle');
+  const [uiState, setUiState] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING'>('IDLE');
   const [viewMode, setViewMode] = useState<'conversation' | 'history'>('conversation');
   const [error, setError] = useState<string | null>(null);
   const [paywallSource, setPaywallSource] = useState<'proactive_click' | 'time_exhausted' | null>(null);
@@ -45,8 +44,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
       audioPlayerRef.current = new AudioPlayer();
       audioPlayerRef.current.onEnded(() => {
         // SPEAKING -> IDLE when audio playback finishes
-        setTurnStatus('idle');
-        setConversationStatus('idle');
+        setUiState('IDLE');
       });
     } catch (e) {
       // If the persistent audio element is missing, log and continue without audio
@@ -68,16 +66,16 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
     switch (msg.type) {
       case 'transcript':
-        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: msg.text }]);
-        setTurnStatus('processing');
+  setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: msg.text }]);
+  setUiState('PROCESSING');
         break;
       case 'assistant_text':
         // Transition to SPEAKING on first assistant token if not already
-        setTurnStatus((prev) => (prev !== 'speaking' ? 'speaking' : prev));
+  setUiState((prev) => (prev !== 'SPEAKING' ? 'SPEAKING' : prev));
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: msg.text }]);
         break;
       case 'audio_start':
-        setTurnStatus('speaking');
+  setUiState('SPEAKING');
         try { audioPlayerRef.current?.reset(); } catch {}
         break;
       case 'audio_end':
@@ -97,7 +95,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     audioBlob.arrayBuffer().then((buf) => {
       try { send(buf); } finally {
         // LISTENING -> PROCESSING immediately after sending user's utterance
-        setTurnStatus('processing');
+        setUiState('PROCESSING');
       }
     });
   });
@@ -107,20 +105,19 @@ export default function ConversationProvider({ children }: { children: React.Rea
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       // On login/logout, reset the conversation state
-      setMessages([]);
-      setTurnStatus('idle');
+  setMessages([]);
+  setUiState('IDLE');
     });
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
+  const stopConversation = useCallback(() => {
     stopMicrophone(); // Manually stop the mic
-    setTurnStatus('idle');
-    setConversationStatus(reason || 'ended_by_user');
+    setUiState('IDLE');
   }, [stopMicrophone]);
 
   const startConversation = useCallback(async () => {
-    if (turnStatus !== 'idle') return;
+    if (uiState !== 'IDLE') return;
 
     let activeConvoId = conversationId;
     if (!activeConvoId) {
@@ -134,10 +131,9 @@ export default function ConversationProvider({ children }: { children: React.Rea
     
   // Once we have a conversation ID, we can start the microphone
     startMicrophone();
-  setTurnStatus('listening');
-  setConversationStatus('active');
+    setUiState('LISTENING');
 
-  }, [turnStatus, conversationId, newConversation, startMicrophone]);
+  }, [uiState, conversationId, newConversation, startMicrophone]);
 
   // This is the only change. We no longer have the complex useEffect that was
   // causing the race condition. The start/stop logic is now cleanly handled
@@ -159,8 +155,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     conversationId,
     currentConversationId: conversationId,
     messages,
-    turnStatus,
-    conversationStatus,
+  uiState,
     // WS
     connectionStatus,
     submitAudioChunk,

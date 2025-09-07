@@ -4,18 +4,22 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import MicButton from './MicButton';
 
 export default function HotMic() {
-  const { turnStatus, startConversation, stopConversation } = useConversation();
+  const { uiState, startConversation, stopConversation } = useConversation();
 
-  const isListening = turnStatus === 'listening';
-  const isProcessing = turnStatus === 'processing';
-  const isSpeaking = turnStatus === 'speaking';
+  const isListening = uiState === 'LISTENING';
+  const isProcessing = uiState === 'PROCESSING';
+  const isSpeaking = uiState === 'SPEAKING';
 
-  // This function tells the app what to do when the orb is clicked
   const handleMicClick = async () => {
-    if (isListening || isProcessing || isSpeaking) {
-      stopConversation();
-    } else {
-      await Promise.resolve(startConversation());
+    switch (uiState) {
+      case 'IDLE':
+        await Promise.resolve(startConversation());
+        break;
+      case 'LISTENING':
+      case 'PROCESSING':
+      case 'SPEAKING':
+        stopConversation();
+        break;
     }
   };
 

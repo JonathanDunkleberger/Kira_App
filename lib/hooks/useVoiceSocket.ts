@@ -185,7 +185,8 @@ export function useVoiceSocket(
   }, []);
 
   // derive current conversationId value for effect deps
-  const conversationId = typeof onMessageOrOpts === 'function' ? null : onMessageOrOpts.conversationId ?? null;
+  const conversationId =
+    typeof onMessageOrOpts === 'function' ? null : (onMessageOrOpts.conversationId ?? null);
 
   useEffect(() => {
     // reconnect when conversationId changes

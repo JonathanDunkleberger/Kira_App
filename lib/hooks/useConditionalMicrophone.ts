@@ -136,8 +136,8 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
           silenceCounterRef.current = 0;
           startedAt = performance.now();
           try {
-            // 2s timeslice to get smaller, frequent chunks
-            mr.start(2000);
+            // Start recording without timeslice; VAD/RMS will control stop
+            mr.start();
             console.log('[mic] Utterance start: frame=%d, rms=%s', framesCount, rms.toFixed(4));
           } catch (e) {
             console.warn('[mic] mr.start() failed', e);
@@ -237,8 +237,8 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
         try {
           if (mr.state !== 'recording') {
             chunks = [];
-            // 2s timeslice to get smaller, frequent chunks
-            mr.start(2000);
+            // Start recording without timeslice; VAD will control stop
+            mr.start();
             console.log('[mic] VAD onSpeechStart -> mr.start()');
           }
         } catch (e) {

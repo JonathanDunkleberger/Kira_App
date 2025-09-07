@@ -62,23 +62,25 @@ export function useConditionalMicrophone(
           else if (MR.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
         }
       } catch {}
-      const mr = mimeType ? new MediaRecorder(dest.stream, { mimeType }) : new MediaRecorder(dest.stream);
+      const mr = mimeType
+        ? new MediaRecorder(dest.stream, { mimeType, audioBitsPerSecond: 16000 })
+        : new MediaRecorder(dest.stream, { audioBitsPerSecond: 16000 });
       mediaRecorderRef.current = mr;
       encoderStreamRef.current = dest.stream;
       encodedChunksRef.current = [];
       console.log('[mic] Mobile path init: mimeType=%s', mimeType || '(default)');
       mr.ondataavailable = (e) => {
+        // Forward smaller, frequent chunks (2s) rather than whole utterances
         if (e.data && e.data.size) {
-          encodedChunksRef.current.push(e.data);
-          console.debug('[mic] ondataavailable: size=%d type=%s', e.data.size, e.data.type);
+          console.debug('[mic] ondataavailable (mobile): size=%d type=%s', e.data.size, e.data.type);
+          try { onUtterance(e.data); } catch {}
         }
       };
     mr.onstop = () => {
         try {
           if (!skipFinalFlushRef.current) {
-            const blob = new Blob(encodedChunksRef.current, { type: mimeType || 'audio/mp4' });
-            console.log('[mic] MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', encodedChunksRef.current.length, blob.size, blob.type);
-            if (blob.size) onUtterance(blob);
+            // We already streamed chunks via ondataavailable; no final aggregated flush needed
+            console.log('[mic] MediaRecorder stopped (mobile): streamed chunks during recording');
           } else {
             console.log('[mic] Skipping final flush on stop (mobile path)');
           }
@@ -127,7 +129,8 @@ export function useConditionalMicrophone(
           silenceCounterRef.current = 0;
           startedAt = performance.now();
           try {
-            mr.start();
+            // 2s timeslice to get smaller, frequent chunks
+            mr.start(2000);
             console.log('[mic] Utterance start: frame=%d, rms=%s', framesCount, rms.toFixed(4));
           } catch (e) {
             console.warn('[mic] mr.start() failed', e);
@@ -180,21 +183,23 @@ export function useConditionalMicrophone(
       }
     } catch {}
 
-    const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const mr = mimeType
+      ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 })
+      : new MediaRecorder(stream, { audioBitsPerSecond: 16000 });
     mediaRecorderRef.current = mr;
     let chunks: BlobPart[] = [];
 
     mr.ondataavailable = (e) => {
+      // Forward smaller, frequent chunks (2s) rather than whole utterances
       if (e.data && e.data.size > 0) {
-        chunks.push(e.data);
+        try { onUtterance(e.data); } catch {}
       }
     };
     mr.onstop = () => {
       try {
         if (!skipFinalFlushRef.current) {
-          const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-          console.log('[mic] Desktop MediaRecorder stopped: chunks=%d, blobSize=%d, blobType=%s', chunks.length, blob.size, blob.type);
-          if (blob.size) onUtterance(blob);
+          // We already streamed chunks during recording; no final aggregated flush needed
+          console.log('[mic] Desktop MediaRecorder stopped: streamed chunks during recording');
         } else {
           console.log('[mic] Skipping final flush on stop (desktop path)');
         }
@@ -213,11 +218,12 @@ export function useConditionalMicrophone(
       positiveSpeechThreshold: 0.6,
       negativeSpeechThreshold: 0.35,
       preSpeechPadFrames: 4,
-      onSpeechStart: () => {
+  onSpeechStart: () => {
         try {
           if (mr.state !== 'recording') {
-            chunks = [];
-            mr.start();
+    chunks = [];
+    // 2s timeslice to get smaller, frequent chunks
+    mr.start(2000);
             console.log('[mic] VAD onSpeechStart -> mr.start()');
           }
         } catch (e) {

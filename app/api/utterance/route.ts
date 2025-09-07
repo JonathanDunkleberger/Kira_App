@@ -1,5 +1,10 @@
 import { NextRequest } from 'next/server';
-import { decrementDailySeconds, decrementDailyMessages, getDailySecondsRemaining, getEntitlement } from '@/lib/usage';
+import {
+  decrementDailySeconds,
+  decrementDailyMessages,
+  getDailySecondsRemaining,
+  getEntitlement,
+} from '@/lib/usage';
 import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
 import OpenAI from '@/lib/server/openai-compat';
 import { transcribeWebmToText } from '@/lib/stt';
@@ -35,7 +40,7 @@ const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
       "Ah, the final boss of any project: actually finishing it. Just think of the sweet, sweet relief when it's done. Or, you know, you could just procrastinate forever. That's also a strategy, I guess.",
   },
   {
-    user: 'Explain the grandfather paradox to me like I\'m five.',
+    user: "Explain the grandfather paradox to me like I'm five.",
     assistant:
       "Okay, so imagine you go back in time and accidentally step on your grandpa's favorite toy train. He gets so sad he never meets your grandma. If they never meet, you're never born. But if you were never born... who stepped on the train? Spooky, right?",
   },
@@ -61,7 +66,9 @@ function OpenAIStream(response: any, opts: OpenAIStreamOptions) {
         if (opts.onCompletion) await opts.onCompletion(full);
         controller.close();
       } catch (err) {
-        try { if (opts.onCompletion) await opts.onCompletion(full); } catch {}
+        try {
+          if (opts.onCompletion) await opts.onCompletion(full);
+        } catch {}
         controller.error(err);
       }
     },
@@ -69,7 +76,10 @@ function OpenAIStream(response: any, opts: OpenAIStreamOptions) {
 }
 class StreamingTextResponse extends Response {
   constructor(stream: ReadableStream<Uint8Array>, init?: ResponseInit & { headers?: HeadersInit }) {
-    const headers: HeadersInit = { 'Content-Type': 'text/plain; charset=utf-8', ...(init?.headers || {}) };
+    const headers: HeadersInit = {
+      'Content-Type': 'text/plain; charset=utf-8',
+      ...(init?.headers || {}),
+    };
     super(stream as any, { ...init, headers });
   }
 }
@@ -100,9 +110,12 @@ export async function POST(req: NextRequest) {
       if (ent.status !== 'active') {
         const secondsLeft = await getDailySecondsRemaining(userId);
         if (secondsLeft <= 0) {
-          return new Response('Daily time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+          return new Response('Daily time limit exceeded.', {
+            status: 402,
+            headers: { 'X-Paywall-Required': 'true' },
+          });
         }
-  // no header flag; automatic client watcher handles last-turn experience
+        // no header flag; automatic client watcher handles last-turn experience
       }
     } else {
       // Guests: use conversation seconds_remaining
@@ -114,9 +127,12 @@ export async function POST(req: NextRequest) {
           .single();
         const secondsLeft = Number(conv?.seconds_remaining ?? 0);
         if (secondsLeft <= 0) {
-          return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+          return new Response('Guest time limit exceeded.', {
+            status: 402,
+            headers: { 'X-Paywall-Required': 'true' },
+          });
         }
-  // no header flag; automatic client watcher handles last-turn experience
+        // no header flag; automatic client watcher handles last-turn experience
       }
     }
   } catch (e) {
@@ -131,8 +147,14 @@ export async function POST(req: NextRequest) {
         .select('seconds_remaining')
         .eq('id', conversationId)
         .single();
-      if (convErr || (conv && typeof conv.seconds_remaining === 'number' && conv.seconds_remaining <= 0)) {
-        return new Response('Guest time limit exceeded.', { status: 402, headers: { 'X-Paywall-Required': 'true' } });
+      if (
+        convErr ||
+        (conv && typeof conv.seconds_remaining === 'number' && conv.seconds_remaining <= 0)
+      ) {
+        return new Response('Guest time limit exceeded.', {
+          status: 402,
+          headers: { 'X-Paywall-Required': 'true' },
+        });
       }
     } catch {}
   }
@@ -165,13 +187,20 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: true })
         .limit(20);
       if (messages) {
-        history = messages.map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
+        history = messages.map((m: any) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content as string,
+        }));
       }
       // Save the current user message to DB for this conversation (works for guests too)
-      await sb.from('messages').insert({ conversation_id: conversationId, role: 'user', content: transcript });
+      await sb
+        .from('messages')
+        .insert({ conversation_id: conversationId, role: 'user', content: transcript });
     } catch (error: any) {
       console.error('DB Error:', error);
-      return new Response(`Error fetching history or saving message: ${error.message}`, { status: 500 });
+      return new Response(`Error fetching history or saving message: ${error.message}`, {
+        status: 500,
+      });
     }
   }
 
@@ -207,7 +236,7 @@ export async function POST(req: NextRequest) {
   // memory is enabled only when ent.status === 'active'). We conservatively mark disabled for guests.
   const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: augmentedSystemPrompt + "\n\n" + memoryFlag },
+    { role: 'system', content: augmentedSystemPrompt + '\n\n' + memoryFlag },
     ...FEW_SHOTS.flatMap((shot) => [
       { role: 'user' as const, content: shot.user },
       { role: 'assistant' as const, content: shot.assistant },
@@ -223,11 +252,16 @@ export async function POST(req: NextRequest) {
       max_tokens: 400,
     });
 
-  const stream = OpenAIStream(response as any, {
+    const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
         if (conversationId) {
-          await sb.from('messages').insert({ conversation_id: conversationId, role: 'assistant', content: completion });
-          await sb.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+          await sb
+            .from('messages')
+            .insert({ conversation_id: conversationId, role: 'assistant', content: completion });
+          await sb
+            .from('conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversationId);
         }
         // Fire-and-forget memory extraction with the last turn (authenticated users only)
         try {
@@ -254,7 +288,10 @@ export async function POST(req: NextRequest) {
             await decrementDailyMessages(userId);
           } else if (conversationId) {
             // Guests unchanged until DB migration: decrement by a small fixed time to prevent abuse
-            await sb.rpc('decrement_guest_seconds', { conv_id: conversationId, seconds_to_decrement: 5 });
+            await sb.rpc('decrement_guest_seconds', {
+              conv_id: conversationId,
+              seconds_to_decrement: 5,
+            });
           }
         } catch (decErr) {
           console.warn('Failed to decrement remaining quota:', decErr);

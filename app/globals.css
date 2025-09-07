@@ -7,13 +7,43 @@
   --ink: #ffffff;
 }
 
-html, body { height: 100%; }
-body { background: var(--bg); color: var(--ink); margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji"; }
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Helvetica,
+    Arial,
+    Noto Sans,
+    'Apple Color Emoji',
+    'Segoe UI Emoji';
+}
 
-.container-page { max-width: 1000px; margin: 0 auto; padding: 16px; }
-.subtle { color: #a3a3a3; }
+.container-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.subtle {
+  color: #a3a3a3;
+}
 
-.orb { height: 100%; width: 100%; border-radius: 9999px; background: radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9); box-shadow: 0 0 44px #6d28d9aa; }
+.orb {
+  height: 100%;
+  width: 100%;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 25%, #a78bfa, #6d28d9);
+  box-shadow: 0 0 44px #6d28d9aa;
+}
 
 /* Custom Scrollbar Styling */
 .custom-scrollbar::-webkit-scrollbar {

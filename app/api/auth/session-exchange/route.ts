@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     // Lazy import Stripe
     const { default: Stripe } = await import('stripe');
     const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-    if (!STRIPE_SECRET_KEY) return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
+    if (!STRIPE_SECRET_KEY)
+      return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
     const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
 
     // Retrieve checkout session
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Supabase session for this user via Admin API
-  const { getSupabaseServerAdmin } = await import('@/lib/server/supabaseAdmin');
+    const { getSupabaseServerAdmin } = await import('@/lib/server/supabaseAdmin');
     const sbAdmin = getSupabaseServerAdmin();
 
     // Look up user email
@@ -44,10 +45,13 @@ export async function POST(req: NextRequest) {
     const { data: linkData, error: linkErr } = await sbAdmin.auth.admin.generateLink({
       type: 'magiclink',
       email,
-      options: { redirectTo: (process.env.APP_URL || '') + '/auth/callback' }
+      options: { redirectTo: (process.env.APP_URL || '') + '/auth/callback' },
     });
     if (linkErr || !linkData) {
-      return NextResponse.json({ error: linkErr?.message || 'Failed to generate link' }, { status: 500 });
+      return NextResponse.json(
+        { error: linkErr?.message || 'Failed to generate link' },
+        { status: 500 },
+      );
     }
 
     const email_otp = (linkData as any).email_otp as string | undefined;
@@ -62,16 +66,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Supabase client not configured' }, { status: 500 });
     }
     const sbAnon = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
+      auth: { persistSession: false, autoRefreshToken: false },
     });
 
     const { data: verifyData, error: verifyErr } = await sbAnon.auth.verifyOtp({
       email,
       token: email_otp,
-      type: 'magiclink'
+      type: 'magiclink',
     });
     if (verifyErr || !verifyData?.session) {
-      return NextResponse.json({ error: verifyErr?.message || 'Failed to verify OTP' }, { status: 500 });
+      return NextResponse.json(
+        { error: verifyErr?.message || 'Failed to verify OTP' },
+        { status: 500 },
+      );
     }
 
     const { access_token, refresh_token } = verifyData.session;

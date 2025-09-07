@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import HotMic from '@/components/HotMic';
 import ConversationView from '@/components/ConversationView';
@@ -10,7 +10,7 @@ export default function HomePage() {
   const { error, viewMode } = useConversation();
   return (
     <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
-  <AchievementToast />
+      <AchievementToast />
       {viewMode === 'conversation' ? (
         <>
           <section className="flex-1 container mx-auto max-w-4xl px-6 pt-10 text-center flex flex-col items-center gap-8 justify-center">

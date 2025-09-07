@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
     const sbAdmin = getSupabaseServerAdmin();
 
     if (!userId || !messages || messages.length === 0) {
-      return NextResponse.json({ success: false, error: 'Missing user ID or messages' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'Missing user ID or messages' },
+        { status: 400 },
+      );
     }
 
     // Format the recent messages for the extraction prompt
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
       temperature: 0.2,
     });
 
-  // Parse JSON array from the model output
+    // Parse JSON array from the model output
     let facts: string[] = [];
     try {
       const content = response.choices?.[0]?.message?.content || '[]';
@@ -78,10 +81,13 @@ export async function POST(req: NextRequest) {
     const { error } = await sbAdmin.from('user_memories').insert(memoriesToInsert);
     if (error) throw error;
 
-  return NextResponse.json({ success: true, memories_saved: facts.length });
+    return NextResponse.json({ success: true, memories_saved: facts.length });
   } catch (error: any) {
     console.error('Memory extraction failed:', error);
-    return NextResponse.json({ success: false, error: error?.message || 'Unknown error' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error?.message || 'Unknown error' },
+      { status: 500 },
+    );
   }
 }
 

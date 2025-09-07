@@ -4,7 +4,8 @@ import { useConversation } from '@/lib/state/ConversationProvider';
 import MicButton from './MicButton';
 
 export default function HotMic() {
-  const { turnStatus, isConversationActive, startConversation, stopConversation } = useConversation();
+  const { turnStatus, isConversationActive, startConversation, stopConversation } =
+    useConversation();
 
   const isListening = turnStatus === 'listening';
   const isProcessing = turnStatus === 'processing';
@@ -42,9 +43,7 @@ export default function HotMic() {
       >
         <PulsingOrb isProcessing={isProcessing} isSpeaking={isSpeaking} />
         {orbText && (
-          <span className="absolute text-white font-medium text-lg capitalize">
-            {orbText}
-          </span>
+          <span className="absolute text-white font-medium text-lg capitalize">{orbText}</span>
         )}
       </div>
     );

@@ -22,5 +22,5 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: DEV_ALLOW_NOAUTH
-        value: "false"
+        value: 'false'
     healthCheckPath: /healthz

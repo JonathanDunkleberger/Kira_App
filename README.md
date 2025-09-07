@@ -5,6 +5,7 @@ Your voice‑first AI companion, re‑imagined for the web.
 Live Demo: [kira-ai-2.vercel.app](https://kira-ai-2.vercel.app)
 
 <!-- Demo screenshot -->
+
 ![Kira – voice companion demo](public/KIRA_2_Preview.png)
 
 ---
@@ -31,14 +32,14 @@ The goal was to take the core concept of a voice‑first AI companion and re‑a
 
 Modern web architecture with a dedicated real‑time voice server. Business logic (entitlements, usage, plans) is server‑authoritative; the UI uses centralized state for predictability.
 
-| Category | Technology |
-|---|---|
-| Frontend | Next.js, React, Tailwind CSS, Framer Motion |
-| Voice backend (real‑time) | Node WebSocket server (ws) on Render |
-| App APIs | Next.js API Routes (Vercel or any Node host) |
-| Database | Supabase (Postgres), Supabase Auth, Row‑Level Security |
-| AI | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
-| Payments | Stripe Checkout & Webhooks |
+| Category                  | Technology                                                          |
+| ------------------------- | ------------------------------------------------------------------- |
+| Frontend                  | Next.js, React, Tailwind CSS, Framer Motion                         |
+| Voice backend (real‑time) | Node WebSocket server (ws) on Render                                |
+| App APIs                  | Next.js API Routes (Vercel or any Node host)                        |
+| Database                  | Supabase (Postgres), Supabase Auth, Row‑Level Security              |
+| AI                        | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
+| Payments                  | Stripe Checkout & Webhooks                                          |
 
 ---
 
@@ -69,19 +70,19 @@ Key client/server vars (non‑exhaustive):
 - OPENAI_API_KEY, OPENAI_MODEL
 - SUPABASE_URL, SUPABASE_ANON_KEY (client)
 - SUPABASE_SERVICE_ROLE_KEY (server, on Render), SUPABASE_URL
-- AZURE_* for TTS
+- AZURE\_\* for TTS
 
 ---
 
 ## ⏯️ Getting Started (local)
 
-1) Copy environment template and fill values
+1. Copy environment template and fill values
 
 ```bash
 cp .env.example .env.local
 ```
 
-1) Install dependencies and run both Next.js and the voice WS server
+1. Install dependencies and run both Next.js and the voice WS server
 
 ```bash
 npm install
@@ -111,13 +112,13 @@ npx playwright test
 ## 📦 Build & Deploy
 
 - Frontend (Next.js)
-	- Build: `npm run build`
-	- Host on Vercel or any Node host.
+  - Build: `npm run build`
+  - Host on Vercel or any Node host.
 
 - Voice server (WebSocket on Render)
-	- Build: `npm run build:server`
-	- Start: `npm run start:server` (runs `dist/socket-server.js`)
-	- Render deployment supported via `render.yaml` (binds to `PORT`, exposes `/healthz`).
+  - Build: `npm run build:server`
+  - Start: `npm run start:server` (runs `dist/socket-server.js`)
+  - Render deployment supported via `render.yaml` (binds to `PORT`, exposes `/healthz`).
 
 ## 📝 Notes
 

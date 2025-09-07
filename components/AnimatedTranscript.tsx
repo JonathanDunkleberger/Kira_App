@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { motion } from 'framer-motion';
 
@@ -19,12 +19,13 @@ export function AnimatedMessage({ message, index }: { message: any; index: numbe
           {message.role === 'user' ? 'You' : 'Kira'}
         </span>
         <span className="text-xs text-white/40">
-          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(message.created_at).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
         </span>
       </div>
-      <p className="text-white/90 text-sm leading-relaxed">
-        {message.content}
-      </p>
+      <p className="text-white/90 text-sm leading-relaxed">{message.content}</p>
     </motion.div>
   );
 }

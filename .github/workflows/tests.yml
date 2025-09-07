@@ -1,0 +1,30 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - run: npm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - name: Use Vercel Preview URL if provided
+        if: startsWith(github.ref, 'refs/pull/')
+        run: echo "E2E_BASE_URL=$(jq -r '.deploymentUrl // empty' < vercel.json)" >> $GITHUB_ENV || true
+      - run: npx playwright install --with-deps
+      - run: npm run e2e

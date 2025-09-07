@@ -37,10 +37,12 @@ export async function POST(req: NextRequest) {
     const { ids } = await req.json();
     if (!Array.isArray(ids) || !ids.length) return NextResponse.json({ ok: true });
 
-  const rows = ids.map((id: string) => ({ user_id: userId, achievement_id: id }));
-  // idempotent insert
-  const { error } = await sb.from('user_achievements').upsert(rows, { onConflict: 'user_id,achievement_id', ignoreDuplicates: true });
-  if (error) throw error;
+    const rows = ids.map((id: string) => ({ user_id: userId, achievement_id: id }));
+    // idempotent insert
+    const { error } = await sb
+      .from('user_achievements')
+      .upsert(rows, { onConflict: 'user_id,achievement_id', ignoreDuplicates: true });
+    if (error) throw error;
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

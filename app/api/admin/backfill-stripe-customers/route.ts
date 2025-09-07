@@ -22,7 +22,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'RPC error', detail: error.message }, { status: 500 });
   }
 
-  const results: Array<{ user_id: string; email: string | null; customer_id?: string; status: string }> = [];
+  const results: Array<{
+    user_id: string;
+    email: string | null;
+    customer_id?: string;
+    status: string;
+  }> = [];
   for (const row of rows as Array<{ user_id: string; email: string | null }>) {
     const email = (row.email || '').trim();
     if (!email) {
@@ -34,7 +39,9 @@ export async function POST(req: NextRequest) {
       const customers = await stripe.customers.search({ query: `email:'${safeEmail}'` });
       const cust = customers.data[0];
       if (cust?.id) {
-        await sb.from('entitlements').upsert({ user_id: row.user_id, stripe_customer_id: cust.id }, { onConflict: 'user_id' });
+        await sb
+          .from('entitlements')
+          .upsert({ user_id: row.user_id, stripe_customer_id: cust.id }, { onConflict: 'user_id' });
         results.push({ user_id: row.user_id, email, customer_id: cust.id, status: 'ok' });
       } else {
         results.push({ user_id: row.user_id, email, status: 'not-found' });

@@ -44,7 +44,7 @@ export async function saveMessage(
 
 export async function generateConversationTitle(
   conversationId: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<string> {
   const content = history.map((m) => `${m.role}: ${m.content}`).join('\n');
   const systemPrompt =
@@ -56,10 +56,7 @@ export async function generateConversationTitle(
   ]);
   const cleanedTitle = (title || '').replace(/["\\]/g, '').trim();
   if (cleanedTitle) {
-    await supa
-      .from('conversations')
-      .update({ title: cleanedTitle })
-      .eq('id', conversationId);
+    await supa.from('conversations').update({ title: cleanedTitle }).eq('id', conversationId);
   }
   return cleanedTitle;
 }

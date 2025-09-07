@@ -8,22 +8,31 @@ export async function warmAzureTtsConnection(): Promise<void> {
       method: 'GET',
       headers: {
         'Ocp-Apim-Subscription-Key': KEY,
-        'Accept': 'application/json',
-        'User-Agent': 'kira-mvp'
-  }
-    }).then(r => { try { void r.arrayBuffer(); } catch {} });
+        Accept: 'application/json',
+        'User-Agent': 'kira-mvp',
+      },
+    }).then((r) => {
+      try {
+        void r.arrayBuffer();
+      } catch {}
+    });
   } catch (e) {
     // Non-fatal: warming is best-effort
-    try { console.warn('[TTS] Warm-up failed:', e); } catch {}
+    try {
+      console.warn('[TTS] Warm-up failed:', e);
+    } catch {}
   }
 }
 
-export async function synthesizeSpeech(text: string, format: 'webm' | 'mp3' = 'webm'): Promise<string> {
+export async function synthesizeSpeech(
+  text: string,
+  format: 'webm' | 'mp3' = 'webm',
+): Promise<string> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
-  const VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
-  const RATE = process.env.AZURE_TTS_RATE || "+25%";
-  const PITCH = process.env.AZURE_TTS_PITCH || "+25%";
+  const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
+  const RATE = process.env.AZURE_TTS_RATE || '+25%';
+  const PITCH = process.env.AZURE_TTS_PITCH || '+25%';
 
   if (!KEY || !REGION) {
     throw new Error('Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION');
@@ -37,17 +46,18 @@ export async function synthesizeSpeech(text: string, format: 'webm' | 'mp3' = 'w
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
   // Choose output format based on client preference
-  const outFmt = format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
+  const outFmt =
+    format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
   const r = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Ocp-Apim-Subscription-Key": KEY,
-      "X-Microsoft-OutputFormat": outFmt,
-      "Content-Type": "application/ssml+xml",
-      "User-Agent": "kira-mvp",
-      "Cache-Control": "no-cache",
-      "Pragma": "no-cache",
-      "Accept": "*/*"
+      'Ocp-Apim-Subscription-Key': KEY,
+      'X-Microsoft-OutputFormat': outFmt,
+      'Content-Type': 'application/ssml+xml',
+      'User-Agent': 'kira-mvp',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      Accept: '*/*',
     },
     body: ssml,
   });
@@ -58,19 +68,19 @@ export async function synthesizeSpeech(text: string, format: 'webm' | 'mp3' = 'w
   }
 
   const buf = Buffer.from(await r.arrayBuffer());
-  return buf.toString("base64");
+  return buf.toString('base64');
 }
 
 export async function synthesizeSpeechStream(
   text: string,
   onChunk: (chunk: Uint8Array) => void | Promise<void>,
-  format: 'webm' | 'mp3' = 'webm'
+  format: 'webm' | 'mp3' = 'webm',
 ): Promise<void> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
-  const VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
-  const RATE = process.env.AZURE_TTS_RATE || "+25%";
-  const PITCH = process.env.AZURE_TTS_PITCH || "+25%";
+  const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
+  const RATE = process.env.AZURE_TTS_RATE || '+25%';
+  const PITCH = process.env.AZURE_TTS_PITCH || '+25%';
 
   if (!KEY || !REGION) {
     throw new Error('Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION');
@@ -83,17 +93,18 @@ export async function synthesizeSpeechStream(
   </speak>`.trim();
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
-  const outFmt = format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
+  const outFmt =
+    format === 'mp3' ? 'audio-24khz-48kbitrate-mono-mp3' : 'webm-24khz-16bit-mono-opus';
   const r = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Ocp-Apim-Subscription-Key": KEY,
-      "X-Microsoft-OutputFormat": outFmt,
-      "Content-Type": "application/ssml+xml",
-      "User-Agent": "kira-mvp",
-      "Cache-Control": "no-cache",
-      "Pragma": "no-cache",
-      "Accept": "*/*"
+      'Ocp-Apim-Subscription-Key': KEY,
+      'X-Microsoft-OutputFormat': outFmt,
+      'Content-Type': 'application/ssml+xml',
+      'User-Agent': 'kira-mvp',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      Accept: '*/*',
     },
     body: ssml,
   });
@@ -120,13 +131,12 @@ export async function synthesizeSpeechStream(
       }
     }
   } finally {
-    try { reader.releaseLock(); } catch {}
+    try {
+      reader.releaseLock();
+    } catch {}
   }
 }
 
 function escapeXml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

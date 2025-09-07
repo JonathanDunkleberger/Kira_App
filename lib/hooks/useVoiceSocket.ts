@@ -8,15 +8,23 @@ export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
 // Resolve base WS URL from environment; provide a dev fallback when not set
 const WS_BASE =
-  process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
-  || process.env.NEXT_PUBLIC_WEBSOCKET_URL
-  || (process.env.NODE_ENV !== 'production' ? 'ws://localhost:10000' : undefined);
+  process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD ||
+  process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+  (process.env.NODE_ENV !== 'production' ? 'ws://localhost:10000' : undefined);
 
-export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessage: (msg: any) => void; conversationId?: string | null }) {
+export function useVoiceSocket(
+  onMessageOrOpts:
+    | ((msg: any) => void)
+    | { onMessage: (msg: any) => void; conversationId?: string | null },
+) {
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SocketStatus>('disconnected');
-  const onMessageRef = useRef<(msg: any) => void>(typeof onMessageOrOpts === 'function' ? onMessageOrOpts : onMessageOrOpts.onMessage);
-  const convIdRef = useRef<string | null>(typeof onMessageOrOpts === 'function' ? null : (onMessageOrOpts.conversationId ?? null));
+  const onMessageRef = useRef<(msg: any) => void>(
+    typeof onMessageOrOpts === 'function' ? onMessageOrOpts : onMessageOrOpts.onMessage,
+  );
+  const convIdRef = useRef<string | null>(
+    typeof onMessageOrOpts === 'function' ? null : (onMessageOrOpts.conversationId ?? null),
+  );
   // Timing instrumentation
   const timerStartedRef = useRef(false);
   const firstTextLoggedRef = useRef(false);
@@ -49,7 +57,9 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
     try {
       const u = new URL(WS_BASE);
       // conversationId
-      try { if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current); } catch {}
+      try {
+        if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current);
+      } catch {}
       // token
       try {
         const { data } = await supabase.auth.getSession();
@@ -78,10 +88,13 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
     };
 
     ws.onclose = () => {
-      if (process.env.NODE_ENV !== 'production') console.warn('[WS] Connection closed. Reconnecting in 5s...');
+      if (process.env.NODE_ENV !== 'production')
+        console.warn('[WS] Connection closed. Reconnecting in 5s...');
       socketRef.current = null;
       setStatus('disconnected');
-      setTimeout(() => { void connect(); }, 5000);
+      setTimeout(() => {
+        void connect();
+      }, 5000);
     };
 
     ws.onerror = (err) => {
@@ -99,7 +112,10 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
           }
           // Timing checkpoints
           try {
-            if ((msg.type === 'assistant_text' || msg.type === 'assistant_text_chunk') && !firstTextLoggedRef.current) {
+            if (
+              (msg.type === 'assistant_text' || msg.type === 'assistant_text_chunk') &&
+              !firstTextLoggedRef.current
+            ) {
               console.timeLog('full-response-latency', 'First text chunk received');
               firstTextLoggedRef.current = true;
             }
@@ -112,7 +128,8 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
           } catch {}
           onMessageRef.current(msg);
         } catch (e) {
-          if (process.env.NODE_ENV !== 'production') console.error('Failed to parse server JSON message:', e);
+          if (process.env.NODE_ENV !== 'production')
+            console.error('Failed to parse server JSON message:', e);
         }
       } else {
         // BINARY (ArrayBuffer due to binaryType = 'arraybuffer')
@@ -132,39 +149,54 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
       if (data instanceof ArrayBuffer) {
         // Start turn timing on first audio send
         if (!timerStartedRef.current) {
-          try { console.time('full-response-latency'); } catch {}
+          try {
+            console.time('full-response-latency');
+          } catch {}
           timerStartedRef.current = true;
           firstTextLoggedRef.current = false;
         }
         if (process.env.NODE_ENV !== 'production') {
-          try { console.log('[WS] Sending BINARY. Size:', (data as ArrayBuffer).byteLength, 'bytes'); } catch {}
+          try {
+            console.log('[WS] Sending BINARY. Size:', (data as ArrayBuffer).byteLength, 'bytes');
+          } catch {}
         }
         socketRef.current.send(data);
       } else {
         if (process.env.NODE_ENV !== 'production') {
-          try { console.log('[WS] Sending STRING:', data); } catch {}
+          try {
+            console.log('[WS] Sending STRING:', data);
+          } catch {}
         }
         socketRef.current.send(JSON.stringify(data));
       }
     } else {
-      if (process.env.NODE_ENV !== 'production') console.warn('[WS] Send failed: WebSocket not open.');
+      if (process.env.NODE_ENV !== 'production')
+        console.warn('[WS] Send failed: WebSocket not open.');
     }
   }, []);
 
   const disconnect = useCallback(() => {
-    try { socketRef.current?.close(); } catch {}
+    try {
+      socketRef.current?.close();
+    } catch {}
     socketRef.current = null;
     setStatus('disconnected');
   }, []);
 
   useEffect(() => {
     // reconnect when conversationId changes
-    try { socketRef.current?.close(); } catch {}
+    try {
+      socketRef.current?.close();
+    } catch {}
     socketRef.current = null;
     setStatus('disconnected');
     void connect();
-    return () => { try { socketRef.current?.close(); } catch {}; };
-  }, [connect, (typeof onMessageOrOpts === 'function') ? null : onMessageOrOpts.conversationId]);
+    return () => {
+      try {
+        socketRef.current?.close();
+      } catch {}
+    };
+  }, [connect, typeof onMessageOrOpts === 'function' ? null : onMessageOrOpts.conversationId]);
 
   return { status, send, disconnect } as const;
 }

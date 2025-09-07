@@ -25,7 +25,12 @@ export async function createConversation(userId: string | null) {
 }
 
 // Saves a message and updates the conversation's timestamp
-export async function saveMessage(convoId: string, role: 'user' | 'assistant', content: string, userId: string | null) {
+export async function saveMessage(
+  convoId: string,
+  role: 'user' | 'assistant',
+  content: string,
+  userId: string | null,
+) {
   const { error: msgError } = await supa
     .from('messages')
     .insert({ conversation_id: convoId, role, content, user_id: userId });
@@ -39,11 +44,14 @@ export async function saveMessage(convoId: string, role: 'user' | 'assistant', c
 }
 
 // Generates and saves an intelligent title
-export async function generateAndSaveTitle(convoId: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) {
-  if (history.filter(m => m.role === 'user').length > 2) return null; // Only title early conversations
-  const content = history.map(m => `${m.role}: ${m.content}`).join('\n');
+export async function generateAndSaveTitle(
+  convoId: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+) {
+  if (history.filter((m) => m.role === 'user').length > 2) return null; // Only title early conversations
+  const content = history.map((m) => `${m.role}: ${m.content}`).join('\n');
   const systemPrompt = `Summarize the following conversation into a short, catchy title of 5 words or less. Just return the title itself, nothing else.\n\nCONVERSATION:\n${content}`;
-  
+
   const title = await runChat([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: 'TITLE ONLY' },

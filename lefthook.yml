@@ -1,0 +1,12 @@
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      glob: '*'
+      run: npx prettier --write --ignore-unknown {staged_files}
+    eslint:
+      glob: '*.{ts,tsx,js,jsx}'
+      run: npx eslint {staged_files}
+    types:
+      glob: '*.{ts,tsx}'
+      run: npx tsc -p tsconfig.json --noEmit --pretty false

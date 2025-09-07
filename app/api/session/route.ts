@@ -10,9 +10,7 @@ export async function GET(req: NextRequest) {
   const origin = req.headers.get('origin') || env.APP_URL;
   const allowedHost = new URL(env.APP_URL).host;
   const isAllowed =
-    origin === env.ALLOWED_ORIGIN ||
-    origin.includes(allowedHost) ||
-    origin.endsWith('.vercel.app');
+    origin === env.ALLOWED_ORIGIN || origin.includes(allowedHost) || origin.endsWith('.vercel.app');
   if (!isAllowed) return new NextResponse('Forbidden origin', { status: 403 });
 
   const auth = req.headers.get('authorization') || '';
@@ -31,13 +29,21 @@ export async function GET(req: NextRequest) {
         trialPerDay: FREE_TRIAL_SECONDS,
         proSessionLimit: PRO_SESSION_SECONDS,
       } as const;
-      try { console.log(`[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      try {
+        console.log(
+          `[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
+        );
+      } catch {}
       return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     }
     // Try to read server-side guest conversation remaining seconds
     try {
       const sb = getSupabaseServerAdmin();
-      const { data } = await sb.from('conversations').select('seconds_remaining').eq('id', guestId).maybeSingle();
+      const { data } = await sb
+        .from('conversations')
+        .select('seconds_remaining')
+        .eq('id', guestId)
+        .maybeSingle();
       const secondsRemaining = Number(data?.seconds_remaining ?? FREE_TRIAL_SECONDS);
       const payload = {
         status: 'inactive',
@@ -47,7 +53,11 @@ export async function GET(req: NextRequest) {
         trialPerDay: FREE_TRIAL_SECONDS,
         proSessionLimit: PRO_SESSION_SECONDS,
       } as const;
-      try { console.log(`[Entitlement Check] User: guest-id-${guestId} | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      try {
+        console.log(
+          `[Entitlement Check] User: guest-id-${guestId} | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
+        );
+      } catch {}
       return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     } catch {
       const payload = {
@@ -58,7 +68,11 @@ export async function GET(req: NextRequest) {
         trialPerDay: FREE_TRIAL_SECONDS,
         proSessionLimit: PRO_SESSION_SECONDS,
       } as const;
-      try { console.log(`[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`); } catch {}
+      try {
+        console.log(
+          `[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
+        );
+      } catch {}
       return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     }
   }
@@ -77,12 +91,16 @@ export async function GET(req: NextRequest) {
     token: randomUUID(),
     plan: ent.plan,
     status: ent.status,
-    secondsRemaining,           // daily remaining
+    secondsRemaining, // daily remaining
     dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : FREE_TRIAL_SECONDS,
     trialPerDay: FREE_TRIAL_SECONDS,
     proSessionLimit: PRO_SESSION_SECONDS,
     paywallRequired: secondsRemaining <= 0 && !isPro,
   } as const;
-  try { console.log(`[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`); } catch {}
+  try {
+    console.log(
+      `[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`,
+    );
+  } catch {}
   return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
 }

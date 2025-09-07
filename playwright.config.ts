@@ -30,9 +30,9 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
-    
-  /* Grant microphone permissions for all tests */
-  permissions: ['microphone'],
+
+    /* Grant microphone permissions for all tests */
+    permissions: ['microphone'],
   },
 
   /* Configure projects for major browsers */

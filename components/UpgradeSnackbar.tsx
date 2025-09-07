@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { startCheckout } from "@/lib/client-api";
-import { trackPaywallEvent, trackUpgradeNudged, trackUpgradeNudgeClick } from "@/lib/analytics";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { startCheckout } from '@/lib/client-api';
+import { trackPaywallEvent, trackUpgradeNudged, trackUpgradeNudgeClick } from '@/lib/analytics';
 
 type Props = {
   open: boolean;
@@ -16,7 +16,7 @@ type Props = {
   source?: 'last_turn' | 'proactive_threshold';
 };
 
-const TODAY_KEY = () => `kira_nudge_suppressed_${new Date().toISOString().slice(0,10)}`;
+const TODAY_KEY = () => `kira_nudge_suppressed_${new Date().toISOString().slice(0, 10)}`;
 
 export default function UpgradeSnackbar({
   open,
@@ -26,7 +26,7 @@ export default function UpgradeSnackbar({
   anchorTop = false,
   userType = 'guest',
   plan = 'free',
-  source = 'last_turn'
+  source = 'last_turn',
 }: Props) {
   const prefersReduced = useReducedMotion();
   const [visible, setVisible] = useState(false);
@@ -34,19 +34,23 @@ export default function UpgradeSnackbar({
   const timerRef = useRef<number | null>(null);
 
   const suppressedToday = useMemo(() => {
-    try { return sessionStorage.getItem(TODAY_KEY()) === "1"; } catch { return false; }
+    try {
+      return sessionStorage.getItem(TODAY_KEY()) === '1';
+    } catch {
+      return false;
+    }
   }, [open]);
 
   // show/hide with per-day suppression
   useEffect(() => {
     if (open && !suppressedToday) {
       setVisible(true);
-  trackUpgradeNudged({
-    userType,
-    plan,
+      trackUpgradeNudged({
+        userType,
+        plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
-    source
+        source,
       });
     } else {
       setVisible(false);
@@ -61,22 +65,26 @@ export default function UpgradeSnackbar({
       return;
     }
     timerRef.current = window.setTimeout(() => {
-      dismiss("timeout");
+      dismiss('timeout');
     }, 8000) as unknown as number;
-    return () => { if (timerRef.current) window.clearTimeout(timerRef.current); };
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
   }, [visible, hover]);
 
-  const dismiss = (reason: "timeout" | "click") => {
-    try { sessionStorage.setItem(TODAY_KEY(), "1"); } catch {}
+  const dismiss = (reason: 'timeout' | 'click') => {
+    try {
+      sessionStorage.setItem(TODAY_KEY(), '1');
+    } catch {}
     setVisible(false);
     onClose?.();
-    if (reason === "click") {
-      trackPaywallEvent("upgrade_nudge_dismiss", {
-  userType,
-  plan,
+    if (reason === 'click') {
+      trackPaywallEvent('upgrade_nudge_dismiss', {
+        userType,
+        plan,
         secondsRemaining: secondsRemaining ?? undefined,
         conversationId: conversationId ?? undefined,
-  source
+        source,
       });
     }
   };
@@ -87,7 +95,7 @@ export default function UpgradeSnackbar({
       plan,
       secondsRemaining: secondsRemaining ?? undefined,
       conversationId: conversationId ?? undefined,
-  source
+      source,
     });
     startCheckout();
   };
@@ -96,20 +104,25 @@ export default function UpgradeSnackbar({
     ? { hidden: { opacity: 0 }, show: { opacity: 1 }, exit: { opacity: 0 } }
     : {
         hidden: { opacity: 0, y: anchorTop ? -16 : 16, scale: 0.98 },
-        show:   { opacity: 1, y: 0,            scale: 1, transition: { type: "spring", stiffness: 420, damping: 28 } },
-        exit:   { opacity: 0, y: anchorTop ? -16 : 16, scale: 0.98, transition: { duration: 0.18 } }
+        show: {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          transition: { type: 'spring', stiffness: 420, damping: 28 },
+        },
+        exit: { opacity: 0, y: anchorTop ? -16 : 16, scale: 0.98, transition: { duration: 0.18 } },
       };
 
   const mm = Math.max(0, Math.floor((secondsRemaining ?? 0) / 60));
   const ss = Math.max(0, (secondsRemaining ?? 0) % 60);
-  const countdown = secondsRemaining != null ? `${mm}:${String(ss).padStart(2,"0")}` : null;
+  const countdown = secondsRemaining != null ? `${mm}:${String(ss).padStart(2, '0')}` : null;
 
   return (
     <div
       aria-live="polite"
       aria-atomic="true"
       className="pointer-events-none fixed z-[60] inset-0 flex"
-      style={{ justifyContent: "flex-end", alignItems: anchorTop ? "flex-start" : "flex-end" }}
+      style={{ justifyContent: 'flex-end', alignItems: anchorTop ? 'flex-start' : 'flex-end' }}
     >
       <AnimatePresence>
         {visible && (
@@ -130,8 +143,11 @@ export default function UpgradeSnackbar({
               <div className="flex-1">
                 <div className="text-sm font-semibold">One more thing…</div>
                 <div className="text-sm text-white/70 mt-0.5">
-                  That was your last free reply today. Unlock unlimited Kira for <span className="font-medium">$1.99/mo</span>.
-                  {countdown ? <span className="ml-1 text-white/50">({countdown} left today)</span> : null}
+                  That was your last free reply today. Unlock unlimited Kira for{' '}
+                  <span className="font-medium">$1.99/mo</span>.
+                  {countdown ? (
+                    <span className="ml-1 text-white/50">({countdown} left today)</span>
+                  ) : null}
                 </div>
                 <div className="mt-3 flex gap-2">
                   <button
@@ -142,7 +158,7 @@ export default function UpgradeSnackbar({
                     Upgrade & Continue
                   </button>
                   <button
-                    onClick={() => dismiss("click")}
+                    onClick={() => dismiss('click')}
                     aria-label="Dismiss"
                     className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/5"
                   >

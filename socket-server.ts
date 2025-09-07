@@ -22,7 +22,7 @@ async function streamAssistantReply(
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -57,7 +57,9 @@ async function streamAssistantReply(
           const payload = line.slice(5).trim();
           if (payload === '[DONE]') {
             // End of stream
-            try { reader.releaseLock(); } catch {}
+            try {
+              reader.releaseLock();
+            } catch {}
             return full;
           }
           try {
@@ -68,7 +70,9 @@ async function streamAssistantReply(
               if (ws.readyState === 1) {
                 ws.send(JSON.stringify({ type: 'assistant_text_chunk', text: content }));
               }
-              try { onChunk?.(content); } catch {}
+              try {
+                onChunk?.(content);
+              } catch {}
             }
           } catch {
             // ignore JSON parse errors for heartbeats
@@ -77,21 +81,32 @@ async function streamAssistantReply(
       }
     }
   } finally {
-    try { reader.releaseLock(); } catch {}
+    try {
+      reader.releaseLock();
+    } catch {}
   }
   return full;
 }
 
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const server = http.createServer((req, res) => {
-  if (req.url === '/healthz') return res.writeHead(200).end('ok');
+  if (req.url === '/healthz') {
+    const body = JSON.stringify({ ok: true, clients: wss.clients.size });
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(body);
+    return;
+  }
   res.writeHead(404).end('Not Found');
 });
 const wss = new WebSocketServer({ server });
 
 // Warm Azure TTS connection at startup and every 5 minutes (best-effort)
 void warmAzureTtsConnection();
-setInterval(() => { void warmAzureTtsConnection(); }, 5 * 60 * 1000);
+setInterval(
+  () => {
+    void warmAzureTtsConnection();
+  },
+  5 * 60 * 1000,
+);
 
 wss.on('connection', async (ws, req) => {
   try {
@@ -106,7 +121,12 @@ wss.on('connection', async (ws, req) => {
   const supa = getSupabaseServerAdmin();
   let userId: string | null = null;
   if (token) {
-    try { const { data: { user } } = await supa.auth.getUser(token); userId = user?.id ?? null; } catch {}
+    try {
+      const {
+        data: { user },
+      } = await supa.auth.getUser(token);
+      userId = user?.id ?? null;
+    } catch {}
   }
 
   let chunkBuffers: Buffer[] = [];
@@ -131,9 +151,16 @@ wss.on('connection', async (ws, req) => {
       while (ttsQueue.length > 0) {
         const next = (ttsQueue.shift() || '').trim();
         if (!next) continue;
-        if (!audioStarted) { try { sendJson(ws, { type: 'audio_start' }); } catch {}; audioStarted = true; }
+        if (!audioStarted) {
+          try {
+            sendJson(ws, { type: 'audio_start' });
+          } catch {}
+          audioStarted = true;
+        }
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
+          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk))
+            .then(resolve)
+            .catch(reject);
         });
       }
     } finally {
@@ -157,10 +184,10 @@ wss.on('connection', async (ws, req) => {
     const payload = Buffer.concat(chunkBuffers);
     chunkBuffers = [];
     try {
-  const turnStart = Date.now();
-  console.time(`[srv] transcription`);
-  const transcript = await transcribeWebmToText(new Uint8Array(payload));
-  console.timeEnd(`[srv] transcription`);
+      const turnStart = Date.now();
+      console.time(`[srv] transcription`);
+      const transcript = await transcribeWebmToText(new Uint8Array(payload));
+      console.timeEnd(`[srv] transcription`);
       if (!transcript) return;
 
       sendJson(ws, { type: 'transcript', text: transcript });
@@ -185,7 +212,9 @@ wss.on('connection', async (ws, req) => {
         }
       }).catch(async (e: unknown) => {
         // Fallback to non-streaming on error
-        try { console.warn('[Server] LLM streaming failed, falling back:', e); } catch {}
+        try {
+          console.warn('[Server] LLM streaming failed, falling back:', e);
+        } catch {}
         usedStreaming = false;
         return await runChat(messages as any);
       });
@@ -193,7 +222,9 @@ wss.on('connection', async (ws, req) => {
       if (!assistant) return;
 
       // Ensure a final full-text event for compatibility with existing clients
-      try { sendJson(ws, { type: 'assistant_text', text: assistant }); } catch {}
+      try {
+        sendJson(ws, { type: 'assistant_text', text: assistant });
+      } catch {}
       historyMem.push({ role: 'assistant', content: assistant });
       await saveMessage(conversationId, 'assistant', assistant, userId);
 
@@ -209,7 +240,9 @@ wss.on('connection', async (ws, req) => {
           pendingText = '';
         }
         // Wait for TTS queue to drain
-        if (ttsProcessPromise) { await ttsProcessPromise; }
+        if (ttsProcessPromise) {
+          await ttsProcessPromise;
+        }
         sendJson(ws, { type: 'audio_end' });
         audioStarted = false;
       } else {
@@ -217,7 +250,9 @@ wss.on('connection', async (ws, req) => {
         sendJson(ws, { type: 'audio_start' });
         console.time(`[srv] tts`);
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
+          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk))
+            .then(resolve)
+            .catch(reject);
         });
         console.timeEnd(`[srv] tts`);
         sendJson(ws, { type: 'audio_end' });
@@ -240,7 +275,16 @@ wss.on('connection', async (ws, req) => {
   };
 
   ws.on('message', (data: Buffer) => {
-    try { console.log(`[Server] 📩 Received message chunk. Size: ${data?.byteLength ?? 0} bytes`); } catch {}
+    // Ping/Pong quick health
+    if (data?.toString?.() === 'ping') {
+      try {
+        ws.send('pong');
+      } catch {}
+      return;
+    }
+    try {
+      console.log(`[Server] 📩 Received message chunk. Size: ${data?.byteLength ?? 0} bytes`);
+    } catch {}
     chunkBuffers.push(data);
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = setTimeout(flushNow, Number(process.env.WS_UTTERANCE_SILENCE_MS || 700));
@@ -255,8 +299,11 @@ wss.on('connection', async (ws, req) => {
   });
 });
 
-function sendJson(ws: WebSocket, data: object) { if (ws.readyState === 1) ws.send(JSON.stringify(data)); }
-function sendBinary(ws: WebSocket, data: Uint8Array) { if (ws.readyState === 1) ws.send(data); }
+function sendJson(ws: WebSocket, data: object) {
+  if (ws.readyState === 1) ws.send(JSON.stringify(data));
+}
+function sendBinary(ws: WebSocket, data: Uint8Array) {
+  if (ws.readyState === 1) ws.send(data);
+}
 
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-

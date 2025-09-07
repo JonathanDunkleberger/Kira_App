@@ -16,18 +16,16 @@ export default function HeaderUsageIndicator() {
   if (isPro) {
     return null;
   }
-  
+
   const totalSeconds = dailyLimitSeconds > 0 ? dailyLimitSeconds : 1; // Avoid division by zero
   const percentage = (dailySecondsRemaining / totalSeconds) * 100;
 
   // Change color based on time remaining
-  const progressBarColor = 
-    percentage <= 10 ? 'bg-red-500' : 
-    percentage <= 30 ? 'bg-yellow-500' : 
-    'bg-fuchsia-500';
+  const progressBarColor =
+    percentage <= 10 ? 'bg-red-500' : percentage <= 30 ? 'bg-yellow-500' : 'bg-fuchsia-500';
 
   return (
-    <button 
+    <button
       onClick={() => promptPaywall?.('proactive_click')}
       className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm w-48 text-left hover:bg-white/10 transition-colors"
     >
@@ -37,8 +35,8 @@ export default function HeaderUsageIndicator() {
           <span>{formatTime(dailySecondsRemaining)}</span>
         </div>
         <div className="w-full bg-white/10 rounded-full h-1.5">
-          <div 
-            className={`h-1.5 rounded-full ${progressBarColor} transition-all duration-300`} 
+          <div
+            className={`h-1.5 rounded-full ${progressBarColor} transition-all duration-300`}
             style={{ width: `${percentage}%` }}
           />
         </div>

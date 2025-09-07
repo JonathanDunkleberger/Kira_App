@@ -9,7 +9,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const sb = getSupabaseServerAdmin();
-  const { data: { user } } = await sb.auth.getUser(token);
+  const {
+    data: { user },
+  } = await sb.auth.getUser(token);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { error } = await sb
@@ -28,10 +30,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const sb = getSupabaseServerAdmin();
-  const { data: { user } } = await sb.auth.getUser(token);
+  const {
+    data: { user },
+  } = await sb.auth.getUser(token);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { title } = await req.json().catch(() => ({} as any));
+  const { title } = await req.json().catch(() => ({}) as any);
   if (!title || typeof title !== 'string') {
     return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
   }

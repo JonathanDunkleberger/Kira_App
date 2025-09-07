@@ -10,7 +10,9 @@ export async function GET(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const sb = getSupabaseServerAdmin();
-  const { data: { user } } = await sb.auth.getUser(token);
+  const {
+    data: { user },
+  } = await sb.auth.getUser(token);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data, error } = await sb
@@ -31,7 +33,9 @@ export async function POST(req: NextRequest) {
 
   if (token) {
     try {
-      const { data: { user } } = await sb.auth.getUser(token);
+      const {
+        data: { user },
+      } = await sb.auth.getUser(token);
       userId = user?.id ?? null;
     } catch {}
   }

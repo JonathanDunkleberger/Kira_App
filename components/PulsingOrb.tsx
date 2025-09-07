@@ -1,4 +1,10 @@
-export default function PulsingOrb({ isProcessing = false, isSpeaking = false }: { isProcessing?: boolean; isSpeaking?: boolean }) {
+export default function PulsingOrb({
+  isProcessing = false,
+  isSpeaking = false,
+}: {
+  isProcessing?: boolean;
+  isSpeaking?: boolean;
+}) {
   const glow = isProcessing
     ? 'from-amber-300 to-amber-600'
     : isSpeaking
@@ -7,7 +13,9 @@ export default function PulsingOrb({ isProcessing = false, isSpeaking = false }:
 
   return (
     <div className="relative h-full w-full">
-      <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${glow} opacity-50 blur-md animate-pulse`} />
+      <div
+        className={`absolute inset-0 rounded-full bg-gradient-to-br ${glow} opacity-50 blur-md animate-pulse`}
+      />
       <div className={`absolute inset-2 rounded-full bg-gradient-to-br ${glow}`} />
     </div>
   );

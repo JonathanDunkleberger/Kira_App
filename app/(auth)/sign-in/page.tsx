@@ -12,7 +12,9 @@ export default function SignInPage() {
         </div>
         <p className="text-sm text-white/50 mt-4 text-center">
           New here?{' '}
-          <Link href="/sign-up" className="text-white hover:underline">Create an account</Link>
+          <Link href="/sign-up" className="text-white hover:underline">
+            Create an account
+          </Link>
         </p>
       </div>
     </main>

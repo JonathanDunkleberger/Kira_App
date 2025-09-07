@@ -1,6 +1,6 @@
-"use client";
-import { useEntitlement } from "@/lib/hooks/useEntitlement";
-import { useConversation } from "@/lib/state/ConversationProvider";
+'use client';
+import { useEntitlement } from '@/lib/hooks/useEntitlement';
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 const formatTime = (totalSeconds: number) => {
   const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
@@ -16,7 +16,9 @@ export default function HeaderUsageCountdown() {
 
   return (
     <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-      <span className={`h-2 w-2 rounded-full ${secondsRemaining > 0 ? 'bg-amber-400' : 'bg-red-500'}`} />
+      <span
+        className={`h-2 w-2 rounded-full ${secondsRemaining > 0 ? 'bg-amber-400' : 'bg-red-500'}`}
+      />
       <span className="font-medium text-white/90">Free Trial</span>
       <span className="text-white/60">{formatTime(secondsRemaining)}</span>
     </div>

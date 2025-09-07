@@ -2,16 +2,13 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "es2022"
-    ],
+    "lib": ["dom", "dom.iterable", "es2022"],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
-  "noEmit": true,
-  "outDir": "./dist",
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "outDir": "./dist",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -26,20 +23,17 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "types": ["vitest/globals"]
   },
   "include": [
     "next-env.d.ts",
-  "**/*.ts",
-  "**/*.tsx",
-  "socket-server.ts",
-  "lib/**/*.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "socket-server.ts",
+    "lib/**/*.ts",
     "scripts/**/*.js",
     ".next/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    ".next",
-    "dist"
-  ]
+  "exclude": ["node_modules", ".next", "dist", "build", "artifacts"]
 }

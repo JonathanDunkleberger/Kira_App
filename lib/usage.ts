@@ -9,7 +9,11 @@ export async function ensureEntitlements(userId: string, perDay: number = FREE_T
   const sb = getSupabaseServerAdmin();
 
   // Create row if missing
-  const { data } = await sb.from('entitlements').select('user_id').eq('user_id', userId).maybeSingle();
+  const { data } = await sb
+    .from('entitlements')
+    .select('user_id')
+    .eq('user_id', userId)
+    .maybeSingle();
   if (!data) {
     await sb.from('entitlements').insert({
       user_id: userId,
@@ -17,7 +21,7 @@ export async function ensureEntitlements(userId: string, perDay: number = FREE_T
       status: 'inactive',
       trial_seconds_per_day: perDay,
       trial_last_reset: new Date().toISOString().slice(0, 10), // YYYY-MM-DD UTC date
-      trial_seconds_remaining: perDay
+      trial_seconds_remaining: perDay,
     });
     return;
   }
@@ -33,11 +37,14 @@ export async function ensureEntitlements(userId: string, perDay: number = FREE_T
   // Always prefer the server-configured value (env) to avoid stale DB overrides
   const perDayValue = perDay;
   if (!entRow?.trial_last_reset || entRow.trial_last_reset !== today) {
-    await sb.from('entitlements').update({
-      trial_last_reset: today,
-      trial_seconds_per_day: perDayValue,
-      trial_seconds_remaining: perDayValue
-    }).eq('user_id', userId);
+    await sb
+      .from('entitlements')
+      .update({
+        trial_last_reset: today,
+        trial_seconds_per_day: perDayValue,
+        trial_seconds_remaining: perDayValue,
+      })
+      .eq('user_id', userId);
   }
 }
 
@@ -51,8 +58,8 @@ export async function getEntitlement(userId: string) {
 
   // Fallbacks keep API stable
   return {
-    status: (data?.status ?? 'inactive') as 'inactive'|'active'|'past_due'|'canceled',
-    plan: (data?.plan ?? 'free') as 'free'|'supporter',
+    status: (data?.status ?? 'inactive') as 'inactive' | 'active' | 'past_due' | 'canceled',
+    plan: (data?.plan ?? 'free') as 'free' | 'supporter',
     trial_seconds_remaining: data?.trial_seconds_remaining ?? 0,
     trial_last_reset: data?.trial_last_reset ?? new Date().toISOString().slice(0, 10),
     trial_seconds_per_day: data?.trial_seconds_per_day ?? FREE_TRIAL_SECONDS,
@@ -75,7 +82,10 @@ export async function getDailyMessagesRemaining(userId: string): Promise<number>
  * Decrement daily seconds based on calculated duration.
  * Returns the updated remaining seconds (undefined for Pro users).
  */
-export async function decrementDailySeconds(userId: string, secondsUsed: number): Promise<number | undefined> {
+export async function decrementDailySeconds(
+  userId: string,
+  secondsUsed: number,
+): Promise<number | undefined> {
   const sb = getSupabaseServerAdmin();
   await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
   const ent = await getEntitlement(userId);
@@ -83,7 +93,10 @@ export async function decrementDailySeconds(userId: string, secondsUsed: number)
 
   const currentRemaining = ent.trial_seconds_remaining ?? 0;
   const newRemaining = Math.max(0, currentRemaining - secondsUsed);
-  await sb.from('entitlements').update({ trial_seconds_remaining: newRemaining }).eq('user_id', userId);
+  await sb
+    .from('entitlements')
+    .update({ trial_seconds_remaining: newRemaining })
+    .eq('user_id', userId);
   return newRemaining;
 }
 
@@ -94,17 +107,20 @@ export async function decrementDailyMessages(userId: string): Promise<number | u
 }
 
 /** Keep your existing Pro-grant semantics. */
-export async function setPro(userId: string, opts?: {
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  status?: 'active'|'past_due'|'canceled';
-}) {
+export async function setPro(
+  userId: string,
+  opts?: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    status?: 'active' | 'past_due' | 'canceled';
+  },
+) {
   const sb = getSupabaseServerAdmin();
   await sb.from('entitlements').upsert({
     user_id: userId,
     plan: 'supporter',
     status: opts?.status ?? 'active',
     stripe_customer_id: opts?.stripeCustomerId,
-    stripe_subscription_id: opts?.stripeSubscriptionId
+    stripe_subscription_id: opts?.stripeSubscriptionId,
   });
 }

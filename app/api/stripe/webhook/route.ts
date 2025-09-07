@@ -24,7 +24,11 @@ export async function POST(req: NextRequest) {
 
   const sb = getSupabaseServerAdmin();
 
-  async function activatePro(userId: string, customerId?: string | null, subscriptionId?: string | null) {
+  async function activatePro(
+    userId: string,
+    customerId?: string | null,
+    subscriptionId?: string | null,
+  ) {
     await sb.from('entitlements').upsert({
       user_id: userId,
       plan: 'supporter',
@@ -35,7 +39,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  async function updateStatusByCustomer(customerId: string, status: string, subscriptionId?: string) {
+  async function updateStatusByCustomer(
+    customerId: string,
+    status: string,
+    subscriptionId?: string,
+  ) {
     const { data } = await sb
       .from('entitlements')
       .select('user_id')
@@ -53,7 +61,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  async function updateStatusBySubscription(subscriptionId: string, status: string, customerId?: string) {
+  async function updateStatusBySubscription(
+    subscriptionId: string,
+    status: string,
+    customerId?: string,
+  ) {
     const { data } = await sb
       .from('entitlements')
       .select('user_id')
@@ -107,7 +119,8 @@ export async function POST(req: NextRequest) {
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const sub = event.data.object as Stripe.Subscription;
-      const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'canceled';
+      const status =
+        sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : 'canceled';
       await updateStatusBySubscription(sub.id, status, sub.customer as string);
       break;
     }

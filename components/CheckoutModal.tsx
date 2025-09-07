@@ -1,16 +1,16 @@
-"use client";
-import { useState } from "react";
-import { supabase } from "@/lib/client/supabaseClient";
-import { envClient } from "@/lib/env.client";
-import { loadStripe } from "@stripe/stripe-js";
+'use client';
+import { useState } from 'react';
+import { supabase } from '@/lib/client/supabaseClient';
+import { envClient } from '@/lib/env.client';
+import { loadStripe } from '@stripe/stripe-js';
 // Note: We include CardElement for UX parity, but payment is completed on Stripe Checkout after redirect.
-import { CardElement, Elements } from "@stripe/react-stripe-js";
+import { CardElement, Elements } from '@stripe/react-stripe-js';
 
-const stripePromise = loadStripe(envClient.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
+const stripePromise = loadStripe(envClient.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 export default function CheckoutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,12 +24,12 @@ export default function CheckoutModal({ open, onClose }: { open: boolean; onClos
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
       const userId = data.user?.id;
-      if (!userId) throw new Error("Sign up failed");
+      if (!userId) throw new Error('Sign up failed');
 
       // 2) Create Checkout Session linked to this user via client_reference_id
-      const r = await fetch("/api/stripe/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const r = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
       if (!r.ok) {
@@ -41,7 +41,7 @@ export default function CheckoutModal({ open, onClose }: { open: boolean; onClos
         window.location.href = j.url as string;
         return;
       }
-      throw new Error("Invalid checkout response");
+      throw new Error('Invalid checkout response');
     } catch (e: any) {
       setError(e?.message || String(e));
       setSubmitting(false);
@@ -56,8 +56,19 @@ export default function CheckoutModal({ open, onClose }: { open: boolean; onClos
           className="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors"
           aria-label="Close"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
         <h2 className="text-2xl font-semibold mb-1">Subscribe</h2>
@@ -94,7 +105,7 @@ export default function CheckoutModal({ open, onClose }: { open: boolean; onClos
           disabled={submitting || !email || !password}
           className="mt-5 w-full rounded-lg bg-purple-600 py-3 font-semibold text-white hover:bg-purple-700 transition-colors disabled:opacity-60"
         >
-          {submitting ? "Processing…" : "Pay & Create Account"}
+          {submitting ? 'Processing…' : 'Pay & Create Account'}
         </button>
       </div>
     </div>

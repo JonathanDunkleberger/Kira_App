@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useConversation } from '@/lib/state/ConversationProvider';
@@ -28,7 +28,9 @@ export default function AchievementToast() {
             <div>
               <div className="font-medium leading-tight">{newlyUnlockedToast.name}</div>
               {newlyUnlockedToast.description ? (
-                <div className="text-white/70 text-xs leading-tight">{newlyUnlockedToast.description}</div>
+                <div className="text-white/70 text-xs leading-tight">
+                  {newlyUnlockedToast.description}
+                </div>
               ) : null}
             </div>
           </motion.div>

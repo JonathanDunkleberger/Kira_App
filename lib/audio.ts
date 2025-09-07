@@ -9,7 +9,10 @@ export async function playMp3Base64(b64: string, onEnd?: () => void) {
   const blob = new Blob([bytes], { type: 'audio/mpeg' });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
-  audio.onended = () => { URL.revokeObjectURL(url); onEnd?.(); };
+  audio.onended = () => {
+    URL.revokeObjectURL(url);
+    onEnd?.();
+  };
   await audio.play();
   return audio;
 }
@@ -28,7 +31,7 @@ export async function playEarcon() {
   const now = ctx.currentTime;
   osc.start();
   gain.gain.exponentialRampToValueAtTime(0.05, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.20);
+  gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.2);
   osc.stop(now + 0.22);
 }
 
@@ -36,7 +39,7 @@ export async function playEarcon() {
 export async function playAndAnalyzeAudio(
   b64: string,
   onVolumeChange: (volume: number) => void,
-  onEnd?: () => void
+  onEnd?: () => void,
 ) {
   const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!AC) {
@@ -44,7 +47,9 @@ export async function playAndAnalyzeAudio(
     try {
       const a = await playMp3Base64(b64, onEnd);
       // No analysis; emit zero once
-      try { onVolumeChange(0); } catch {}
+      try {
+        onVolumeChange(0);
+      } catch {}
       return a as any;
     } catch (e) {
       throw e;
@@ -89,10 +94,18 @@ export async function playAndAnalyzeAudio(
   };
 
   source.onended = () => {
-    try { cancelAnimationFrame(rafId); } catch {}
-    try { onVolumeChange(0); } catch {}
-    try { onEnd?.(); } catch {}
-    try { audioContext.close(); } catch {}
+    try {
+      cancelAnimationFrame(rafId);
+    } catch {}
+    try {
+      onVolumeChange(0);
+    } catch {}
+    try {
+      onEnd?.();
+    } catch {}
+    try {
+      audioContext.close();
+    } catch {}
   };
 
   source.start(0);
@@ -103,7 +116,10 @@ export async function playAndAnalyzeAudio(
 }
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
-export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
+export function playAudioData(audioData: ArrayBuffer): {
+  audio: HTMLAudioElement;
+  done: Promise<void>;
+} {
   const audio = document.getElementById('tts-player') as HTMLAudioElement | null;
   if (!audio) throw new Error('Persistent audio element #tts-player not found');
 
@@ -113,11 +129,15 @@ export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement
 
   const done = new Promise<void>((resolve, reject) => {
     audio.onended = () => {
-      try { URL.revokeObjectURL(url); } catch {}
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
       resolve();
     };
     audio.onerror = (err) => {
-      try { URL.revokeObjectURL(url); } catch {}
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
       console.error('Error playing audio:', err);
       reject(err as any);
     };
@@ -143,12 +163,12 @@ export class AudioPlayer {
     const el = document.getElementById('tts-player') as HTMLAudioElement | null;
     if (!el) throw new Error('Persistent audio element #tts-player not found');
     this.audio = el;
-  // Initialize chunk buffer
-  this.desktopChunks = [];
+    // Initialize chunk buffer
+    this.desktopChunks = [];
   }
 
   appendChunk(chunk: ArrayBuffer) {
-  this.desktopChunks.push(chunk);
+    this.desktopChunks.push(chunk);
   }
 
   async play() {
@@ -156,13 +176,17 @@ export class AudioPlayer {
       await this.audio.play();
     } catch (e) {
       // Best-effort, some browsers require user gesture
-      try { (this.audio as any).play?.(); } catch {}
+      try {
+        (this.audio as any).play?.();
+      } catch {}
     }
   }
 
   onEnded(callback: () => void) {
     this.audio.onended = () => {
-      try { callback(); } catch {}
+      try {
+        callback();
+      } catch {}
       // Cleanup object URL used for blob playback
       try {
         const src = this.audio.src;
@@ -170,8 +194,10 @@ export class AudioPlayer {
           URL.revokeObjectURL(src);
         }
       } catch {}
-  // Ensure player state is reset to prevent stutter on next playback
-  try { this.reset(); } catch {}
+      // Ensure player state is reset to prevent stutter on next playback
+      try {
+        this.reset();
+      } catch {}
     };
   }
 
@@ -195,10 +221,14 @@ export class AudioPlayer {
     try {
       const src = this.audio.src;
       if (src && typeof src === 'string' && src.startsWith('blob:')) {
-        try { URL.revokeObjectURL(src); } catch {}
+        try {
+          URL.revokeObjectURL(src);
+        } catch {}
       }
       // Stop/pause just in case, then clear source
-      try { (this.audio as any).pause?.(); } catch {}
+      try {
+        (this.audio as any).pause?.();
+      } catch {}
       this.audio.src = '';
     } catch {}
     // Clear any accumulated chunks
@@ -209,7 +239,7 @@ export class AudioPlayer {
 // Allow caller to set the content type used for non-MSE blob playback
 // Useful when the server negotiates MP3/MP4 for iOS
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-(AudioPlayer as any).prototype.setContentType = function(mime: string) {
+(AudioPlayer as any).prototype.setContentType = function (mime: string) {
   if (mime && typeof mime === 'string') {
     (this as any).desktopContentType = mime;
   }
@@ -235,6 +265,9 @@ function mergeArrayBuffers(parts: ArrayBuffer[]): ArrayBuffer {
   const total = parts.reduce((n, b) => n + b.byteLength, 0);
   const out = new Uint8Array(total);
   let offset = 0;
-  for (const p of parts) { out.set(new Uint8Array(p), offset); offset += p.byteLength; }
+  for (const p of parts) {
+    out.set(new Uint8Array(p), offset);
+    offset += p.byteLength;
+  }
   return out.buffer;
 }

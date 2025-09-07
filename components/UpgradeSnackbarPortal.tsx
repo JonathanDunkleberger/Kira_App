@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useConversation } from "@/lib/state/ConversationProvider";
-import UpgradeSnackbar from "@/components/UpgradeSnackbar";
-import { mapPlan } from "@/lib/analytics";
+import { useConversation } from '@/lib/state/ConversationProvider';
+import UpgradeSnackbar from '@/components/UpgradeSnackbar';
+import { mapPlan } from '@/lib/analytics';
 
 export default function UpgradeSnackbarPortal() {
   const {
-  showUpgradeNudge,
-  setShowUpgradeNudge,
-  upgradeNudgeSource,
+    showUpgradeNudge,
+    setShowUpgradeNudge,
+    upgradeNudgeSource,
     dailySecondsRemaining,
     currentConversationId,
     session,
@@ -19,15 +19,17 @@ export default function UpgradeSnackbarPortal() {
     upgradeNudgeSource === 'time_exhausted'
       ? 'last_turn'
       : upgradeNudgeSource === 'proactive_click'
-      ? 'proactive_threshold'
-      : undefined;
+        ? 'proactive_threshold'
+        : undefined;
 
   return (
     <UpgradeSnackbar
       open={!!showUpgradeNudge}
       onClose={() => {
         setShowUpgradeNudge?.(false);
-        try { window.dispatchEvent(new Event('upgrade_nudge:dismissed')); } catch {}
+        try {
+          window.dispatchEvent(new Event('upgrade_nudge:dismissed'));
+        } catch {}
       }}
       secondsRemaining={dailySecondsRemaining}
       conversationId={currentConversationId}

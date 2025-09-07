@@ -1,1 +1,3 @@
-export default function Removed() { return null; }
+export default function Removed() {
+  return null;
+}

@@ -1,4 +1,8 @@
-import { spawn, type ChildProcessByStdio, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import {
+  spawn,
+  type ChildProcessByStdio,
+  type ChildProcessWithoutNullStreams,
+} from 'node:child_process';
 import ffmpegPath from 'ffmpeg-static';
 
 async function transcodeWebmToWav16k(bytes: Uint8Array): Promise<Uint8Array> {
@@ -8,23 +12,32 @@ async function transcodeWebmToWav16k(bytes: Uint8Array): Promise<Uint8Array> {
   }
   return await new Promise<Uint8Array>((resolve, reject) => {
     try {
-      const ff = spawn(ffmpegPath as string, [
-        '-hide_banner',
-        '-loglevel', 'error',
-        '-i', 'pipe:0',
-        // Output: 16kHz mono PCM WAV
-        '-ar', '16000',
-        '-ac', '1',
-        '-f', 'wav',
-        'pipe:1',
-      ], { stdio: ['pipe', 'pipe', 'pipe'] }) as unknown as ChildProcessWithoutNullStreams;
+      const ff = spawn(
+        ffmpegPath as string,
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-i',
+          'pipe:0',
+          // Output: 16kHz mono PCM WAV
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-f',
+          'wav',
+          'pipe:1',
+        ],
+        { stdio: ['pipe', 'pipe', 'pipe'] },
+      ) as unknown as ChildProcessWithoutNullStreams;
 
       const chunks: Buffer[] = [];
-  ff.stdout?.on('data', (d: Buffer) => chunks.push(d));
+      ff.stdout?.on('data', (d: Buffer) => chunks.push(d));
       const errChunks: Buffer[] = [];
-  ff.stderr?.on('data', (d: Buffer) => errChunks.push(d));
-  ff.on('error', (err: unknown) => reject(err as any));
-  ff.on('close', (code: number) => {
+      ff.stderr?.on('data', (d: Buffer) => errChunks.push(d));
+      ff.on('error', (err: unknown) => reject(err as any));
+      ff.on('close', (code: number) => {
         if (code !== 0) {
           const msg = Buffer.concat(errChunks).toString('utf8');
           return reject(new Error(`ffmpeg exited with code ${code}: ${msg}`));
@@ -32,8 +45,8 @@ async function transcodeWebmToWav16k(bytes: Uint8Array): Promise<Uint8Array> {
         resolve(new Uint8Array(Buffer.concat(chunks)));
       });
 
-  ff.stdin?.write(bytes);
-  ff.stdin?.end();
+      ff.stdin?.write(bytes);
+      ff.stdin?.end();
     } catch (e) {
       reject(e);
     }
@@ -50,7 +63,9 @@ export async function transcribeWebmToText(bytes: Uint8Array): Promise<string> {
     wavBytes = await transcodeWebmToWav16k(bytes);
   } catch (err) {
     // Fallback: submit original WebM if transcoding fails
-    try { console.warn('[STT] Transcode failed, falling back to WebM:', err); } catch {}
+    try {
+      console.warn('[STT] Transcode failed, falling back to WebM:', err);
+    } catch {}
   }
 
   const form = new FormData();

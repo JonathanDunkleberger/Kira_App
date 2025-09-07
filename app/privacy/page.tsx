@@ -8,9 +8,17 @@ export default function PrivacyPage() {
         <h2>1. Data We Collect</h2>
         <p>To provide our service, we collect the following information:</p>
         <ul>
-          <li><b>Account Information:</b> Your email address when you register.</li>
-          <li><b>Conversation Data:</b> If you are a registered user, we store the text transcripts of your conversations to provide you with a chat history. We do not store your audio files.</li>
-          <li><b>Payment Information:</b> We use Stripe to process payments. We do not store your credit card details on our servers.</li>
+          <li>
+            <b>Account Information:</b> Your email address when you register.
+          </li>
+          <li>
+            <b>Conversation Data:</b> If you are a registered user, we store the text transcripts of
+            your conversations to provide you with a chat history. We do not store your audio files.
+          </li>
+          <li>
+            <b>Payment Information:</b> We use Stripe to process payments. We do not store your
+            credit card details on our servers.
+          </li>
         </ul>
 
         <h2>2. How We Use Your Data</h2>
@@ -22,18 +30,34 @@ export default function PrivacyPage() {
         </ul>
 
         <h2>3. Third-Party Sharing</h2>
-        <p>Kira AI relies on third-party services to function. We share data with the following providers solely for the purpose of operating the application:</p>
+        <p>
+          Kira AI relies on third-party services to function. We share data with the following
+          providers solely for the purpose of operating the application:
+        </p>
         <ul>
-          <li><b>Supabase:</b> For database hosting and user authentication.</li>
-          <li><b>Stripe:</b> For secure payment processing.</li>
-          <li><b>OpenAI, Google, Microsoft Azure:</b> For Speech-to-Text (STT), AI language model (LLM) responses, and Text-to-Speech (TTS) services.</li>
+          <li>
+            <b>Supabase:</b> For database hosting and user authentication.
+          </li>
+          <li>
+            <b>Stripe:</b> For secure payment processing.
+          </li>
+          <li>
+            <b>OpenAI, Google, Microsoft Azure:</b> For Speech-to-Text (STT), AI language model
+            (LLM) responses, and Text-to-Speech (TTS) services.
+          </li>
         </ul>
         <p>We do not sell your personal data to any third parties.</p>
 
         <h2>4. Data Deletion</h2>
-        <p>You can delete your account and all associated conversation data at any time from your account page. This action is irreversible.</p>
-  <h2>5. Contact Us</h2>
-  <p>If you have any questions about this privacy policy, please contact us at <a href="mailto:info@elsaresearch.co">info@elsaresearch.co</a>.</p>
+        <p>
+          You can delete your account and all associated conversation data at any time from your
+          account page. This action is irreversible.
+        </p>
+        <h2>5. Contact Us</h2>
+        <p>
+          If you have any questions about this privacy policy, please contact us at{' '}
+          <a href="mailto:info@elsaresearch.co">info@elsaresearch.co</a>.
+        </p>
       </div>
     </main>
   );

@@ -17,9 +17,12 @@ export function checkAchievements(ctx: CheckContext): string[] {
 
   // Examples: tweak IDs to match your DB seed
   if (messagesCount >= 1 && !unlockedAchievements.includes('ICEBREAKER')) newly.push('ICEBREAKER');
-  if (messagesCount >= 100 && !unlockedAchievements.includes('DEEP_THINKER')) newly.push('DEEP_THINKER');
-  if (conversationCount >= 5 && !unlockedAchievements.includes('CHATTERBOX')) newly.push('CHATTERBOX');
-  if (memoryCount >= 1 && !unlockedAchievements.includes('FIRST_MEMORY')) newly.push('FIRST_MEMORY');
+  if (messagesCount >= 100 && !unlockedAchievements.includes('DEEP_THINKER'))
+    newly.push('DEEP_THINKER');
+  if (conversationCount >= 5 && !unlockedAchievements.includes('CHATTERBOX'))
+    newly.push('CHATTERBOX');
+  if (memoryCount >= 1 && !unlockedAchievements.includes('FIRST_MEMORY'))
+    newly.push('FIRST_MEMORY');
 
   return newly;
 }

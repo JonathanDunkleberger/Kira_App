@@ -1,6 +1,6 @@
 // In lib/hooks/useConversationManager.ts
 
-"use client";
+'use client';
 import { useCallback, useState, useEffect } from 'react';
 import { Session } from '@supabase/supabase-js';
 import {
@@ -10,8 +10,8 @@ import {
 } from '@/lib/client-api';
 
 // Keep existing type definitions
-type Message = { id: string; role: 'user' | 'assistant'; content: string; };
-type Convo = { id: string; title: string | null; updated_at: string; };
+type Message = { id: string; role: 'user' | 'assistant'; content: string };
+type Convo = { id: string; title: string | null; updated_at: string };
 
 export function useConversationManager(session: Session | null) {
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function useConversationManager(session: Session | null) {
       const convos = await apiListConversations();
       setAllConversations(convos);
     } catch (err) {
-      console.error("Failed to fetch conversations:", err);
+      console.error('Failed to fetch conversations:', err);
     }
   }, [session]);
 
@@ -47,14 +47,14 @@ export function useConversationManager(session: Session | null) {
       console.error('Failed to load messages', e);
     }
   }, []);
-  
+
   // --- THIS IS THE CRITICAL FIX ---
   // This function now creates a new conversation and simply activates it
   // on the frontend without trying to fetch its (non-existent) messages.
   const newConversation = useCallback(async () => {
     try {
       const newConvo = await apiCreateConversation();
-      setAllConversations(prev => [newConvo as any, ...prev]);
+      setAllConversations((prev) => [newConvo as any, ...prev]);
       setConversationId(newConvo.id); // Set the new ID
       setMessages([]); // Set messages to an empty array
       return newConvo.id; // Return the new ID

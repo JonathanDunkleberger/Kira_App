@@ -28,12 +28,16 @@ export function trackPaywallEvent(event: string, properties: PaywallEventPropert
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const w: any = window as any;
   if (typeof w.plausible === 'function') {
-    try { w.plausible(event, { props: properties }); } catch {}
+    try {
+      w.plausible(event, { props: properties });
+    } catch {}
   }
 
   // Google Analytics 4
   if (typeof w.gtag === 'function') {
-    try { w.gtag('event', event, properties); } catch {}
+    try {
+      w.gtag('event', event, properties);
+    } catch {}
   }
 
   // Backend persistence
@@ -52,7 +56,8 @@ export function trackPaywallEvent(event: string, properties: PaywallEventPropert
 
 // Helpers
 // Central mapping from internal plan names to analytics enum
-export const mapPlan = (plan: 'free' | 'supporter'): 'free' | 'pro' => (plan === 'supporter' ? 'pro' : 'free');
+export const mapPlan = (plan: 'free' | 'supporter'): 'free' | 'pro' =>
+  plan === 'supporter' ? 'pro' : 'free';
 
 export const trackPaywallTriggered = (properties: PaywallEventProperties) =>
   trackPaywallEvent('paywall_triggered', properties);

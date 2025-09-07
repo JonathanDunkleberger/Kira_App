@@ -22,7 +22,6 @@ export async function GET() {
     const displayPrice = `$${amount.toFixed(2)}/${interval === 'month' ? 'mo' : interval}`;
 
     return NextResponse.json({ displayPrice });
-
   } catch (error: any) {
     console.error('Stripe price fetch error:', error);
     return NextResponse.json({ error: 'Could not fetch price information.' }, { status: 500 });

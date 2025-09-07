@@ -28,21 +28,33 @@ export default function Banner() {
               refresh_token: j.refresh_token,
             });
             try {
-              const guestConvId = localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id');
+              const guestConvId =
+                localStorage.getItem('kiraGuestId') ||
+                localStorage.getItem('guestConversationId') ||
+                localStorage.getItem('kira_guest_id');
               if (guestConvId) {
-                const { data: { session } } = await supabase.auth.getSession();
+                const {
+                  data: { session },
+                } = await supabase.auth.getSession();
                 if (session) {
                   await fetch('/api/auth/claim-conversation', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-                    body: JSON.stringify({ guestConvId })
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ guestConvId }),
                   });
                 }
               }
             } catch {}
             window.dispatchEvent(new Event('entitlement:updated'));
             trackUpgradeSuccess({ userType: 'authenticated', plan: 'pro' });
-            setTimeout(() => { try { startConversation(); } catch {} }, 400);
+            setTimeout(() => {
+              try {
+                startConversation();
+              } catch {}
+            }, 400);
           }
         } catch {}
       })();
@@ -62,7 +74,9 @@ export default function Banner() {
     <div className="sticky top-0 z-40 w-full bg-emerald-600/20 backdrop-blur border-b border-emerald-700/30 text-emerald-200">
       <div className="mx-auto max-w-5xl px-4 py-2 flex items-center justify-between text-sm">
         <span>{msg}</span>
-        <button onClick={() => setMsg(null)} className="text-emerald-200/80 hover:text-emerald-100">Dismiss</button>
+        <button onClick={() => setMsg(null)} className="text-emerald-200/80 hover:text-emerald-100">
+          Dismiss
+        </button>
       </div>
     </div>
   );

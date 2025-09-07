@@ -1,5 +1,5 @@
-"use client";
-import { useConversation } from "@/lib/state/ConversationProvider";
+'use client';
+import { useConversation } from '@/lib/state/ConversationProvider';
 
 export default function HeaderUsageChip() {
   const { isPro } = useConversation();

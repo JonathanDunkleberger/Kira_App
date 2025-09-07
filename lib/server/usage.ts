@@ -54,7 +54,7 @@ export async function deductUsage(conversationId: string, secondsUsed: number) {
     // We will create this procedure in the next step.
     const { error } = await supa.rpc('deduct_guest_usage', {
       p_conversation_id: conversationId,
-      p_seconds_used: Math.ceil(secondsUsed)
+      p_seconds_used: Math.ceil(secondsUsed),
     });
 
     if (error) {

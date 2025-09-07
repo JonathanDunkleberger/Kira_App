@@ -1,4 +1,4 @@
-import SimpleConversation from '@/components/SimpleConversation'
+import SimpleConversation from '@/components/SimpleConversation';
 
 export default function Page() {
   return (
@@ -8,5 +8,5 @@ export default function Page() {
         <SimpleConversation />
       </div>
     </main>
-  )
+  );
 }

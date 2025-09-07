@@ -43,9 +43,13 @@ export function usePaywallBase(params: {
       } else {
         // Guests: fetch unified session snapshot using guestId so server returns secondsRemaining
         try {
-          const guestId = (typeof window !== 'undefined')
-            ? (localStorage.getItem('kiraGuestId') || localStorage.getItem('guestConversationId') || localStorage.getItem('kira_guest_id') || 'guest')
-            : 'guest';
+          const guestId =
+            typeof window !== 'undefined'
+              ? localStorage.getItem('kiraGuestId') ||
+                localStorage.getItem('guestConversationId') ||
+                localStorage.getItem('kira_guest_id') ||
+                'guest'
+              : 'guest';
           const url = new URL('/api/session', window.location.origin);
           url.searchParams.set('guestId', guestId);
           const res = await fetch(url.toString());
@@ -74,17 +78,22 @@ export function usePaywallBase(params: {
     }
   }, [session, promptPaywall]);
 
-  const triggerPaywall = useCallback((source: 'proactive_click' | 'time_exhausted' = 'proactive_click') => {
-    setIsOpen(true);
-    promptPaywall(source);
-  }, [promptPaywall]);
+  const triggerPaywall = useCallback(
+    (source: 'proactive_click' | 'time_exhausted' = 'proactive_click') => {
+      setIsOpen(true);
+      promptPaywall(source);
+    },
+    [promptPaywall],
+  );
 
   const dismissPaywall = useCallback(() => {
     setIsOpen(false);
     closePaywall();
   }, [closePaywall]);
 
-  useEffect(() => { checkUsage(); }, [checkUsage]);
+  useEffect(() => {
+    checkUsage();
+  }, [checkUsage]);
 
   useEffect(() => {
     setSecondsRemaining(dailySecondsRemaining);
@@ -98,12 +107,24 @@ export function usePaywallBase(params: {
     isLoading,
     triggerPaywall,
     dismissPaywall,
-    checkUsage
+    checkUsage,
   };
 }
 
 // Convenience hook for components: uses ConversationProvider context
 export function usePaywall(): PaywallState {
-  const { session, isPro: contextIsPro, dailySecondsRemaining, promptPaywall, closePaywall } = useConversation();
-  return usePaywallBase({ session, contextIsPro, dailySecondsRemaining, promptPaywall, closePaywall });
+  const {
+    session,
+    isPro: contextIsPro,
+    dailySecondsRemaining,
+    promptPaywall,
+    closePaywall,
+  } = useConversation();
+  return usePaywallBase({
+    session,
+    contextIsPro,
+    dailySecondsRemaining,
+    promptPaywall,
+    closePaywall,
+  });
 }

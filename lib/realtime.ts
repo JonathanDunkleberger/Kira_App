@@ -13,11 +13,13 @@ export function subscribeToConversation(conversationId: string, callback: (messa
       },
       (payload) => {
         callback((payload as any).new);
-      }
+      },
     )
     .subscribe();
 }
 
 export function unsubscribeFromConversation(subscription: any) {
-  try { supabase.removeChannel(subscription); } catch {}
+  try {
+    supabase.removeChannel(subscription);
+  } catch {}
 }

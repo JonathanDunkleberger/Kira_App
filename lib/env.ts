@@ -22,7 +22,7 @@ const EnvSchema = z.object({
   FREE_TRIAL_SECONDS: z.string(),
   PRO_SESSION_SECONDS: z.string().default('1800'),
   ALLOWED_ORIGIN: z.string(),
-  DEV_ALLOW_NOAUTH: z.string().optional()
+  DEV_ALLOW_NOAUTH: z.string().optional(),
 });
 
 export const env = EnvSchema.parse({ ...process.env });

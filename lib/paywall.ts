@@ -3,7 +3,10 @@ import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 import { NextResponse } from 'next/server';
 
 export class PaywallError extends Error {
-  constructor(message: string, public code: number = 402) {
+  constructor(
+    message: string,
+    public code: number = 402,
+  ) {
     super(message);
     this.name = 'PaywallError';
   }
@@ -45,7 +48,7 @@ export async function enforcePaywall(userId: string | null): Promise<void> {
 export function createPaywallResponse(message: string = 'Daily time limit exceeded') {
   return NextResponse.json(
     { error: message, code: 'PAYWALL_REQUIRED' },
-    { status: 402, headers: { 'X-Paywall-Required': 'true' } }
+    { status: 402, headers: { 'X-Paywall-Required': 'true' } },
   );
 }
 
@@ -56,6 +59,7 @@ export function shouldTriggerPaywall(error: any): boolean {
   return (
     error?.status === 402 ||
     error?.code === 'PAYWALL_REQUIRED' ||
-    (typeof error?.headers?.get === 'function' && error.headers.get('X-Paywall-Required') === 'true')
+    (typeof error?.headers?.get === 'function' &&
+      error.headers.get('X-Paywall-Required') === 'true')
   );
 }

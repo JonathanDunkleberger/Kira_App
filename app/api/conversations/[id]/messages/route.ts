@@ -8,7 +8,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const sb = getSupabaseServerAdmin();
-  const { data: { user } } = await sb.auth.getUser(token);
+  const {
+    data: { user },
+  } = await sb.auth.getUser(token);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const conversationId = params.id;
@@ -18,8 +20,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .select('id,user_id')
     .eq('id', conversationId)
     .maybeSingle();
-  if (convoErr) return NextResponse.json({ error: 'Failed to fetch conversation' }, { status: 500 });
-  if (!convo || convo.user_id !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (convoErr)
+    return NextResponse.json({ error: 'Failed to fetch conversation' }, { status: 500 });
+  if (!convo || convo.user_id !== user.id)
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { data, error } = await sb
     .from('messages')

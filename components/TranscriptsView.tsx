@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/client/supabaseClient';
@@ -32,7 +32,10 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
   useEffect(() => {
     if (!isOpen || !conversationId) return;
     const sub = subscribeToConversation(conversationId, (row: any) => {
-      setMessages((prev) => [...prev, { role: row.role, content: row.content, created_at: row.created_at }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: row.role, content: row.content, created_at: row.created_at },
+      ]);
     });
     return () => unsubscribeFromConversation(sub);
   }, [isOpen, conversationId]);
@@ -41,7 +44,9 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
     if (!conversationId) return;
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) return;
 
       const response = await fetch(`/api/conversations/${conversationId}/messages`, {
@@ -100,7 +105,11 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
             >
               {exporting ? 'Exporting...' : 'Export'}
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg" aria-label="Close transcript">
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/5 rounded-lg"
+              aria-label="Close transcript"
+            >
               ×
             </button>
           </div>

@@ -12,9 +12,11 @@ export async function POST(req: Request) {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split('Bearer ')[1];
     let userId: string | null = null;
-    
+
     if (token) {
-      const { data: { user } } = await supa.auth.getUser(token);
+      const {
+        data: { user },
+      } = await supa.auth.getUser(token);
       userId = user?.id || null;
     }
 
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       { secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
     );
   } catch (e) {
     const error = e as Error;
@@ -40,7 +42,9 @@ export async function GET(req: NextRequest) {
     const token = authHeader?.split('Bearer ')[1];
     let userId: string | null = null;
     if (token) {
-      const { data: { user } } = await supa.auth.getUser(token);
+      const {
+        data: { user },
+      } = await supa.auth.getUser(token);
       userId = user?.id || null;
     }
 
@@ -66,18 +70,19 @@ export async function GET(req: NextRequest) {
       const secondsRemaining = Number(conv?.seconds_remaining ?? FREE_TRIAL_SECONDS);
       const res = NextResponse.json(
         { secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS },
-        { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+        { headers: { 'Cache-Control': 'no-store, max-age=0' } },
       );
-      if (cid) res.cookies.set('kira_cid', cid, { maxAge: 60 * 60 * 24 * 30, path: '/', sameSite: 'lax' });
+      if (cid)
+        res.cookies.set('kira_cid', cid, { maxAge: 60 * 60 * 24 * 30, path: '/', sameSite: 'lax' });
       return res;
     }
 
     // Otherwise, compute usage via existing helper (user or anon subject via cid)
-    const secondsRemaining = await checkUsage(userId, userId ? null : (cid || null));
+    const secondsRemaining = await checkUsage(userId, userId ? null : cid || null);
 
     const res = NextResponse.json(
       { secondsRemaining, dailyLimitSeconds: FREE_TRIAL_SECONDS },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
     );
     // Set cookie if we're treating this as a guest
     if (!userId && cid) {

@@ -42,23 +42,37 @@ export async function POST(req: NextRequest) {
         { style: { display: 'flex', gap: '24px' } },
         h(
           'div',
-          { style: { flex: 1, background: 'rgba(255,255,255,0.06)', padding: '24px', borderRadius: 16 } },
+          {
+            style: {
+              flex: 1,
+              background: 'rgba(255,255,255,0.06)',
+              padding: '24px',
+              borderRadius: 16,
+            },
+          },
           h('div', { style: { opacity: 0.7, fontSize: 20, marginBottom: 8 } }, 'You'),
-          h('div', { style: { fontSize: 30, lineHeight: 1.3 } }, String(userMessage))
+          h('div', { style: { fontSize: 30, lineHeight: 1.3 } }, String(userMessage)),
         ),
         h(
           'div',
-          { style: { flex: 1, background: 'rgba(168,85,247,0.18)', padding: '24px', borderRadius: 16 } },
+          {
+            style: {
+              flex: 1,
+              background: 'rgba(168,85,247,0.18)',
+              padding: '24px',
+              borderRadius: 16,
+            },
+          },
           h('div', { style: { opacity: 0.8, fontSize: 20, marginBottom: 8 } }, 'Kira'),
-          h('div', { style: { fontSize: 30, lineHeight: 1.3 } }, String(kiraMessage))
-        )
+          h('div', { style: { fontSize: 30, lineHeight: 1.3 } }, String(kiraMessage)),
+        ),
       ),
-      h('div', { style: { opacity: 0.6, fontSize: 22 } }, 'kira.ai • Talk with Kira')
+      h('div', { style: { opacity: 0.6, fontSize: 22 } }, 'kira.ai • Talk with Kira'),
     );
 
     const svg = await satori(tree as any, { width, height, fonts: [] });
-  const png = await sharp(Buffer.from(svg)).png().toBuffer();
-  return new Response(new Uint8Array(png), { headers: { 'Content-Type': 'image/png' } });
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    return new Response(new Uint8Array(png), { headers: { 'Content-Type': 'image/png' } });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || 'Server error' }), { status: 500 });
   }

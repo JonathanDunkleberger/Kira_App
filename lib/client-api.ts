@@ -1,18 +1,18 @@
 import { supabase } from '@/lib/client/supabaseClient';
 
 export async function sendUtterance(payload: { text: string }) {
-  const r = await fetch("/api/utterance", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  const r = await fetch('/api/utterance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
   if (r.status === 402) {
-    throw Object.assign(new Error("Paywall"), { code: 402 });
+    throw Object.assign(new Error('Paywall'), { code: 402 });
   }
 
   if (!r.ok) {
-    let message = "Request failed";
+    let message = 'Request failed';
     try {
       const body = await r.json();
       message = body?.error || message;
@@ -30,18 +30,22 @@ export type Entitlement = {
 };
 
 export async function fetchEntitlement(): Promise<Entitlement | null> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) return null;
 
-  const r = await fetch('/api/session', { headers: { Authorization: `Bearer ${session.access_token}` } });
+  const r = await fetch('/api/session', {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
   if (!r.ok) return null;
 
   const j = await r.json();
   return {
-    plan: (j?.plan ?? 'free'),
-    status: (j?.status ?? 'inactive'),
+    plan: j?.plan ?? 'free',
+    status: j?.status ?? 'inactive',
     secondsRemaining: Number(j?.secondsRemaining ?? 0),
-  trialPerDay: Number(j?.trialPerDay ?? 0)
+    trialPerDay: Number(j?.trialPerDay ?? 0),
   } as Entitlement;
 }
 
@@ -52,14 +56,16 @@ export async function fetchSessionSeconds(): Promise<number | null> {
 }
 
 export async function startCheckout(): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (!session) {
     window.location.href = '/sign-up?next=upgrade';
     return;
   }
   const r = await fetch('/api/stripe/create-checkout', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` }
+    headers: { Authorization: `Bearer ${session.access_token}` },
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j?.url) {
@@ -70,14 +76,22 @@ export async function startCheckout(): Promise<void> {
 }
 
 export async function openBillingPortal() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) { window.location.href = '/sign-in'; return; }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = '/sign-in';
+    return;
+  }
   const r = await fetch('/api/stripe/portal', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` }
+    headers: { Authorization: `Bearer ${session.access_token}` },
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j?.url) { alert(j?.error || 'Portal error'); return; }
+  if (!r.ok || !j?.url) {
+    alert(j?.error || 'Portal error');
+    return;
+  }
   window.location.href = j.url;
 }
 
@@ -94,13 +108,17 @@ export async function signOut() {
 export async function ensureAnonSession(): Promise<void> {
   // With email+password now in play, you might not want anon.
   // Keep it no-op for now.
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   if (session) return;
 }
 
 // --- Conversations (HTTP) ---
 async function getAuthHeaders() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   // Guests: no auth header, but keep JSON content-type by default
   if (!session) {
     return { 'Content-Type': 'application/json' } as Record<string, string>;
@@ -148,16 +166,20 @@ export async function renameConversation(id: string, title: string) {
   const res = await fetch(`/api/conversations/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify({ title })
+    body: JSON.stringify({ title }),
   });
   if (!res.ok) throw new Error('Failed to rename conversation');
   return res.json();
 }
 
 export async function clearAllConversations() {
-  const confirmed = window.confirm('Are you sure you want to delete your entire chat history? This cannot be undone.');
+  const confirmed = window.confirm(
+    'Are you sure you want to delete your entire chat history? This cannot be undone.',
+  );
   if (!confirmed) return;
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) throw new Error('Unauthorized');
   const { error } = await supabase.from('conversations').delete().eq('user_id', user.id);
   if (error) throw new Error(error.message);
@@ -167,13 +189,15 @@ export async function clearAllConversations() {
 // --- Account deletion ---
 export async function deleteAccount() {
   const confirmed = window.confirm(
-    'Are you sure you want to permanently delete your account? This will also cancel any active subscriptions and cannot be undone.'
+    'Are you sure you want to permanently delete your account? This will also cancel any active subscriptions and cannot be undone.',
   );
 
   if (!confirmed) return;
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (!session) throw new Error('You must be logged in to delete your account.');
 
     const response = await fetch('/api/user/delete', {
@@ -183,7 +207,10 @@ export async function deleteAccount() {
 
     if (!response.ok) {
       let msg = 'Failed to delete account.';
-      try { const j = await response.json(); msg = j?.error || msg; } catch {}
+      try {
+        const j = await response.json();
+        msg = j?.error || msg;
+      } catch {}
       throw new Error(msg);
     }
 

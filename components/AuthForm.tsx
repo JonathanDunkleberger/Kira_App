@@ -5,7 +5,10 @@ import { supabase } from '@/lib/client/supabaseClient';
 export default function AuthForm({
   mode, // 'signup' | 'signin'
   afterSuccessHref = '/',
-}: { mode: 'signup' | 'signin'; afterSuccessHref?: string }) {
+}: {
+  mode: 'signup' | 'signin';
+  afterSuccessHref?: string;
+}) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -14,13 +17,17 @@ export default function AuthForm({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setMsg(null); setBusy(true);
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
     try {
       if (mode === 'signup') {
         const { error } = await supabase.auth.signUp({ email, password: pw });
         if (error) throw error;
         // if email confirmation is disabled, the session is active; otherwise require confirm
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) {
           setMsg('Check your email to confirm your account, then return to sign in.');
         } else {
@@ -46,7 +53,7 @@ export default function AuthForm({
           type="email"
           required
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value)}
           className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white placeholder-white/30"
           placeholder="you@example.com"
         />
@@ -57,7 +64,7 @@ export default function AuthForm({
           type="password"
           required
           value={pw}
-          onChange={e => setPw(e.target.value)}
+          onChange={(e) => setPw(e.target.value)}
           className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-white placeholder-white/30"
           placeholder="••••••••"
         />

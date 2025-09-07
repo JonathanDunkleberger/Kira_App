@@ -1,2 +1,4 @@
-"use client";
-export default function StreakIndicator() { return null; }
+'use client';
+export default function StreakIndicator() {
+  return null;
+}

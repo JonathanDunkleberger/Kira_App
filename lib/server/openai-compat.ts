@@ -29,13 +29,13 @@ export default class OpenAI {
         const r = await fetch(`${this.baseURL}/chat/completions`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(args),
         });
         if (!r.ok) {
-          const body = await r.text().catch(()=> '');
+          const body = await r.text().catch(() => '');
           throw new Error(`OpenAI chat failed: ${r.status} ${body}`);
         }
         return await r.json();
@@ -48,13 +48,13 @@ export default class OpenAI {
       const r = await fetch(`${this.baseURL}/embeddings`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(args),
       });
       if (!r.ok) {
-        const body = await r.text().catch(()=> '');
+        const body = await r.text().catch(() => '');
         throw new Error(`OpenAI embeddings failed: ${r.status} ${body}`);
       }
       return await r.json();

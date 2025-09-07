@@ -22,14 +22,16 @@ const EnvSchema = z.object({
   APP_URL: z.string(),
   FREE_TRIAL_SECONDS: z.string(),
   ALLOWED_ORIGIN: z.string(),
-  DEV_ALLOW_NOAUTH: z.string().optional()
+  DEV_ALLOW_NOAUTH: z.string().optional(),
 });
 
 const isVercel = !!process.env.VERCEL;
 try {
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('\n - ');
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('\n - ');
     if (isVercel) {
       console.warn('⚠️ Environment warnings (continuing on Vercel):\n - ' + issues);
       process.exit(0);

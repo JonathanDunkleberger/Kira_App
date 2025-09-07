@@ -17,10 +17,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
 
-  const { error: e1 } = await sb.from('messages').insert({ conversation_id: conversationId, role, content });
+  const { error: e1 } = await sb
+    .from('messages')
+    .insert({ conversation_id: conversationId, role, content });
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
 
-  await sb.from('conversations')
+  await sb
+    .from('conversations')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', conversationId);
 

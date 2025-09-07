@@ -13,10 +13,15 @@ export async function POST(req: NextRequest) {
 
     const sb = getSupabaseServerAdmin();
     const { data: userData, error } = await sb.auth.getUser(token);
-    if (error || !userData?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (error || !userData?.user)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = userData.user.id;
-    const { data: ent } = await sb.from('entitlements').select('stripe_customer_id').eq('user_id', userId).maybeSingle();
+    const { data: ent } = await sb
+      .from('entitlements')
+      .select('stripe_customer_id')
+      .eq('user_id', userId)
+      .maybeSingle();
     let stripeCustomerId = (ent?.stripe_customer_id as string) || undefined;
 
     const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
@@ -24,19 +29,26 @@ export async function POST(req: NextRequest) {
     // If we don't have a stored Stripe customer, try to find by email and persist for next time
     if (!stripeCustomerId) {
       const email = userData.user.email;
-      if (!email) return NextResponse.json({ error: 'No email on account. Please contact support.' }, { status: 400 });
+      if (!email)
+        return NextResponse.json(
+          { error: 'No email on account. Please contact support.' },
+          { status: 400 },
+        );
       const customers = await stripe.customers.list({ email, limit: 1 });
       const customer = customers.data[0];
       if (!customer) {
         return NextResponse.json(
           { error: 'No Stripe customer found for your email. Please start a subscription first.' },
-          { status: 400 }
+          { status: 400 },
         );
       }
       stripeCustomerId = customer.id;
       await sb
         .from('entitlements')
-        .upsert({ user_id: userId, stripe_customer_id: stripeCustomerId }, { onConflict: 'user_id' });
+        .upsert(
+          { user_id: userId, stripe_customer_id: stripeCustomerId },
+          { onConflict: 'user_id' },
+        );
     }
 
     const session = await stripe.billingPortal.sessions.create({

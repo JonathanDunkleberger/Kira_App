@@ -75,7 +75,7 @@ export async function generateReply(userText: string): Promise<string> {
         top_p: 0.95,
         presence_penalty: 0.2,
         frequency_penalty: 0.1,
-  max_tokens: 4096,
+        max_tokens: 4096,
       });
 
       const text = resp.choices?.[0]?.message?.content || '';
@@ -102,7 +102,7 @@ export async function generateReply(userText: string): Promise<string> {
         temperature: 0.85,
         topP: 0.95,
         topK: 50,
-  maxOutputTokens: 4096,
+        maxOutputTokens: 4096,
       },
       systemInstruction: {
         role: 'system',
@@ -182,7 +182,7 @@ export async function generateReplyWithHistory(
         top_p: 0.95,
         presence_penalty: 0.2,
         frequency_penalty: 0.1,
-  max_tokens: 4096,
+        max_tokens: 4096,
       });
       const text = resp.choices?.[0]?.message?.content || '';
       if (text) return postProcess(text);
@@ -211,7 +211,7 @@ export async function generateReplyWithHistory(
         temperature: 0.85,
         topP: 0.95,
         topK: 50,
-  maxOutputTokens: 4096,
+        maxOutputTokens: 4096,
       },
       systemInstruction: { role: 'system', parts: [{ text: finalSystemPrompt }] },
     });

@@ -31,7 +31,7 @@ async function streamAssistantReply(
       model,
       messages,
       stream: true,
-  max_tokens: 4096,
+      max_tokens: 4096,
       temperature: 0.85,
       top_p: 0.95,
       presence_penalty: 0.2,
@@ -168,11 +168,17 @@ wss.on('connection', async (ws, req) => {
         try {
           sendJson(ws, { type: 'segment_start' });
         } catch {}
+        try {
+          console.log('[SERVER-DEBUG] Sending sentence to TTS...');
+        } catch {}
         await new Promise<void>((resolve, reject) => {
           synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        try {
+          console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
+        } catch {}
         try {
           sendJson(ws, { type: 'segment_end' });
         } catch {}
@@ -222,6 +228,9 @@ wss.on('connection', async (ws, req) => {
         if (/([\.\!\?])\s$/.test(pendingText) || pendingText.length >= 120) {
           const toSpeak = pendingText;
           pendingText = '';
+          try {
+            console.log('[SERVER-DEBUG] Identified sentence:', toSpeak);
+          } catch {}
           enqueueTts(toSpeak);
         }
       }).catch(async (e: unknown) => {
@@ -267,11 +276,17 @@ wss.on('connection', async (ws, req) => {
         try {
           sendJson(ws, { type: 'segment_start' });
         } catch {}
+        try {
+          console.log('[SERVER-DEBUG] Sending sentence to TTS...');
+        } catch {}
         await new Promise<void>((resolve, reject) => {
           synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        try {
+          console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
+        } catch {}
         try {
           sendJson(ws, { type: 'segment_end' });
         } catch {}

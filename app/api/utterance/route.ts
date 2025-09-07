@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages,
-  max_tokens: 4096,
+      max_tokens: 4096,
       temperature: 0.85,
       top_p: 0.95,
       presence_penalty: 0.2,

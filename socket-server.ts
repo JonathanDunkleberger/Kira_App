@@ -261,22 +261,26 @@ wss.on('connection', async (ws, req) => {
         ...historyMem,
       ];
       console.time(`[srv] llm`);
-      // Streaming path: forward chunks as they arrive and progressively TTS them
+      // Streaming path: buffer chunks and flush to TTS every 800ms
       let usedStreaming = true;
-      let pendingText = '';
+      let textBuffer = '';
+      const FLUSH_MS = Number(process.env.TTS_FLUSH_INTERVAL_MS || 800);
+      const flushBufferedText = () => {
+        const toSpeak = textBuffer.trim();
+        if (!toSpeak) return;
+        textBuffer = '';
+        try {
+          console.log('[SERVER-DEBUG] Flushing buffered segment:', toSpeak);
+        } catch {}
+        enqueueTts(toSpeak);
+      };
+      let flushTicker: ReturnType<typeof setInterval> | null = setInterval(
+        flushBufferedText,
+        FLUSH_MS,
+      );
       const assistant = await streamAssistantReply(messages as any, ws, (chunk: string) => {
-        // Append new text and split into full sentences ending with . ! ? only
-        pendingText += chunk;
-        const { sentences, remainder } = extractStrictSentences(pendingText);
-        pendingText = remainder;
-        for (const s of sentences) {
-          const toSpeak = s.trim();
-          if (!toSpeak) continue;
-          try {
-            console.log('[SERVER-DEBUG] Identified sentence:', toSpeak);
-          } catch {}
-          enqueueTts(toSpeak);
-        }
+        // Accumulate raw text; segmentation is purely timer-driven
+        textBuffer += chunk;
       }).catch(async (e: unknown) => {
         // Fallback to non-streaming on error
         try {
@@ -301,10 +305,13 @@ wss.on('connection', async (ws, req) => {
       } catch {}
 
       if (usedStreaming) {
-        // Flush any remaining pending text to TTS
-        if (pendingText.trim()) {
-          enqueueTts(pendingText.trim());
-          pendingText = '';
+        // Stop the periodic flusher and immediately flush any remaining text
+        if (flushTicker) {
+          clearInterval(flushTicker);
+          flushTicker = null;
+        }
+        if (textBuffer.trim()) {
+          flushBufferedText();
         }
         // Wait for TTS queue to drain fully (sequential)
         if (ttsProcessPromise) {
@@ -395,22 +402,6 @@ wss.on('connection', async (ws, req) => {
 
 function sendJson(ws: WebSocket, data: object) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
-}
-// Split text into natural sentences ending with ., !, or ? followed by whitespace or end-of-string.
-// Ignores commas, colons, and does not attempt to split on markdown punctuation.
-function extractStrictSentences(text: string): { sentences: string[]; remainder: string } {
-  const sentences: string[] = [];
-  // Use a minimal, dotall regex to capture up to the first terminal punctuation
-  const re = /(.+?[.!?])(?=\s|$)/gms;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    const segment = (match[1] || '').trim();
-    if (segment) sentences.push(segment);
-    lastIndex = re.lastIndex;
-  }
-  const remainder = text.slice(lastIndex);
-  return { sentences, remainder };
 }
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

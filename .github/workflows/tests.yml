@@ -3,7 +3,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 on:
-  pull_request:
   push:
     branches: [main]
 
@@ -30,8 +29,5 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Use Vercel Preview URL if provided
-        if: startsWith(github.ref, 'refs/pull/')
-        run: echo "E2E_BASE_URL=$(jq -r '.deploymentUrl // empty' < vercel.json)" >> $GITHUB_ENV || true
       - run: npx playwright install --with-deps
       - run: npm run e2e

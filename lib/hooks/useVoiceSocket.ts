@@ -54,33 +54,47 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      console.log('[WS] Connection opened.');
+      if (process.env.NODE_ENV !== 'production') console.log('[WS] Connection opened.');
       setStatus('connected');
     };
 
     ws.onclose = () => {
-      console.warn('[WS] Connection closed. Reconnecting in 5s...');
+      if (process.env.NODE_ENV !== 'production') console.warn('[WS] Connection closed. Reconnecting in 5s...');
       socketRef.current = null;
       setStatus('disconnected');
       setTimeout(() => { void connect(); }, 5000);
     };
 
     ws.onerror = (err) => {
-      console.error('[WS] WebSocket error:', err);
+      if (process.env.NODE_ENV !== 'production') console.error('[WS] WebSocket error:', err);
       ws.close(); // This will trigger the onclose handler for reconnect logic
     };
 
     ws.onmessage = (event) => {
       // Pass all messages, binary or text, to the provider for handling
       if (typeof event.data === 'string') {
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const parsed = JSON.parse(event.data);
+            console.log('[WS] Received STRING:', parsed);
+          } catch {
+            console.log('[WS] Received STRING (raw):', event.data);
+          }
+        }
         try {
           const msg = JSON.parse(event.data);
           onMessageRef.current(msg);
         } catch (e) {
-          console.error('Failed to parse server JSON message:', e);
+          if (process.env.NODE_ENV !== 'production') console.error('Failed to parse server JSON message:', e);
         }
       } else {
-        // Pass ArrayBuffer directly
+        // BINARY (ArrayBuffer due to binaryType = 'arraybuffer')
+        if (process.env.NODE_ENV !== 'production') {
+          try {
+            const size = (event.data as ArrayBuffer)?.byteLength ?? 0;
+            console.log('[WS] Received BINARY (ArrayBuffer). Size:', size, 'bytes');
+          } catch {}
+        }
         onMessageRef.current(event.data);
       }
     };
@@ -89,12 +103,18 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
   const send = useCallback((data: object | ArrayBuffer) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       if (data instanceof ArrayBuffer) {
+        if (process.env.NODE_ENV !== 'production') {
+          try { console.log('[WS] Sending BINARY. Size:', (data as ArrayBuffer).byteLength, 'bytes'); } catch {}
+        }
         socketRef.current.send(data);
       } else {
+        if (process.env.NODE_ENV !== 'production') {
+          try { console.log('[WS] Sending STRING:', data); } catch {}
+        }
         socketRef.current.send(JSON.stringify(data));
       }
     } else {
-      console.warn('[WS] Send failed: WebSocket not open.');
+      if (process.env.NODE_ENV !== 'production') console.warn('[WS] Send failed: WebSocket not open.');
     }
   }, []);
 

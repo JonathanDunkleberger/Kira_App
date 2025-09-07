@@ -140,8 +140,10 @@ wss.on('connection', async (ws, req) => {
   let isProcessing = false;
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  // Progressive TTS state (sequential chain)
-  let ttsChain: Promise<void> = Promise.resolve();
+  // Progressive TTS state (robust sequential queue)
+  let ttsQueue: string[] = [];
+  let ttsProcessing = false;
+  let ttsProcessPromise: Promise<void> | null = null;
   let audioStarted = false;
   const mime = ttsFmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
   // Backpressure-aware WS binary sending
@@ -177,10 +179,18 @@ wss.on('connection', async (ws, req) => {
   const enqueueTts = (text: string) => {
     const toSpeak = (text || '').trim();
     if (!toSpeak) return;
-    // Serialize each sentence by chaining onto ttsChain
-    ttsChain = ttsChain
-      .then(async () => {
-        if (ws.readyState !== 1) return;
+    ttsQueue.push(toSpeak);
+    if (!ttsProcessing) {
+      ttsProcessPromise = processTtsQueue();
+    }
+  };
+
+  async function processTtsQueue(): Promise<void> {
+    ttsProcessing = true;
+    try {
+      while (ttsQueue.length > 0 && ws.readyState === 1) {
+        const next = (ttsQueue.shift() || '').trim();
+        if (!next) continue;
         if (!audioStarted) {
           try {
             sendJson(ws, { type: 'audio_start', mime });
@@ -193,13 +203,12 @@ wss.on('connection', async (ws, req) => {
         try {
           console.log('[SERVER-DEBUG] Sending sentence to TTS...');
         } catch {}
-        // Stream TTS for this sentence and enqueue binary chunks
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(toSpeak, (chunk) => enqueueBinary(chunk), ttsFmt)
+          synthesizeSpeechStream(next, (chunk) => enqueueBinary(chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
-        // Flush all WS binary sends for this sentence before closing the segment
+        // Ensure all chunks for this sentence are flushed over WS before signaling end
         if (binaryFlushPromise) {
           try {
             await binaryFlushPromise;
@@ -211,13 +220,15 @@ wss.on('connection', async (ws, req) => {
         try {
           sendJson(ws, { type: 'segment_end' });
         } catch {}
-      })
-      .catch((e) => {
-        try {
-          console.warn('[TTS] Sentence processing failed:', e);
-        } catch {}
-      });
-  };
+      }
+    } catch (e) {
+      try {
+        console.warn('[TTS] Queue processing error:', e);
+      } catch {}
+    } finally {
+      ttsProcessing = false;
+    }
+  }
 
   // Seed history from DB
   try {
@@ -295,8 +306,12 @@ wss.on('connection', async (ws, req) => {
           enqueueTts(pendingText.trim());
           pendingText = '';
         }
-        // Wait for all sentences in the chain to finish (sequential)
-        await ttsChain.catch(() => {});
+        // Wait for TTS queue to drain fully (sequential)
+        if (ttsProcessPromise) {
+          try {
+            await ttsProcessPromise;
+          } catch {}
+        }
         // Ensure any outstanding WS binary sends are flushed
         if (binaryFlushPromise) {
           try {

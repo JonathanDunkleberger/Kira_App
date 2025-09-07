@@ -64,6 +64,11 @@ export function useConversationManager(session: Session | null) {
     }
   }, []);
 
+  const clearCurrentConversation = useCallback(() => {
+    setConversationId(null);
+    setMessages([]);
+  }, []);
+
   // Update startConversation in the Provider to use this new version
   const startConversation = useCallback(async () => {
     let currentConvoId = conversationId;
@@ -84,5 +89,6 @@ export function useConversationManager(session: Session | null) {
     fetchAllConversations,
     loadConversation,
     newConversation,
+    clearCurrentConversation,
   };
 }

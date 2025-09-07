@@ -29,6 +29,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     fetchAllConversations,
     loadConversation,
     newConversation,
+    clearCurrentConversation,
   } = useConversationManager(session);
 
   const { userStatus, secondsRemaining, dailyLimitSeconds, refresh: refreshUsage } = useEntitlement() as any;
@@ -59,7 +60,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     }
   }, [setMessages, refreshUsage]);
 
-  const { status: connectionStatus, send } = useVoiceSocket({ onMessage: handleServerMessage, conversationId });
+  const { status: connectionStatus, send, disconnect } = useVoiceSocket({ onMessage: handleServerMessage, conversationId });
 
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
     // This callback is fired by the microphone's VAD when an utterance is complete
@@ -78,10 +79,14 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, []);
 
   const stopConversation = useCallback((reason?: 'ended_by_user' | 'ended_by_limit') => {
-    stopMicrophone(); // Manually stop the mic
+    console.log('Stopping conversation, performing hard reset...');
+    try { disconnect(); } catch {}
+    try { stopMicrophone(); } catch {}
     setTurnStatus('idle');
     setConversationStatus(reason || 'ended_by_user');
-  }, [stopMicrophone]);
+    // MOST IMPORTANT: clear active conversation and messages
+    clearCurrentConversation();
+  }, [disconnect, stopMicrophone, clearCurrentConversation]);
 
   const startConversation = useCallback(async () => {
     if (turnStatus !== 'idle') return;
@@ -113,8 +118,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   const promptPaywall = useCallback((source: 'proactive_click' | 'time_exhausted') => setPaywallSource(source), []);
   const closePaywall = useCallback(() => setPaywallSource(null), []);
-
-  const clearCurrentConversation = useCallback(() => setMessages([]), [setMessages]);
 
   const value = {
     // Auth/session

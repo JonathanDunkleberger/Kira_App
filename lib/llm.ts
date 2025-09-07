@@ -71,9 +71,11 @@ export async function generateReply(userText: string): Promise<string> {
       const resp = await openai.chat.completions.create({
         model: openaiModel,
         messages,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 400,
+        temperature: 0.85,
+        top_p: 0.95,
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1,
+        max_tokens: 2048,
       });
 
       const text = resp.choices?.[0]?.message?.content || '';
@@ -97,9 +99,10 @@ export async function generateReply(userText: string): Promise<string> {
     const chat = model.startChat({
       history,
       generationConfig: {
-        temperature: 0.7,
-        topP: 0.9,
-        maxOutputTokens: 400,
+        temperature: 0.85,
+        topP: 0.95,
+        topK: 50,
+        maxOutputTokens: 2048,
       },
       systemInstruction: {
         role: 'system',
@@ -175,9 +178,11 @@ export async function generateReplyWithHistory(
       const resp = await openai.chat.completions.create({
         model: openaiModel,
         messages,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 400,
+        temperature: 0.85,
+        top_p: 0.95,
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1,
+        max_tokens: 2048,
       });
       const text = resp.choices?.[0]?.message?.content || '';
       if (text) return postProcess(text);
@@ -203,9 +208,10 @@ export async function generateReplyWithHistory(
     const chat = model.startChat({
       history: [...fewShotHistory, ...prior],
       generationConfig: {
-        temperature: 0.7,
-        topP: 0.9,
-        maxOutputTokens: 400,
+        temperature: 0.85,
+        topP: 0.95,
+        topK: 50,
+        maxOutputTokens: 2048,
       },
       systemInstruction: { role: 'system', parts: [{ text: finalSystemPrompt }] },
     });

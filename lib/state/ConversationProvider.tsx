@@ -1,11 +1,12 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/client/supabaseClient';
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
+import { AudioPlayer } from '@/lib/audio';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 
 // ... (Keep your existing type definitions: ConversationContextType, Message, etc.)
@@ -36,8 +37,34 @@ export default function ConversationProvider({ children }: { children: React.Rea
   const dailySecondsRemaining = Number.isFinite(secondsRemaining) ? Number(secondsRemaining) : null;
   const usageRemaining = dailySecondsRemaining;
 
+  const audioPlayerRef = useRef<AudioPlayer | null>(null);
+
+  // Initialize audio player once and wire completion to state transition
+  useEffect(() => {
+    try {
+      audioPlayerRef.current = new AudioPlayer();
+      audioPlayerRef.current.onEnded(() => {
+        // SPEAKING -> IDLE when audio playback finishes
+        setTurnStatus('idle');
+        setConversationStatus('idle');
+      });
+    } catch (e) {
+      // If the persistent audio element is missing, log and continue without audio
+      if (process.env.NODE_ENV !== 'production') console.warn('Audio player init failed:', e);
+    }
+    return () => {
+      // Best-effort cleanup
+      try { audioPlayerRef.current?.reset(); } catch {}
+      audioPlayerRef.current = null;
+    };
+  }, []);
+
   const handleServerMessage = useCallback((msg: any) => {
-    if (msg instanceof ArrayBuffer) return; // Audio is handled by the audio player
+    if (msg instanceof ArrayBuffer) {
+      // Queue audio chunk for playback
+      try { audioPlayerRef.current?.appendChunk(msg); } catch {}
+      return;
+    }
 
     switch (msg.type) {
       case 'transcript':
@@ -45,13 +72,17 @@ export default function ConversationProvider({ children }: { children: React.Rea
         setTurnStatus('processing');
         break;
       case 'assistant_text':
+        // Transition to SPEAKING on first assistant token if not already
+        setTurnStatus((prev) => (prev !== 'speaking' ? 'speaking' : prev));
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: msg.text }]);
         break;
       case 'audio_start':
         setTurnStatus('speaking');
+        try { audioPlayerRef.current?.reset(); } catch {}
         break;
       case 'audio_end':
-        setTurnStatus('listening');
+        // Finish and play the buffered audio; onEnded handler will set IDLE
+        try { void audioPlayerRef.current?.endStream(); } catch {}
         break;
       case 'usage_update':
         refreshUsage(); // Tell the entitlement hook to refresh its data
@@ -63,7 +94,12 @@ export default function ConversationProvider({ children }: { children: React.Rea
 
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
     // This callback is fired by the microphone's VAD when an utterance is complete
-    audioBlob.arrayBuffer().then(send);
+    audioBlob.arrayBuffer().then((buf) => {
+      try { send(buf); } finally {
+        // LISTENING -> PROCESSING immediately after sending user's utterance
+        setTurnStatus('processing');
+      }
+    });
   });
 
   useEffect(() => {

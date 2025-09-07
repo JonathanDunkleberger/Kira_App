@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { trackUpgradeSuccess } from '@/lib/analytics';
 import { useConversation } from '@/lib/state/ConversationProvider';
@@ -8,7 +8,11 @@ export default function Banner() {
   const [msg, setMsg] = useState<string | null>(null);
   const { startConversation } = useConversation();
 
+  // Ensure the effect logic runs only once on mount, even if dependencies change
+  const ran = useRef(false);
   useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
     const q = new URLSearchParams(window.location.search);
     if (q.get('success') === '1') setMsg('Payment successful — Pro unlocked.');
     if (q.get('canceled') === '1') setMsg('Checkout canceled.');
@@ -67,7 +71,7 @@ export default function Banner() {
       url.searchParams.delete('session_id');
       history.replaceState({}, '', url.toString());
     }
-  }, []);
+  }, [startConversation]);
 
   if (!msg) return null;
 

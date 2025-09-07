@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 import { startCheckout } from '@/lib/client-api';
@@ -40,7 +40,24 @@ export default function UpgradeSnackbar({
     } catch {
       return false;
     }
-  }, [open]);
+  }, []);
+
+  const dismiss = useCallback((reason: 'timeout' | 'click') => {
+    try {
+      sessionStorage.setItem(TODAY_KEY(), '1');
+    } catch {}
+    setVisible(false);
+    onClose?.();
+    if (reason === 'click') {
+      trackPaywallEvent('upgrade_nudge_dismiss', {
+        userType,
+        plan,
+        secondsRemaining: secondsRemaining ?? undefined,
+        conversationId: conversationId ?? undefined,
+        source,
+      });
+    }
+  }, [onClose, userType, plan, secondsRemaining, conversationId, source]);
 
   // show/hide with per-day suppression
   useEffect(() => {
@@ -71,24 +88,7 @@ export default function UpgradeSnackbar({
     return () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
-  }, [visible, hover]);
-
-  const dismiss = (reason: 'timeout' | 'click') => {
-    try {
-      sessionStorage.setItem(TODAY_KEY(), '1');
-    } catch {}
-    setVisible(false);
-    onClose?.();
-    if (reason === 'click') {
-      trackPaywallEvent('upgrade_nudge_dismiss', {
-        userType,
-        plan,
-        secondsRemaining: secondsRemaining ?? undefined,
-        conversationId: conversationId ?? undefined,
-        source,
-      });
-    }
-  };
+  }, [visible, hover, dismiss]);
 
   const handleUpgrade = () => {
     trackUpgradeNudgeClick({

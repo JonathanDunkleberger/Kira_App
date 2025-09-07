@@ -184,6 +184,9 @@ export function useVoiceSocket(
     setStatus('disconnected');
   }, []);
 
+  // derive current conversationId value for effect deps
+  const conversationId = typeof onMessageOrOpts === 'function' ? null : onMessageOrOpts.conversationId ?? null;
+
   useEffect(() => {
     // reconnect when conversationId changes
     try {
@@ -197,7 +200,7 @@ export function useVoiceSocket(
         socketRef.current?.close();
       } catch {}
     };
-  }, [connect, typeof onMessageOrOpts === 'function' ? null : onMessageOrOpts.conversationId]);
+  }, [connect, conversationId]);
 
   return { status, send, disconnect } as const;
 }

@@ -18,6 +18,10 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (ws, req) => {
+  try {
+    const ip = (req.headers['x-forwarded-for'] as string) || (req.socket as any)?.remoteAddress;
+    console.log(`[Server] ✅ New client connected from IP: ${ip}`);
+  } catch {}
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   const conversationId = url.searchParams.get('conversationId');
   const token = url.searchParams.get('token') || '';
@@ -95,9 +99,18 @@ wss.on('connection', async (ws, req) => {
   };
 
   ws.on('message', (data: Buffer) => {
+    try { console.log(`[Server] 📩 Received message chunk. Size: ${data?.byteLength ?? 0} bytes`); } catch {}
     chunkBuffers.push(data);
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = setTimeout(flushNow, Number(process.env.WS_UTTERANCE_SILENCE_MS || 700));
+  });
+
+  ws.on('close', () => {
+    console.log('[Server] ❌ Client disconnected.');
+  });
+
+  ws.on('error', (err) => {
+    console.error('[Server] ❗️ WebSocket error:', err);
   });
 });
 

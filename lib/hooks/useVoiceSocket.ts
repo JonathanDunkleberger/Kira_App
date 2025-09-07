@@ -6,7 +6,11 @@ import { supabase } from '@/lib/client/supabaseClient';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
-const WSS_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD || process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+// Resolve base WS URL from environment; provide a dev fallback when not set
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD
+  || process.env.NEXT_PUBLIC_WEBSOCKET_URL
+  || (process.env.NODE_ENV !== 'production' ? 'ws://localhost:10000' : undefined);
 
 export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessage: (msg: any) => void; conversationId?: string | null }) {
   const socketRef = useRef<WebSocket | null>(null);
@@ -24,14 +28,23 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
   }, [onMessageOrOpts]);
 
   const connect = useCallback(async () => {
-    if (socketRef.current || !WSS_URL) return;
+    if (socketRef.current) return;
+    if (!WS_BASE) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[WS] No WebSocket URL configured. Set NEXT_PUBLIC_WEBSOCKET_URL.');
+      }
+      return;
+    }
     if (!convIdRef.current) return; // require conversationId in hybrid mode
 
-    console.log('[WS] Attempting to connect...');
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[WS] Attempting to connect...');
+      console.log(`[WS] Connecting to WebSocket server at: ${WS_BASE}`);
+    }
     // Attach token and tts preference in the URL for server-side auth/format
-    let url = WSS_URL;
+    let url = WS_BASE;
     try {
-      const u = new URL(WSS_URL);
+      const u = new URL(WS_BASE);
       // conversationId
       try { if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current); } catch {}
       // token
@@ -46,6 +59,9 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
         if (pref?.fmt) u.searchParams.set('tts', pref.fmt);
       } catch {}
       url = u.toString();
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[WS] Final URL (with params):', url);
+      }
     } catch {}
 
     const ws = new WebSocket(url);

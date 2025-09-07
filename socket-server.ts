@@ -13,6 +13,7 @@ import { runChat } from '@/lib/llm';
 async function streamAssistantReply(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   ws: WebSocket,
+  onChunk?: (text: string) => void,
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY || '';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -67,6 +68,7 @@ async function streamAssistantReply(
               if (ws.readyState === 1) {
                 ws.send(JSON.stringify({ type: 'assistant_text_chunk', text: content }));
               }
+              try { onChunk?.(content); } catch {}
             }
           } catch {
             // ignore JSON parse errors for heartbeats
@@ -112,6 +114,33 @@ wss.on('connection', async (ws, req) => {
   let isProcessing = false;
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
+  // Progressive TTS state
+  let ttsQueue: string[] = [];
+  let ttsProcessing = false;
+  let ttsProcessPromise: Promise<void> | null = null;
+  let audioStarted = false;
+  const enqueueTts = (text: string) => {
+    ttsQueue.push(text);
+    if (!ttsProcessing) {
+      ttsProcessPromise = processTtsQueue();
+    }
+  };
+  async function processTtsQueue(): Promise<void> {
+    ttsProcessing = true;
+    try {
+      while (ttsQueue.length > 0) {
+        const next = (ttsQueue.shift() || '').trim();
+        if (!next) continue;
+        if (!audioStarted) { try { sendJson(ws, { type: 'audio_start' }); } catch {}; audioStarted = true; }
+        await new Promise<void>((resolve, reject) => {
+          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
+        });
+      }
+    } finally {
+      ttsProcessing = false;
+    }
+  }
+
   // Seed history from DB
   try {
     const { data: hist } = await supa
@@ -143,9 +172,21 @@ wss.on('connection', async (ws, req) => {
         ...historyMem,
       ];
       console.time(`[srv] llm`);
-  const assistant = await streamAssistantReply(messages as any, ws).catch(async (e: unknown) => {
+      // Streaming path: forward chunks as they arrive and progressively TTS them
+      let usedStreaming = true;
+      let pendingText = '';
+      const assistant = await streamAssistantReply(messages as any, ws, (chunk: string) => {
+        // Aggregate small tokens until punctuation or reasonable length, then enqueue for TTS
+        pendingText += chunk;
+        if (/([\.\!\?])\s$/.test(pendingText) || pendingText.length >= 120) {
+          const toSpeak = pendingText;
+          pendingText = '';
+          enqueueTts(toSpeak);
+        }
+      }).catch(async (e: unknown) => {
         // Fallback to non-streaming on error
         try { console.warn('[Server] LLM streaming failed, falling back:', e); } catch {}
+        usedStreaming = false;
         return await runChat(messages as any);
       });
       console.timeEnd(`[srv] llm`);
@@ -161,13 +202,26 @@ wss.on('connection', async (ws, req) => {
         if (newTitle) sendJson(ws, { type: 'title_update', title: newTitle, conversationId });
       } catch {}
 
-      sendJson(ws, { type: 'audio_start' });
-      console.time(`[srv] tts`);
-      await new Promise<void>((resolve, reject) => {
-        synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
-      });
-      console.timeEnd(`[srv] tts`);
-      sendJson(ws, { type: 'audio_end' });
+      if (usedStreaming) {
+        // Flush any remaining pending text to TTS
+        if (pendingText.trim()) {
+          enqueueTts(pendingText);
+          pendingText = '';
+        }
+        // Wait for TTS queue to drain
+        if (ttsProcessPromise) { await ttsProcessPromise; }
+        sendJson(ws, { type: 'audio_end' });
+        audioStarted = false;
+      } else {
+        // Non-streaming fallback: synthesize the full reply as before
+        sendJson(ws, { type: 'audio_start' });
+        console.time(`[srv] tts`);
+        await new Promise<void>((resolve, reject) => {
+          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
+        });
+        console.timeEnd(`[srv] tts`);
+        sendJson(ws, { type: 'audio_end' });
+      }
 
       if (userId) {
         const secondsUsed = (Date.now() - turnStart) / 1000;

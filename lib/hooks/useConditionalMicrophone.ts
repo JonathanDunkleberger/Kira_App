@@ -222,9 +222,8 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
       }
     };
 
-    // Initialize VAD
+    // Initialize VAD (let the library acquire the mic internally)
     const vad = await MicVAD.new({
-      stream,
       // Reasonable defaults; adjust as needed
       minSpeechFrames: 6,
       redemptionFrames: 30,
@@ -256,7 +255,7 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
     });
 
     vadRef.current = vad;
-    vad.start();
+    await vad.start();
     setIsListening(true);
   }, [isListening, onUtterance]);
 

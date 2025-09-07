@@ -28,9 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </ConversationProvider>
-  {/* Persistent TTS audio elements for double-buffer playback */}
-  <audio id="tts-player-a" style={{ display: 'none' }} />
-  <audio id="tts-player-b" style={{ display: 'none' }} />
+        {/* Persistent TTS audio elements for double-buffer playback */}
+        <audio id="tts-player-a" style={{ display: 'none' }} />
+        <audio id="tts-player-b" style={{ display: 'none' }} />
       </body>
     </html>
   );

@@ -31,7 +31,7 @@ async function streamAssistantReply(
       model,
       messages,
       stream: true,
-      max_tokens: 1024,
+  max_tokens: 4096,
       temperature: 0.85,
       top_p: 0.95,
       presence_penalty: 0.2,

@@ -116,7 +116,10 @@ export async function playAndAnalyzeAudio(
 }
 
 // Plays audio data from an ArrayBuffer via an HTMLAudioElement for robust mobile compatibility.
-export function playAudioData(audioData: ArrayBuffer): { audio: HTMLAudioElement; done: Promise<void> } {
+export function playAudioData(audioData: ArrayBuffer): {
+  audio: HTMLAudioElement;
+  done: Promise<void>;
+} {
   const a = document.getElementById('tts-player-a') as HTMLAudioElement | null;
   const b = document.getElementById('tts-player-b') as HTMLAudioElement | null;
   const audio = a || b;
@@ -170,14 +173,15 @@ export class AudioPlayer {
   // but keep a reset() to clear state and avoid stutter on some mobile browsers.
 
   constructor() {
-  const a = document.getElementById('tts-player-a') as HTMLAudioElement | null;
-  const b = document.getElementById('tts-player-b') as HTMLAudioElement | null;
-  if (!a || !b) throw new Error('Persistent audio elements #tts-player-a/#tts-player-b not found');
-  this.audioA = a;
-  this.audioB = b;
-  // Initialize chunk buffer
-  this.desktopChunks = [];
-  this.installOnEndedHandler();
+    const a = document.getElementById('tts-player-a') as HTMLAudioElement | null;
+    const b = document.getElementById('tts-player-b') as HTMLAudioElement | null;
+    if (!a || !b)
+      throw new Error('Persistent audio elements #tts-player-a/#tts-player-b not found');
+    this.audioA = a;
+    this.audioB = b;
+    // Initialize chunk buffer
+    this.desktopChunks = [];
+    this.installOnEndedHandler();
   }
 
   appendChunk(chunk: ArrayBuffer) {
@@ -246,8 +250,8 @@ export class AudioPlayer {
     this.currentSegmentChunks = [];
     this.streamClosed = false;
     this.isPlaying = false;
-  this.active = 'a';
-  this.preloaded = false;
+    this.active = 'a';
+    this.preloaded = false;
   }
 
   // Segment-aware playback API (progressive queue)

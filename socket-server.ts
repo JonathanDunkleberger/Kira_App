@@ -10,6 +10,76 @@ import { decrementDailySeconds } from '@/lib/usage';
 import { saveMessage, generateAndSaveTitle } from '@/lib/server/conversation-logic';
 import { runChat } from '@/lib/llm';
 
+async function streamAssistantReply(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  ws: WebSocket,
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  if (!apiKey) throw new Error('OPENAI_API_KEY missing for streaming');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      max_tokens: 200,
+      temperature: 0.7,
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`OpenAI stream failed: ${res.status} ${body}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let full = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames are separated by double newlines
+      const parts = buf.split('\n\n');
+      buf = parts.pop() || '';
+      for (const part of parts) {
+        const lines = part.split('\n').filter(Boolean);
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') {
+            // End of stream
+            try { reader.releaseLock(); } catch {}
+            return full;
+          }
+          try {
+            const json = JSON.parse(payload);
+            const content: string = json?.choices?.[0]?.delta?.content || '';
+            if (content) {
+              full += content;
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'assistant_text_chunk', text: content }));
+              }
+            }
+          } catch {
+            // ignore JSON parse errors for heartbeats
+          }
+        }
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  return full;
+}
+
 const PORT = Number(process.env.PORT || process.env.WS_PORT || 8080);
 const server = http.createServer((req, res) => {
   if (req.url === '/healthz') return res.writeHead(200).end('ok');
@@ -68,16 +138,21 @@ wss.on('connection', async (ws, req) => {
       historyMem.push({ role: 'user', content: transcript });
       await saveMessage(conversationId, 'user', transcript, userId);
 
-  const messages = [
+      const messages = [
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
         ...historyMem,
       ];
-  console.time(`[srv] llm`);
-  const assistant = await runChat(messages as any);
-  console.timeEnd(`[srv] llm`);
+      console.time(`[srv] llm`);
+  const assistant = await streamAssistantReply(messages as any, ws).catch(async (e: unknown) => {
+        // Fallback to non-streaming on error
+        try { console.warn('[Server] LLM streaming failed, falling back:', e); } catch {}
+        return await runChat(messages as any);
+      });
+      console.timeEnd(`[srv] llm`);
       if (!assistant) return;
 
-      sendJson(ws, { type: 'assistant_text', text: assistant });
+      // Ensure a final full-text event for compatibility with existing clients
+      try { sendJson(ws, { type: 'assistant_text', text: assistant }); } catch {}
       historyMem.push({ role: 'assistant', content: assistant });
       await saveMessage(conversationId, 'assistant', assistant, userId);
 

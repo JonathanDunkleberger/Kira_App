@@ -224,6 +224,9 @@ export function useConditionalMicrophone(onUtterance: (blob: Blob) => void) {
 
     // Initialize VAD (let the library acquire the mic internally)
     const vad = await MicVAD.new({
+      // Serve model from Next public/ root and point ORT WASM assets to CDN
+      baseAssetPath: '/',
+      onnxWASMBasePath: 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
       // timing in milliseconds (replaces *Frames*)
       minSpeechMs: 200, // ~0.2s for quicker start
       redemptionMs: 500, // grace period after speech ends

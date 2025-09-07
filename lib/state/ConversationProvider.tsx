@@ -153,8 +153,6 @@ export default function ConversationProvider({ children }: { children: React.Rea
             segmentedModeRef.current = false; // reset at the start of each turn
             // Initialize a new turn; set server-provided mime if available
             (audioPlayerRef.current as any)?.beginTurn?.(msg?.mime);
-            // Also reset legacy buffer to avoid mixing modes
-            audioPlayerRef.current?.reset();
           } catch {}
           break;
         case 'segment_start':

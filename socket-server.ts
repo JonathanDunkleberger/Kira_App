@@ -146,6 +146,36 @@ wss.on('connection', async (ws, req) => {
   let ttsProcessPromise: Promise<void> | null = null;
   let audioStarted = false;
   const mime = ttsFmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
+  // Backpressure-aware WS binary sending
+  const BACKPRESSURE_LIMIT = Number(process.env.WS_BACKPRESSURE_LIMIT || 1_000_000);
+  let binaryQueue: Uint8Array[] = [];
+  let binaryFlushing = false;
+  let binaryFlushPromise: Promise<void> | null = null;
+  function enqueueBinary(data: Uint8Array) {
+    binaryQueue.push(data);
+    if (!binaryFlushing) binaryFlushPromise = flushBinaryQueue();
+  }
+  async function flushBinaryQueue(): Promise<void> {
+    binaryFlushing = true;
+    try {
+      while (binaryQueue.length > 0 && ws.readyState === 1) {
+        if ((ws as any).bufferedAmount > BACKPRESSURE_LIMIT) {
+          await delay(10);
+          continue;
+        }
+        const chunk = binaryQueue.shift()!;
+        await new Promise<void>((resolve, reject) => {
+          try {
+            ws.send(chunk, { binary: true }, (err?: Error) => (err ? reject(err) : resolve()));
+          } catch (e) {
+            reject(e as any);
+          }
+        });
+      }
+    } finally {
+      binaryFlushing = false;
+    }
+  }
   const enqueueTts = (text: string) => {
     ttsQueue.push(text);
     if (!ttsProcessing) {
@@ -172,10 +202,16 @@ wss.on('connection', async (ws, req) => {
           console.log('[SERVER-DEBUG] Sending sentence to TTS...');
         } catch {}
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(next, (chunk) => sendBinary(ws, chunk), ttsFmt)
+          synthesizeSpeechStream(next, (chunk) => enqueueBinary(chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        // Ensure all chunks for this sentence are flushed over WS before signaling end
+        if (binaryFlushPromise) {
+          try {
+            await binaryFlushPromise;
+          } catch {}
+        }
         try {
           console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
         } catch {}
@@ -266,6 +302,12 @@ wss.on('connection', async (ws, req) => {
         if (ttsProcessPromise) {
           await ttsProcessPromise;
         }
+        // Ensure any outstanding WS binary sends are flushed
+        if (binaryFlushPromise) {
+          try {
+            await binaryFlushPromise;
+          } catch {}
+        }
         sendJson(ws, { type: 'audio_end' });
         audioStarted = false;
       } else {
@@ -280,10 +322,16 @@ wss.on('connection', async (ws, req) => {
           console.log('[SERVER-DEBUG] Sending sentence to TTS...');
         } catch {}
         await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk), ttsFmt)
+          synthesizeSpeechStream(assistant, (chunk) => enqueueBinary(chunk), ttsFmt)
             .then(resolve)
             .catch(reject);
         });
+        // Ensure all chunks are flushed before segment_end and audio_end
+        if (binaryFlushPromise) {
+          try {
+            await binaryFlushPromise;
+          } catch {}
+        }
         try {
           console.log('[SERVER-DEBUG] Finished streaming audio for sentence.');
         } catch {}
@@ -338,8 +386,8 @@ wss.on('connection', async (ws, req) => {
 function sendJson(ws: WebSocket, data: object) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
-function sendBinary(ws: WebSocket, data: Uint8Array) {
-  if (ws.readyState === 1) ws.send(data);
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

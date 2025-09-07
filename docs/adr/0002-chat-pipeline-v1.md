@@ -13,17 +13,17 @@ We support an interactive chat experience with two transport layers:
 
 ## Current flow (high-level)
 
-1) Client boot
+1. Client boot
    - Fetches config (`/api/config`), reads env, and initializes Supabase auth.
-2) Start/continue a conversation
+2. Start/continue a conversation
    - For anonymous users, we create/ensure an anon session; for signed-in users we claim/attach a conversation.
    - Conversation metadata is managed via HTTP endpoints under `/api/conversations*`.
-3) Realtime turn
+3. Realtime turn
    - A WebSocket connection is created to the voice server (URL from `NEXT_PUBLIC_WEBSOCKET_URL*`).
    - Query params include: `conversationId`, `token` (Supabase access token), and `tts` preference.
    - Client streams microphone audio; server streams interim text and synthesized audio back.
    - Turn timing is recorded (first text chunk, audio start) for UX metrics.
-4) Post-turn updates
+4. Post-turn updates
    - HTTP endpoints record usage, streaks, and analytics (e.g., paywall nudges, upgrade clicks).
 
 ## Where WS is used vs HTTP

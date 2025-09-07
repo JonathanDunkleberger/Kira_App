@@ -1,129 +1,94 @@
-#!/usr/bin/env zx
-import { $, which } from 'zx';
-import fs from 'node:fs';
-import path from 'node:path';
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
-// Ensure artifacts dir exists (cross-platform)
-fs.mkdirSync(path.resolve('artifacts'), { recursive: true });
+const A = "artifacts";
+fs.mkdirSync(A, { recursive: true });
 
-// project tree (3 levels, ignore big dirs)
-try {
-  if (await which('tree').catch(() => null)) {
-    await $`tree -I node_modules;.next;dist;build;.git;artifacts -L 3 > artifacts/project_tree.txt`;
-  } else {
-    // Fallback Node walker
-    const ignore = new Set(['node_modules', '.next', 'dist', 'build', '.git', 'artifacts']);
+function run(cmd, args, opts = {}) {
+  const r = spawnSync(cmd, args, { encoding: "utf8", shell: process.platform === "win32", ...opts });
+  return { ok: r.status === 0, out: r.stdout?.trim() || "", err: r.stderr?.trim() || "" };
+}
+function write(p, s) { fs.writeFileSync(path.join(A, p), s ?? "", "utf8"); }
+
+// 1) project tree (Windows-safe)
+{
+  const treeCli = run("npx", ["-y", "tree-cli", "-L", "3", "-I", "node_modules,.next,dist,build,artifacts,.git,coverage,.vercel,.turbo"]);
+  if (treeCli.ok) write("project_tree.txt", treeCli.out);
+  else {
+    // fallback: directories/files (depth <= 3)
+    const root = process.cwd().split(path.sep);
+    const max = root.length + 3;
     const lines = [];
-    function walk(dir, depth = 0) {
-      if (depth > 2) return;
-      const entries = fs
-        .readdirSync(dir, { withFileTypes: true })
-        .sort((a, b) => a.name.localeCompare(b.name));
-      for (const e of entries) {
-        if (ignore.has(e.name)) continue;
-        lines.push(`${'  '.repeat(depth)}- ${e.name}${e.isDirectory() ? '/' : ''}`);
-        if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1);
+    function walk(dir) {
+      const parts = dir.split(path.sep);
+      if (parts.length > max) return;
+      const rel = dir === process.cwd() ? "" : dir.slice(process.cwd().length + 1);
+      if (rel) lines.push(rel);
+      for (const e of fs.readdirSync(dir)) {
+        if (["node_modules",".next","dist","build","artifacts",".git","coverage",".vercel",".turbo"].includes(e)) continue;
+        const p = path.join(dir, e);
+        const st = fs.statSync(p);
+        if (st.isDirectory()) walk(p);
       }
     }
-    walk('.');
-    fs.writeFileSync('artifacts/project_tree.txt', lines.join('\n'));
+    walk(process.cwd());
+    write("project_tree.txt", lines.sort().join("\n"));
   }
-} catch {}
+}
 
-// dependency graph + cycles
-try {
-  await $`npm run graph --silent`;
-} catch {}
-try {
-  await $`npx madge app lib components --image artifacts/cycles.png`;
-} catch {}
+// 2) dependency graph & cycles
+{
+  // JSON graph (always works)
+  const depcruiseJson = run("npx", ["-y", "dependency-cruiser", "src", "app", "lib", "--include-only", "^src|^app|^lib", "--output-type", "json"]);
+  if (depcruiseJson.ok) write("deps.json", depcruiseJson.out);
 
-// dead/unused code & deps
-try {
-  await $`npm run -s deadcode`
-    .stdio('pipe')
-    .then((p) => fs.writeFileSync('artifacts/tsprune.txt', p.stdout ?? ''));
-} catch {}
-try {
-  await $`npx knip --reporter json`
-    .stdio('pipe')
-    .then((p) => fs.writeFileSync('artifacts/knip.json', p.stdout ?? ''));
-} catch {}
-try {
-  await $`npm run -s deps:unused`
-    .stdio('pipe')
-    .then((p) => fs.writeFileSync('artifacts/depcheck.txt', p.stdout ?? ''));
-} catch {}
-
-// lint & typecheck
-try {
-  await $`npx eslint . -f json`
-    .stdio('pipe')
-    .then((p) => fs.writeFileSync('artifacts/eslint.json', p.stdout ?? ''));
-} catch {}
-try {
-  await $`npx tsc --noEmit --pretty false`
-    .stdio('pipe')
-    .then((p) => fs.writeFileSync('artifacts/tsc.txt', p.stdout ?? ''));
-} catch {}
-
-// routes (Next.js 13+/App Router)
-try {
-  if (await which('rg').catch(() => null)) {
-    await $`rg -n "createRouteHandler|generateStaticParams|metadata|export const dynamic|export const revalidate" app`
-      .stdio('pipe')
-      .then((p) => fs.writeFileSync('artifacts/routes_signals.txt', p.stdout ?? ''));
+  // DOT → SVG/PNG if dot exists
+  const depcruiseDot = run("npx", ["-y", "dependency-cruiser", "src", "app", "lib", "--include-only", "^src|^app|^lib", "--output-type", "dot"]);
+  const dotExists = run("dot", ["-V"]).ok;
+  if (depcruiseDot.ok && dotExists) {
+    write("deps.dot", depcruiseDot.out);
+    run("dot", ["-Tsvg", path.join(A, "deps.dot"), "-o", path.join(A, "deps.svg")]);
   }
-} catch {}
 
-// API endpoints (Next.js route handlers)
-try {
-  if (await which('rg').catch(() => null)) {
-    await $`rg -n "/api/.*(GET|POST|PUT|DELETE|PATCH)" app`
-      .stdio('pipe')
-      .then((p) => fs.writeFileSync('artifacts/endpoints_guess.txt', p.stdout ?? ''));
-  }
-} catch {}
+  // cycles via madge
+  const madgeJson = run("npx", ["-y", "madge", "app", "lib", "--json", "--circular"]);
+  write("cycles.json", madgeJson.ok ? madgeJson.out : "[]");
+}
 
-// TODO / flags
-try {
-  if (await which('rg').catch(() => null)) {
-    await $`rg -n "(TODO|FIXME|@deprecated|featureFlag|killSwitch)"`
-      .stdio('pipe')
-      .then((p) => fs.writeFileSync('artifacts/todos.txt', p.stdout ?? ''));
-  }
-} catch {}
+// 3) dead/unused code & deps
+{
+  const knip = run("npx", ["-y", "knip", "--reporter", "json"]);
+  write("knip.json", knip.ok ? knip.out : "[]");
 
-// env usage (uppercase vars) vs example file
-try {
-  if (await which('rg').catch(() => null)) {
-    await $`rg -oN "[A-Z][A-Z0-9_]{2,}" app lib components | sort -u`
-      .stdio('pipe')
-      .then((p) => fs.writeFileSync('artifacts/env_in_code.txt', p.stdout ?? ''));
+  const tsprune = run("npx", ["-y", "ts-prune"]);
+  write("tsprune.txt", tsprune.ok ? tsprune.out : "");
+
+  const depcheck = run("npx", ["-y", "depcheck"]);
+  write("depcheck.txt", depcheck.ok ? depcheck.out : depcheck.err);
+}
+
+// 4) lint & typecheck
+{
+  write("eslint.json", run("npx", ["-y", "eslint", ".", "-f", "json"]).out);
+  write("tsc.txt", run("npx", ["-y", "tsc", "--noEmit", "--pretty", "false"]).out);
+}
+
+// 5) routes / endpoints / todos (ripgrep if present)
+{
+  const hasRg = run("rg", ["--version"]).ok;
+  if (hasRg) {
+    write("routes_signals.txt", run("rg", ["-n", "createRouteHandler|generateStaticParams|export const dynamic|export const revalidate", "app"]).out);
+    write("endpoints_guess.txt", run("rg", ["-n", "/api/.*(GET|POST|PUT|DELETE|PATCH)", "app"]).out);
+    write("todos.txt", run("rg", ["-n", "(TODO|FIXME|@deprecated|featureFlag|killSwitch)"]).out);
+    write("env_in_code.txt", run("rg", ["-oN", "[A-Z][A-Z0-9_]{2,}", "app", "lib"]).out);
   } else {
-    // simple fallback: scan files with a regex in Node
-    const globs = ['app', 'lib', 'components'];
-    const re = /[A-Z][A-Z0-9_]{2,}/g;
-    const set = new Set();
-    function scan(dir) {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const e of entries) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) scan(p);
-        else if (/(\.[jt]sx?|\.m?js|\.ts)$/.test(e.name)) {
-          const txt = fs.readFileSync(p, 'utf8');
-          const matches = txt.match(re) || [];
-          for (const m of matches) set.add(m);
-        }
-      }
-    }
-    for (const g of globs) if (fs.existsSync(g)) scan(g);
-    fs.writeFileSync('artifacts/env_in_code.txt', Array.from(set).sort().join('\n'));
+    write("routes_signals.txt", "");
+    write("endpoints_guess.txt", "");
+    write("todos.txt", "");
+    write("env_in_code.txt", "");
   }
-  if (fs.existsSync('.env.example')) {
-    const lines = fs.readFileSync('.env.example', 'utf8').split(/\r?\n/).filter(Boolean).sort();
-    fs.writeFileSync('artifacts/env_example_sorted.txt', lines.join('\n'));
-  }
-} catch {}
+}
 
-console.log('✅ Review packet generated in artifacts/');
+console.log("✅ Review packet written to artifacts/");

@@ -1,3 +1,23 @@
+export async function warmAzureTtsConnection(): Promise<void> {
+  const KEY = process.env.AZURE_SPEECH_KEY || '';
+  const REGION = process.env.AZURE_SPEECH_REGION || '';
+  if (!KEY || !REGION) return;
+  try {
+    const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+    await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Ocp-Apim-Subscription-Key': KEY,
+        'Accept': 'application/json',
+        'User-Agent': 'kira-mvp'
+  }
+    }).then(r => { try { void r.arrayBuffer(); } catch {} });
+  } catch (e) {
+    // Non-fatal: warming is best-effort
+    try { console.warn('[TTS] Warm-up failed:', e); } catch {}
+  }
+}
+
 export async function synthesizeSpeech(text: string, format: 'webm' | 'mp3' = 'webm'): Promise<string> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';

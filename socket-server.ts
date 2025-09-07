@@ -5,7 +5,7 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { transcribeWebmToText } from '@/lib/server/stt';
-import { synthesizeSpeechStream } from '@/lib/server/tts';
+import { synthesizeSpeechStream, warmAzureTtsConnection } from '@/lib/server/tts';
 import { decrementDailySeconds } from '@/lib/usage';
 import { saveMessage, generateAndSaveTitle } from '@/lib/server/conversation-logic';
 import { runChat } from '@/lib/llm';
@@ -16,6 +16,10 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end('Not Found');
 });
 const wss = new WebSocketServer({ server });
+
+// Warm Azure TTS connection at startup and every 5 minutes (best-effort)
+void warmAzureTtsConnection();
+setInterval(() => { void warmAzureTtsConnection(); }, 5 * 60 * 1000);
 
 wss.on('connection', async (ws, req) => {
   try {

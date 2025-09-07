@@ -17,6 +17,9 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const onMessageRef = useRef<(msg: any) => void>(typeof onMessageOrOpts === 'function' ? onMessageOrOpts : onMessageOrOpts.onMessage);
   const convIdRef = useRef<string | null>(typeof onMessageOrOpts === 'function' ? null : (onMessageOrOpts.conversationId ?? null));
+  // Timing instrumentation
+  const timerStartedRef = useRef(false);
+  const firstTextLoggedRef = useRef(false);
 
   useEffect(() => {
     if (typeof onMessageOrOpts === 'function') {
@@ -89,16 +92,24 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
     ws.onmessage = (event) => {
       // Pass all messages, binary or text, to the provider for handling
       if (typeof event.data === 'string') {
-        if (process.env.NODE_ENV !== 'production') {
-          try {
-            const parsed = JSON.parse(event.data);
-            console.log('[WS] Received STRING:', parsed);
-          } catch {
-            console.log('[WS] Received STRING (raw):', event.data);
-          }
-        }
         try {
           const msg = JSON.parse(event.data);
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[WS] Received STRING:', msg);
+          }
+          // Timing checkpoints
+          try {
+            if ((msg.type === 'assistant_text' || msg.type === 'assistant_text_chunk') && !firstTextLoggedRef.current) {
+              console.timeLog('full-response-latency', 'First text chunk received');
+              firstTextLoggedRef.current = true;
+            }
+            if (msg.type === 'audio_start') {
+              console.timeLog('full-response-latency', 'Audio started playing');
+              console.timeEnd('full-response-latency');
+              timerStartedRef.current = false;
+              firstTextLoggedRef.current = false;
+            }
+          } catch {}
           onMessageRef.current(msg);
         } catch (e) {
           if (process.env.NODE_ENV !== 'production') console.error('Failed to parse server JSON message:', e);
@@ -119,6 +130,12 @@ export function useVoiceSocket(onMessageOrOpts: ((msg: any) => void) | { onMessa
   const send = useCallback((data: object | ArrayBuffer) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       if (data instanceof ArrayBuffer) {
+        // Start turn timing on first audio send
+        if (!timerStartedRef.current) {
+          try { console.time('full-response-latency'); } catch {}
+          timerStartedRef.current = true;
+          firstTextLoggedRef.current = false;
+        }
         if (process.env.NODE_ENV !== 'production') {
           try { console.log('[WS] Sending BINARY. Size:', (data as ArrayBuffer).byteLength, 'bytes'); } catch {}
         }

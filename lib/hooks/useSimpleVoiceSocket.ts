@@ -6,6 +6,8 @@ import { useConversationStore } from '@/lib/state/conversation-store'
 export const useSimpleVoiceSocket = () => {
   const wsRef = useRef<WebSocket | null>(null)
   const { setStatus, addMessage, setWsConnection } = useConversationStore()
+  const timerStartedRef = useRef(false)
+  const firstTextLoggedRef = useRef(false)
 
   useEffect(() => {
     const connectWebSocket = () => {
@@ -27,9 +29,19 @@ export const useSimpleVoiceSocket = () => {
               break
             case 'assistant_response':
               addMessage({ role: 'assistant', content: data.text })
+              if (!firstTextLoggedRef.current) {
+                try { console.timeLog('full-response-latency', 'First text chunk received') } catch {}
+                firstTextLoggedRef.current = true
+              }
               break
             case 'audio_ready':
               setStatus('speaking')
+              try {
+                console.timeLog('full-response-latency', 'Audio started playing')
+                console.timeEnd('full-response-latency')
+              } catch {}
+              timerStartedRef.current = false
+              firstTextLoggedRef.current = false
               break
             case 'ready_for_input':
               setStatus('listening')
@@ -55,6 +67,11 @@ export const useSimpleVoiceSocket = () => {
   }, [addMessage, setStatus, setWsConnection])
 
   const sendAudio = (audioData: ArrayBuffer) => {
+    if (!timerStartedRef.current) {
+      try { console.time('full-response-latency') } catch {}
+      timerStartedRef.current = true
+      firstTextLoggedRef.current = false
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(audioData)
     }

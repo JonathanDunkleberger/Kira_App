@@ -54,19 +54,23 @@ wss.on('connection', async (ws, req) => {
     const payload = Buffer.concat(chunkBuffers);
     chunkBuffers = [];
     try {
-      const turnStart = Date.now();
-      const transcript = await transcribeWebmToText(new Uint8Array(payload));
+  const turnStart = Date.now();
+  console.time(`[srv] transcription`);
+  const transcript = await transcribeWebmToText(new Uint8Array(payload));
+  console.timeEnd(`[srv] transcription`);
       if (!transcript) return;
 
       sendJson(ws, { type: 'transcript', text: transcript });
       historyMem.push({ role: 'user', content: transcript });
       await saveMessage(conversationId, 'user', transcript, userId);
 
-      const messages = [
+  const messages = [
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
         ...historyMem,
       ];
+  console.time(`[srv] llm`);
   const assistant = await runChat(messages as any);
+  console.timeEnd(`[srv] llm`);
       if (!assistant) return;
 
       sendJson(ws, { type: 'assistant_text', text: assistant });
@@ -79,9 +83,11 @@ wss.on('connection', async (ws, req) => {
       } catch {}
 
       sendJson(ws, { type: 'audio_start' });
+      console.time(`[srv] tts`);
       await new Promise<void>((resolve, reject) => {
         synthesizeSpeechStream(assistant, (chunk) => sendBinary(ws, chunk)).then(resolve).catch(reject);
       });
+      console.timeEnd(`[srv] tts`);
       sendJson(ws, { type: 'audio_end' });
 
       if (userId) {

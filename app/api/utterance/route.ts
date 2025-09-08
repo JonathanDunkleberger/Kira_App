@@ -1,18 +1,14 @@
 import { NextRequest } from 'next/server';
 
-import {
-  decrementDailySeconds,
-  decrementDailyMessages,
-  getDailySecondsRemaining,
-  getEntitlement,
-} from '@/lib/usage';
-import { enforcePaywall, createPaywallResponse, PaywallError } from '@/lib/paywall';
-import OpenAI from '@/lib/server/openai-compat';
-import { transcribeWebmToText } from '@/lib/stt';
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
+// Legacy entitlement & decrement logic removed; using new usageLimiter
+import OpenAI from '../../../lib/server/openai-compat';
+import { transcribeWebmToText } from '../../../lib/stt';
+import { getSupabaseServerAdmin } from '../../../lib/server/supabaseAdmin';
+import { checkAndIncrementUsage, getCurrentUsage } from '../../../lib/usageLimiter';
 type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 
-export const runtime = 'edge';
+// Need Node.js runtime to use service role (usageLimiter) safely
+export const runtime = 'nodejs';
 
 // Prompt is inlined for Edge reliability
 const CHARACTER_SYSTEM_PROMPT = `
@@ -102,63 +98,42 @@ export async function POST(req: NextRequest) {
     const user = (data as any)?.user;
     if (user) userId = user.id;
   }
-  // Server-side paywall enforcement for authenticated users with graceful last-turn signal
+  // New usage enforcement (authenticated users only). Guests still rely on conversation seconds.
   let isPro = false;
-  try {
-    if (userId) {
-      const ent = await getEntitlement(userId);
-      isPro = ent.status === 'active';
-      if (ent.status !== 'active') {
-        const secondsLeft = await getDailySecondsRemaining(userId);
-        if (secondsLeft <= 0) {
-          return new Response('Daily time limit exceeded.', {
-            status: 402,
-            headers: { 'X-Paywall-Required': 'true' },
-          });
-        }
-        // no header flag; automatic client watcher handles last-turn experience
-      }
-    } else {
-      // Guests: use conversation seconds_remaining
-      if (conversationId) {
-        const { data: conv } = await sb
-          .from('conversations')
-          .select('seconds_remaining')
-          .eq('id', conversationId)
-          .single();
-        const secondsLeft = Number(conv?.seconds_remaining ?? 0);
-        if (secondsLeft <= 0) {
-          return new Response('Guest time limit exceeded.', {
-            status: 402,
-            headers: { 'X-Paywall-Required': 'true' },
-          });
-        }
-        // no header flag; automatic client watcher handles last-turn experience
-      }
-    }
-  } catch (e) {
-    console.warn('Usage enforcement check failed:', e);
-  }
-
-  // Additional server-side enforcement for guests using conversation seconds_remaining
-  if (!userId && conversationId) {
+  if (userId) {
     try {
-      const { data: conv, error: convErr } = await sb
+      const usage = await getCurrentUsage(userId);
+      isPro = usage.isPro;
+      if (!usage.isPro && usage.remaining <= 0) {
+        return new Response('Daily time limit exceeded.', {
+          status: 402,
+          headers: { 'X-Paywall-Required': 'true' },
+        });
+      }
+    } catch (e) {
+      console.warn('Usage enforcement check failed:', e);
+    }
+  } else if (conversationId) {
+    // Guest conversation gating (unchanged for now)
+    try {
+      const { data: conv } = await sb
         .from('conversations')
         .select('seconds_remaining')
         .eq('id', conversationId)
         .single();
-      if (
-        convErr ||
-        (conv && typeof conv.seconds_remaining === 'number' && conv.seconds_remaining <= 0)
-      ) {
+      const secondsLeft = Number(conv?.seconds_remaining ?? 0);
+      if (secondsLeft <= 0) {
         return new Response('Guest time limit exceeded.', {
           status: 402,
           headers: { 'X-Paywall-Required': 'true' },
         });
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Guest usage enforcement check failed:', e);
+    }
   }
+
+  // (Legacy duplicate guest enforcement removed)
 
   // Guests may use a guest conversationId; validation occurs when persisting (only for authed users)
 
@@ -233,8 +208,6 @@ export async function POST(req: NextRequest) {
   // --- END RAG IMPLEMENTATION ---
 
   // 3. Stream LLM Response
-  // Determine plan status (best-effort: if we reached here with a userId and not blocked above,
-  // memory is enabled only when ent.status === 'active'). We conservatively mark disabled for guests.
   const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: augmentedSystemPrompt + '\n\n' + memoryFlag },
@@ -286,28 +259,41 @@ export async function POST(req: NextRequest) {
           console.error('Memory extraction trigger error:', e);
         }
 
-        // --- START GUEST TIME DECREMENT LOGIC ---
-        // Messages-based decrement: one unit per assistant reply (auth users only for now)
+        // Usage increment: approximate duration via transcript word count heuristic ( ~180 wpm -> 3 wps )
         try {
           if (userId) {
-            await decrementDailyMessages(userId);
+            const words = transcript.split(/\s+/).filter(Boolean).length;
+            const approxSeconds = Math.max(1, Math.ceil(words / 3));
+            await checkAndIncrementUsage(userId, approxSeconds);
           } else if (conversationId) {
-            // Guests unchanged until DB migration: decrement by a small fixed time to prevent abuse
+            // Guest decrement: small fixed chunk
             await sb.rpc('decrement_guest_seconds', {
               conv_id: conversationId,
               seconds_to_decrement: 5,
             });
           }
         } catch (decErr) {
-          console.warn('Failed to decrement remaining quota:', decErr);
+          console.warn('Failed to record usage increment:', decErr);
         }
-        // --- END GUEST TIME DECREMENT LOGIC ---
       },
     });
 
+    let usageHeaders: Record<string, string> = {};
+    if (userId) {
+      try {
+        const latest = await getCurrentUsage(userId);
+        usageHeaders = {
+          'X-Usage-Remaining': String(latest.remaining),
+          'X-Usage-Limit': String(latest.limit),
+          'X-Usage-Used': String(latest.used),
+          'X-Usage-Pro': String(latest.isPro),
+        };
+      } catch {}
+    }
     return new StreamingTextResponse(stream, {
       headers: {
         'X-User-Transcript': encodeURIComponent(transcript),
+        ...usageHeaders,
       },
     });
   } catch (error: any) {

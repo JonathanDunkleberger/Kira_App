@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { openBillingPortal, signOut } from '@/lib/client-api';
-import HeaderUsageIndicator from '@/components/HeaderUsageIndicator';
+import UsageTimer from '@/components/UsageTimer';
 import { supabase } from '@/lib/client/supabaseClient';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import UserProfile from '@/components/UserProfile';
@@ -42,7 +42,7 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  // Countdown/CTA handled by HeaderUsageIndicator
+  // Usage timer handled by UsageTimer component
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
@@ -60,7 +60,7 @@ export default function Header() {
 
           {!signedIn ? (
             <>
-              <HeaderUsageIndicator />
+              <UsageTimer />
               <Link
                 href="/sign-in"
                 className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5"
@@ -76,7 +76,7 @@ export default function Header() {
             </>
           ) : (
             <>
-              <HeaderUsageIndicator />
+              <UsageTimer />
               <UserProfile />
             </>
           )}

@@ -48,23 +48,30 @@ export function useEntitlement(): Entitlement & {
   });
 
   const fetchEnt = useCallback(async () => {
-    console.log('[Entitlement] Refreshing usage...');
+    console.log('[Entitlement] Refreshing usage (session API)...');
     try {
       const guestId = getGuestId();
-      console.log('[Entitlement] Using guestId for refresh:', guestId);
-      const res = await fetch('/api/usage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guestId }),
+      const url = new URL('/api/session', window.location.origin);
+      url.searchParams.set('guestId', guestId);
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const res = await fetch(url.toString(), {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
-
-      if (!res.ok) throw new Error('Failed to fetch usage');
-
+      if (!res.ok) throw new Error('Failed to fetch session usage');
       const data = await res.json();
-      console.log('[Entitlement] New usage data received:', data);
-      setEntitlement((prev) => ({ ...prev, ...data, isLoading: false }));
+      // Derive userStatus from status/plan fields
+      const userStatus: 'guest' | 'free' | 'pro' = data.status === 'active' ? 'pro' : data.plan === 'free' ? 'free' : 'guest';
+      const mapped = {
+        userStatus,
+        secondsRemaining: Number.isFinite(data.secondsRemaining) ? data.secondsRemaining : 0,
+        dailyLimitSeconds: Number.isFinite(data.dailyLimitSeconds) ? data.dailyLimitSeconds : 0,
+        trialPerDay: Number.isFinite(data.trialPerDay) ? data.trialPerDay : 0,
+        proSessionLimit: Number.isFinite(data.proSessionLimit) ? data.proSessionLimit : 0,
+      };
+      setEntitlement((prev) => ({ ...prev, ...mapped, isLoading: false }));
       try {
-        localStorage.setItem('kira:secondsRemaining', String(data?.secondsRemaining ?? 0));
+        localStorage.setItem('kira:secondsRemaining', String(mapped.secondsRemaining));
       } catch {}
     } catch (e) {
       console.error('Entitlement fetch failed', e);

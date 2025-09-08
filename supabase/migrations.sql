@@ -25,6 +25,13 @@ create table if not exists public.profiles (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+  -- Daily usage authoritative columns (idempotent) ----------------------------------
+  ALTER TABLE IF EXISTS public.profiles
+    ADD COLUMN IF NOT EXISTS used_seconds_today integer DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS last_seconds_reset timestamptz DEFAULT NOW();
+
+  CREATE INDEX IF NOT EXISTS idx_profiles_last_seconds_reset
+    ON public.profiles (last_seconds_reset);
 
 -- Conversations and messages
 create table if not exists public.conversations (

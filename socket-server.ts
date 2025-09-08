@@ -5,12 +5,12 @@ import http from 'node:http';
 
 import { WebSocketServer, WebSocket } from 'ws';
 
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { transcribeWebmToText } from '@/lib/server/stt';
-import { synthesizeSpeechStream, warmAzureTtsConnection } from '@/lib/server/tts';
-import { decrementDailySeconds } from '@/lib/usage';
-import { saveMessage, generateAndSaveTitle } from '@/lib/server/conversation-logic';
-import { runChat } from '@/lib/llm';
+import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin';
+import { transcribeWebmToText } from './lib/server/stt';
+import { synthesizeSpeechStream, warmAzureTtsConnection } from './lib/server/tts';
+import { checkAndIncrementUsage } from './lib/usageLimiter';
+import { saveMessage, generateAndSaveTitle } from './lib/server/conversation-logic';
+import { runChat } from './lib/llm';
 
 async function streamAssistantReply(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -259,10 +259,14 @@ wss.on('connection', async (ws, req) => {
       if (userId) {
         const secondsUsed = (Date.now() - turnStart) / 1000;
         try {
-          const secondsRemaining = await decrementDailySeconds(userId, secondsUsed);
-          if (typeof secondsRemaining === 'number') {
-            sendJson(ws, { type: 'usage_update', secondsUsed, secondsRemaining });
-          }
+          const result = await checkAndIncrementUsage(userId, secondsUsed);
+          sendJson(ws, {
+            type: 'usage_update',
+            secondsUsed,
+            secondsRemaining: result.remaining,
+            limit: result.limit,
+            isPro: result.isPro,
+          });
         } catch {}
       }
     } catch (err) {

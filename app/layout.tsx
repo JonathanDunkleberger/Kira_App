@@ -2,6 +2,8 @@ import './globals.css';
 import { Suspense } from 'react';
 
 import Header from '@/components/Header';
+import TimerPill from '@/components/TimerPill';
+import EntitlementsHydrator from '@/components/EntitlementsHydrator';
 import Banner from '@/components/Banner';
 import Sidebar from '@/components/Sidebar'; // <-- Add this import
 import ConversationProvider from '@/lib/state/ConversationProvider';
@@ -24,6 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex-1 flex flex-col">
               {/* Header moved inside provider scope */}
               <Header />
+              <EntitlementsHydrator />
+              <TimerPill />
               <div className="flex-1 min-w-0">{children}</div>
             </div>
           </div>

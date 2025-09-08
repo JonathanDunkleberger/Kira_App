@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 import { preferredTtsFormat } from '@/lib/audio';
 import { supabase } from '@/lib/client/supabaseClient';
+import { useUsage } from '@/lib/useUsage';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -127,7 +128,15 @@ export function useVoiceSocket(
               firstTextLoggedRef.current = false;
             }
           } catch {}
-          onMessageRef.current(msg);
+          if (msg?.t === 'heartbeat') {
+            try {
+              useUsage.getState().setHeartbeat(msg);
+            } catch {}
+          } else if (msg?.t === 'chat_session') {
+            // could update conversation id state if needed
+          } else {
+            onMessageRef.current(msg);
+          }
         } catch (e) {
           if (process.env.NODE_ENV !== 'production')
             console.error('Failed to parse server JSON message:', e);

@@ -10,6 +10,7 @@ import { transcribeWebmToText } from './lib/server/stt';
 import { synthesizeSpeechStream, warmAzureTtsConnection } from './lib/server/tts';
 // usageLimiter removed; heartbeat accrual to be implemented
 import { saveMessage, generateAndSaveTitle } from './lib/server/conversation-logic';
+import { startHeartbeat } from './server/heartbeat';
 import { runChat } from './lib/llm';
 
 async function streamAssistantReply(
@@ -119,12 +120,30 @@ wss.on('connection', async (ws, req) => {
     console.log(`[Server] ✅ New client connected from IP: ${ip}`);
   } catch {}
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
-  const conversationId = url.searchParams.get('conversationId');
+  let conversationId: string | null = url.searchParams.get('conversationId');
   const token = url.searchParams.get('token') || '';
   const ttsFmt = (url.searchParams.get('tts') as 'webm' | 'mp3' | null) || 'webm';
-  if (!conversationId) return ws.close(1008, 'Missing conversationId');
-
   const supa = getSupabaseServerAdmin();
+  // If no conversationId provided, create a chat_session (conversation) row
+  if (!conversationId) {
+    try {
+      const { data, error } = await supa
+        .from('chat_sessions')
+        .insert({})
+        .select('id')
+        .single();
+      if (error) throw error;
+  conversationId = data?.id || null;
+      if (conversationId && (ws as any).readyState === 1) {
+        (ws as any).send(JSON.stringify({ t: 'chat_session', chatSessionId: conversationId }));
+      }
+    } catch (e) {
+      console.error('Failed to auto-create chat session', e);
+      return ws.close(1011, 'Failed to create chat session');
+    }
+  }
+
+  // supa already initialized above
   let userId: string | null = null;
   if (token) {
     try {
@@ -186,6 +205,7 @@ wss.on('connection', async (ws, req) => {
   } catch {}
 
   const flushNow = async () => {
+    if (!conversationId) return; // safety
     if (isProcessing || chunkBuffers.length === 0) return;
     isProcessing = true;
     const payload = Buffer.concat(chunkBuffers);
@@ -199,7 +219,7 @@ wss.on('connection', async (ws, req) => {
 
       sendJson(ws, { type: 'transcript', text: transcript });
       historyMem.push({ role: 'user', content: transcript });
-      await saveMessage(conversationId, 'user', transcript, userId);
+  await saveMessage(conversationId as string, 'user', transcript, userId);
 
       const messages = [
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
@@ -227,10 +247,10 @@ wss.on('connection', async (ws, req) => {
         sendJson(ws, { type: 'assistant_text', text: assistant });
       } catch {}
       historyMem.push({ role: 'assistant', content: assistant });
-      await saveMessage(conversationId, 'assistant', assistant, userId);
+  await saveMessage(conversationId as string, 'assistant', assistant, userId);
 
       try {
-        const newTitle = await generateAndSaveTitle(conversationId, historyMem);
+  const newTitle = await generateAndSaveTitle(conversationId as string, historyMem);
         if (newTitle) sendJson(ws, { type: 'title_update', title: newTitle, conversationId });
       } catch {}
 
@@ -256,7 +276,7 @@ wss.on('connection', async (ws, req) => {
         audioStarted = false;
       }
 
-  // TODO: heartbeat will handle usage increments and client updates
+      // TODO: heartbeat will handle usage increments and client updates
     } catch (err) {
       console.error(`Error in flushNow for ${conversationId}:`, err);
     } finally {
@@ -287,6 +307,15 @@ wss.on('connection', async (ws, req) => {
   ws.on('error', (err) => {
     console.error('[Server] ❗️ WebSocket error:', err);
   });
+
+  // Start authoritative heartbeat if user authenticated and we have a conversationId
+  try {
+    if (userId && conversationId) {
+      startHeartbeat(ws, userId, conversationId);
+    }
+  } catch (e) {
+    console.error('Failed to start heartbeat', e);
+  }
 });
 
 function sendJson(ws: WebSocket, data: object) {

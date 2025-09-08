@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin';
 import { transcribeWebmToText } from './lib/server/stt';
 import { synthesizeSpeechStream, warmAzureTtsConnection } from './lib/server/tts';
-import { checkAndIncrementUsage } from './lib/usageLimiter';
+// usageLimiter removed; heartbeat accrual to be implemented
 import { saveMessage, generateAndSaveTitle } from './lib/server/conversation-logic';
 import { runChat } from './lib/llm';
 
@@ -256,19 +256,7 @@ wss.on('connection', async (ws, req) => {
         audioStarted = false;
       }
 
-      if (userId) {
-        const secondsUsed = (Date.now() - turnStart) / 1000;
-        try {
-          const result = await checkAndIncrementUsage(userId, secondsUsed);
-          sendJson(ws, {
-            type: 'usage_update',
-            secondsUsed,
-            secondsRemaining: result.remaining,
-            limit: result.limit,
-            isPro: result.isPro,
-          });
-        } catch {}
-      }
+  // TODO: heartbeat will handle usage increments and client updates
     } catch (err) {
       console.error(`Error in flushNow for ${conversationId}:`, err);
     } finally {

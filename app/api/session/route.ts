@@ -2,8 +2,11 @@ import { randomUUID } from 'crypto';
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { envServer as env, FREE_TRIAL_SECONDS, PRO_SESSION_SECONDS } from '../../../lib/server/env.server';
-import { getCurrentUsage } from '../../../lib/usageLimiter';
+import {
+  envServer as env,
+  FREE_TRIAL_SECONDS,
+  PRO_SESSION_SECONDS,
+} from '../../../lib/server/env.server';
 import { getSupabaseServerAdmin } from '../../../lib/server/supabaseAdmin';
 // Legacy entitlement helpers removed in usage migration.
 
@@ -85,15 +88,15 @@ export async function GET(req: NextRequest) {
   if (error || !userData?.user) return new NextResponse('Invalid auth', { status: 401 });
   const userId = userData.user.id;
 
-  const usage = await getCurrentUsage(userId);
-  const isPro = usage.isPro;
-  const secondsRemaining = isPro ? Number.POSITIVE_INFINITY : usage.remaining;
+  // TODO: replace with entitlements heartbeat lookup once implemented
+  const isPro = false; // placeholder until new entitlements system
+  const secondsRemaining = FREE_TRIAL_SECONDS; // temporary fallback
   const payload = {
     token: randomUUID(),
-  plan: isPro ? 'supporter' : 'free',
-  status: isPro ? 'active' : 'inactive',
-  secondsRemaining,
-  dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : usage.limit,
+    plan: isPro ? 'supporter' : 'free',
+    status: isPro ? 'active' : 'inactive',
+    secondsRemaining,
+  dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : FREE_TRIAL_SECONDS,
     trialPerDay: FREE_TRIAL_SECONDS,
     proSessionLimit: PRO_SESSION_SECONDS,
     paywallRequired: secondsRemaining <= 0 && !isPro,

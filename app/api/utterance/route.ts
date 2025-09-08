@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
 
-// Legacy entitlement & decrement logic removed; using new usageLimiter
+// Legacy entitlement logic removed; new heartbeat-based usage accrual pending
 import OpenAI from '../../../lib/server/openai-compat';
 import { transcribeWebmToText } from '../../../lib/stt';
 import { getSupabaseServerAdmin } from '../../../lib/server/supabaseAdmin';
-import { checkAndIncrementUsage, getCurrentUsage } from '../../../lib/usageLimiter';
+// usageLimiter removed; heartbeat-based accrual will replace this
 type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 
-// Need Node.js runtime to use service role (usageLimiter) safely
+// Node runtime retained for service role operations
 export const runtime = 'nodejs';
 
 // Prompt is inlined for Edge reliability
@@ -101,18 +101,7 @@ export async function POST(req: NextRequest) {
   // New usage enforcement (authenticated users only). Guests still rely on conversation seconds.
   let isPro = false;
   if (userId) {
-    try {
-      const usage = await getCurrentUsage(userId);
-      isPro = usage.isPro;
-      if (!usage.isPro && usage.remaining <= 0) {
-        return new Response('Daily time limit exceeded.', {
-          status: 402,
-          headers: { 'X-Paywall-Required': 'true' },
-        });
-      }
-    } catch (e) {
-      console.warn('Usage enforcement check failed:', e);
-    }
+    // TODO: enforce via entitlements/daily_usage once implemented
   } else if (conversationId) {
     // Guest conversation gating (unchanged for now)
     try {
@@ -260,36 +249,11 @@ export async function POST(req: NextRequest) {
         }
 
         // Usage increment: approximate duration via transcript word count heuristic ( ~180 wpm -> 3 wps )
-        try {
-          if (userId) {
-            const words = transcript.split(/\s+/).filter(Boolean).length;
-            const approxSeconds = Math.max(1, Math.ceil(words / 3));
-            await checkAndIncrementUsage(userId, approxSeconds);
-          } else if (conversationId) {
-            // Guest decrement: small fixed chunk
-            await sb.rpc('decrement_guest_seconds', {
-              conv_id: conversationId,
-              seconds_to_decrement: 5,
-            });
-          }
-        } catch (decErr) {
-          console.warn('Failed to record usage increment:', decErr);
-        }
+  // TODO: usage accrual will be handled by websocket heartbeat
       },
     });
 
-    let usageHeaders: Record<string, string> = {};
-    if (userId) {
-      try {
-        const latest = await getCurrentUsage(userId);
-        usageHeaders = {
-          'X-Usage-Remaining': String(latest.remaining),
-          'X-Usage-Limit': String(latest.limit),
-          'X-Usage-Used': String(latest.used),
-          'X-Usage-Pro': String(latest.isPro),
-        };
-      } catch {}
-    }
+  let usageHeaders: Record<string, string> = {};
     return new StreamingTextResponse(stream, {
       headers: {
         'X-User-Transcript': encodeURIComponent(transcript),

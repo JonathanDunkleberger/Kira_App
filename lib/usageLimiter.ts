@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false, autoRefreshToken: false } }
+  { auth: { persistSession: false, autoRefreshToken: false } },
 );
 
 export interface UsageResult {
@@ -62,7 +62,7 @@ export async function getCurrentUsage(userId: string | null): Promise<UsageResul
 
 export async function checkAndIncrementUsage(
   userId: string,
-  durationSeconds: number
+  durationSeconds: number,
 ): Promise<UsageResult> {
   const current = await getCurrentUsage(userId);
   if (current.hasReachedLimit) return current;
@@ -82,6 +82,6 @@ export async function checkAndIncrementUsage(
     remaining,
     limit: current.limit,
     isPro: current.isPro,
-    hasReachedLimit: remaining <= 0
+    hasReachedLimit: remaining <= 0,
   };
 }

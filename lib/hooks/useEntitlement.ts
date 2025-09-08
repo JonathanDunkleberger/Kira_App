@@ -61,7 +61,8 @@ export function useEntitlement(): Entitlement & {
       if (!res.ok) throw new Error('Failed to fetch session usage');
       const data = await res.json();
       // Derive userStatus from status/plan fields
-      const userStatus: 'guest' | 'free' | 'pro' = data.status === 'active' ? 'pro' : data.plan === 'free' ? 'free' : 'guest';
+      const userStatus: 'guest' | 'free' | 'pro' =
+        data.status === 'active' ? 'pro' : data.plan === 'free' ? 'free' : 'guest';
       const mapped = {
         userStatus,
         secondsRemaining: Number.isFinite(data.secondsRemaining) ? data.secondsRemaining : 0,

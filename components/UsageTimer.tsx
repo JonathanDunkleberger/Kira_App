@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useEffect, useState } from 'react';
 
 import { useConversation } from '../lib/state/ConversationProvider';
@@ -6,7 +6,9 @@ import { useConversation } from '../lib/state/ConversationProvider';
 function format(secs: number) {
   if (secs < 0) secs = 0;
   const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60).toString().padStart(2, '0');
+  const s = Math.floor(secs % 60)
+    .toString()
+    .padStart(2, '0');
   return `${m}:${s}`;
 }
 
@@ -27,7 +29,7 @@ export default function UsageTimer() {
 
   return (
     <button
-  onClick={() => promptPaywall?.('proactive_click')}
+      onClick={() => promptPaywall?.('proactive_click')}
       className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 pl-3 pr-3 py-1.5 text-xs hover:bg-white/10 transition-colors w-44"
     >
       <div className="flex-1">

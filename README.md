@@ -27,6 +27,17 @@ The goal was to take the core concept of a voice‑first AI companion and re‑a
 - 🌐 100% web‑based: Nothing to install; works in modern Chromium browsers.
 - 🔐 Secure & private: Supabase Auth, RLS, per‑user chat history APIs.
 
+### Unified Limit Dialog
+
+A single `LimitDialog` component presents both daily free paywall and per‑chat cap limits. It subscribes to heartbeat payloads (`t: 'heartbeat'`) via a lightweight global callback `(window as any).__onHeartbeat(msg)` triggered after the usage store updates. This keeps enforcement server‑side while ensuring consistent, minimal UI.
+
+```tsx
+// Example wrapper
+<ChatGuardrails>
+  <YourChatUI />
+</ChatGuardrails>
+```
+
 ---
 
 ## 🛠️ Tech Stack & Architecture
@@ -49,7 +60,7 @@ Modern web architecture with a dedicated real‑time voice server. Business logi
 - Heartbeat usage accrual: Server ticks entitlements & emits authoritative snapshots (eliminates race/drift).
 - Entitlements schema: `user_entitlements`, `daily_usage`, `chat_sessions` plus RPC for atomic increments.
 - Frictionless conversion funnel: Guest → signup → resume chat, upgrade surfaces when limits near.
-- Guardrails UX: Paywall & chat cap modals unified via a single store + event channel.
+- Guardrails UX: Unified LimitDialog handles both paywall and per‑chat cap states (one component, two modes).
 - Polished UX: Dynamic voice orb (Web Audio API), tuned VAD, streaming TTS for rapid first phoneme.
 
 ---

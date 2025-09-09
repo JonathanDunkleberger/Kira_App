@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useEffect, useState } from 'react';
 
 import LimitDialog, { type LimitDialogMode } from '@/components/dialogs/LimitDialog';
@@ -17,17 +17,31 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
       const isPro = server?.todaySecondsLimit === 0;
       if (!isPro) {
         if (msg.remainingToday > 0 && msg.remainingToday <= 120) {
-          setMode('paywall'); setRemainingToday(msg.remainingToday); setOpen(true);
+          setMode('paywall');
+          setRemainingToday(msg.remainingToday);
+          setOpen(true);
         }
-        if (msg.paywall) { setMode('paywall'); setRemainingToday(0); setOpen(true); }
+        if (msg.paywall) {
+          setMode('paywall');
+          setRemainingToday(0);
+          setOpen(true);
+        }
       }
       if (msg.remainingThisChat > 0 && msg.remainingThisChat <= 120) {
-        setMode('chat-cap'); setRemainingThisChat(msg.remainingThisChat); setOpen(true);
+        setMode('chat-cap');
+        setRemainingThisChat(msg.remainingThisChat);
+        setOpen(true);
       }
-      if (msg.hardStop) { setMode('chat-cap'); setRemainingThisChat(0); setOpen(true); }
+      if (msg.hardStop) {
+        setMode('chat-cap');
+        setRemainingThisChat(0);
+        setOpen(true);
+      }
     };
     (window as any).__onHeartbeat = handler;
-    return () => { if ((window as any).__onHeartbeat === handler) (window as any).__onHeartbeat = null; };
+    return () => {
+      if ((window as any).__onHeartbeat === handler) (window as any).__onHeartbeat = null;
+    };
   }, [server]);
 
   return (

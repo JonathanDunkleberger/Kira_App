@@ -156,8 +156,15 @@ export async function deleteConversation(id: string) {
 
 export async function getMessagesForConversation(id: string) {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/conversations/${id}/messages`, { headers });
-  if (!res.ok) throw new Error('Failed to fetch messages');
+  const res = await fetch(`/api/conversations/${id}/messages`, { headers, cache: 'no-store' });
+  if (!res.ok) {
+    let detail: any = null;
+    try { detail = await res.json(); } catch {}
+    const code = detail?.error || res.status;
+    if (res.status === 401) throw new Error('unauthorized');
+    if (res.status === 404) throw new Error('not_found');
+    throw new Error(`messages_fetch_failed:${code}`);
+  }
   return res.json();
 }
 

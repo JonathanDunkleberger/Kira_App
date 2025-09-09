@@ -127,13 +127,9 @@ wss.on('connection', async (ws, req) => {
   // If no conversationId provided, create a chat_session (conversation) row
   if (!conversationId) {
     try {
-      const { data, error } = await supa
-        .from('chat_sessions')
-        .insert({})
-        .select('id')
-        .single();
+      const { data, error } = await supa.from('chat_sessions').insert({}).select('id').single();
       if (error) throw error;
-  conversationId = data?.id || null;
+      conversationId = data?.id || null;
       if (conversationId && (ws as any).readyState === 1) {
         (ws as any).send(JSON.stringify({ t: 'chat_session', chatSessionId: conversationId }));
       }
@@ -219,7 +215,7 @@ wss.on('connection', async (ws, req) => {
 
       sendJson(ws, { type: 'transcript', text: transcript });
       historyMem.push({ role: 'user', content: transcript });
-  await saveMessage(conversationId as string, 'user', transcript, userId);
+      await saveMessage(conversationId as string, 'user', transcript, userId);
 
       const messages = [
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
@@ -247,10 +243,10 @@ wss.on('connection', async (ws, req) => {
         sendJson(ws, { type: 'assistant_text', text: assistant });
       } catch {}
       historyMem.push({ role: 'assistant', content: assistant });
-  await saveMessage(conversationId as string, 'assistant', assistant, userId);
+      await saveMessage(conversationId as string, 'assistant', assistant, userId);
 
       try {
-  const newTitle = await generateAndSaveTitle(conversationId as string, historyMem);
+        const newTitle = await generateAndSaveTitle(conversationId as string, historyMem);
         if (newTitle) sendJson(ws, { type: 'title_update', title: newTitle, conversationId });
       } catch {}
 

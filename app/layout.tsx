@@ -32,8 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </ConversationProvider>
-  {/* Persistent TTS audio element for single-blob playback */}
-  <audio id="tts-player" style={{ display: 'none' }} />
+        {/* Persistent TTS audio element for single-blob playback */}
+        <audio id="tts-player" style={{ display: 'none' }} />
       </body>
     </html>
   );

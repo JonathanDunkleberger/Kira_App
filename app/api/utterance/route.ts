@@ -249,11 +249,11 @@ export async function POST(req: NextRequest) {
         }
 
         // Usage increment: approximate duration via transcript word count heuristic ( ~180 wpm -> 3 wps )
-  // TODO: usage accrual will be handled by websocket heartbeat
+        // TODO: usage accrual will be handled by websocket heartbeat
       },
     });
 
-  let usageHeaders: Record<string, string> = {};
+    let usageHeaders: Record<string, string> = {};
     return new StreamingTextResponse(stream, {
       headers: {
         'X-User-Transcript': encodeURIComponent(transcript),

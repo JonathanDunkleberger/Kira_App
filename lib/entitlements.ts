@@ -2,9 +2,13 @@
 // Utilities for loading entitlement + usage snapshot from new schema
 import { createClient } from '@supabase/supabase-js';
 
-const svc = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+const svc = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: { persistSession: false, autoRefreshToken: false },
+  },
+);
 
 export interface EntitlementsSnapshot {
   plan: 'free' | 'supporter';
@@ -17,7 +21,10 @@ export interface EntitlementsSnapshot {
 const FREE_DAILY_LIMIT = parseInt(process.env.DAILY_FREE_SECONDS_LIMIT || '300', 10);
 const PRO_SESSION_LIMIT = parseInt(process.env.PRO_USER_CONVERSATION_SECONDS_LIMIT || '7200', 10);
 
-export async function loadEntitlements(userId: string, chatSessionId: string): Promise<EntitlementsSnapshot> {
+export async function loadEntitlements(
+  userId: string,
+  chatSessionId: string,
+): Promise<EntitlementsSnapshot> {
   // Fetch entitlement plan
   const { data: ent } = await svc
     .from('user_entitlements')

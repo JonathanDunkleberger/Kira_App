@@ -18,7 +18,9 @@ export default async function HistoryPage() {
           <li key={s.id} className="border rounded p-3 flex items-center justify-between">
             <div>
               <div className="font-medium">{new Date(s.started_at).toLocaleString()}</div>
-              <div className="text-sm text-gray-400">Elapsed: {(s.seconds_elapsed / 60) | 0} min</div>
+              <div className="text-sm text-gray-400">
+                Elapsed: {(s.seconds_elapsed / 60) | 0} min
+              </div>
             </div>
             <a
               href={`/chat?chatSessionId=${s.id}`}

@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     plan: isPro ? 'supporter' : 'free',
     status: isPro ? 'active' : 'inactive',
     secondsRemaining,
-  dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : FREE_TRIAL_SECONDS,
+    dailyLimitSeconds: isPro ? Number.POSITIVE_INFINITY : FREE_TRIAL_SECONDS,
     trialPerDay: FREE_TRIAL_SECONDS,
     proSessionLimit: PRO_SESSION_SECONDS,
     paywallRequired: secondsRemaining <= 0 && !isPro,

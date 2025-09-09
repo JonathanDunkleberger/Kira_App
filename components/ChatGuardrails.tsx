@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+
 import PaywallModal from '@/components/PaywallModal';
 import ChatCapModal from '@/components/ChatCapModal';
 

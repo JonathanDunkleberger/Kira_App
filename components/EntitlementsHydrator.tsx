@@ -1,6 +1,7 @@
 // components/EntitlementsHydrator.tsx
 'use client';
 import { useEffect } from 'react';
+
 import { useUsage } from '@/lib/useUsage';
 
 export default function EntitlementsHydrator({ chatSessionId }: { chatSessionId?: string }) {

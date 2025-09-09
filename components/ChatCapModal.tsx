@@ -8,7 +8,9 @@ export default function ChatCapModal({ onNewChat }: { onNewChat: () => void }) {
           This conversation hit its per-chat limit. Start a new chat to keep going.
         </p>
         <div className="flex gap-2 justify-end">
-          <button className="px-3 py-1.5 rounded bg-black text-white" onClick={onNewChat}>Start new chat</button>
+          <button className="px-3 py-1.5 rounded bg-black text-white" onClick={onNewChat}>
+            Start new chat
+          </button>
         </div>
       </div>
     </div>

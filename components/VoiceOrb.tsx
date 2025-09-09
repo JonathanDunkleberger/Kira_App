@@ -46,7 +46,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
       style={{ width: s, height: s }}
     >
       {/* Speaking waves */}
-  <Waves active={isSpeaking} baseSize={s} multiHue={multiHue} />
+  <Waves active={isSpeaking} baseSize={s} multiHue={false} />
 
       {/* GLOW RINGS */}
       <div
@@ -99,8 +99,8 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
           <div className="orb-bg absolute inset-0 rounded-full" />
 
           {/* slow swirling caustics (conic gradient masked to center) */}
-            <div className="orb-swirls absolute inset-0 rounded-full" />
-            <div className="orb-swirls orb-swirls--rev absolute inset-0 rounded-full" />
+          <div className="orb-swirls absolute inset-0 rounded-full" />
+          <div className="orb-swirls orb-swirls--rev absolute inset-0 rounded-full" />
 
           {/* soft top-left specular highlight */}
           <div className="orb-sheen absolute inset-0 rounded-full" />
@@ -113,107 +113,163 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
         <style jsx>{`
           /* breathing scale (outer wrapper) */
           @keyframes orb-breathe {
-            0%, 100% { transform: scale(var(--min)); filter: saturate(1) brightness(1); }
-            50%      { transform: scale(var(--max)); filter: saturate(1.03) brightness(1.02); }
+            0%,
+            100% {
+              transform: scale(var(--min));
+              filter: saturate(1) brightness(1);
+            }
+            50% {
+              transform: scale(var(--max));
+              filter: saturate(1.03) brightness(1.02);
+            }
           }
 
           /* base bed: soft pistachio gradient */
           .orb-bg {
-            background:
-              radial-gradient(120% 120% at 30% 20%,
-                #eef4df 0%,
-                #dbe6bf 38%,
-                #c3d197 62%,
-                #a9ba7b 100%);
+            background: radial-gradient(
+              120% 120% at 30% 20%,
+              #eef4df 0%,
+              #dbe6bf 38%,
+              #c3d197 62%,
+              #a9ba7b 100%
+            );
             box-shadow:
-              inset 0 10px 30px rgba(255,255,255,0.55),
-              inset 0 -22px 40px rgba(90,90,60,0.15);
+              inset 0 10px 30px rgba(255, 255, 255, 0.55),
+              inset 0 -22px 40px rgba(90, 90, 60, 0.15);
           }
           :global(.dark) .orb-bg {
-            background:
-              radial-gradient(120% 120% at 30% 20%,
-                #d6e4b6 0%,
-                #bfd487 40%,
-                #a6c06a 70%,
-                #8cab55 100%);
+            background: radial-gradient(
+              120% 120% at 30% 20%,
+              #d6e4b6 0%,
+              #bfd487 40%,
+              #a6c06a 70%,
+              #8cab55 100%
+            );
             box-shadow:
-              inset 0 10px 34px rgba(255,255,255,0.45),
-              inset 0 -24px 44px rgba(40,50,25,0.35);
+              inset 0 10px 34px rgba(255, 255, 255, 0.45),
+              inset 0 -24px 44px rgba(40, 50, 25, 0.35);
           }
 
           /* swirling caustics */
           .orb-swirls {
-            background:
-              conic-gradient(
-                from 0deg,
-                hsl(78 65% 68% / 0.35),
-                hsl(95 60% 64% / 0.35),
-                hsl(60 75% 72% / 0.35),
-                hsl(78 65% 68% / 0.35)
-              );
+            background: conic-gradient(
+              from 0deg,
+              hsl(78 65% 68% / 0.35),
+              hsl(95 60% 64% / 0.35),
+              hsl(60 75% 72% / 0.35),
+              hsl(78 65% 68% / 0.35)
+            );
             /* keep swirls near the center; fade at edge */
-            -webkit-mask: radial-gradient(closest-side, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 65%, rgba(0,0,0,0) 100%);
-                    mask: radial-gradient(closest-side, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.1) 65%, rgba(0,0,0,0) 100%);
+            -webkit-mask: radial-gradient(
+              closest-side,
+              rgba(0, 0, 0, 0.7) 0%,
+              rgba(0, 0, 0, 0.1) 65%,
+              rgba(0, 0, 0, 0) 100%
+            );
+            mask: radial-gradient(
+              closest-side,
+              rgba(0, 0, 0, 0.7) 0%,
+              rgba(0, 0, 0, 0.1) 65%,
+              rgba(0, 0, 0, 0) 100%
+            );
             mix-blend-mode: multiply;
-            animation: orb-spin 18s linear infinite, hue-shift 14s linear infinite;
+            animation:
+              orb-spin 18s linear infinite,
+              hue-shift 14s linear infinite;
           }
-          .orb-swirls--rev { animation-duration: 24s; animation-direction: reverse; opacity: 0.8; }
-          @keyframes orb-spin { to { transform: rotate(360deg); } }
-          @keyframes hue-shift { to { filter: hue-rotate(360deg); } }
+          .orb-swirls--rev {
+            animation-duration: 24s;
+            animation-direction: reverse;
+            opacity: 0.8;
+          }
+          @keyframes orb-spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+          @keyframes hue-shift {
+            to {
+              filter: hue-rotate(360deg);
+            }
+          }
 
           :global(.dark) .orb-swirls {
             mix-blend-mode: screen; /* additive look in dark */
-            background:
-              conic-gradient(
-                from 0deg,
-                hsl(78 92% 78% / 0.55),
-                hsl(95 88% 72% / 0.55),
-                hsl(60 95% 76% / 0.55),
-                hsl(78 92% 78% / 0.55)
-              );
+            background: conic-gradient(
+              from 0deg,
+              hsl(78 92% 78% / 0.55),
+              hsl(95 88% 72% / 0.55),
+              hsl(60 95% 76% / 0.55),
+              hsl(78 92% 78% / 0.55)
+            );
           }
 
           /* specular sheen */
-            .orb-sheen {
-            background:
-              radial-gradient(60% 42% at 28% 22%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.10) 45%, rgba(255,255,255,0) 70%);
+          .orb-sheen {
+            background: radial-gradient(
+              60% 42% at 28% 22%,
+              rgba(255, 255, 255, 0.35) 0%,
+              rgba(255, 255, 255, 0.1) 45%,
+              rgba(255, 255, 255, 0) 70%
+            );
             transform: rotate(-8deg);
             filter: blur(0.5px);
           }
           :global(.dark) .orb-sheen {
-            background:
-              radial-gradient(60% 42% at 28% 22%, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.12) 45%, rgba(255,255,255,0) 72%);
+            background: radial-gradient(
+              60% 42% at 28% 22%,
+              rgba(255, 255, 255, 0.42) 0%,
+              rgba(255, 255, 255, 0.12) 45%,
+              rgba(255, 255, 255, 0) 72%
+            );
           }
 
           /* inner rim / vignette for depth */
           .orb-rim {
             box-shadow:
-              inset 0 0 0 1px rgba(255,255,255,0.35),
-              inset 0 0 40px rgba(0,0,0,0.08),
-              inset 0 40px 80px rgba(0,0,0,0.10);
+              inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+              inset 0 0 40px rgba(0, 0, 0, 0.08),
+              inset 0 40px 80px rgba(0, 0, 0, 0.1);
           }
           :global(.dark) .orb-rim {
             box-shadow:
-              inset 0 0 0 1px rgba(255,255,255,0.22),
-              inset 0 0 60px rgba(10,10,10,0.35),
-              inset 0 50px 120px rgba(0,0,0,0.45);
+              inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+              inset 0 0 60px rgba(10, 10, 10, 0.35),
+              inset 0 50px 120px rgba(0, 0, 0, 0.45);
           }
 
           /* accessibility: reduce motion */
           @media (prefers-reduced-motion: reduce) {
-            .orb-swirls, .orb-swirls--rev { animation: none; }
-            .orb-breathe { animation: none !important; }
+            .orb-swirls,
+            .orb-swirls--rev {
+              animation: none;
+            }
+            .orb-breathe {
+              animation: none !important;
+            }
           }
           /* dark overrides for halos */
-          :global(.dark) div[data-orb-halo='1'] { border-color: rgba(255,255,255,0.06) !important; }
-          :global(.dark) div[data-orb-halo='2'] { border-color: rgba(255,255,255,0.04) !important; }
+          :global(.dark) div[data-orb-halo='1'] {
+            border-color: rgba(255, 255, 255, 0.06) !important;
+          }
+          :global(.dark) div[data-orb-halo='2'] {
+            border-color: rgba(255, 255, 255, 0.04) !important;
+          }
         `}</style>
       </div>
     </div>
   );
 }
 
-function Waves({ active, baseSize, multiHue }: { active: boolean; baseSize: number; multiHue: boolean }) {
+function Waves({
+  active,
+  baseSize,
+  multiHue,
+}: {
+  active: boolean;
+  baseSize: number;
+  multiHue: boolean;
+}) {
   if (!active) return null;
   return (
     <>
@@ -235,9 +291,15 @@ function Waves({ active, baseSize, multiHue }: { active: boolean; baseSize: numb
           filter: blur(0.15px);
           animation: wave-expand ${WAVE_MS}ms ease-out infinite;
         }
-        .wave:nth-child(1) { animation-delay: 0s; }
-        .wave:nth-child(2) { animation-delay: ${WAVE_MS / 3}ms; }
-        .wave:nth-child(3) { animation-delay: ${(WAVE_MS / 3) * 2}ms; }
+        .wave:nth-child(1) {
+          animation-delay: 0s;
+        }
+        .wave:nth-child(2) {
+          animation-delay: ${WAVE_MS / 3}ms;
+        }
+        .wave:nth-child(3) {
+          animation-delay: ${(WAVE_MS / 3) * 2}ms;
+        }
 
         :global(.dark) .wave {
           border-color: hsl(78 45% 72% / 0.45);
@@ -253,19 +315,50 @@ function Waves({ active, baseSize, multiHue }: { active: boolean; baseSize: numb
             hsl(60 85% 72% / 0.85),
             hsl(78 70% 70% / 0.85)
           );
-          -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - ${WAVE_RING_PX}px), #000 calc(100% - ${WAVE_RING_PX}px));
-                  mask: radial-gradient(farthest-side, transparent calc(100% - ${WAVE_RING_PX}px), #000 calc(100% - ${WAVE_RING_PX}px));
-          animation: wave-expand ${WAVE_MS}ms ease-out infinite, hue-shift 10s linear infinite;
+          -webkit-mask: radial-gradient(
+            farthest-side,
+            transparent calc(100% - ${WAVE_RING_PX}px),
+            #000 calc(100% - ${WAVE_RING_PX}px)
+          );
+          mask: radial-gradient(
+            farthest-side,
+            transparent calc(100% - ${WAVE_RING_PX}px),
+            #000 calc(100% - ${WAVE_RING_PX}px)
+          );
+          animation:
+            wave-expand ${WAVE_MS}ms ease-out infinite,
+            hue-shift 10s linear infinite;
         }
-        :global(.dark) .wave-g { mix-blend-mode: screen; }
+        :global(.dark) .wave-g {
+          mix-blend-mode: screen;
+        }
 
         @keyframes wave-expand {
-          0%   { transform: translate(-50%, -50%) scale(1);    opacity: ${WAVE_OPACITY}; }
-          70%  { opacity: ${Math.max(0.14, 0.26 * 0.6)}; }
-          100% { transform: translate(-50%, -50%) scale(${WAVE_SCALE_MAX}); opacity: 0; }
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: ${WAVE_OPACITY};
+          }
+          70% {
+            opacity: ${Math.max(0.14, 0.26 * 0.6)};
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(${WAVE_SCALE_MAX});
+            opacity: 0;
+          }
         }
-        @keyframes hue-shift { 0% { filter: hue-rotate(0deg); } 100% { filter: hue-rotate(360deg); } }
-        @media (prefers-reduced-motion: reduce) { .wave-g { animation: wave-expand ${WAVE_MS}ms ease-out infinite; } }
+        @keyframes hue-shift {
+          0% {
+            filter: hue-rotate(0deg);
+          }
+          100% {
+            filter: hue-rotate(360deg);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .wave-g {
+            animation: wave-expand ${WAVE_MS}ms ease-out infinite;
+          }
+        }
       `}</style>
     </>
   );

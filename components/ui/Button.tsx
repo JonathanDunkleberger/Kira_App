@@ -5,7 +5,9 @@ function cn(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
 }
 
-type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'outline' };
+type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'ghost' | 'outline';
+};
 export function Button({ variant = 'primary', className, ...props }: Props) {
   return (
     <button

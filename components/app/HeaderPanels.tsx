@@ -33,21 +33,29 @@ export default function HeaderPanels({
           <div>
             <h2 className="text-lg font-semibold">Profile</h2>
             <p className="text-sm text-muted-foreground">Update your display and preferences.</p>
-            <div className="mt-4 text-sm text-muted-foreground">Profile settings go here.</div>
+            <div className="mt-4">
+              {/* <YourProfileFormComponent /> */}
+              <div className="text-sm text-muted-foreground">Profile form placeholder.</div>
+            </div>
           </div>
         )}
         {panel === 'settings' && (
           <div>
             <h2 className="text-lg font-semibold">Settings</h2>
             <p className="text-sm text-muted-foreground">App preferences (UI-only).</p>
-            <div className="mt-4 text-sm text-muted-foreground">App settings go here.</div>
+            <div className="mt-4">
+              {/* <YourSettingsPanel /> */}
+              <div className="text-sm text-muted-foreground">Settings panel placeholder.</div>
+            </div>
           </div>
         )}
         {panel === 'billing' && (
           <div>
             <h2 className="text-lg font-semibold">Billing</h2>
             <p className="text-sm text-muted-foreground">Upgrade to Pro or manage your plan.</p>
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-4">
+              {/* <UpgradeCTA /> */}
+              {/* <ManageBilling /> */}
               <Button onClick={() => (window.location.href = '/upgrade')}>Upgrade to Pro</Button>
               <Button variant="outline" onClick={() => (window.location.href = '/billing')}>
                 Manage subscription
@@ -59,7 +67,8 @@ export default function HeaderPanels({
           <div>
             <h2 className="text-lg font-semibold">Sign in</h2>
             <p className="text-sm text-muted-foreground">You need to sign in before subscribing.</p>
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-4">
+              {/* <AuthPanel /> */}
               <Button onClick={() => (window.location.href = '/login')}>Sign in</Button>
               <Button variant="outline" onClick={() => (window.location.href = '/signup')}>
                 Create account

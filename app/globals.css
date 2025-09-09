@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 /* Light (cream/almond) */
-:root{
-  --background: 40 38% 96%;        /* warm cream */
+:root {
+  --background: 40 38% 96%; /* warm cream */
   --foreground: 24 16% 10%;
 
   --card: 40 38% 98%;
@@ -14,15 +14,15 @@
   --popover-foreground: 24 16% 10%;
 
   /* Pistachio/olive accents */
-  --primary: 78 28% 35%;           /* #566f2f */
+  --primary: 78 28% 35%; /* #566f2f */
   --primary-foreground: 0 0% 100%;
-  --secondary: 72 26% 46%;         /* #7a8b53 */
+  --secondary: 72 26% 46%; /* #7a8b53 */
   --secondary-foreground: 0 0% 100%;
 
-  --muted: 40 28% 94%;             /* almond card */
+  --muted: 40 28% 94%; /* almond card */
   --muted-foreground: 24 10% 32%;
 
-  --accent: 78 30% 86%;            /* pale pistachio */
+  --accent: 78 30% 86%; /* pale pistachio */
   --accent-foreground: 24 16% 10%;
 
   --border: 40 20% 88%;

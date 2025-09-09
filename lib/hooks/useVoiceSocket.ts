@@ -48,7 +48,7 @@ export function useVoiceSocket(
       }
       return;
     }
-    if (!convIdRef.current) return; // require conversationId in hybrid mode
+    // Allow missing conversationId (server will auto-create if omitted)
 
     if (process.env.NODE_ENV !== 'production') {
       console.log('[WS] Attempting to connect...');
@@ -104,7 +104,7 @@ export function useVoiceSocket(
       ws.close(); // This will trigger the onclose handler for reconnect logic
     };
 
-    ws.onmessage = (event) => {
+  ws.onmessage = (event) => {
       // Pass all messages, binary or text, to the provider for handling
       if (typeof event.data === 'string') {
         try {
@@ -136,7 +136,10 @@ export function useVoiceSocket(
               (window as any).__onHeartbeat?.(msg);
             } catch {}
           } else if (msg?.t === 'chat_session') {
-            // could update conversation id state if needed
+            // capture new conversation id if server auto-created one
+            if (!convIdRef.current && msg.chatSessionId) {
+              convIdRef.current = msg.chatSessionId;
+            }
           } else {
             onMessageRef.current(msg);
           }
@@ -215,5 +218,47 @@ export function useVoiceSocket(
     };
   }, [connect, conversationId]);
 
-  return { status, send, disconnect } as const;
+  // Start microphone capture + streaming via MediaRecorder
+  const startMic = useCallback(
+    async (audioConstraints?: MediaTrackConstraints) => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          ...audioConstraints,
+        },
+      });
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 });
+      rec.ondataavailable = (e) => {
+        if (e.data?.size) {
+          try {
+            e.data.arrayBuffer().then((buf) => send(buf));
+          } catch {}
+        }
+      };
+      rec.start(250);
+      return () => {
+        try {
+          rec.stop();
+        } catch {}
+        stream.getTracks().forEach((t) => t.stop());
+      };
+    },
+    [send],
+  );
+
+  const signal = useCallback(
+    (type: string, payload?: any) => {
+      try {
+        send({ t: type, ...(payload || {}) });
+      } catch {}
+    },
+    [send],
+  );
+
+  return { status, send, disconnect, connect, startMic, signal } as const;
 }

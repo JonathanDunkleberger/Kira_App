@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useRef as useMutableRef } from 'react';
 import VoiceOrb from '@/components/VoiceOrb';
 import { voiceBus } from '@/lib/voiceBus';
 import CallControls from '@/components/chat/CallControls';
@@ -10,26 +10,29 @@ export default function ChatClient({ persona }: { persona: string }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
 
   // Setup socket (hybrid mode requires conversationId; we capture from server events)
-  const { status, send } = useVoiceSocket({
+  const { connect, startMic, signal, status } = useVoiceSocket({
     conversationId,
     onMessage: (msg: any) => {
       if (msg?.t === 'chat_session' && msg.chatSessionId) {
         setConversationId((prev) => prev || msg.chatSessionId);
       }
-      if (msg?.type === 'audio_start') {
-        // attach audio mime if needed
-      }
-      // handle other message types as necessary
     },
   });
 
-  // Auto-start mic + connection once we have a conversation id (or request one by sending a ping)
+  const startedRef = useRef(false);
   useEffect(() => {
-    // If no conversation yet, request creation by sending a ping after small delay
-    if (!conversationId && status === 'connected') {
-      try { send({ type: 'ping' }); } catch {}
-    }
-  }, [conversationId, status, send]);
+    if (startedRef.current) return;
+    startedRef.current = true;
+    (async () => {
+      try {
+        await connect();
+        await startMic();
+        signal?.('client_ready');
+      } catch (e) {
+        console.error('Auto-start call failed', e);
+      }
+    })();
+  }, [connect, startMic, signal]);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -48,8 +51,7 @@ export default function ChatClient({ persona }: { persona: string }) {
     };
   }, []);
 
-  // TODO: implement microphone capture + streaming (depends on existing audio pipeline)
-  // Placeholder: could call startMic() from a hook once integrated.
+  // microphone now auto-starts on mount
 
   return (
     <div className="min-h-[calc(100vh-3rem)] grid place-items-center">

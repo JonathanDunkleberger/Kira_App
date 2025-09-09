@@ -1,25 +1,33 @@
 'use client';
 import { useState } from 'react';
 import { Mic, MicOff, Square } from 'lucide-react';
+import type { useVoiceSocket } from '@/lib/useVoiceSocket';
+import { Button } from '@/components/ui/Button';
 
-export default function CallControls() {
-  const [muted, setMuted] = useState(false);
+export default function CallControls({ voice }: { voice: ReturnType<typeof useVoiceSocket> }) {
+  const [ending, setEnding] = useState(false);
   return (
     <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
-      <div className="rounded-2xl border border-white/10 bg-white/10 backdrop-blur px-3 py-2 flex items-center gap-4">
-        <button
-          onClick={() => setMuted((m) => !m)}
-          className={`text-sm px-3 py-2 rounded-md flex items-center gap-2 border transition ${muted ? 'bg-rose-600/20 border-rose-500/40 text-rose-200' : 'bg-white/10 hover:bg-white/20 text-white/90 border-white/20'}`}
+      <div className="rounded-2xl border bg-muted/70 backdrop-blur px-3 py-2 flex items-center gap-4">
+        <Button
+          variant={voice.isMuted ? 'primary' : 'outline'}
+          onClick={() => voice.setMuted(!voice.isMuted)}
         >
-          {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-          {muted ? 'Unmute' : 'Mute'}
-        </button>
-        <button
-          onClick={() => (window.location.href = '/')}
-          className="text-sm px-3 py-2 rounded-md flex items-center gap-2 bg-rose-600/80 hover:bg-rose-600 text-white shadow border border-rose-400/40"
+          {voice.isMuted ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
+          {voice.isMuted ? 'Unmute' : 'Mute'}
+        </Button>
+        <Button
+          variant="primary"
+          className="bg-rose-600 hover:bg-rose-600/90 text-white"
+          disabled={ending}
+          onClick={async () => {
+            setEnding(true);
+            await voice.endCall();
+            location.assign('/chat?persona=kira');
+          }}
         >
-          <Square className="h-4 w-4" /> End call
-        </button>
+          <Square className="mr-2 h-4 w-4" /> End call
+        </Button>
       </div>
     </div>
   );

@@ -3,10 +3,10 @@
 @tailwind utilities;
 
 /* Light (cream/almond) */
-:root{
+:root {
   /* Cream background stays */
   --background: 40 38% 96%;
-  --foreground: 24 18% 14%;           /* darker text for readability */
+  --foreground: 24 18% 14%; /* darker text for readability */
 
   --card: 40 38% 98%;
   --card-foreground: 24 18% 14%;

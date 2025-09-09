@@ -1,38 +1,28 @@
 'use client';
-import { useEffect, useRef, useState, useRef as useMutableRef } from 'react';
+import { useEffect, useRef } from 'react';
 import VoiceOrb from '@/components/VoiceOrb';
 import { voiceBus } from '@/lib/voiceBus';
 import CallControls from '@/components/chat/CallControls';
-import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
+import { useVoiceSocket } from '@/lib/useVoiceSocket';
 
 export default function ChatClient({ persona }: { persona: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const voice = useVoiceSocket();
+  const started = useRef(false);
 
-  // Setup socket (hybrid mode requires conversationId; we capture from server events)
-  const { connect, startMic, signal, status } = useVoiceSocket({
-    conversationId,
-    onMessage: (msg: any) => {
-      if (msg?.t === 'chat_session' && msg.chatSessionId) {
-        setConversationId((prev) => prev || msg.chatSessionId);
-      }
-    },
-  });
-
-  const startedRef = useRef(false);
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    if (started.current) return;
+    started.current = true;
     (async () => {
       try {
-        await connect();
-        await startMic();
-        signal?.('client_ready');
+        await voice.connect({ persona });
+        await voice.startMic();
+        voice.signal?.('client_ready');
       } catch (e) {
-        console.error('Auto-start call failed', e);
+        console.error('start failed', e);
       }
     })();
-  }, [connect, startMic, signal]);
+  }, [voice, persona]);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -57,9 +47,9 @@ export default function ChatClient({ persona }: { persona: string }) {
     <div className="min-h-[calc(100vh-3rem)] grid place-items-center">
       <audio ref={audioRef} className="hidden" id="tts-audio" />
       <div className="mt-10" />
-      <VoiceOrb audioEl={audioRef.current} size={340} />
+  <VoiceOrb audioEl={audioRef.current} size={280} />
       <div className="mt-10" />
-      <CallControls />
+  <CallControls voice={voice} />
     </div>
   );
 }

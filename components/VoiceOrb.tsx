@@ -36,33 +36,33 @@ export default function VoiceOrb({ audioEl, size = 260, className }: Props) {
       {/* Speaking waves */}
       <Waves active={isSpeaking} />
 
-      {/* Glow ring/breath */}
+      {/* GLOW RINGS */}
       <div
         className="absolute inset-0 rounded-full"
         style={{
           transform: `scale(${breatheScale})`,
           transition: 'transform 1200ms cubic-bezier(0.16, 1, 0.3, 1)',
-          boxShadow: '0 0 60px 20px rgba(139,153,100,0.12)',
+          boxShadow: '0 0 60px 20px rgba(139,153,100,0.18)',
         }}
       />
       <div
+        data-orb-halo="1"
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           width: ring1,
           height: ring1,
-          border: '10px solid rgba(0,0,0,0.03)',
           borderRadius: '9999px',
-          filter: 'blur(0.2px)',
+          border: '10px solid rgba(0,0,0,0.05)',
         }}
       />
       <div
+        data-orb-halo="2"
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           width: ring2,
           height: ring2,
-          border: '6px solid rgba(0,0,0,0.02)',
           borderRadius: '9999px',
-          filter: 'blur(0.2px)',
+          border: '6px solid rgba(0,0,0,0.03)',
         }}
       />
 
@@ -80,6 +80,7 @@ export default function VoiceOrb({ audioEl, size = 260, className }: Props) {
       />
 
       <style jsx>{`
+        /* speaking waves */
         .wave {
           position: absolute;
           left: 50%;
@@ -87,34 +88,33 @@ export default function VoiceOrb({ audioEl, size = 260, className }: Props) {
           width: ${s}px;
           height: ${s}px;
           border-radius: 9999px;
-          border: 2px solid rgba(139, 153, 100, 0.12);
           transform: translate(-50%, -50%) scale(1);
           opacity: 0;
-          animation: wave 2.2s ease-out infinite;
           pointer-events: none;
+          border: 2px solid hsl(var(--primary) / 0.28);
+          filter: blur(0.2px);
+          animation: wave 2.2s ease-out infinite;
         }
-        .wave:nth-child(1) {
-          animation-delay: 0s;
+        .wave:nth-child(1) { animation-delay: 0s; }
+        .wave:nth-child(2) { animation-delay: 0.6s; }
+        .wave:nth-child(3) { animation-delay: 1.2s; }
+
+        /* DARK THEME */
+        :global(.dark) .wave {
+          border-color: hsl(78 45% 72% / 0.55);
+          mix-blend-mode: screen;
+          filter: none;
         }
-        .wave:nth-child(2) {
-          animation-delay: 0.6s;
-        }
-        .wave:nth-child(3) {
-          animation-delay: 1.2s;
-        }
+
         @keyframes wave {
-          0% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: 0.25;
-          }
-          70% {
-            opacity: 0.12;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(2.4);
-            opacity: 0;
-          }
+          0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.38; }
+          70%  { opacity: 0.20; }
+          100% { transform: translate(-50%, -50%) scale(2.8); opacity: 0; }
         }
+
+        /* dark overrides for halos */
+        :global(.dark) div[data-orb-halo="1"] { border-color: rgba(255,255,255,0.08) !important; }
+        :global(.dark) div[data-orb-halo="2"] { border-color: rgba(255,255,255,0.05) !important; }
       `}</style>
     </div>
   );

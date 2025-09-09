@@ -125,6 +125,11 @@ wss.on('connection', async (ws, req) => {
   const ttsFmt = (url.searchParams.get('tts') as 'webm' | 'mp3' | null) || 'webm';
   const supa = getSupabaseServerAdmin();
   // If no conversationId provided, create a chat_session (conversation) row
+  // TODO(auto-resume): In a future iteration we can accept a short-lived resume token here
+  // and attempt to look up / re-associate the most recent active chat_session for the user
+  // (e.g. last N minutes) instead of always creating a new one. This keeps the current
+  // implementation simple (stateless client bootstrap) while allowing transparent
+  // reconnection flows later without exposing history UI.
   if (!conversationId) {
     try {
       const { data, error } = await supa.from('chat_sessions').insert({}).select('id').single();

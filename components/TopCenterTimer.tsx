@@ -2,14 +2,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useUsage } from '@/lib/useUsage';
 
-function fmt(s:number){ const m=Math.floor(s/60), ss=s%60; return `${m}:${String(ss).padStart(2,'0')}` }
+function fmt(s: number) {
+  const m = Math.floor(s / 60),
+    ss = s % 60;
+  return `${m}:${String(ss).padStart(2, '0')}`;
+}
 
 export default function TopCenterTimer() {
   const { server, getDisplayTimes, setHeartbeat } = useUsage() as any;
   const [, tick] = useState(0);
 
   // Cosmetic tick every second so elapsed appears to advance between heartbeats
-  useEffect(() => { const id = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(id); }, []);
+  useEffect(() => {
+    const id = setInterval(() => tick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Self-hydrate on first mount if we don't yet have server state (supports resume, hard refresh)
   useEffect(() => {
@@ -18,10 +25,13 @@ export default function TopCenterTimer() {
     const chatSessionId = params.get('chatSessionId') ?? undefined;
     (async () => {
       try {
-        const res = await fetch(`/api/entitlements${chatSessionId ? `?chatSessionId=${chatSessionId}` : ''}`, { cache: 'no-store' });
+        const res = await fetch(
+          `/api/entitlements${chatSessionId ? `?chatSessionId=${chatSessionId}` : ''}`,
+          { cache: 'no-store' },
+        );
         if (res.ok) {
           const state = await res.json();
-            setHeartbeat({ t: 'heartbeat', now: Date.now(), entitlements: state });
+          setHeartbeat({ t: 'heartbeat', now: Date.now(), entitlements: state });
         }
       } catch {}
     })();

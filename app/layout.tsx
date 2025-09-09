@@ -1,39 +1,18 @@
 import './globals.css';
-import { Suspense } from 'react';
+import { ThemeProvider } from '@/components/theme-provider';
+import AppHeader from '@/components/app/AppHeader';
 
-import Header from '@/components/Header';
-import TopClockTimer from '@/components/TopClockTimer';
-import EntitlementsHydrator from '@/components/EntitlementsHydrator';
-import Banner from '@/components/Banner';
-import Sidebar from '@/components/Sidebar'; // <-- Add this import
-import ConversationProvider from '@/lib/state/ConversationProvider';
-import UpgradeSnackbarPortal from '@/components/UpgradeSnackbarPortal';
-
+export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Kira — AI Media Companion', description: 'Talk, don’t alt-tab.' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="bg-[#0b0b12] text-white font-ui antialiased">
-        <ConversationProvider>
-          <Banner />
-          {/* Global upgrade nudge */}
-          <UpgradeSnackbarPortal />
-          <div className="flex">
-            <Suspense fallback={null}>
-              <Sidebar />
-            </Suspense>
-            <div className="flex-1 flex flex-col">
-              {/* Header moved inside provider scope */}
-              <Header />
-              <EntitlementsHydrator />
-              <TopClockTimer />
-              <div className="flex-1 min-w-0">{children}</div>
-            </div>
-          </div>
-        </ConversationProvider>
-        {/* Persistent TTS audio element for single-blob playback */}
-        <audio id="tts-player" style={{ display: 'none' }} />
+    <html lang="en" suppressHydrationWarning>
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        <ThemeProvider>
+          <AppHeader />
+          <div className="relative z-0">{children}</div>
+        </ThemeProvider>
       </body>
     </html>
   );

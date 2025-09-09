@@ -2,9 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light theme (almond/pistachio) */
 :root {
-  --bg: #0b0b12;
-  --ink: #ffffff;
+  --background: #f8f7f3;
+  --foreground: #1f2415;
+  --card: #ffffffcc;
+  --card-foreground: #1f2415;
+  --muted: #e5e7d8;
+  --muted-foreground: #5a6244;
+  --primary: #647a34;
+  --primary-foreground: #f5f8ec;
+  --accent: #c3d39a;
+  --accent-foreground: #243213;
+  --destructive: #b3261e;
+  --destructive-foreground: #fff;
+  --border: #d5dbc4;
+  --input: #d5dbc4;
+  --ring: #7f9944;
+  --radius: 0.7rem;
+  /* Legacy fallbacks */
+  --bg: var(--background);
+  --ink: var(--foreground);
+}
+
+/* Dark theme */
+.dark {
+  --background: #0b0f07;
+  --foreground: #f1f5e8;
+  --card: #161d11cc;
+  --card-foreground: #f1f5e8;
+  --muted: #1e2716;
+  --muted-foreground: #8aa06a;
+  --primary: #93b857;
+  --primary-foreground: #132004;
+  --accent: #4c5f2c;
+  --accent-foreground: #e6f2cf;
+  --destructive: #ff5a4e;
+  --destructive-foreground: #2a0907;
+  --border: #27341d;
+  --input: #27341d;
+  --ring: #a2d167;
+  --bg: var(--background);
+  --ink: var(--foreground);
 }
 
 html,

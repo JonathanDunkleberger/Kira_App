@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 
 // Reads audio level (RMS) from an <audio> element using Web Audio API.
 // Returns normalized level 0..1 plus basic speaking detection.
-export function useAudioLevel(opts: { audioEl?: HTMLAudioElement | null; smoothing?: number } = {}) {
+export function useAudioLevel(
+  opts: { audioEl?: HTMLAudioElement | null; smoothing?: number } = {},
+) {
   const { audioEl, smoothing = 0.85 } = opts;
   const [level, setLevel] = useState(0); // 0..1
   const [isSpeaking, setSpeaking] = useState(false);
@@ -14,7 +16,8 @@ export function useAudioLevel(opts: { audioEl?: HTMLAudioElement | null; smoothi
   useEffect(() => {
     if (!audioEl) return;
     try {
-      const Ctx: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const Ctx: typeof AudioContext =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!Ctx) return;
       const ctx = new Ctx();
       const analyser = ctx.createAnalyser();
@@ -41,14 +44,20 @@ export function useAudioLevel(opts: { audioEl?: HTMLAudioElement | null; smoothi
         smoothed = smoothing * smoothed + (1 - smoothing) * rms;
         const norm = Math.min(1, Math.max(0, (smoothed - 0.02) / 0.3));
         setLevel(norm);
-        setSpeaking(audioEl.currentTime > 0 && !audioEl.paused && !audioEl.ended && audioEl.readyState >= 2);
+        setSpeaking(
+          audioEl.currentTime > 0 && !audioEl.paused && !audioEl.ended && audioEl.readyState >= 2,
+        );
         raf.current = requestAnimationFrame(loop);
       };
       raf.current = requestAnimationFrame(loop);
 
       return () => {
         cancelAnimationFrame(raf.current);
-        try { src.disconnect(); analyser.disconnect(); ctx.close(); } catch {}
+        try {
+          src.disconnect();
+          analyser.disconnect();
+          ctx.close();
+        } catch {}
       };
     } catch {
       // Silently ignore if Web Audio is unavailable

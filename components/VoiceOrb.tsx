@@ -29,7 +29,10 @@ export default function VoiceOrb({ audioEl, size = 260, className }: Props) {
   const ring2 = s * 1.65;
 
   return (
-    <div className={cn('relative mx-auto my-8 select-none', className)} style={{ width: s, height: s }}>
+    <div
+      className={cn('relative mx-auto my-8 select-none', className)}
+      style={{ width: s, height: s }}
+    >
       {/* Speaking waves */}
       <Waves active={isSpeaking} />
 
@@ -69,17 +72,49 @@ export default function VoiceOrb({ audioEl, size = 260, className }: Props) {
         style={{
           transform: `scale(${reactive})`,
           transition: 'transform 120ms ease-out',
-          background: 'radial-gradient(120% 120% at 30% 20%, #e9efd8 0%, #c6d09a 50%, #aab97d 100%)',
-          boxShadow: 'inset 0 10px 30px rgba(255,255,255,0.6), inset 0 -20px 40px rgba(120,120,80,0.15)',
+          background:
+            'radial-gradient(120% 120% at 30% 20%, #e9efd8 0%, #c6d09a 50%, #aab97d 100%)',
+          boxShadow:
+            'inset 0 10px 30px rgba(255,255,255,0.6), inset 0 -20px 40px rgba(120,120,80,0.15)',
         }}
       />
 
       <style jsx>{`
-        .wave { position:absolute; left:50%; top:50%; width:${s}px; height:${s}px; border-radius:9999px; border:2px solid rgba(139,153,100,0.12); transform:translate(-50%, -50%) scale(1); opacity:0; animation:wave 2.2s ease-out infinite; pointer-events:none; }
-        .wave:nth-child(1){ animation-delay:0s; }
-        .wave:nth-child(2){ animation-delay:0.6s; }
-        .wave:nth-child(3){ animation-delay:1.2s; }
-        @keyframes wave { 0%{ transform:translate(-50%, -50%) scale(1); opacity:0.25;} 70%{opacity:0.12;} 100%{ transform:translate(-50%, -50%) scale(2.4); opacity:0;} }
+        .wave {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: ${s}px;
+          height: ${s}px;
+          border-radius: 9999px;
+          border: 2px solid rgba(139, 153, 100, 0.12);
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0;
+          animation: wave 2.2s ease-out infinite;
+          pointer-events: none;
+        }
+        .wave:nth-child(1) {
+          animation-delay: 0s;
+        }
+        .wave:nth-child(2) {
+          animation-delay: 0.6s;
+        }
+        .wave:nth-child(3) {
+          animation-delay: 1.2s;
+        }
+        @keyframes wave {
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.25;
+          }
+          70% {
+            opacity: 0.12;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(2.4);
+            opacity: 0;
+          }
+        }
       `}</style>
     </div>
   );

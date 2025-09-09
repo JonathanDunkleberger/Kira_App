@@ -159,7 +159,9 @@ export async function getMessagesForConversation(id: string) {
   const res = await fetch(`/api/conversations/${id}/messages`, { headers, cache: 'no-store' });
   if (!res.ok) {
     let detail: any = null;
-    try { detail = await res.json(); } catch {}
+    try {
+      detail = await res.json();
+    } catch {}
     const code = detail?.error || res.status;
     if (res.status === 401) throw new Error('unauthorized');
     if (res.status === 404) throw new Error('not_found');

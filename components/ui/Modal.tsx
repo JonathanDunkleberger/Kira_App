@@ -7,8 +7,8 @@ type ModalProps = {
   onClose?: () => void;
   title: string;
   description?: string | React.ReactNode;
-  children?: React.ReactNode;   // body slot
-  footer?: React.ReactNode;     // actions slot
+  children?: React.ReactNode; // body slot
+  footer?: React.ReactNode; // actions slot
 };
 
 export default function Modal({ open, onClose, title, description, children, footer }: ModalProps) {
@@ -19,12 +19,15 @@ export default function Modal({ open, onClose, title, description, children, foo
           {/* Backdrop */}
           <motion.div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={onClose}
           />
           {/* Card */}
           <motion.div
-            role="dialog" aria-modal="true"
+            role="dialog"
+            aria-modal="true"
             className="absolute left-1/2 top-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2"
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -40,7 +43,9 @@ export default function Modal({ open, onClose, title, description, children, foo
                   <p className="mt-1.5 text-sm leading-6 text-neutral-600">{description}</p>
                 ) : null}
                 {children ? <div className="mt-4">{children}</div> : null}
-                {footer ? <div className="mt-5 flex items-center justify-end gap-2">{footer}</div> : null}
+                {footer ? (
+                  <div className="mt-5 flex items-center justify-end gap-2">{footer}</div>
+                ) : null}
               </div>
             </div>
           </motion.div>

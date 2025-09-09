@@ -1,36 +1,14 @@
-'use client';
-
-import HotMic from '@/components/HotMic';
-import ConversationView from '@/components/ConversationView';
-import { useConversation } from '@/lib/state/ConversationProvider';
-import Paywall from '@/components/Paywall';
-import AchievementToast from '@/components/AchievementToast';
+import Link from 'next/link';
 
 export default function HomePage() {
-  const { error, viewMode } = useConversation();
   return (
-    <main className="h-[calc(100vh-56px)] bg-[#0b0b12] text-white flex flex-col items-center scrollbar-hover">
-      <AchievementToast />
-      {viewMode === 'conversation' ? (
-        <>
-          <section className="flex-1 container mx-auto max-w-4xl px-6 pt-10 text-center flex flex-col items-center gap-8 justify-center">
-            <h1 className="text-4xl font-semibold">Talk with Kira</h1>
-            <p className="text-gray-400">Speak naturally. Kira will listen and reply.</p>
-            <HotMic />
-            {error && <p className="text-rose-400 mt-2">Error: {error}</p>}
-          </section>
-          <ConversationView />
-          {/* Mount paywall globally so promptPaywall always renders a modal */}
-          <Paywall />
-        </>
-      ) : (
-        <section className="w-full h-full flex flex-col items-center pt-8">
-          <h2 className="text-2xl font-semibold mb-4">Conversation History</h2>
-          <ConversationView />
-          {/* Keep paywall available in history view as well */}
-          <Paywall />
-        </section>
-      )}
+    <main className="min-h-[calc(100vh-3rem)] flex items-center justify-center p-6">
+      <div className="max-w-sm w-full">
+        <Link href="/chat?persona=kira" className="group block rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6 hover:border-white/20 transition">
+          <div className="text-lg font-semibold mb-2 flex items-center gap-2">Call Kira <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Live</span></div>
+          <p className="text-sm text-white/60 group-hover:text-white/80">Real-time voice conversation. Just talk—she listens and replies.</p>
+        </Link>
+      </div>
     </main>
   );
 }

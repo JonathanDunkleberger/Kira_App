@@ -1,16 +1,12 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import VoiceOrb from '@/components/VoiceOrb';
-import TopClockTimer from '@/components/TopClockTimer';
 import { voiceBus } from '@/lib/voiceBus';
+import CallControls from '@/components/chat/CallControls';
 
-// If you already have a socket hook that manages conversation, integrate it here.
-// import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
-
-export default function ChatClient({ chatSessionId }: { chatSessionId?: string }) {
+export default function ChatClient({ persona }: { persona: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Bridge audio element events to the voice bus (in addition to amplitude detection)
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
@@ -29,15 +25,12 @@ export default function ChatClient({ chatSessionId }: { chatSessionId?: string }
   }, []);
 
   return (
-    <>
-      {/* Provide timer (layout already renders one globally; keep only if you want duplication) */}
-      <TopClockTimer />
-
-      <main className="min-h-[70vh] grid place-items-center px-4">
-        <audio ref={audioRef} id="tts-audio" className="hidden" />
-        <VoiceOrb audioEl={audioRef.current} size={320} />
-        {/* TODO: Insert composer and messages list here using chatSessionId */}
-      </main>
-    </>
+    <div className="min-h-[calc(100vh-3rem)] grid place-items-center">
+      <audio ref={audioRef} className="hidden" id="tts-audio" />
+      <div className="mt-10" />
+      <VoiceOrb audioEl={audioRef.current} size={340} />
+      <div className="mt-10" />
+      <CallControls />
+    </div>
   );
 }

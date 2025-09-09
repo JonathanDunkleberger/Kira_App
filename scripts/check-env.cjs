@@ -6,10 +6,7 @@ const requiredAtBuild = [
   // add other NEXT_PUBLIC_ vars needed at build
 ];
 
-const optionalDefaultsAtBuild = [
-  'DEFAULT_DAILY_FREE_SECONDS',
-  'DEFAULT_PRO_PER_CHAT_SECONDS',
-];
+const optionalDefaultsAtBuild = ['DEFAULT_DAILY_FREE_SECONDS', 'DEFAULT_PRO_PER_CHAT_SECONDS'];
 
 const requiredAtRuntime = [
   'SUPABASE_URL',
@@ -35,7 +32,10 @@ optionalDefaultsAtBuild.forEach((k) => {
 
 const missingRuntime = requiredAtRuntime.filter((k) => !process.env[k]);
 if (missingRuntime.length) {
-  console.warn('[env] These must exist at RUNTIME (not required for build):', missingRuntime.join(', '));
+  console.warn(
+    '[env] These must exist at RUNTIME (not required for build):',
+    missingRuntime.join(', '),
+  );
 }
 
 console.log('[env] Build env check complete.');

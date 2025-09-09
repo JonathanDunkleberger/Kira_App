@@ -29,12 +29,17 @@ export default function TopClockTimer() {
     const chatSessionId = params.get('chatSessionId') ?? undefined;
     (async () => {
       try {
-        const res = await fetch(`/api/entitlements${chatSessionId ? `?chatSessionId=${chatSessionId}` : ''}`, { cache: 'no-store' });
+        const res = await fetch(
+          `/api/entitlements${chatSessionId ? `?chatSessionId=${chatSessionId}` : ''}`,
+          { cache: 'no-store' },
+        );
         if (res.ok) {
           const state = await res.json();
           setHeartbeat({ t: 'heartbeat', now: Date.now(), entitlements: state });
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     })();
   }, [server, setHeartbeat]);
 

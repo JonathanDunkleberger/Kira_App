@@ -12,9 +12,15 @@ export default function RestartChatButton({ persona = 'kira' }: { persona?: stri
         try {
           usage.setChatSessionId(undefined);
         } catch {}
-  try { endCall(); } catch {}
-  try { await connectVoice({ persona, conversationId: undefined }); } catch {}
-  try { await startMic(); } catch {}
+        try {
+          endCall();
+        } catch {}
+        try {
+          await connectVoice({ persona, conversationId: undefined });
+        } catch {}
+        try {
+          await startMic();
+        } catch {}
       }}
     >
       Restart chat

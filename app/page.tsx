@@ -6,6 +6,9 @@ export default function HomePage() {
       <div className="max-w-sm w-full">
         <Link
           href="/chat?persona=kira"
+          onClick={() => {
+            try { sessionStorage.setItem('kira_auto_start', '1'); } catch {}
+          }}
           className="group block rounded-2xl border border-border bg-card/70 backdrop-blur p-6 hover:border-border/80 transition"
         >
           <div className="flex items-center gap-2 text-[17px] font-medium text-foreground mb-2">

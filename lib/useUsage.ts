@@ -28,7 +28,8 @@ export const useUsage = create<UsageState>((set, get) => ({
       const ent = hb.entitlements as ServerState;
       // preserve existing chatSessionId if heartbeat omits it
       const merged: ServerState = { ...s.server, ...ent } as ServerState;
-      if (!ent.chatSessionId && s.server?.chatSessionId) merged.chatSessionId = s.server.chatSessionId;
+      if (!ent.chatSessionId && s.server?.chatSessionId)
+        merged.chatSessionId = s.server.chatSessionId;
       return {
         server: merged,
         lastHeartbeatAt: hb.now as number,

@@ -4,6 +4,9 @@ import { voiceBus } from '@/lib/voiceBus';
 import { useAudioLevel } from '@/lib/hooks/useAudioLevel';
 import { cn } from '@/lib/utils';
 
+// Waves are strictly gated by speaking events emitted from ChatClient audio playback events now.
+// Audio level only influences subtle reactive scaling of inner orb, not wave visibility.
+
 // Subtle, natural motion constants
 const ORB_BREATHE_MS = 7500; // slower breathe
 const ORB_BREATHE_MIN = 0.992; // 0.992 → 1.008 scale
@@ -27,7 +30,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
   const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
-  const off = voiceBus.on<boolean>('speaking', (v) => setSpeaking(Boolean(v)));
+    const off = voiceBus.on<boolean>('speaking', (v) => setSpeaking(Boolean(v)));
     return off;
   }, []);
 
@@ -55,7 +58,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
       />
 
       {/* DECORATIONS — only while speaking */}
-  {speaking && (
+      {speaking && (
         <>
           {/* soft halos while speaking */}
           <div

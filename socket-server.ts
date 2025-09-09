@@ -296,7 +296,9 @@ wss.on('connection', async (ws, req) => {
     try {
       const txt = data.toString();
       if (txt === 'ping') {
-        try { ws.send('pong'); } catch {}
+        try {
+          ws.send('pong');
+        } catch {}
         return;
       }
       const msg = JSON.parse(txt);

@@ -1,6 +1,7 @@
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import AppHeader from '@/components/app/AppHeader';
+import '../lib/bootlog'; // boot health logging
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Kira — AI Media Companion', description: 'Talk, don’t alt-tab.' };

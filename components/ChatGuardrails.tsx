@@ -91,8 +91,12 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
           setOpen(false);
         }}
         onNewChat={async () => {
-          try { (window as any).voice?.endCall?.(); } catch {}
-          try { setChatSessionId?.(undefined); } catch {}
+          try {
+            (window as any).voice?.endCall?.();
+          } catch {}
+          try {
+            setChatSessionId?.(undefined);
+          } catch {}
           location.assign('/chat');
         }}
       />

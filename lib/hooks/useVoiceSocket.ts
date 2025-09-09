@@ -132,6 +132,9 @@ export function useVoiceSocket(
             try {
               useUsage.getState().setHeartbeat(msg);
             } catch {}
+            try {
+              (window as any).__onHeartbeat?.(msg);
+            } catch {}
           } else if (msg?.t === 'chat_session') {
             // could update conversation id state if needed
           } else {

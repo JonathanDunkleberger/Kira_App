@@ -1,29 +1,47 @@
-'use client';
+"use client";
 import { useEffect, useState } from 'react';
 
-import PaywallModal from '@/components/PaywallModal';
-import ChatCapModal from '@/components/ChatCapModal';
+import LimitDialog, { type LimitDialogMode } from '@/components/dialogs/LimitDialog';
+import { useUsage } from '@/lib/useUsage';
 
 export default function ChatGuardrails({ children }: { children: React.ReactNode }) {
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [showCap, setShowCap] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<LimitDialogMode>('paywall');
+  const [remainingToday, setRemainingToday] = useState(0);
+  const [remainingThisChat, setRemainingThisChat] = useState(0);
+  const { server } = useUsage();
+
   useEffect(() => {
     const handler = (msg: any) => {
-      if (msg?.t === 'heartbeat') {
-        if (msg.paywall) setShowPaywall(true);
-        if (msg.hardStop) setShowCap(true);
+      if (!msg || msg.t !== 'heartbeat') return;
+      const isPro = server?.todaySecondsLimit === 0;
+      if (!isPro) {
+        if (msg.remainingToday > 0 && msg.remainingToday <= 120) {
+          setMode('paywall'); setRemainingToday(msg.remainingToday); setOpen(true);
+        }
+        if (msg.paywall) { setMode('paywall'); setRemainingToday(0); setOpen(true); }
       }
+      if (msg.remainingThisChat > 0 && msg.remainingThisChat <= 120) {
+        setMode('chat-cap'); setRemainingThisChat(msg.remainingThisChat); setOpen(true);
+      }
+      if (msg.hardStop) { setMode('chat-cap'); setRemainingThisChat(0); setOpen(true); }
     };
     (window as any).__onHeartbeat = handler;
-    return () => {
-      if ((window as any).__onHeartbeat === handler) (window as any).__onHeartbeat = null;
-    };
-  }, []);
+    return () => { if ((window as any).__onHeartbeat === handler) (window as any).__onHeartbeat = null; };
+  }, [server]);
+
   return (
     <>
       {children}
-      {showPaywall && <PaywallModal onClose={() => setShowPaywall(false)} />}
-      {showCap && <ChatCapModal onNewChat={() => (location.href = '/chat')} />}
+      <LimitDialog
+        open={open}
+        mode={mode}
+        remainingToday={remainingToday}
+        remainingThisChat={remainingThisChat}
+        onClose={() => setOpen(false)}
+        onUpgrade={() => (location.href = '/upgrade')}
+        onNewChat={() => (location.href = '/chat')}
+      />
     </>
   );
 }

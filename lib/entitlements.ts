@@ -1,6 +1,8 @@
 // lib/entitlements.ts
 // Utilities for loading entitlement + usage snapshot from new schema
 import { createClient } from '@supabase/supabase-js';
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,12 +46,20 @@ export async function loadEntitlements(
     .maybeSingle();
   const todaySecondsUsed = Number(daily?.seconds_used || 0);
 
-  const { data: chat } = await svc
-    .from('chat_sessions')
-    .select('seconds_elapsed')
-    .eq('id', chatSessionId)
-    .maybeSingle();
-  const chatSecondsElapsed = Number(chat?.seconds_elapsed || 0);
+  // Use Prisma conversation as authoritative; fallback to 0 if missing
+  let chatSecondsElapsed = 0;
+  try {
+    const convo = await prisma.conversation.findUnique({
+      where: { id: chatSessionId },
+      select: { secondsRemaining: true },
+    });
+    // Original semantic was elapsed seconds; if model stores remaining, convert if both limits known.
+    // For now interpret secondsRemaining as inverse of elapsed relative to today limit when finite.
+    if (convo?.secondsRemaining != null) {
+      const limit = plan === 'supporter' ? PRO_SESSION_LIMIT : FREE_DAILY_LIMIT;
+      chatSecondsElapsed = Math.max(0, limit - convo.secondsRemaining);
+    }
+  } catch {}
 
   return {
     plan,

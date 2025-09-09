@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { PrismaClient } from '@prisma/client';
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -19,19 +20,28 @@ export async function GET(req: Request) {
   } = await supa.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { data: sess, error: se } = await supa
-    .from('chat_sessions')
-    .select('id')
-    .eq('id', chatSessionId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (se || !sess) return NextResponse.json({ error: 'not found' }, { status: 404 });
-
-  const { data, error } = await supa
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', chatSessionId)
-    .order('created_at', { ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });
+  const prisma = new PrismaClient();
+  try {
+    const convo = await prisma.conversation.findFirst({
+      where: { id: chatSessionId, userId: user.id },
+      select: { id: true },
+    });
+    if (!convo) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    const msgs = await prisma.message.findMany({
+      where: { conversationId: chatSessionId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, text: true, sender: true, createdAt: true },
+    });
+    return NextResponse.json(
+  msgs.map((m: { id: string; text: string; sender: string; createdAt: Date }) => ({
+        id: m.id,
+        role: m.sender,
+        content: m.text,
+        created_at: m.createdAt,
+      })),
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'query failed' }, { status: 500 });
+  }
 }

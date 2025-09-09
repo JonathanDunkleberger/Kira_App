@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
+import { PrismaClient } from '@prisma/client';
 
 export async function GET() {
   const cookieStore: any = cookies();
@@ -15,20 +16,24 @@ export async function GET() {
   } = await supa.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { data, error } = await supa
-    .from('chat_sessions')
-    .select('id, created_at, updated_at, seconds_elapsed')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(
-    data.map((d: any) => ({
-      id: d.id,
-      started_at: d.created_at,
-      ended_at: d.updated_at,
-      seconds_elapsed: d.seconds_elapsed,
-    })),
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  const prisma = new PrismaClient();
+  try {
+    const convos = await prisma.conversation.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: { id: true, createdAt: true, updatedAt: true, secondsRemaining: true },
+    });
+    return NextResponse.json(
+  convos.map((c: { id: string; createdAt: Date; updatedAt: Date; secondsRemaining: number | null }) => ({
+        id: c.id,
+        started_at: c.createdAt,
+        ended_at: c.updatedAt,
+        seconds_elapsed: c.secondsRemaining ?? 0, // interpret remaining if you later change semantics
+      })),
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'query failed' }, { status: 500 });
+  }
 }

@@ -4,6 +4,7 @@ import 'dotenv/config';
 import http from 'node:http';
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { PrismaClient } from '@prisma/client';
 
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin';
 // Legacy STT & streaming TTS utilities retained for fallback, but primary path now uses
@@ -126,6 +127,7 @@ wss.on('connection', async (ws, req) => {
   const token = url.searchParams.get('token') || '';
   const ttsFmt = (url.searchParams.get('tts') as 'webm' | 'mp3' | null) || 'webm';
   const supa = getSupabaseServerAdmin();
+  const prisma = new PrismaClient();
   // If no conversationId provided, create a chat_session (conversation) row
   // TODO(auto-resume): In a future iteration we can accept a short-lived resume token here
   // and attempt to look up / re-associate the most recent active chat_session for the user
@@ -134,15 +136,21 @@ wss.on('connection', async (ws, req) => {
   // reconnection flows later without exposing history UI.
   if (!conversationId) {
     try {
-      const { data, error } = await supa.from('chat_sessions').insert({}).select('id').single();
-      if (error) throw error;
-      conversationId = data?.id || null;
-      if (conversationId && (ws as any).readyState === 1) {
-        (ws as any).send(JSON.stringify({ t: 'chat_session', chatSessionId: conversationId }));
+      // Create a guest conversation (no user association yet) using Prisma Conversation model
+      const convo = await prisma.conversation.create({
+        data: {
+          userId: 'guest', // placeholder; optionally replace with a synthetic per-visitor id strategy
+          title: 'New Conversation',
+          isGuest: true,
+        },
+      });
+      conversationId = convo.id;
+      if (conversationId && ws.readyState === 1) {
+        ws.send(JSON.stringify({ t: 'chat_session', chatSessionId: conversationId }));
       }
     } catch (e) {
-      console.error('Failed to auto-create chat session', e);
-      return ws.close(1011, 'Failed to create chat session');
+      console.error('Failed to auto-create conversation (prisma)', e);
+      return ws.close(1011, 'Failed to create conversation');
     }
   }
 
@@ -189,14 +197,19 @@ wss.on('connection', async (ws, req) => {
   // Streaming state (no single-blob accumulation variables required now)
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-  // Seed history from DB
+  // Seed history from Prisma messages table mapped as app_messages
   try {
-    const { data: hist } = await supa
-      .from('messages')
-      .select('role, content')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-    if (hist) historyMem = hist.map((m: any) => ({ role: m.role, content: m.content }));
+    if (conversationId) {
+      const msgs = await prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'asc' },
+        select: { sender: true, text: true },
+      });
+      historyMem = msgs.map((m: { sender: string; text: string }) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
+    }
   } catch {}
 
   // Attach streaming voice handler (will create its own ws.on('message') listener)

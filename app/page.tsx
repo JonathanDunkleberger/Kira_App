@@ -1,4 +1,5 @@
-import { cookies } from 'next/headers';
+"use client";
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import { CharacterCard } from '../components/ui/CharacterCard';
@@ -10,10 +11,17 @@ function greet(): string {
   return 'Evening';
 }
 
-export default async function HomePage() {
-  const jar = await cookies();
-  const name = jar.get?.('kira_name')?.value || 'there';
-  const conversationId = crypto.randomUUID();
+export default function HomePage() {
+  const [name, setName] = useState('there');
+  const conversationId = useMemo(() => crypto.randomUUID(), []);
+  useEffect(() => {
+    try {
+      const cookieMatch = document.cookie.match(/(?:^|; )kira_name=([^;]+)/);
+      if (cookieMatch && cookieMatch[1]) setName(decodeURIComponent(cookieMatch[1]));
+    } catch {
+      /* noop */
+    }
+  }, []);
   return (
     <main className="min-h-[calc(100vh-3rem)] flex items-center justify-center p-6">
       <CharacterCard

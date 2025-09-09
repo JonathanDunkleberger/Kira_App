@@ -118,3 +118,49 @@ create policy if not exists "messages_owned_by_user" on public.messages
 create policy if not exists "chat_sessions_owner_all" on public.chat_sessions
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 ```
+
+### Transitional Dual-Schema Policy (chat_session_id OR conversation_id)
+
+If you are migrating from a legacy `conversation_id` column on `messages` to the new `chat_session_id` foreign key, you can create a temporary policy that authorizes either linkage so old rows remain readable until you finish backfilling:
+
+```sql
+drop policy if exists "messages_owned_by_user" on public.messages;
+
+create policy "messages_owned_by_user" on public.messages
+  for select using (
+    exists (
+      select 1 from public.chat_sessions s
+      where s.id = messages.chat_session_id
+        and s.user_id = auth.uid()
+    )
+    OR
+    exists (
+      select 1 from public.chat_sessions s2
+      where s2.id = messages.conversation_id
+        and s2.user_id = auth.uid()
+    )
+  );
+```
+
+After running the one-time backfill (see below) you can revert to the stricter single-column policy.
+
+### One-Time Backfill Helpers
+
+Create missing `chat_sessions` rows for legacy conversations and then copy `conversation_id` to `chat_session_id`:
+
+```sql
+insert into chat_sessions (id, user_id, started_at, seconds_elapsed)
+select m.conversation_id, m.user_id, min(m.created_at), 0
+from messages m
+left join chat_sessions s on s.id = m.conversation_id
+where m.conversation_id is not null
+  and s.id is null
+group by m.conversation_id, m.user_id;
+
+update messages m
+set chat_session_id = m.conversation_id
+where m.chat_session_id is null
+  and m.conversation_id is not null;
+```
+
+Once all rows have `chat_session_id` populated and queries/clients are updated, drop the transitional policy and keep only the final one.

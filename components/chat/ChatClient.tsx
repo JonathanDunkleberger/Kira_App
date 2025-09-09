@@ -4,6 +4,7 @@ import VoiceOrb from '@/components/VoiceOrb';
 import { voiceBus } from '@/lib/voiceBus';
 import CallControls from '@/components/chat/CallControls';
 import { useVoiceSocket } from '@/lib/useVoiceSocket';
+import ChatGuardrails from '@/components/ChatGuardrails';
 
 export default function ChatClient({ persona }: { persona: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -44,12 +45,12 @@ export default function ChatClient({ persona }: { persona: string }) {
   // microphone now auto-starts on mount
 
   return (
-    <div className="min-h-[calc(100vh-3rem)] grid place-items-center">
+    <ChatGuardrails>
       <audio ref={audioRef} className="hidden" id="tts-audio" />
       <div className="mt-10" />
-  <VoiceOrb audioEl={audioRef.current} size={280} />
+      <VoiceOrb audioEl={audioRef.current} size={280} />
       <div className="mt-10" />
-  <CallControls voice={voice} />
-    </div>
+      <CallControls voice={voice} />
+    </ChatGuardrails>
   );
 }

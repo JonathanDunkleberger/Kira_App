@@ -1,80 +1,36 @@
-'use client';
+"use client";
 import { useEffect } from 'react';
-import { Button } from '@/components/ui/Button';
 
 export type Panel = 'profile' | 'settings' | 'billing' | 'auth' | null;
 
-// Minimal inline Sheet implementation using portal + basic styles (replace with shadcn/ui if available)
-export default function HeaderPanels({
-  panel,
-  onOpenChange,
-}: {
-  panel: Panel;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const open = Boolean(panel);
+export default function HeaderPanels({ panel, onOpenChange }: { panel: Panel; onOpenChange: (o: boolean) => void }) {
+  const open = !!panel;
+  const src =
+    panel === 'profile' ? '/profile' :
+    panel === 'settings' ? '/settings' :
+    panel === 'billing' ? '/billing' :
+    panel === 'auth' ? '/login' : '';
+
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onOpenChange(false);
-    }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onOpenChange(false); }
     if (open) window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onOpenChange]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex">
-      <div
-        className="flex-1 bg-black/40 backdrop-blur-sm"
-        onClick={() => onOpenChange(false)}
-        aria-hidden
-      />
-      <div className="w-[380px] sm:w-[420px] h-full bg-background text-foreground border-l border-border p-5 overflow-y-auto shadow-xl">
-        {panel === 'profile' && (
-          <div>
-            <h2 className="text-lg font-semibold">Profile</h2>
-            <p className="text-sm text-muted-foreground">Update your display and preferences.</p>
-            <div className="mt-4">
-              {/* <YourProfileFormComponent /> */}
-              <div className="text-sm text-muted-foreground">Profile form placeholder.</div>
-            </div>
-          </div>
-        )}
-        {panel === 'settings' && (
-          <div>
-            <h2 className="text-lg font-semibold">Settings</h2>
-            <p className="text-sm text-muted-foreground">App preferences (UI-only).</p>
-            <div className="mt-4">
-              {/* <YourSettingsPanel /> */}
-              <div className="text-sm text-muted-foreground">Settings panel placeholder.</div>
-            </div>
-          </div>
-        )}
-        {panel === 'billing' && (
-          <div>
-            <h2 className="text-lg font-semibold">Billing</h2>
-            <p className="text-sm text-muted-foreground">Upgrade to Pro or manage your plan.</p>
-            <div className="mt-4 space-y-4">
-              {/* <UpgradeCTA /> */}
-              {/* <ManageBilling /> */}
-              <Button onClick={() => (window.location.href = '/upgrade')}>Upgrade to Pro</Button>
-              <Button variant="outline" onClick={() => (window.location.href = '/billing')}>
-                Manage subscription
-              </Button>
-            </div>
-          </div>
-        )}
-        {panel === 'auth' && (
-          <div>
-            <h2 className="text-lg font-semibold">Sign in</h2>
-            <p className="text-sm text-muted-foreground">You need to sign in before subscribing.</p>
-            <div className="mt-4 space-y-4">
-              {/* <AuthPanel /> */}
-              <Button onClick={() => (window.location.href = '/login')}>Sign in</Button>
-              <Button variant="outline" onClick={() => (window.location.href = '/signup')}>
-                Create account
-              </Button>
-            </div>
-          </div>
+    <div className="fixed inset-0 z-[120] flex">
+      <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
+      <div className="w-[380px] sm:w-[420px] h-full bg-background text-foreground border-l border-border shadow-xl flex flex-col">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <div className="text-base font-medium capitalize">{panel}</div>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="text-xs px-2 py-1 rounded-md bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600"
+          >Close</button>
+        </div>
+        {panel && (
+          <iframe key={src} src={src} className="w-full flex-1" style={{ border: 0 }} />
         )}
       </div>
     </div>

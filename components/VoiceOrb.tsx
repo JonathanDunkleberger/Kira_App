@@ -41,14 +41,8 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
   const ring2 = s * 1.65;
 
   return (
-    <div
-      className={cn('relative mx-auto my-8 select-none', className)}
-      style={{ width: s, height: s }}
-    >
-      {/* Speaking waves */}
-  <Waves active={isSpeaking} baseSize={s} multiHue={false} />
-
-      {/* GLOW RINGS */}
+    <div className={cn('relative mx-auto my-8 select-none', className)} style={{ width: s, height: s }}>
+      {/* always-on subtle glow */}
       <div
         className="absolute inset-0 rounded-full"
         style={{
@@ -57,26 +51,33 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
           boxShadow: '0 0 42px 14px rgba(139,153,100,0.14)',
         }}
       />
-      <div
-        data-orb-halo="1"
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          width: ring1,
-          height: ring1,
-          borderRadius: '9999px',
-          border: '6px solid rgba(0,0,0,0.05)',
-        }}
-      />
-      <div
-        data-orb-halo="2"
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          width: ring2,
-          height: ring2,
-          borderRadius: '9999px',
-          border: '3px solid rgba(0,0,0,0.035)',
-        }}
-      />
+
+      {/* DECORATIONS — only while speaking */}
+      {isSpeaking && (
+        <>
+          {/* soft halos while speaking */}
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              width: ring1,
+              height: ring1,
+              borderRadius: '9999px',
+              border: '5px solid rgba(0,0,0,0.04)',
+            }}
+          />
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              width: ring2,
+              height: ring2,
+              borderRadius: '9999px',
+              border: '3px solid rgba(0,0,0,0.03)',
+            }}
+          />
+          {/* speaking waves */}
+          <Waves active baseSize={s} multiHue={false} />
+        </>
+      )}
 
       {/* CORE ORB — palantír style, always breathing */}
       <div
@@ -249,12 +250,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
             }
           }
           /* dark overrides for halos */
-          :global(.dark) div[data-orb-halo='1'] {
-            border-color: rgba(255, 255, 255, 0.06) !important;
-          }
-          :global(.dark) div[data-orb-halo='2'] {
-            border-color: rgba(255, 255, 255, 0.04) !important;
-          }
+          /* dark halos now handled inline only while speaking */
         `}</style>
       </div>
     </div>
@@ -302,7 +298,7 @@ function Waves({
         }
 
         :global(.dark) .wave {
-          border-color: hsl(78 45% 72% / 0.45);
+          border-color: hsl(78 45% 72% / 0.50);
           mix-blend-mode: screen;
         }
 
@@ -334,17 +330,9 @@ function Waves({
         }
 
         @keyframes wave-expand {
-          0% {
-            transform: translate(-50%, -50%) scale(1);
-            opacity: ${WAVE_OPACITY};
-          }
-          70% {
-            opacity: ${Math.max(0.14, 0.26 * 0.6)};
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(${WAVE_SCALE_MAX});
-            opacity: 0;
-          }
+          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.28; }
+          60% { opacity: 0.16; }
+          100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
         }
         @keyframes hue-shift {
           0% {

@@ -26,14 +26,20 @@ export async function GET(req: NextRequest) {
     const user = await ensureUser();
     if (user) {
       const { remaining } = await getRemainingSeconds({ userId: user.id });
-      return NextResponse.json({ secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'user' }, { headers: { 'Cache-Control': 'no-store, max-age=0' } });
+      return NextResponse.json(
+        { secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'user' },
+        { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      );
     }
     const ip = getClientIp(req);
     if (!ip) {
       return NextResponse.json({ error: 'Unable to determine IP' }, { status: 400 });
     }
     const { remaining } = await getRemainingSeconds({ ip });
-    return NextResponse.json({ secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'ip' }, { headers: { 'Cache-Control': 'no-store, max-age=0' } });
+    return NextResponse.json(
+      { secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'ip' },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+    );
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage/check GET Error:', error.message);

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import * as React from 'react';
 import { clsx } from 'clsx';
 
@@ -32,7 +32,7 @@ export function ConversationOrb({
     pulse || state === 'listening'
       ? 'animate-[pulseSoft_2s_ease-in-out_infinite]'
       : state === 'speaking'
-        ? 'animate-[breath_3.2s_ease-in-out_infinite]' 
+        ? 'animate-[breath_3.2s_ease-in-out_infinite]'
         : '';
 
   return (
@@ -55,16 +55,34 @@ export function ConversationOrb({
       {children && <div className="relative z-10 text-cream-100 drop-shadow-lg">{children}</div>}
       <style jsx>{`
         @keyframes pulseSoft {
-          0%,100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.08); opacity: 0.9; }
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.08);
+            opacity: 0.9;
+          }
         }
         @keyframes breath {
-          0%,100% { transform: scale(1); }
-          25% { transform: scale(1.05); }
-          50% { transform: scale(1.02); }
-          75% { transform: scale(1.07); }
+          0%,
+          100% {
+            transform: scale(1);
+          }
+          25% {
+            transform: scale(1.05);
+          }
+          50% {
+            transform: scale(1.02);
+          }
+          75% {
+            transform: scale(1.07);
+          }
         }
-        .animate-spin-slow { animation: spin 18s linear infinite; }
+        .animate-spin-slow {
+          animation: spin 18s linear infinite;
+        }
       `}</style>
     </div>
   );

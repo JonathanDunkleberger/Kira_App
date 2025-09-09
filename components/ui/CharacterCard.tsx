@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import * as React from 'react';
 import { clsx } from 'clsx';
 
@@ -34,7 +34,11 @@ export function CharacterCard({
       )}
     >
       <div className="flex items-start gap-4">
-        {avatar && <div className="shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-surface-300 flex items-center justify-center">{avatar}</div>}
+        {avatar && (
+          <div className="shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-surface-300 flex items-center justify-center">
+            {avatar}
+          </div>
+        )}
         <div className="flex-1 space-y-1">
           <h2 className="text-lg font-semibold tracking-tight text-cream-100">{name}</h2>
           {subtitle && <p className="text-sm text-cream-300/80">{subtitle}</p>}

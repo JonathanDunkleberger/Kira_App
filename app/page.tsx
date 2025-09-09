@@ -21,7 +21,9 @@ export default async function HomePage() {
         subtitle={`${greet()}, ${name}`}
         description="Real-time voice conversation. Just talk—she listens and replies."
         onPrimaryAction={() => {
-          try { sessionStorage.setItem('kira_auto_start', '1'); } catch {}
+          try {
+            sessionStorage.setItem('kira_auto_start', '1');
+          } catch {}
         }}
         footer={
           <Link

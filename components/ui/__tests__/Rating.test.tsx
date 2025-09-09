@@ -8,8 +8,8 @@ describe('Rating', () => {
     const fn = vi.fn();
     const { getAllByRole } = render(<Rating onChange={fn} />);
     const stars = getAllByRole('radio');
-  const third = stars[2]!;
-  fireEvent.click(third);
+    const third = stars[2]!;
+    fireEvent.click(third);
     expect(fn).toHaveBeenCalledWith(3);
   });
 });

@@ -191,7 +191,9 @@ export function handleVoiceConnection(
     try {
       const msg = JSON.parse(data.toString());
       if (msg.t === 'end') {
-        try { ws.close(1000, 'end'); } catch {}
+        try {
+          ws.close(1000, 'end');
+        } catch {}
       }
     } catch {}
   });

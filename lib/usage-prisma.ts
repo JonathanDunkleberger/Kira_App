@@ -15,7 +15,7 @@ function identityWhere(identity: Identity, start: Date, end: Date) {
     return { ip: identity.ip, date: { gte: start, lt: end } };
   }
   // Impossible in normal usage; return clause that matches nothing
-  return { id: "__none__" };
+  return { id: '__none__' };
 }
 
 export async function getDailyUsageSeconds(identity: Identity) {

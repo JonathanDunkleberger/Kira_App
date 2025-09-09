@@ -91,7 +91,7 @@ Key client/server vars (non‑exhaustive):
   - `CLERK_PUBLISHABLE_KEY`
   - `CLERK_SECRET_KEY`
   - `CLERK_WEBHOOK_SECRET` (for user sync route)
-  
+
 ## Backend Data Flow (Phase 1 One-Shot Plan)
 
 This phase introduces Prisma-backed persistence for core objects while retaining existing Supabase-based endpoints during a short transition window:
@@ -108,16 +108,17 @@ During the cutover, UI calls will be updated incrementally to point from Supabas
 
 All conversation/message operations now backed by Prisma tables (`app_conversations`, `app_messages`, `app_users`). Response shape maintains legacy keys (`created_at`, `updated_at`) for UI compatibility.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/conversations` | GET | List user conversations |
-| `/api/conversations` | POST | Create new conversation |
-| `/api/conversations/[id]` | PATCH | Rename conversation |
-| `/api/conversations/[id]` | DELETE | Delete conversation |
-| `/api/conversations/[id]/messages` | GET | List messages (ascending) |
-| `/api/conversations/[id]/messages` | POST | Append message (text + sender) |
+| Endpoint                           | Method | Description                    |
+| ---------------------------------- | ------ | ------------------------------ |
+| `/api/conversations`               | GET    | List user conversations        |
+| `/api/conversations`               | POST   | Create new conversation        |
+| `/api/conversations/[id]`          | PATCH  | Rename conversation            |
+| `/api/conversations/[id]`          | DELETE | Delete conversation            |
+| `/api/conversations/[id]/messages` | GET    | List messages (ascending)      |
+| `/api/conversations/[id]/messages` | POST   | Append message (text + sender) |
 
 Auth: Clerk user required (guest flow deferred). `ensureUser()` upserts into `app_users`.
+
 - Database:
   - `DATABASE_URL` (Postgres for Prisma)
 
@@ -127,12 +128,12 @@ Daily usage seconds are persisted in the Prisma `Usage` model (`app_usage`). Aut
 
 Endpoints (all dynamic – no caching):
 
-| Endpoint | Method | Purpose | Identity Strategy |
-|----------|--------|---------|-------------------|
-| `/api/usage` | GET | Backwards-compatible usage fetch | UserId → IP fallback |
-| `/api/usage` | POST | Backwards-compatible update (increment) | UserId → IP fallback |
-| `/api/usage/check` | GET | Explicit usage snapshot | UserId → IP fallback |
-| `/api/usage/update` | POST | Explicit usage increment | UserId → IP fallback |
+| Endpoint            | Method | Purpose                                 | Identity Strategy    |
+| ------------------- | ------ | --------------------------------------- | -------------------- |
+| `/api/usage`        | GET    | Backwards-compatible usage fetch        | UserId → IP fallback |
+| `/api/usage`        | POST   | Backwards-compatible update (increment) | UserId → IP fallback |
+| `/api/usage/check`  | GET    | Explicit usage snapshot                 | UserId → IP fallback |
+| `/api/usage/update` | POST   | Explicit usage increment                | UserId → IP fallback |
 
 Request (POST /api/usage/update or /api/usage):
 
@@ -160,8 +161,8 @@ Implementation details:
 
 Environment knobs:
 
-| Var | Meaning |
-|-----|---------|
+| Var                  | Meaning                                                          |
+| -------------------- | ---------------------------------------------------------------- |
 | `FREE_TRIAL_SECONDS` | Daily allowance applied to both authenticated and guest subjects |
 
 Future hardening ideas (not yet implemented):
@@ -175,7 +176,11 @@ Future hardening ideas (not yet implemented):
 Before processing audio, the voice WebSocket server calls `/api/usage/check`. If `secondsRemaining <= 0` it sends:
 
 ```json
-{ "t": "limit_exceeded", "reason": "daily_limit", "message": "Daily free usage exhausted. Upgrade to continue." }
+{
+  "t": "limit_exceeded",
+  "reason": "daily_limit",
+  "message": "Daily free usage exhausted. Upgrade to continue."
+}
 ```
 
 The client (`useVoiceSocket`) listens for this event, sets a global flag, and a lightweight `LimitBanner` component displays an upgrade prompt. This ensures no additional audio is processed post-limit.

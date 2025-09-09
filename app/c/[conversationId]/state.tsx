@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import * as React from 'react';
 import { useVoiceSocket, startMic, endCall } from '../../../lib/useVoiceSocket';
 import { ConversationOrb } from '../../../components/ui/ConversationOrb';
@@ -7,7 +7,9 @@ import { Rating } from '../../../components/ui/Rating';
 import CallControls from '../../../components/chat/CallControls';
 import { Button } from '../../../components/ui/Button';
 
-interface Props { id: string; }
+interface Props {
+  id: string;
+}
 export default function ActiveConversation({ id }: Props) {
   const vs = useVoiceSocket();
   const [phase, setPhase] = React.useState<'connecting' | 'active' | 'ended'>('connecting');

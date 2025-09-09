@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import * as React from 'react';
 import { clsx } from 'clsx';
 
@@ -32,7 +32,11 @@ export function Rating({
   }
 
   return (
-    <div className={clsx('flex items-center gap-1', className)} aria-label={label} role="radiogroup">
+    <div
+      className={clsx('flex items-center gap-1', className)}
+      aria-label={label}
+      role="radiogroup"
+    >
       {Array.from({ length: max }).map((_, i) => {
         const starValue = i + 1;
         const active = hover != null ? starValue <= hover : starValue <= value;

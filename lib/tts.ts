@@ -130,7 +130,10 @@ async function synthesizeElevenLabs(text: string): Promise<string> {
       'Content-Type': 'application/json',
       Accept: 'audio/mpeg',
     },
-    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_MODEL || 'eleven_monolingual_v1' }),
+    body: JSON.stringify({
+      text,
+      model_id: process.env.ELEVENLABS_MODEL || 'eleven_monolingual_v1',
+    }),
   });
   if (!r.ok) {
     const body = await r.text();

@@ -282,11 +282,11 @@ export async function connectVoice(opts: ConnectOpts) {
         } else if (msg.t === 'limit_exceeded') {
           console.warn('[voice][limit] server reported limit_exceeded');
           // Broadcast via a lightweight global for now; a dedicated store could be added later
-            try {
-              (window as any).__kiraLimitExceeded = true;
-              const ev = new CustomEvent('kira-limit-exceeded', { detail: msg });
-              window.dispatchEvent(ev);
-            } catch {}
+          try {
+            (window as any).__kiraLimitExceeded = true;
+            const ev = new CustomEvent('kira-limit-exceeded', { detail: msg });
+            window.dispatchEvent(ev);
+          } catch {}
         } else if (msg.t === 'partial') {
           if (typeof msg.text === 'string') usePartialStore.getState().setPartial(msg.text);
         } else if (msg.t === 'transcript') {

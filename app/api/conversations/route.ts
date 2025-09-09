@@ -17,7 +17,7 @@ export async function GET() {
   });
   // shape parity with previous response keys
   return NextResponse.json(
-    rows.map((r: typeof rows[number]) => ({
+    rows.map((r: (typeof rows)[number]) => ({
       id: r.id,
       title: r.title,
       created_at: r.createdAt,

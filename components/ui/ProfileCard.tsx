@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import * as React from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { clsx } from 'clsx';
@@ -23,7 +23,9 @@ export function ProfileCard({
 }: ProfileCardProps) {
   return (
     <Dialog.Root>
-      <Dialog.Trigger asChild>{trigger ?? <Button variant="secondary">Account</Button>}</Dialog.Trigger>
+      <Dialog.Trigger asChild>
+        {trigger ?? <Button variant="secondary">Account</Button>}
+      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out" />
         <Dialog.Content

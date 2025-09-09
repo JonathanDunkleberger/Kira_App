@@ -104,7 +104,7 @@ export function useVoiceSocket(
       ws.close(); // This will trigger the onclose handler for reconnect logic
     };
 
-  ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
       // Pass all messages, binary or text, to the provider for handling
       if (typeof event.data === 'string') {
         try {

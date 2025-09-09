@@ -81,7 +81,8 @@ export async function GET(req: Request) {
   }
 
   const plan = ent?.plan ?? 'free';
-  const todaySecondsLimit = plan === 'pro' ? 0 : n(ent?.daily_free_seconds, DEFAULT_DAILY_FREE_SECONDS);
+  const todaySecondsLimit =
+    plan === 'pro' ? 0 : n(ent?.daily_free_seconds, DEFAULT_DAILY_FREE_SECONDS);
   const chatSecondsCap = n(ent?.per_chat_cap_seconds, DEFAULT_PRO_PER_CHAT_SECONDS);
 
   return NextResponse.json(

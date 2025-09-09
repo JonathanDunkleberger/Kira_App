@@ -3,34 +3,36 @@
 @tailwind utilities;
 
 /* Light (cream/almond) */
-:root {
-  --background: 40 38% 96%; /* warm cream */
-  --foreground: 24 16% 10%;
+:root{
+  /* Cream background stays */
+  --background: 40 38% 96%;
+  --foreground: 24 18% 14%;           /* darker text for readability */
 
   --card: 40 38% 98%;
-  --card-foreground: 24 16% 10%;
+  --card-foreground: 24 18% 14%;
 
   --popover: 40 38% 98%;
-  --popover-foreground: 24 16% 10%;
+  --popover-foreground: 24 18% 14%;
 
-  /* Pistachio/olive accents */
-  --primary: 78 28% 35%; /* #566f2f */
+  /* Pistachio accents */
+  --primary: 78 28% 35%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 72 26% 46%; /* #7a8b53 */
+  --secondary: 72 26% 46%;
   --secondary-foreground: 0 0% 100%;
 
-  --muted: 40 28% 94%; /* almond card */
-  --muted-foreground: 24 10% 32%;
+  /* Secondary text/background on cream */
+  --muted: 40 28% 94%;
+  --muted-foreground: 24 12% 30%;
 
-  --accent: 78 30% 86%; /* pale pistachio */
-  --accent-foreground: 24 16% 10%;
+  /* Accent surfaces (chips/badges) */
+  --accent: 78 30% 86%;
+  --accent-foreground: 24 18% 14%;
 
-  --border: 40 20% 88%;
-  --input: 40 20% 88%;
+  --border: 40 20% 86%;
+  --input: 40 20% 86%;
   --ring: 78 28% 35%;
 
   --radius: 1rem;
-  /* Legacy fallbacks for existing code expecting hex vars */
   --bg: hsl(var(--background));
   --ink: hsl(var(--foreground));
 }

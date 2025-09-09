@@ -26,7 +26,7 @@ export default function AppHeader() {
   }
 
   return (
-    <header className="relative h-12 flex items-center justify-center border-b border-border bg-background/80 backdrop-blur-sm">
+  <header className="relative h-12 flex items-center justify-center bg-transparent">
       <TopClockTimer />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
         <div className="relative group">

@@ -6,15 +6,15 @@ export default function HomePage() {
       <div className="max-w-sm w-full">
         <Link
           href="/chat?persona=kira"
-          className="group block rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6 hover:border-white/20 transition"
+          className="group block rounded-2xl border border-border bg-card/70 backdrop-blur p-6 hover:border-border/80 transition"
         >
-          <div className="text-lg font-semibold mb-2 flex items-center gap-2">
+          <div className="flex items-center gap-2 text-[17px] font-medium text-foreground mb-2">
             Call Kira{' '}
-            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+            <span className="text-[10px] tracking-wide px-2 py-0.5 rounded-full bg-accent text-accent-foreground border border-border/40 uppercase">
               Live
             </span>
           </div>
-          <p className="text-sm text-white/60 group-hover:text-white/80">
+          <p className="mt-2 text-[14px] leading-6 text-foreground/85 group-hover:text-foreground">
             Real-time voice conversation. Just talk—she listens and replies.
           </p>
         </Link>

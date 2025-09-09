@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-import LimitDialog, { type LimitDialogMode } from '@/components/dialogs/LimitDialog';
-import { useUsage } from '@/lib/useUsage';
+import { useUsage } from '../lib/useUsage';
+import { supaBrowser } from '../lib/supabase-browser';
+
+import LimitDialog, { type LimitDialogMode } from './dialogs/LimitDialog';
 
 export default function ChatGuardrails({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -10,12 +12,33 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
   const [remainingToday, setRemainingToday] = useState(0);
   const [remainingThisChat, setRemainingThisChat] = useState(0);
   const { server } = useUsage();
+  const [isAuthed, setAuthed] = useState(false);
+  const [isPro, setIsPro] = useState(false);
+  const [usedToday, setUsedToday] = useState<number | undefined>();
+  const [usedThisChat, setUsedThisChat] = useState<number | undefined>();
+  const todayCap = server?.todaySecondsLimit ?? 0;
+  const chatCap = server?.chatSecondsCap ?? 0;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const supa = supaBrowser();
+        const { data } = await supa.auth.getUser();
+        setAuthed(!!data.user);
+      } catch {
+        setAuthed(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const handler = (msg: any) => {
       if (!msg || msg.t !== 'heartbeat') return;
-      const isPro = server?.todaySecondsLimit === 0;
-      if (!isPro) {
+  const pro = server?.todaySecondsLimit === 0;
+  setIsPro(!!pro);
+  setUsedToday(msg.usedToday);
+  setUsedThisChat(msg.usedThisChat);
+  if (!pro) {
         if (msg.remainingToday > 0 && msg.remainingToday <= 120) {
           setMode('paywall');
           setRemainingToday(msg.remainingToday);
@@ -52,9 +75,25 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
         mode={mode}
         remainingToday={remainingToday}
         remainingThisChat={remainingThisChat}
+        usedToday={usedToday}
+        usedThisChat={usedThisChat}
+        todayCap={todayCap}
+        chatCap={chatCap}
+        isAuthed={isAuthed}
+        isPro={isPro}
         onClose={() => setOpen(false)}
-        onUpgrade={() => (location.href = '/upgrade')}
-        onNewChat={() => (location.href = '/chat')}
+        onUpgrade={() => {
+          document.querySelector<HTMLButtonElement>('[data-open-billing]')?.click();
+          setOpen(false);
+        }}
+        onLogin={() => {
+          document.querySelector<HTMLButtonElement>('[data-open-auth]')?.click();
+          setOpen(false);
+        }}
+        onNewChat={async () => {
+          (window as any).voice?.endCall?.();
+          location.assign('/chat');
+        }}
       />
     </>
   );

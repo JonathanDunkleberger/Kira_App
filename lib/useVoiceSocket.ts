@@ -1,11 +1,45 @@
-"use client";
+'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+// Unified URL resolution supporting legacy + new env vars and runtime override
+function resolveVoiceWsUrl(): string {
+  // Highest priority: explicit runtime override for debugging
+  if (typeof window !== 'undefined' && (window as any).__VOICE_WS__) {
+    return (window as any).__VOICE_WS__;
+  }
+
+  // Support BOTH old and new env names
+  const newVar = process.env.NEXT_PUBLIC_VOICE_WS_URL; // new
+  const oldDev = process.env.NEXT_PUBLIC_WEBSOCKET_URL; // old (dev)
+  const oldProd = process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD; // old (prod)
+
+  // Prefer explicit new var if present
+  let candidate = newVar;
+
+  // Otherwise pick env by NODE_ENV
+  if (!candidate) {
+    candidate = process.env.NODE_ENV === 'production' ? oldProd : oldDev;
+  }
+
+  // If someone set localhost for "All Environments", ignore it in prod/preview
+  if (candidate && typeof window !== 'undefined') {
+    const isLocal = candidate.includes('localhost') || candidate.includes('127.0.0.1');
+    const host = window.location.hostname;
+    const onRemote = host !== 'localhost' && host !== '127.0.0.1';
+    if (isLocal && onRemote) candidate = ''; // force fallback
+  }
+
+  // Normalize http(s) -> ws(s)
+  if (candidate?.startsWith('http')) {
+    candidate = candidate.replace(/^http/i, 'ws');
+  }
+
+  // Final fallback: same-origin edge route (works if you kept /api/voice)
+  return candidate || '/api/voice';
+}
+
 /** Prefer an explicit backend if you have one; else use local /api/voice (Edge). */
-const WS_URL =
-  (typeof window !== 'undefined' ? (window as any).__VOICE_WS__ : '') ||
-  process.env.NEXT_PUBLIC_VOICE_WS_URL ||
-  '/api/voice';
+// (legacy normalizeWsUrl removed in favor of resolveVoiceWsUrl logic above)
 
 type ConnectOpts = { persona?: string; conversationId?: string };
 
@@ -23,7 +57,9 @@ export function useVoiceSocket() {
   function playUrlOn(audioEl: HTMLAudioElement | null, url: string) {
     if (!audioEl) return;
     audioEl.src = url;
-    try { audioEl.currentTime = 0; } catch {}
+    try {
+      audioEl.currentTime = 0;
+    } catch {}
     audioEl.play().catch(() => {});
   }
 
@@ -33,19 +69,18 @@ export function useVoiceSocket() {
     if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN))
       return;
 
-    const base = WS_URL.startsWith('ws')
-      ? WS_URL
-      : new URL(WS_URL, window.location.origin).toString();
-    const url = new URL(base);
-    if (opts?.persona) url.searchParams.set('persona', opts.persona);
-    if (opts?.conversationId) url.searchParams.set('conversationId', opts.conversationId);
-
-    const ws = new WebSocket(url);
+  const base = resolveVoiceWsUrl();
+  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+  if (opts?.persona) url.searchParams.set('persona', opts.persona);
+  if (opts?.conversationId) url.searchParams.set('conversationId', opts.conversationId);
+  console.log('[voice][ws] connecting', { base, href: url.href });
+  const ws = new WebSocket(url);
     wsRef.current = ws;
 
     openPromiseRef.current = new Promise<void>((res) => (openResolveRef.current = res));
 
     ws.addEventListener('open', () => {
+      console.log('[voice][ws] open');
       setConnected(true);
       openResolveRef.current?.();
       try {
@@ -57,6 +92,9 @@ export function useVoiceSocket() {
       if (typeof e.data !== 'string') return;
       try {
         const msg = JSON.parse(e.data);
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[voice][ws] message', msg);
+        }
         if (msg.t === 'tts_url' && typeof msg.url === 'string') {
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
           playUrlOn(el, msg.url);
@@ -69,13 +107,15 @@ export function useVoiceSocket() {
       } catch {}
     });
 
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (e) => {
+      console.log('[voice][ws] close', e.code, e.reason);
       setConnected(false);
       openPromiseRef.current = null;
       openResolveRef.current = null;
     });
 
-    ws.addEventListener('error', () => {
+    ws.addEventListener('error', (e) => {
+      console.warn('[voice][ws] error', e);
       setConnected(false);
       openPromiseRef.current = null;
       openResolveRef.current = null;

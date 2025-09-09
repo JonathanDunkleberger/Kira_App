@@ -64,21 +64,42 @@ export async function GET(req: Request) {
     if (busy) return;
     busy = true;
     const size = chunks.reduce((n, u) => n + u.byteLength, 0);
-    if (!size) { busy = false; return; }
-  // Ensure proper BlobPart[] types
-  const webm = new Blob(chunks.map(c => new Uint8Array(c)), { type: 'audio/webm' });
+    if (!size) {
+      busy = false;
+      return;
+    }
+    // Ensure proper BlobPart[] types
+    const webm = new Blob(
+      chunks.map((c) => new Uint8Array(c)),
+      { type: 'audio/webm' },
+    );
     chunks = [];
     try {
       const text = await transcribeWebmToText(webm);
-      if (!text) { busy = false; return; }
+      if (!text) {
+        busy = false;
+        return;
+      }
       const reply = await replyLLM(text);
-      if (!reply) { busy = false; return; }
+      if (!reply) {
+        busy = false;
+        return;
+      }
       server.send(JSON.stringify({ t: 'speak', on: true }));
       const ttsUrl = `/api/tts?q=${encodeURIComponent(reply)}`;
       server.send(JSON.stringify({ t: 'tts_url', url: ttsUrl }));
-      setTimeout(() => { try { server.send(JSON.stringify({ t: 'speak', on: false })); } catch {}; }, Math.min(6000, 800 + reply.length * 35));
+      setTimeout(
+        () => {
+          try {
+            server.send(JSON.stringify({ t: 'speak', on: false }));
+          } catch {}
+        },
+        Math.min(6000, 800 + reply.length * 35),
+      );
     } catch (e: any) {
-      try { server.send(JSON.stringify({ t: 'error', msg: String(e?.message || e) })); } catch {}
+      try {
+        server.send(JSON.stringify({ t: 'error', msg: String(e?.message || e) }));
+      } catch {}
     } finally {
       busy = false;
     }
@@ -106,23 +127,37 @@ export async function GET(req: Request) {
       const msg: J = JSON.parse(typeof data === 'string' ? data : '{}');
       if (msg.t === 'client_ready') {
         // @ts-ignore
-        hb = setInterval(() => server.send(JSON.stringify({ t: 'heartbeat', now: Date.now() })), 1000) as any;
+        hb = setInterval(
+          () => server.send(JSON.stringify({ t: 'heartbeat', now: Date.now() })),
+          1000,
+        ) as any;
         return;
       }
       if (msg.t === 'mute') return;
       if (msg.t === 'end_chat') {
-        try { if (hb) clearInterval(hb as any); } catch {}
-        try { if (eouTimer) clearTimeout(eouTimer as any); } catch {}
+        try {
+          if (hb) clearInterval(hb as any);
+        } catch {}
+        try {
+          if (eouTimer) clearTimeout(eouTimer as any);
+        } catch {}
         server.close();
         return;
       }
-      if (msg.t === 'eou') { flushEOU(); return; }
+      if (msg.t === 'eou') {
+        flushEOU();
+        return;
+      }
     } catch {}
   });
 
   server.addEventListener('close', () => {
-    try { if (hb) clearInterval(hb as any); } catch {}
-    try { if (eouTimer) clearTimeout(eouTimer as any); } catch {}
+    try {
+      if (hb) clearInterval(hb as any);
+    } catch {}
+    try {
+      if (eouTimer) clearTimeout(eouTimer as any);
+    } catch {}
   });
 
   // @ts-ignore Edge Response supports webSocket init property

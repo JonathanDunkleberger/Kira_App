@@ -48,7 +48,7 @@ export function SheetContent({
   return (
     <div
       className={cn(
-        'absolute top-0 h-full w-[380px] sm:w-[420px] bg-background text-foreground border-l border-border shadow-xl flex flex-col',
+        'absolute top-0 h-full w-[380px] sm:w-[420px] bg-background text-foreground shadow-xl flex flex-col',
         side === 'right' ? 'right-0' : '',
         className,
       )}

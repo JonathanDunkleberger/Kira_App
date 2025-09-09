@@ -7,7 +7,9 @@ export default function HomePage() {
         <Link
           href="/chat?persona=kira"
           onClick={() => {
-            try { sessionStorage.setItem('kira_auto_start', '1'); } catch {}
+            try {
+              sessionStorage.setItem('kira_auto_start', '1');
+            } catch {}
           }}
           className="group block rounded-2xl border border-border bg-card/70 backdrop-blur p-6 hover:border-border/80 transition"
         >

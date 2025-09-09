@@ -126,3 +126,6 @@ body {
 .scrollbar-hover:hover .scrollbar-hide::-webkit-scrollbar {
   display: block; /* Chrome/Safari/Opera */
 }
+
+/* Defensive: remove any stray pseudo hairline divider */
+body::after { content: none !important; }

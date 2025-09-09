@@ -89,6 +89,10 @@ let micStream: MediaStream | null = null;
 let parts: BlobPart[] = [];
 let muted = false; // logical mute (stops auto-restart loop)
 
+// Public mute controls (simple flag)
+export function setMuted(v: boolean) { muted = v; }
+export function getMuted() { return muted; }
+
 // Diagnostics / one-shot guards
 let diag = {
   clientReadySent: false,
@@ -166,7 +170,10 @@ export async function connectVoice(opts: ConnectOpts) {
         // If no heartbeat within 5s -> warn
         diag.heartbeatWarnTimeout = setTimeout(() => {
           if (!diag.firstHeartbeat) {
-            onceWarn('no_heartbeat', '[voice][diag] No heartbeat 5s after client_ready. Server may be stalled.');
+            onceWarn(
+              'no_heartbeat',
+              '[voice][diag] No heartbeat 5s after client_ready. Server may be stalled.',
+            );
           }
         }, 5000);
       } catch {}
@@ -180,7 +187,10 @@ export async function connectVoice(opts: ConnectOpts) {
       if (wsRef === ws) wsRef = null;
       console.warn('[voice][ws] closed', ev.code, ev.reason || '(no reason)');
       if (ev.code !== 1000) {
-        onceWarn('abnormal_close', `[voice][diag] Abnormal close code=${ev.code}. Check connectivity / auth / server logs.`);
+        onceWarn(
+          'abnormal_close',
+          `[voice][diag] Abnormal close code=${ev.code}. Check connectivity / auth / server logs.`,
+        );
       }
     });
     ws.addEventListener('message', (e) => {
@@ -217,7 +227,8 @@ export async function connectVoice(opts: ConnectOpts) {
   });
   // After open if client_ready not sent within 1s (should be immediate) warn
   setTimeout(() => {
-    if (!diag.clientReadySent) onceWarn('no_client_ready', '[voice][diag] client_ready not sent within 1s of open.');
+    if (!diag.clientReadySent)
+      onceWarn('no_client_ready', '[voice][diag] client_ready not sent within 1s of open.');
   }, 1000);
   return connectingRef;
 }
@@ -258,26 +269,25 @@ async function beginRecorder() {
     try {
       const blob = new Blob(parts, { type: MIME });
       const buf = await blob.arrayBuffer();
-      if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
-      sendJson({ t: 'audio_begin', mime: MIME, size: buf.byteLength, u: idx });
-      wsRef.send(buf);
-      sendJson({ t: 'audio_end', u: idx });
+      if (wsRef && wsRef.readyState === WebSocket.OPEN && buf.byteLength) {
+        try { wsRef.send(JSON.stringify({ t: 'audio_begin', mime: MIME, size: buf.byteLength })); } catch {}
+        try { wsRef.send(buf); } catch {}
+        try { wsRef.send(JSON.stringify({ t: 'audio_end' })); } catch {}
+      }
       if (!diag.firstUtteranceEnd) {
         diag.firstUtteranceEnd = true;
-        // After an utterance if no speak/tts in 10s warn
         diag.speakTimeout = setTimeout(() => {
           if (!diag.firstSpeak && !diag.firstTts) {
             onceWarn('no_speak_after_utterance', '[voice][diag] No speak/tts within 10s after first utterance. LLM/TTS path stalled?');
           }
         }, 10000) as any;
       }
-      console.log('[voice][mic] utterance sent bytes=', buf.byteLength, 'u=', idx);
     } finally {
       parts = [];
       mr = null;
+      // 🔁 continuous: immediately begin next utterance if not muted
       if (!muted && wsRef && wsRef.readyState === WebSocket.OPEN) {
-        // auto start next recorder (continuous loop)
-        beginRecorder();
+        try { await startMic(); } catch {}
       }
     }
   };

@@ -1,48 +1,38 @@
 'use client';
 import { useState } from 'react';
 
-import { Mic, Square } from 'lucide-react';
-import { startMic, stopMicForUtterance } from '../../lib/useVoiceSocket';
 import { Button } from '../ui/Button';
-import RestartChatButton from './RestartChatButton';
+import { startMic, stopMicForUtterance, setMuted, sendJson } from '../../lib/useVoiceSocket';
+import { useUsage } from '../../lib/useUsage';
 
-export default function CallControls({ voice }: { voice: any }) {
-  const [ptt, setPtt] = useState(false);
-  const [ending, setEnding] = useState(false);
+export default function CallControls() {
+  const [mutedState, setMutedState] = useState(false);
+  const usage = useUsage() as any;
+
+  async function onToggleMute() {
+    const next = !mutedState;
+    setMutedState(next);
+    setMuted(next);
+    if (next) {
+      stopMicForUtterance();
+    } else {
+      await startMic();
+    }
+  }
+
+  async function onEnd() {
+    setMuted(true);
+    stopMicForUtterance();
+    sendJson({ t: 'end' });
+    usage.setChatSessionId(undefined);
+  }
+
   return (
-    <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
-      <div className="rounded-2xl border bg-muted/70 backdrop-blur px-3 py-2 flex items-center gap-4">
-        <RestartChatButton />
-        <Button
-          variant={ptt ? 'primary' : 'outline'}
-          onMouseDown={async () => {
-            if (!ptt) {
-              setPtt(true);
-              await startMic();
-            }
-          }}
-          onMouseUp={() => {
-            if (ptt) {
-              stopMicForUtterance();
-              setPtt(false);
-            }
-          }}
-        >
-          <Mic className="mr-2 h-4 w-4" /> {ptt ? 'Release to Send' : 'Hold to Talk'}
-        </Button>
-        <Button
-          variant="primary"
-          className="bg-rose-600 hover:bg-rose-600/90 text-white"
-          disabled={ending}
-          onClick={async () => {
-            setEnding(true);
-            await voice.endCall?.();
-            location.assign('/chat?persona=kira');
-          }}
-        >
-          <Square className="mr-2 h-4 w-4" /> End call
-        </Button>
-      </div>
+    <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-[rgba(255,255,240,.85)] dark:bg-[rgba(18,20,14,.85)] shadow-md px-3 py-2">
+      <Button variant={mutedState ? 'default' : 'outline'} onClick={onToggleMute} aria-pressed={mutedState}>
+        {mutedState ? 'Unmute' : 'Mute'}
+      </Button>
+      <Button variant="destructive" onClick={onEnd}>End call</Button>
     </div>
   );
 }

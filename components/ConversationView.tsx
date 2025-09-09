@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { User, Bot } from 'lucide-react';
 
 import { usePartialStore } from '../lib/partialStore';
+import { useAssistantStream } from '../lib/assistantStreamStore';
 import { useConversation } from '../lib/state/ConversationProvider';
 
 export default function ConversationView() {
   const { messages, error, conversationStatus } = useConversation();
   const partial = usePartialStore((s) => s.partial);
+  const { text: assistantStreamText, streaming: assistantStreaming } = useAssistantStream();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,7 +59,21 @@ export default function ConversationView() {
         {messages.length === 0 && conversationStatus === 'active' && (
           <div className="text-center text-gray-400">Listening... Say something!</div>
         )}
-        {!!partial && (
+        {!!assistantStreamText && assistantStreaming && (
+          <div className="mt-4 flex items-start gap-4">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full grid place-items-center bg-fuchsia-800/50">
+              <Bot size={18} className="text-fuchsia-300" />
+            </div>
+            <div className="flex-grow pt-1">
+              <div className="font-bold text-sm mb-1">Kira</div>
+              <p className="text-white/90 leading-relaxed">
+                {assistantStreamText}
+                <span className="animate-pulse ml-1">▍</span>
+              </p>
+            </div>
+          </div>
+        )}
+        {!!partial && !assistantStreaming && (
           <div className="mt-4 text-sm text-gray-300 italic opacity-80">
             <span className="pr-2">…</span>
             {partial}

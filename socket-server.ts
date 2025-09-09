@@ -179,20 +179,23 @@ wss.on('connection', async (ws, req) => {
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
         ...historyMem,
       ];
-      let reply = '';
+      let full = '';
       try {
-        reply = await runChat(messages as any);
+        full = await streamAssistantReply(messages as any, ws, (chunk) => {
+          // already emitted in streamAssistantReply via assistant_text_chunk; hook left for future metrics
+        });
       } catch (e) {
-        console.error('[srv] runChat failed', e);
+        console.error('[srv] streamAssistantReply failed', e);
+        sendJson(ws, { t: 'error', where: 'assistant_stream', message: (e as any)?.message || 'assistant stream failed' });
         return 'Sorry, I had a problem generating a reply.';
       }
-      historyMem.push({ role: 'assistant', content: reply });
-      if (conversationId) await saveMessage(conversationId, 'assistant', reply, userId);
+      historyMem.push({ role: 'assistant', content: full });
+      if (conversationId) await saveMessage(conversationId, 'assistant', full, userId);
       try {
         const newTitle = await generateAndSaveTitle(conversationId as string, historyMem);
         if (newTitle) sendJson(ws, { t: 'title_update', title: newTitle, conversationId });
       } catch {}
-      return reply;
+      return full;
     },
   });
 

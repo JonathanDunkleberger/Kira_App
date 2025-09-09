@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { supaBrowser } from './supabase-browser';
 import { useUsage } from './useUsage';
 import { usePartialStore } from './partialStore';
+import { useAssistantStream } from './assistantStreamStore';
 
 // Unified URL resolution supporting legacy + new env vars and runtime override
 function resolveVoiceWsUrl(): string {
@@ -235,13 +236,20 @@ export async function connectVoice(opts: ConnectOpts) {
           if (!diag.firstSpeak) diag.firstSpeak = true;
           // On bot speak, clear any lingering partial
           usePartialStore.getState().clear();
+          // Finalize assistant streaming if not already
+          const as = useAssistantStream.getState();
+          if (as.streaming) as.finalize();
         } else if (msg.t === 'error') {
           console.warn('[voice][server][error]', msg.where, msg.message);
         } else if (msg.t === 'partial') {
           if (typeof msg.text === 'string') usePartialStore.getState().setPartial(msg.text);
         } else if (msg.t === 'transcript') {
           // Final user transcript arrived: clear partial caption
-            usePartialStore.getState().clear();
+          usePartialStore.getState().clear();
+        } else if (msg.type === 'assistant_text_chunk') {
+          const as = useAssistantStream.getState();
+            if (!as.streaming) as.start();
+            if (typeof msg.text === 'string') as.append(msg.text);
         }
       } catch {}
     });
@@ -323,7 +331,9 @@ export async function startMic() {
 export function stopMicForUtterance() {
   // In streaming mode treat as mute toggle + stop
   muted = true;
-  try { mr?.stop(); } catch {}
+  try {
+    mr?.stop();
+  } catch {}
   mr = null;
 }
 

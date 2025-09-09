@@ -41,7 +41,7 @@ export default function Header() {
   }, []);
 
   const signedIn = !!email;
-  // Usage timer removed; pending TimerPill integration
+  // TopCenterTimer now provides global elapsed time; no per-header timer.
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">

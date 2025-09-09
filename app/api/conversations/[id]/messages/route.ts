@@ -1,42 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import type { CookieOptions } from '@supabase/ssr';
 
-  const sb = getSupabaseServerAdmin();
+export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  // Manual cookie parsing (avoid type issues in some Next runtimes)
+  const cookieHeader = (await (globalThis as any).headers?.get?.('cookie')) || '';
+  const map: Record<string, string> = {};
+  cookieHeader.split(/;\s*/).forEach((p: string) => {
+    if (!p) return;
+    const i = p.indexOf('=');
+    if (i === -1) return;
+    const k = decodeURIComponent(p.slice(0, i));
+    const v = decodeURIComponent(p.slice(i + 1));
+    map[k] = v;
+  });
+  const supa = createServerClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return map[name];
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          // noop: API route not setting auth cookies
+        },
+        remove(name: string, options: CookieOptions) {
+          // noop
+        },
+      },
+    },
+  );
+
   const {
     data: { user },
-  } = await sb.auth.getUser(token);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  } = await supa.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const conversationId = params.id;
-  // Ensure ownership
-  const { data: convo, error: convoErr } = await sb
-    .from('conversations')
-    .select('id,user_id')
-    .eq('id', conversationId)
+  const chatSessionId = params.id;
+  // verify ownership in chat_sessions
+  const { data: sess, error: sessErr } = await supa
+    .from('chat_sessions')
+    .select('id')
+    .eq('id', chatSessionId)
+    .eq('user_id', user.id)
     .maybeSingle();
-  if (convoErr)
-    return NextResponse.json({ error: 'Failed to fetch conversation' }, { status: 500 });
-  if (!convo || convo.user_id !== user.id)
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (sessErr) return NextResponse.json({ error: 'failed to fetch session' }, { status: 500 });
+  if (!sess) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  const { data, error } = await sb
+  const { data, error } = await supa
     .from('messages')
-    .select('id, role, content, created_at')
-    .eq('conversation_id', conversationId)
+    .select('*')
+    .eq('chat_session_id', chatSessionId)
     .order('created_at', { ascending: true });
-
-  if (error) {
-    console.error('Error fetching messages:', error);
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
-  }
-
-  return NextResponse.json(data ?? []);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data ?? [], { headers: { 'Cache-Control': 'no-store' } });
 }
-// Deprecated: handled by WebSocket + Supabase client queries

@@ -1,6 +1,6 @@
-'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
+"use client";
+// Singleton voice WebSocket + mic helpers.
+import { useEffect, useState } from 'react';
 import { supaBrowser } from './supabase-browser';
 import { useUsage } from './useUsage';
 
@@ -44,7 +44,7 @@ function resolveVoiceWsUrl(): string {
 /** Prefer an explicit backend if you have one; else use local /api/voice (Edge). */
 // (legacy normalizeWsUrl removed in favor of resolveVoiceWsUrl logic above)
 
-type ConnectOpts = { persona?: string; conversationId?: string };
+type ConnectOpts = { persona: string; conversationId?: string };
 
 async function getSupabaseAccessToken(): Promise<string | undefined> {
   try {
@@ -71,248 +71,148 @@ function getVisitorId(): string {
   }
 }
 
-export function useVoiceSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const openPromiseRef = useRef<Promise<void> | null>(null);
-  const openResolveRef = useRef<(() => void) | null>(null);
+// --------------------
+// Singleton state
+// --------------------
+let wsRef: WebSocket | null = null;
+let connectingRef: Promise<WebSocket> | null = null;
+let connectedOnce = false;
 
-  const recRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const partsRef = useRef<BlobPart[]>([]);
-  const mimeRef = useRef<string>('audio/webm');
-  const capturingRef = useRef(false);
+// Mic capture (single utterance)
+const MIME = (typeof window !== 'undefined' && (window as any).MediaRecorder?.isTypeSupported?.('audio/webm;codecs=opus'))
+  ? 'audio/webm;codecs=opus'
+  : 'audio/webm';
+let mr: MediaRecorder | null = null;
+let micStream: MediaStream | null = null;
+let parts: BlobPart[] = [];
 
-  const [isConnected, setConnected] = useState(false);
-  const [isMuted, setMuted] = useState(false);
+function playTtsUrl(url: string) {
+  const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
+  if (!el) return;
+  el.src = url;
+  try { el.currentTime = 0; } catch {}
+  el.play().catch(() => {});
+}
 
-  function playUrlOn(audioEl: HTMLAudioElement | null, url: string) {
-    if (!audioEl) return;
-    audioEl.src = url;
-    try {
-      audioEl.currentTime = 0;
-    } catch {}
-    audioEl.play().catch(() => {});
-  }
+async function getToken(): Promise<string | undefined> {
+  try {
+    const { data: { session } } = await supaBrowser().auth.getSession();
+    return session?.access_token || undefined;
+  } catch { return undefined; }
+}
 
-  const usage = useUsage.getState();
+export async function connectVoice(opts: ConnectOpts) {
+  // Build URL
+  const base = resolveVoiceWsUrl();
+  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+  if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
+  url.searchParams.set('persona', opts.persona);
+  if (opts.conversationId) url.searchParams.set('conversationId', opts.conversationId);
+  const token = await getToken();
+  if (token) url.searchParams.set('token', token);
+  url.searchParams.set('visitor', getVisitorId());
 
-  const connect = useCallback(async (opts?: ConnectOpts) => {
-    // already connecting/open?
-    const cur = wsRef.current;
-    if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN))
-      return;
+  if (wsRef && wsRef.readyState === WebSocket.OPEN) return wsRef;
+  if (connectingRef) return connectingRef;
 
-    const base = resolveVoiceWsUrl();
-    const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
-    if (opts?.persona) url.searchParams.set('persona', opts.persona);
-    const savedId =
-      opts?.conversationId ||
-      useUsage.getState().server?.chatSessionId ||
-      (typeof window !== 'undefined'
-        ? sessionStorage.getItem('kira_chat_session_id') || undefined
-        : undefined);
-    if (savedId) url.searchParams.set('conversationId', savedId);
-    // identity for RLS
-    const token = await getSupabaseAccessToken();
-    if (token) url.searchParams.set('token', token);
-    url.searchParams.set('visitor', getVisitorId());
-    if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
-    console.log('[voice][ws] connecting', {
-      base,
-      href: url.toString().replace(/token=[^&]+/, 'token=***'),
-    });
+  connectingRef = new Promise<WebSocket>((resolve, reject) => {
     const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    openPromiseRef.current = new Promise<void>((res) => (openResolveRef.current = res));
-
+    ws.binaryType = 'arraybuffer';
     ws.addEventListener('open', () => {
-      console.log('[voice][ws] open');
-      setConnected(true);
-      openResolveRef.current?.();
+      wsRef = ws; connectingRef = null; connectedOnce = true;
       try {
-        ws.send(JSON.stringify({ t: 'client_ready' }));
+        ws.send(JSON.stringify({ t: 'client_ready', persona: opts.persona, session: opts.conversationId, ua: navigator.userAgent }));
       } catch {}
+      resolve(ws);
     });
-
+    ws.addEventListener('error', (e) => { connectingRef = null; reject(e); });
+    ws.addEventListener('close', () => { if (wsRef === ws) wsRef = null; });
     ws.addEventListener('message', (e) => {
       if (typeof e.data !== 'string') return;
       try {
         const msg = JSON.parse(e.data);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[voice][ws] message', msg);
-        }
-        // capture chat session id
         if (msg.t === 'chat_session') {
-          const id = msg.id || msg.chatSessionId || msg.chat_session_id;
-          if (id) useUsage.getState().setChatSessionId(id);
-        }
-        if (msg.t === 'heartbeat') {
-          const id = msg.chatSessionId || msg.chat_session_id;
-          if (id) useUsage.getState().setChatSessionId(id);
-        }
-        if (msg.t === 'end') {
+          const id = msg.id || msg.chatSessionId || msg.chat_session_id; if (id) useUsage.getState().setChatSessionId(id);
+        } else if (msg.t === 'heartbeat') {
+          const id = msg.chatSessionId || msg.chat_session_id; if (id) useUsage.getState().setChatSessionId(id);
+        } else if (msg.t === 'end') {
           useUsage.getState().setChatSessionId(undefined);
-        }
-        if (msg.t === 'tts_url' && typeof msg.url === 'string') {
-          const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
-          playUrlOn(el, msg.url);
-          return;
-        }
-        if (msg.t === 'speak') {
+        } else if (msg.t === 'tts_url' && typeof msg.url === 'string') {
+          playTtsUrl(msg.url);
+        } else if (msg.t === 'speak') {
           import('./voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
-          return;
         }
       } catch {}
     });
+  });
+  console.log('[voice][ws] connecting', { href: url.toString().replace(/token=[^&]+/, 'token=***') });
+  return connectingRef;
+}
 
-    ws.addEventListener('close', (e) => {
-      console.warn('[voice][ws] close', e.code, e.reason || '(no reason)');
-      setConnected(false);
-      openPromiseRef.current = null;
-      openResolveRef.current = null;
-    });
+export function sendJson(obj: any) {
+  if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+    try { wsRef.send(JSON.stringify(obj)); } catch {}
+  }
+}
 
-    ws.addEventListener('error', (e) => {
-      console.warn('[voice][ws] error', e);
-      setConnected(false);
-      openPromiseRef.current = null;
-      openResolveRef.current = null;
-    });
-  }, []);
-
-  const ensureStream = useCallback(async (constraints?: MediaTrackConstraints) => {
-    if (streamRef.current) return streamRef.current;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1,
-        sampleRate: 48000,
-        ...constraints,
-      },
-    });
-    streamRef.current = stream;
-    return stream;
-  }, []);
-
-  const startUtterance = useCallback(
-    async (constraints?: MediaTrackConstraints) => {
-      if (capturingRef.current) return; // already capturing
-      await openPromiseRef.current;
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const stream = await ensureStream(constraints);
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
-      mimeRef.current = mime;
-      partsRef.current = [];
-      const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 });
-      recRef.current = rec;
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size) partsRef.current.push(e.data);
-      };
-      rec.onstop = async () => {
-        try {
-          const all = new Blob(partsRef.current, { type: mimeRef.current });
-          const buf = await all.arrayBuffer();
-          const ws2 = wsRef.current;
-          if (!ws2 || ws2.readyState !== WebSocket.OPEN) return;
-          ws2.send(JSON.stringify({ t: 'audio_begin', mime: mimeRef.current, size: buf.byteLength }));
-            ws2.send(buf);
-          ws2.send(JSON.stringify({ t: 'audio_end' }));
-        } catch (e) {
-          console.warn('[voice] failed to assemble utterance', e);
-        } finally {
-          partsRef.current = [];
-          capturingRef.current = false;
-        }
-      };
-      capturingRef.current = true;
-      rec.start(); // no timeslice => full header/footer
-    },
-    [ensureStream],
-  );
-
-  const stopUtterance = useCallback(() => {
-    if (!capturingRef.current) return;
+export async function startMic() {
+  if (mr) return; // already capturing
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mr = new MediaRecorder(micStream, { mimeType: MIME });
+  parts = [];
+  mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+  mr.onstop = async () => {
     try {
-      recRef.current?.requestData();
-    } catch {}
-    try {
-      recRef.current?.stop();
-    } catch {}
-  }, []);
-
-  // Backwards compat: startMic now just ensures stream
-  const startMic = useCallback(async (c?: MediaTrackConstraints) => {
-    await ensureStream(c);
-  }, [ensureStream]);
-
-  const stopMic = useCallback(() => {
-    try {
-      recRef.current?.stop();
-    } catch {}
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    recRef.current = null;
-    streamRef.current = null;
-  }, []);
-
-  const setMutedSafe = useCallback((m: boolean) => {
-    setMuted(m);
-    try {
-      wsRef.current?.send(JSON.stringify({ t: 'mute', muted: m }));
-    } catch {}
-  }, []);
-
-  const endCall = useCallback(async () => {
-    stopMic();
-    try {
-      wsRef.current?.send(JSON.stringify({ t: 'end_chat' }));
-    } catch {}
-    try {
-      wsRef.current?.close();
-    } catch {}
-    wsRef.current = null;
-    setConnected(false);
-  }, [stopMic]);
-
-  const signal = useCallback((type: string, payload?: any) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ t: type, ...payload }));
+      const blob = new Blob(parts, { type: MIME });
+      const buf = await blob.arrayBuffer();
+      if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
+      sendJson({ t: 'audio_begin', mime: MIME, size: buf.byteLength });
+      wsRef.send(buf);
+      sendJson({ t: 'audio_end' });
+    } finally {
+      parts = [];
+      mr = null;
     }
+  };
+  mr.start();
+  const AudioCtx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (AudioCtx) {
+    try { const ctx = new AudioCtx(); if (ctx.state === 'suspended') await ctx.resume(); } catch {}
+  }
+}
+
+export function stopMicForUtterance() {
+  if (!mr) return;
+  try { mr.requestData(); } catch {}
+  try { mr.stop(); } catch {}
+}
+
+export function endCall() {
+  try { sendJson({ t: 'end_chat' }); } catch {}
+  try { wsRef?.close(); } catch {}
+  wsRef = null;
+  if (micStream) {
+    try { micStream.getTracks().forEach(t => t.stop()); } catch {}
+  }
+  mr = null; micStream = null; parts = [];
+}
+
+// Compatibility hook returns reactive flags (connected)
+export function useVoiceSocket() {
+  const [connected, setConnected] = useState<boolean>(!!wsRef && wsRef.readyState === WebSocket.OPEN);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const on = !!wsRef && wsRef.readyState === WebSocket.OPEN;
+      setConnected((prev) => (prev === on ? prev : on));
+    }, 500);
+    return () => clearInterval(id);
   }, []);
-
-  useEffect(
-    () => () => {
-      // cleanup on unmount
-      try {
-        recRef.current?.stop();
-      } catch {}
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      try {
-        wsRef.current?.close();
-      } catch {}
-    },
-    [],
-  );
-
-  return useMemo(
-    () => ({
-      isConnected,
-      isMuted,
-      connect,
-  startMic, // legacy (ensures stream only)
-  stopMic,
-  startUtterance,
-  stopUtterance,
-      setMuted: setMutedSafe,
-      endCall,
-      signal,
-    }),
-  [isConnected, isMuted, connect, startMic, stopMic, startUtterance, stopUtterance, setMutedSafe, endCall, signal],
-  );
+  return {
+    isConnected: connected,
+    connect: connectVoice,
+    startMic,
+    stopMicForUtterance,
+    endCall,
+    sendJson,
+  } as const;
 }

@@ -1,50 +1,38 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 import ChatGuardrails from '../ChatGuardrails';
 import VoiceOrb from '../VoiceOrb';
 import { voiceBus } from '../../lib/voiceBus';
-import { useVoiceSocket } from '../../lib/useVoiceSocket';
+import { useVoiceSocket, connectVoice, startMic, endCall, sendJson } from '../../lib/useVoiceSocket';
+import { useUsage } from '../../lib/useUsage';
 
 import CallControls from './CallControls';
 
 export default function ChatClient({ persona }: { persona: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voice = useVoiceSocket();
-  const started = useRef(false);
+  const usage: any = useUsage();
 
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    (async () => {
-      try {
-        // Ensure an AudioContext can play (user gesture may be required)
-        const AudioCtx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
-        let ctx: AudioContext | undefined;
-        if (AudioCtx) {
-          try {
-            ctx = new AudioCtx();
-            if (ctx?.state === 'suspended') await ctx.resume();
-          } catch {}
-        }
-        await voice.connect({ persona });
-        await voice.startMic();
-        // Fallback: if first playback blocked, retry on next click
-        const audio = document.getElementById('tts-audio') as HTMLAudioElement | null;
-        if (audio) {
-          audio.play().catch(() => {
-            const once = () => {
-              audio.play().finally(() => document.removeEventListener('click', once));
-            };
-            document.addEventListener('click', once, { once: true });
-          });
-        }
-        voice.signal?.('client_ready');
-      } catch (e) {
-        console.error('start failed', e);
-      }
-    })();
-  }, [voice, persona]);
+  const startCall = useCallback(async () => {
+    await connectVoice({
+      persona,
+      conversationId:
+        usage.server?.chatSessionId ||
+        (typeof window !== 'undefined'
+          ? sessionStorage.getItem('kira_chat_session_id') || undefined
+          : undefined),
+    });
+    await startMic();
+  }, [persona, usage]);
+
+  const endCallLocal = useCallback(() => {
+    sendJson({ t: 'end' });
+    usage.setChatSessionId(undefined);
+    endCall();
+  }, [usage]);
+
+  // NOTE: call now starts only on user action (e.g., button outside) via startCall
 
   useEffect(() => {
     const el = audioRef.current;
@@ -71,7 +59,7 @@ export default function ChatClient({ persona }: { persona: string }) {
       <div className="mt-10" />
       <VoiceOrb audioEl={audioRef.current} size={280} />
       <div className="mt-10" />
-      <CallControls voice={voice} />
+  <CallControls voice={voice} />
     </ChatGuardrails>
   );
 }

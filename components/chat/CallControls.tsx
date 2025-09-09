@@ -1,44 +1,34 @@
 'use client';
 import { useState } from 'react';
 
-import { Mic, MicOff, Square } from 'lucide-react';
-import type { useVoiceSocket } from '../../lib/useVoiceSocket';
+import { Mic, Square } from 'lucide-react';
+import { startMic, stopMicForUtterance } from '../../lib/useVoiceSocket';
 import { Button } from '../ui/Button';
 import RestartChatButton from './RestartChatButton';
 
-export default function CallControls({ voice }: { voice: ReturnType<typeof useVoiceSocket> }) {
+export default function CallControls({ voice }: { voice: any }) {
+  const [ptt, setPtt] = useState(false);
   const [ending, setEnding] = useState(false);
   return (
     <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
       <div className="rounded-2xl border bg-muted/70 backdrop-blur px-3 py-2 flex items-center gap-4">
         <RestartChatButton />
         <Button
-          variant={voice.isMuted ? 'primary' : 'outline'}
+          variant={ptt ? 'primary' : 'outline'}
           onMouseDown={async () => {
-            if (voice.isMuted) {
-              voice.setMuted(false);
-              await voice.startUtterance?.();
+            if (!ptt) {
+              setPtt(true);
+              await startMic();
             }
           }}
           onMouseUp={() => {
-            if (!voice.isMuted) {
-              voice.stopUtterance?.();
-              voice.setMuted(true);
-            }
-          }}
-          onClick={() => {
-            // fallback toggle for keyboard users
-            const next = !voice.isMuted;
-            voice.setMuted(!next);
-            if (next) {
-              void voice.startUtterance?.();
-            } else {
-              voice.stopUtterance?.();
+            if (ptt) {
+              stopMicForUtterance();
+              setPtt(false);
             }
           }}
         >
-          {voice.isMuted ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
-          {voice.isMuted ? 'Hold to Talk' : 'Release to Stop'}
+          <Mic className="mr-2 h-4 w-4" /> {ptt ? 'Release to Send' : 'Hold to Talk'}
         </Button>
         <Button
           variant="primary"
@@ -46,7 +36,7 @@ export default function CallControls({ voice }: { voice: ReturnType<typeof useVo
           disabled={ending}
           onClick={async () => {
             setEnding(true);
-            await voice.endCall();
+            await voice.endCall?.();
             location.assign('/chat?persona=kira');
           }}
         >

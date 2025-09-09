@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useEffect, useState } from 'react';
 import { useConversation } from '@/lib/state/ConversationProvider';
 import { openBillingPortal, startCheckout } from '@/lib/client-api';
@@ -11,7 +11,10 @@ export default function BillingPanel({ variant = 'panel' }: { variant?: Variant 
   useEffect(() => setHydrated(true), []);
   const seconds = dailySecondsRemaining ?? 0;
 
-  const shell = variant === 'panel' ? 'px-4 py-3 space-y-4 text-sm' : 'container mx-auto max-w-3xl py-10 space-y-6 text-sm';
+  const shell =
+    variant === 'panel'
+      ? 'px-4 py-3 space-y-4 text-sm'
+      : 'container mx-auto max-w-3xl py-10 space-y-6 text-sm';
   if (!hydrated) return <div className={shell}>Loading…</div>;
 
   return (

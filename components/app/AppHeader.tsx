@@ -54,12 +54,12 @@ export default function AppHeader() {
             <button
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5"
               onClick={() => {
-        <button
-          type="button"
-          data-open-auth
-          onClick={() => setPanel('auth')}
-          style={{ display: 'none' }}
-        />
+                <button
+                  type="button"
+                  data-open-auth
+                  onClick={() => setPanel('auth')}
+                  style={{ display: 'none' }}
+                />;
                 setPanel('profile');
                 setMenuOpen(false);
               }}

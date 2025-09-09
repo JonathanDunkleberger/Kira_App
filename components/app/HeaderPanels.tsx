@@ -11,7 +11,13 @@ const BillingPanel = dynamic(() => import('@/components/billing/BillingPanel'), 
 const AuthPanel = dynamic(() => import('@/components/auth/AuthPanel'), { ssr: false });
 const FeedbackPanel = dynamic(() => import('@/components/feedback/FeedbackPanel'), { ssr: false });
 
-export default function HeaderPanels({ panel, onOpenChange }: { panel: Panel; onOpenChange: (o: boolean) => void }) {
+export default function HeaderPanels({
+  panel,
+  onOpenChange,
+}: {
+  panel: Panel;
+  onOpenChange: (o: boolean) => void;
+}) {
   const open = !!panel;
   return (
     <Sheet open={open} onOpenChange={(o) => onOpenChange(o)}>

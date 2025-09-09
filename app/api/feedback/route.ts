@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
       },
     },
   );
-  const { data: { user } } = await anon.auth.getUser();
+  const {
+    data: { user },
+  } = await anon.auth.getUser();
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const { error } = await admin.from('feedback').insert({

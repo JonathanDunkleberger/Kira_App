@@ -1,7 +1,10 @@
-"use client";
+'use client';
 type Variant = 'panel' | 'page';
 export default function SettingsPanel({ variant = 'panel' }: { variant?: Variant }) {
-  const shell = variant === 'panel' ? 'px-4 py-3 space-y-4 text-sm' : 'container mx-auto max-w-3xl py-10 space-y-6 text-sm';
+  const shell =
+    variant === 'panel'
+      ? 'px-4 py-3 space-y-4 text-sm'
+      : 'container mx-auto max-w-3xl py-10 space-y-6 text-sm';
   return (
     <div className={shell}>
       <h2 className="text-lg font-semibold">Settings</h2>

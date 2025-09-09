@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { Check, Lock, MessageSquare, Sparkles } from 'lucide-react';
 import { Button } from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -49,16 +49,20 @@ export default function LimitDialog(props: LimitDialogProps) {
   } = props;
 
   const title = mode === 'paywall' ? 'Daily free limit reached' : 'This chat hit its time limit';
-  const blurb = mode === 'paywall'
-    ? (isAuthed
+  const blurb =
+    mode === 'paywall'
+      ? isAuthed
         ? 'Upgrade to Pro to keep talking without daily limits.'
-        : 'Sign in and upgrade to keep talking without daily limits.')
-    : 'Each Pro conversation is capped to keep things fresh. Start a new chat to continue.';
+        : 'Sign in and upgrade to keep talking without daily limits.'
+      : 'Each Pro conversation is capped to keep things fresh. Start a new chat to continue.';
 
   const Stat = ({ label, value, cap }: { label: string; value?: number; cap?: number }) => (
     <div className="flex items-center justify-between text-[13px]">
       <span className="text-white/50 dark:text-white/50 text-muted-foreground">{label}</span>
-      <span className="font-medium tabular-nums">{fmt(value)}{cap ? ` / ${fmt(cap)}` : ''}</span>
+      <span className="font-medium tabular-nums">
+        {fmt(value)}
+        {cap ? ` / ${fmt(cap)}` : ''}
+      </span>
     </div>
   );
 
@@ -79,7 +83,7 @@ export default function LimitDialog(props: LimitDialogProps) {
         );
       }
       return (
-  <Button className="w-full" onClick={onNewChat}>
+        <Button className="w-full" onClick={onNewChat}>
           <MessageSquare className="mr-2 h-4 w-4" /> Start a new chat
         </Button>
       );

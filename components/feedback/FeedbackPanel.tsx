@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useState } from 'react';
 
 type Variant = 'panel' | 'page';
@@ -27,14 +27,17 @@ export default function FeedbackPanel({ variant = 'panel' }: { variant?: Variant
       setPending(false);
     }
   }
-  const shell = variant === 'panel' ? 'px-4 py-3 space-y-4 text-sm' : 'container mx-auto max-w-2xl py-10 space-y-6 text-sm';
+  const shell =
+    variant === 'panel'
+      ? 'px-4 py-3 space-y-4 text-sm'
+      : 'container mx-auto max-w-2xl py-10 space-y-6 text-sm';
   return (
     <form
       className={shell}
       onSubmit={(e) => {
         e.preventDefault();
-  if (!text.trim() || pending) return;
-  submitFeedback(text.trim());
+        if (!text.trim() || pending) return;
+        submitFeedback(text.trim());
       }}
     >
       <h2 className="text-lg font-semibold">Feedback</h2>

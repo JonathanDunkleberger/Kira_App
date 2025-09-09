@@ -69,12 +69,12 @@ export function useVoiceSocket() {
     if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN))
       return;
 
-  const base = resolveVoiceWsUrl();
-  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
-  if (opts?.persona) url.searchParams.set('persona', opts.persona);
-  if (opts?.conversationId) url.searchParams.set('conversationId', opts.conversationId);
-  console.log('[voice][ws] connecting', { base, href: url.href });
-  const ws = new WebSocket(url);
+    const base = resolveVoiceWsUrl();
+    const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+    if (opts?.persona) url.searchParams.set('persona', opts.persona);
+    if (opts?.conversationId) url.searchParams.set('conversationId', opts.conversationId);
+    console.log('[voice][ws] connecting', { base, href: url.href });
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     openPromiseRef.current = new Promise<void>((res) => (openResolveRef.current = res));

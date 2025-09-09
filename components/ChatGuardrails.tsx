@@ -34,11 +34,11 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
   useEffect(() => {
     const handler = (msg: any) => {
       if (!msg || msg.t !== 'heartbeat') return;
-  const pro = server?.todaySecondsLimit === 0;
-  setIsPro(!!pro);
-  setUsedToday(msg.usedToday);
-  setUsedThisChat(msg.usedThisChat);
-  if (!pro) {
+      const pro = server?.todaySecondsLimit === 0;
+      setIsPro(!!pro);
+      setUsedToday(msg.usedToday);
+      setUsedThisChat(msg.usedThisChat);
+      if (!pro) {
         if (msg.remainingToday > 0 && msg.remainingToday <= 120) {
           setMode('paywall');
           setRemainingToday(msg.remainingToday);

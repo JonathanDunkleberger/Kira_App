@@ -128,4 +128,4 @@ body {
 }
 
 /* Defensive: remove any stray pseudo hairline divider */
-body::after { content: none !important; }
+body::after, body::before { content: none !important; }

@@ -5,7 +5,7 @@ import ChatClient from '@/components/chat/ChatClient';
 
 export default function ChatPage({ searchParams }: { searchParams: { persona?: string } }) {
   return (
-    <main className="min-h-[calc(100vh-56px)] flex items-center justify-center px-4">
+    <main className="min-h-[100dvh] pt-14 flex items-center justify-center">
       <ChatClient persona={searchParams.persona ?? 'kira'} />
     </main>
   );

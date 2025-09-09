@@ -1,8 +1,10 @@
 'use client';
 // Singleton voice WebSocket + mic helpers.
 import { useEffect, useState } from 'react';
+
 import { supaBrowser } from './supabase-browser';
 import { useUsage } from './useUsage';
+import { usePartialStore } from './partialStore';
 
 // Unified URL resolution supporting legacy + new env vars and runtime override
 function resolveVoiceWsUrl(): string {
@@ -78,35 +80,50 @@ let wsRef: WebSocket | null = null;
 let connectingRef: Promise<WebSocket> | null = null;
 let connectedOnce = false;
 
-// Mic capture (single utterance)
-const MIME =
-  typeof window !== 'undefined' &&
-  (window as any).MediaRecorder?.isTypeSupported?.('audio/webm;codecs=opus')
-    ? 'audio/webm;codecs=opus'
-    : 'audio/webm';
+// Mic capture (streaming) – robust codec selection across browsers
+function pickMime(): string {
+  if (typeof window === 'undefined') return '';
+  const can = (t: string) =>
+    typeof (window as any).MediaRecorder !== 'undefined' &&
+    (window as any).MediaRecorder?.isTypeSupported?.(t);
+  const pick = [
+    'audio/webm;codecs=opus', // Chrome / Chromium
+    'audio/webm',
+    'audio/ogg;codecs=opus', // Firefox
+    'audio/ogg',
+    'audio/mp4', // Safari recent
+    'audio/mpeg', // Fallback (MP3)
+  ];
+  const sel = pick.find(can) ?? '';
+  if (!sel) {
+    console.warn('[voice] MediaRecorder/codec not supported on this browser');
+  }
+  return sel;
+}
+const MIME = pickMime();
 let mr: MediaRecorder | null = null;
 let micStream: MediaStream | null = null;
-let parts: BlobPart[] = [];
-let muted = false; // logical mute (stops auto-restart loop)
+let muted = false; // logical mute (prevents sending frames)
 
 // Public mute controls (simple flag)
-export function setMuted(v: boolean) { muted = v; }
-export function getMuted() { return muted; }
+export function setMuted(v: boolean) {
+  muted = v;
+}
+export function getMuted() {
+  return muted;
+}
 
 // Diagnostics / one-shot guards
 let diag = {
   clientReadySent: false,
   firstHeartbeat: false,
-  firstUtteranceEnd: false,
   firstSpeak: false,
   firstTts: false,
   noFramesWarned: false,
   heartbeatTimer: 0 as any,
   frameTimer: 0 as any,
-  speakTimeout: 0 as any,
   heartbeatWarnTimeout: 0 as any,
 };
-let __utteranceCounter = 0;
 
 function onceWarn(key: string, msg: string) {
   const k = `__warn_${key}` as any;
@@ -216,8 +233,15 @@ export async function connectVoice(opts: ConnectOpts) {
         } else if (msg.t === 'speak') {
           import('./voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
           if (!diag.firstSpeak) diag.firstSpeak = true;
+          // On bot speak, clear any lingering partial
+          usePartialStore.getState().clear();
         } else if (msg.t === 'error') {
           console.warn('[voice][server][error]', msg.where, msg.message);
+        } else if (msg.t === 'partial') {
+          if (typeof msg.text === 'string') usePartialStore.getState().setPartial(msg.text);
+        } else if (msg.t === 'transcript') {
+          // Final user transcript arrived: clear partial caption
+            usePartialStore.getState().clear();
         }
       } catch {}
     });
@@ -244,55 +268,37 @@ export function sendJson(obj: any) {
 function scheduleNoFramesCheck() {
   if (diag.frameTimer) clearTimeout(diag.frameTimer);
   diag.frameTimer = setTimeout(() => {
-    if (!diag.noFramesWarned && parts.length === 0) {
+    if (!diag.noFramesWarned) {
       diag.noFramesWarned = true;
       console.warn('[voice][diag] No audio frames 5s after mic start. Mic permissions?');
     }
   }, 5000) as any;
 }
 
-async function beginRecorder() {
+function startStreamingRecorder() {
   try {
     mr = new MediaRecorder(micStream!, { mimeType: MIME });
   } catch (e) {
     console.error('[voice][mic] Failed to create MediaRecorder', e);
     return;
   }
-  parts = [];
   scheduleNoFramesCheck();
-  const idx = ++__utteranceCounter;
-  console.log('[voice][mic] utterance start', idx);
   mr.ondataavailable = (e) => {
-    if (e.data && e.data.size) parts.push(e.data);
+    if (!e.data || !e.data.size) return;
+    if (muted) return;
+    if (!wsRef || wsRef.readyState !== WebSocket.OPEN) return;
+    e.data.arrayBuffer().then((buf) => {
+      try {
+        wsRef?.send(buf);
+      } catch {}
+    });
   };
-  mr.onstop = async () => {
-    try {
-      const blob = new Blob(parts, { type: MIME });
-      const buf = await blob.arrayBuffer();
-      if (wsRef && wsRef.readyState === WebSocket.OPEN && buf.byteLength) {
-        try { wsRef.send(JSON.stringify({ t: 'audio_begin', mime: MIME, size: buf.byteLength })); } catch {}
-        try { wsRef.send(buf); } catch {}
-        try { wsRef.send(JSON.stringify({ t: 'audio_end' })); } catch {}
-      }
-      if (!diag.firstUtteranceEnd) {
-        diag.firstUtteranceEnd = true;
-        diag.speakTimeout = setTimeout(() => {
-          if (!diag.firstSpeak && !diag.firstTts) {
-            onceWarn('no_speak_after_utterance', '[voice][diag] No speak/tts within 10s after first utterance. LLM/TTS path stalled?');
-          }
-        }, 10000) as any;
-      }
-    } finally {
-      parts = [];
-      mr = null;
-      // 🔁 continuous: immediately begin next utterance if not muted
-      if (!muted && wsRef && wsRef.readyState === WebSocket.OPEN) {
-        try { await startMic(); } catch {}
-      }
-    }
+  mr.onstop = () => {
+    mr = null;
   };
   try {
-    mr.start();
+    // short timeslice for low latency (250ms)
+    mr.start(250);
   } catch (e) {
     console.error('[voice][mic] start failed', e);
   }
@@ -311,18 +317,14 @@ export async function startMic() {
       if (ctx.state === 'suspended') await ctx.resume();
     } catch {}
   }
-  beginRecorder();
+  startStreamingRecorder();
 }
 
 export function stopMicForUtterance() {
-  if (!mr) return;
-  try {
-    mr.requestData();
-  } catch {}
-  try {
-    mr.stop();
-  } catch {}
-  muted = true; // prevent auto-restart until explicitly unmuted/startMic called
+  // In streaming mode treat as mute toggle + stop
+  muted = true;
+  try { mr?.stop(); } catch {}
+  mr = null;
 }
 
 export function endCall() {
@@ -340,19 +342,16 @@ export function endCall() {
   }
   mr = null;
   micStream = null;
-  parts = [];
   muted = true;
   // reset diag (except onceWarn sticky flags)
   diag = {
     clientReadySent: false,
     firstHeartbeat: false,
-    firstUtteranceEnd: false,
     firstSpeak: false,
     firstTts: false,
     noFramesWarned: false,
     heartbeatTimer: 0,
     frameTimer: 0,
-    speakTimeout: 0,
     heartbeatWarnTimeout: 0,
   };
 }

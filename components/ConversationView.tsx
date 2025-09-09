@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { User, Bot } from 'lucide-react';
 
-import { useConversation } from '@/lib/state/ConversationProvider';
+import { usePartialStore } from '../lib/partialStore';
+import { useConversation } from '../lib/state/ConversationProvider';
 
 export default function ConversationView() {
   const { messages, error, conversationStatus } = useConversation();
+  const partial = usePartialStore((s) => s.partial);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,6 +56,13 @@ export default function ConversationView() {
         )}
         {messages.length === 0 && conversationStatus === 'active' && (
           <div className="text-center text-gray-400">Listening... Say something!</div>
+        )}
+        {!!partial && (
+          <div className="mt-4 text-sm text-gray-300 italic opacity-80">
+            <span className="pr-2">…</span>
+            {partial}
+            <span className="animate-pulse pl-1">▍</span>
+          </div>
         )}
         {error && <div className="text-red-400 text-sm">{error}</div>}
       </div>

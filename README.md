@@ -86,6 +86,26 @@ Key client/server vars (non‑exhaustive):
 - `AZURE_*` for TTS
 - `FREE_TRIAL_SECONDS`, `FREE_DAILY_LIMIT`, `PRO_CHAT_SESSION_LIMIT` (usage tuning)
 
+### Realtime Speech Recognition (Deepgram)
+
+Add `DEEPGRAM_API_KEY` to enable production streaming STT (model `nova-2`).
+
+Client sends `audio/webm;codecs=opus` 48k mono chunks; server opens a Deepgram websocket with matching params (`encoding=opus&sample_rate=48000&channels=1`). Partial transcripts are emitted with `{ t: 'partial' }`, finals as `{ t: 'transcript' }` followed by assistant reply `{ t: 'speak' }`.
+
+If the key is absent the server falls back to a lightweight mock transcriber so voice flow still works locally without external spend.
+
+Partial Captions: While you speak, interim hypotheses stream in and render as a faint italic line at the bottom of the conversation (`partialStore`). They are cleared when a final transcript arrives or when the assistant begins speaking.
+
+Auto-Retry: The Deepgram websocket now reconnects with exponential backoff (500ms doubling, capped at 8s) if the connection drops mid‑session. Audio chunks are queued while reconnecting; if reconnection fails they are discarded when the transcriber closes.
+
+Environment only (never expose to browser):
+
+```bash
+DEEPGRAM_API_KEY=dg_secret_...
+```
+
+Future overrides (not yet parameterized): `model`, `tier`, `smart_format`, `punctuate`.
+
 ---
 
 ## ⏯️ Getting Started (Local)

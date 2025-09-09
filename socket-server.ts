@@ -6,8 +6,10 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin';
-import { transcribeWebmToText } from './lib/server/stt';
-import { synthesizeSpeechStream, warmAzureTtsConnection } from './lib/server/tts';
+// Legacy STT & streaming TTS utilities retained for fallback, but primary path now uses
+// single-blob utterance -> OpenAI transcription (no ffmpeg) -> LLM -> optional TTS URL.
+import { warmAzureTtsConnection } from './lib/server/tts'; // keep warm to reduce cold starts if TTS reintroduced
+import { handleVoiceConnection } from './services/voice-service';
 // usageLimiter removed; heartbeat accrual to be implemented
 import { saveMessage, generateAndSaveTitle } from './lib/server/conversation-logic';
 import { startHeartbeat } from './server/heartbeat';
@@ -155,46 +157,8 @@ wss.on('connection', async (ws, req) => {
     } catch {}
   }
 
-  // Utterance accumulation state (Fix A)
-  let pendingAudio: Buffer[] = [];
-  let currentMime: string = 'audio/webm';
-  let isProcessing = false;
+  // Streaming state (no single-blob accumulation variables required now)
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-  // Single-blob TTS state
-  let audioStarted = false;
-  const mime = ttsFmt === 'mp3' ? 'audio/mpeg' : 'audio/webm';
-  // Backpressure-aware WS binary sending
-  const BACKPRESSURE_LIMIT = Number(process.env.WS_BACKPRESSURE_LIMIT || 1_000_000);
-  let binaryQueue: Uint8Array[] = [];
-  let binaryFlushing = false;
-  let binaryFlushPromise: Promise<void> | null = null;
-  function enqueueBinary(data: Uint8Array) {
-    binaryQueue.push(data);
-    if (!binaryFlushing) binaryFlushPromise = flushBinaryQueue();
-  }
-  async function flushBinaryQueue(): Promise<void> {
-    binaryFlushing = true;
-    try {
-      while (binaryQueue.length > 0 && ws.readyState === 1) {
-        if ((ws as any).bufferedAmount > BACKPRESSURE_LIMIT) {
-          await delay(10);
-          continue;
-        }
-        const chunk = binaryQueue.shift()!;
-        await new Promise<void>((resolve, reject) => {
-          try {
-            ws.send(chunk, { binary: true }, (err?: Error) => (err ? reject(err) : resolve()));
-          } catch (e) {
-            reject(e as any);
-          }
-        });
-      }
-    } finally {
-      binaryFlushing = false;
-    }
-  }
-  // No sentence queue: we'll synthesize once per assistant reply
 
   // Seed history from DB
   try {
@@ -206,111 +170,30 @@ wss.on('connection', async (ws, req) => {
     if (hist) historyMem = hist.map((m: any) => ({ role: m.role, content: m.content }));
   } catch {}
 
-  const flushNow = async () => {
-    if (!conversationId) return;
-    if (isProcessing || pendingAudio.length === 0) return;
-    isProcessing = true;
-    const payload = Buffer.concat(pendingAudio);
-    pendingAudio = [];
-    try {
-      const turnStart = Date.now();
-      console.time(`[srv] transcription`);
-      const transcript = await transcribeWebmToText(new Uint8Array(payload));
-      console.timeEnd(`[srv] transcription`);
-      if (!transcript) return;
-
-      sendJson(ws, { type: 'transcript', text: transcript });
-      historyMem.push({ role: 'user', content: transcript });
-      await saveMessage(conversationId as string, 'user', transcript, userId);
-
+  // Attach streaming voice handler (will create its own ws.on('message') listener)
+  handleVoiceConnection(ws as any, {
+    onFinal: async (text: string) => {
+      historyMem.push({ role: 'user', content: text });
+      if (conversationId) await saveMessage(conversationId, 'user', text, userId);
       const messages = [
         { role: 'system', content: 'You are Kira, a friendly and concise AI assistant.' },
         ...historyMem,
       ];
-      console.time(`[srv] llm`);
-      // Streaming path: accumulate full assistant text; no progressive TTS
-      let usedStreaming = true;
-      let fullText = '';
-      const assistant = await streamAssistantReply(messages as any, ws, (chunk: string) => {
-        fullText += chunk;
-      }).catch(async (e: unknown) => {
-        // Fallback to non-streaming on error
-        try {
-          console.warn('[Server] LLM streaming failed, falling back:', e);
-        } catch {}
-        usedStreaming = false;
-        return await runChat(messages as any);
-      });
-      console.timeEnd(`[srv] llm`);
-      if (!assistant) return;
-
-      // Ensure a final full-text event for compatibility with existing clients
+      let reply = '';
       try {
-        sendJson(ws, { type: 'assistant_text', text: assistant });
-      } catch {}
-      historyMem.push({ role: 'assistant', content: assistant });
-      await saveMessage(conversationId as string, 'assistant', assistant, userId);
-
+        reply = await runChat(messages as any);
+      } catch (e) {
+        console.error('[srv] runChat failed', e);
+        return 'Sorry, I had a problem generating a reply.';
+      }
+      historyMem.push({ role: 'assistant', content: reply });
+      if (conversationId) await saveMessage(conversationId, 'assistant', reply, userId);
       try {
         const newTitle = await generateAndSaveTitle(conversationId as string, historyMem);
-        if (newTitle) sendJson(ws, { type: 'title_update', title: newTitle, conversationId });
+        if (newTitle) sendJson(ws, { t: 'title_update', title: newTitle, conversationId });
       } catch {}
-
-      // Regardless of streaming vs fallback, we have the full assistant text; synthesize once
-      const textToSpeak = usedStreaming ? fullText : assistant;
-      if (textToSpeak && ws.readyState === 1) {
-        try {
-          sendJson(ws, { type: 'audio_start', mime });
-        } catch {}
-        console.time(`[srv] tts`);
-        await new Promise<void>((resolve, reject) => {
-          synthesizeSpeechStream(textToSpeak, (chunk) => enqueueBinary(chunk), ttsFmt)
-            .then(resolve)
-            .catch(reject);
-        });
-        if (binaryFlushPromise) {
-          try {
-            await binaryFlushPromise;
-          } catch {}
-        }
-        console.timeEnd(`[srv] tts`);
-        sendJson(ws, { type: 'audio_end' });
-        audioStarted = false;
-      }
-
-      // TODO: heartbeat will handle usage increments and client updates
-    } catch (err) {
-      console.error(`Error in flushNow for ${conversationId}:`, err);
-    } finally {
-      isProcessing = false;
-    }
-  };
-
-  ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
-    if (isBinary) {
-      // accumulate binary into pending buffer (should be one blob but handle fragmentation)
-      pendingAudio.push(Buffer.from(data as any));
-      return;
-    }
-    // text control frames
-    try {
-      const txt = data.toString();
-      if (txt === 'ping') {
-        try {
-          ws.send('pong');
-        } catch {}
-        return;
-      }
-      const msg = JSON.parse(txt);
-      if (msg.t === 'audio_begin') {
-        pendingAudio = [];
-        currentMime = msg.mime || 'audio/webm';
-      } else if (msg.t === 'audio_end') {
-        void flushNow();
-      }
-    } catch (e) {
-      console.warn('[Server] bad control frame', e);
-    }
+      return reply;
+    },
   });
 
   ws.on('close', () => {
@@ -334,8 +217,6 @@ wss.on('connection', async (ws, req) => {
 function sendJson(ws: WebSocket, data: object) {
   if (ws.readyState === 1) ws.send(JSON.stringify(data));
 }
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Removed legacy flush-mode transcription helpers (transcribeViaOpenAI / guessExt)
 
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));

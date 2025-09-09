@@ -1,6 +1,6 @@
 import './globals.css';
 import { ThemeProvider } from '@/components/theme-provider';
-import AppHeader from '@/components/app/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import '../lib/bootlog'; // boot health logging
 
 export const dynamic = 'force-dynamic';

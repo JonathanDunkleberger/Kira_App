@@ -11,7 +11,7 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
   const [mode, setMode] = useState<LimitDialogMode>('paywall');
   const [remainingToday, setRemainingToday] = useState(0);
   const [remainingThisChat, setRemainingThisChat] = useState(0);
-  const { server } = useUsage();
+  const { server, setChatSessionId } = useUsage() as any;
   const [isAuthed, setAuthed] = useState(false);
   const [isPro, setIsPro] = useState(false);
   const [usedToday, setUsedToday] = useState<number | undefined>();
@@ -91,7 +91,8 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
           setOpen(false);
         }}
         onNewChat={async () => {
-          (window as any).voice?.endCall?.();
+          try { (window as any).voice?.endCall?.(); } catch {}
+          try { setChatSessionId?.(undefined); } catch {}
           location.assign('/chat');
         }}
       />

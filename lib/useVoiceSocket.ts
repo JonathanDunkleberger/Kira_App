@@ -1,6 +1,9 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { supaBrowser } from './supabase-browser';
+import { useUsage } from './useUsage';
+
 // Unified URL resolution supporting legacy + new env vars and runtime override
 function resolveVoiceWsUrl(): string {
   // Highest priority: explicit runtime override for debugging
@@ -43,6 +46,29 @@ function resolveVoiceWsUrl(): string {
 
 type ConnectOpts = { persona?: string; conversationId?: string };
 
+async function getSupabaseAccessToken(): Promise<string | undefined> {
+  try {
+    const { data: { session } } = await supaBrowser().auth.getSession();
+    return session?.access_token || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getVisitorId(): string {
+  try {
+    const k = 'kira_visitor_id';
+    let id = localStorage.getItem(k);
+    if (!id) {
+      id = (crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+      localStorage.setItem(k, id);
+    }
+    return id;
+  } catch {
+    return 'guest';
+  }
+}
+
 export function useVoiceSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const openPromiseRef = useRef<Promise<void> | null>(null);
@@ -63,17 +89,30 @@ export function useVoiceSocket() {
     audioEl.play().catch(() => {});
   }
 
+  const usage = useUsage.getState();
+
   const connect = useCallback(async (opts?: ConnectOpts) => {
     // already connecting/open?
     const cur = wsRef.current;
     if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN))
       return;
 
-    const base = resolveVoiceWsUrl();
-    const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+  const base = resolveVoiceWsUrl();
+  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
     if (opts?.persona) url.searchParams.set('persona', opts.persona);
-    if (opts?.conversationId) url.searchParams.set('conversationId', opts.conversationId);
-    console.log('[voice][ws] connecting', { base, href: url.href });
+    const savedId =
+      opts?.conversationId ||
+      useUsage.getState().server?.chatSessionId ||
+      (typeof window !== 'undefined'
+        ? sessionStorage.getItem('kira_chat_session_id') || undefined
+        : undefined);
+    if (savedId) url.searchParams.set('conversationId', savedId);
+  // identity for RLS
+  const token = await getSupabaseAccessToken();
+  if (token) url.searchParams.set('token', token);
+  url.searchParams.set('visitor', getVisitorId());
+  if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
+  console.log('[voice][ws] connecting', { base, href: url.toString().replace(/token=[^&]+/, 'token=***') });
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -95,20 +134,32 @@ export function useVoiceSocket() {
         if (process.env.NODE_ENV !== 'production') {
           console.log('[voice][ws] message', msg);
         }
+        // capture chat session id
+        if (msg.t === 'chat_session') {
+          const id = msg.id || msg.chatSessionId || msg.chat_session_id;
+          if (id) useUsage.getState().setChatSessionId(id);
+        }
+        if (msg.t === 'heartbeat') {
+          const id = msg.chatSessionId || msg.chat_session_id;
+          if (id) useUsage.getState().setChatSessionId(id);
+        }
+        if (msg.t === 'end') {
+          useUsage.getState().setChatSessionId(undefined);
+        }
         if (msg.t === 'tts_url' && typeof msg.url === 'string') {
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
           playUrlOn(el, msg.url);
           return;
         }
         if (msg.t === 'speak') {
-          import('@/lib/voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
+          import('./voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
           return;
         }
       } catch {}
     });
 
     ws.addEventListener('close', (e) => {
-      console.log('[voice][ws] close', e.code, e.reason);
+      console.warn('[voice][ws] close', e.code, e.reason || '(no reason)');
       setConnected(false);
       openPromiseRef.current = null;
       openResolveRef.current = null;

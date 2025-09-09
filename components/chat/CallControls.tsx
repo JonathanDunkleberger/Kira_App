@@ -1,14 +1,17 @@
-'use client';
+"use client";
 import { useState } from 'react';
+
 import { Mic, MicOff, Square } from 'lucide-react';
-import type { useVoiceSocket } from '@/lib/useVoiceSocket';
-import { Button } from '@/components/ui/Button';
+import type { useVoiceSocket } from '../../lib/useVoiceSocket';
+import { Button } from '../ui/Button';
+import RestartChatButton from './RestartChatButton';
 
 export default function CallControls({ voice }: { voice: ReturnType<typeof useVoiceSocket> }) {
   const [ending, setEnding] = useState(false);
   return (
     <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
       <div className="rounded-2xl border bg-muted/70 backdrop-blur px-3 py-2 flex items-center gap-4">
+        <RestartChatButton />
         <Button
           variant={voice.isMuted ? 'primary' : 'outline'}
           onClick={() => voice.setMuted(!voice.isMuted)}

@@ -9,12 +9,14 @@ type ServerState = {
   todaySecondsLimit: number; // 0 => unlimited
   chatSecondsElapsed: number;
   chatSecondsCap: number;
+  chatSessionId?: string;
 };
 
 type UsageState = {
   lastHeartbeatAt: number | null;
   server: ServerState | null;
   setHeartbeat: (hb: any) => void;
+  setChatSessionId: (id?: string) => void;
   getDisplayTimes: () => { todayUsed: number; chatElapsed: number };
 };
 
@@ -22,9 +24,24 @@ export const useUsage = create<UsageState>((set, get) => ({
   lastHeartbeatAt: null,
   server: null,
   setHeartbeat: (hb) =>
-    set({
-      server: hb.entitlements as ServerState,
-      lastHeartbeatAt: hb.now as number,
+    set((s) => {
+      const ent = hb.entitlements as ServerState;
+      // preserve existing chatSessionId if heartbeat omits it
+      const merged: ServerState = { ...s.server, ...ent } as ServerState;
+      if (!ent.chatSessionId && s.server?.chatSessionId) merged.chatSessionId = s.server.chatSessionId;
+      return {
+        server: merged,
+        lastHeartbeatAt: hb.now as number,
+      };
+    }),
+  setChatSessionId: (id) =>
+    set((s) => {
+      const next = { ...(s.server || ({} as ServerState)), chatSessionId: id };
+      try {
+        if (id) sessionStorage.setItem('kira_chat_session_id', id);
+        else sessionStorage.removeItem('kira_chat_session_id');
+      } catch {}
+      return { server: next };
     }),
   getDisplayTimes: () => {
     const s = get().server;
@@ -37,3 +54,11 @@ export const useUsage = create<UsageState>((set, get) => ({
     };
   },
 }));
+
+// Hydration restore (client only)
+if (typeof window !== 'undefined') {
+  try {
+    const saved = sessionStorage.getItem('kira_chat_session_id');
+    if (saved) useUsage.getState().setChatSessionId(saved);
+  } catch {}
+}

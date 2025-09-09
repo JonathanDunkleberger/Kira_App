@@ -6,10 +6,10 @@ import { useUsage } from '@/lib/useUsage';
 const NAME = process.env.NEXT_PUBLIC_AGENT_NAME ?? 'Kira';
 const BYLINE = process.env.NEXT_PUBLIC_BYLINE ?? 'by elsa';
 
-function fmt(s: number) {
-  if (!Number.isFinite(s) || s < 0) s = 0;
-  const m = Math.floor(s / 60);
-  const ss = s % 60;
+function fmt(s?: number) {
+  const n = Number.isFinite(s as number) ? Math.max(0, Math.floor(s as number)) : 0;
+  const m = Math.floor(n / 60);
+  const ss = n % 60;
   return `${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 

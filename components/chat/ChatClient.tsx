@@ -1,10 +1,12 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import VoiceOrb from '@/components/VoiceOrb';
-import { voiceBus } from '@/lib/voiceBus';
-import CallControls from '@/components/chat/CallControls';
-import { useVoiceSocket } from '@/lib/useVoiceSocket';
-import ChatGuardrails from '@/components/ChatGuardrails';
+
+import ChatGuardrails from '../ChatGuardrails';
+import VoiceOrb from '../VoiceOrb';
+import { voiceBus } from '../../lib/voiceBus';
+import { useVoiceSocket } from '../../lib/useVoiceSocket';
+
+import CallControls from './CallControls';
 
 export default function ChatClient({ persona }: { persona: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -16,8 +18,27 @@ export default function ChatClient({ persona }: { persona: string }) {
     started.current = true;
     (async () => {
       try {
+        // Ensure an AudioContext can play (user gesture may be required)
+        const AudioCtx: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+        let ctx: AudioContext | undefined;
+        if (AudioCtx) {
+          try {
+            ctx = new AudioCtx();
+            if (ctx?.state === 'suspended') await ctx.resume();
+          } catch {}
+        }
         await voice.connect({ persona });
         await voice.startMic();
+        // Fallback: if first playback blocked, retry on next click
+        const audio = document.getElementById('tts-audio') as HTMLAudioElement | null;
+        if (audio) {
+          audio.play().catch(() => {
+            const once = () => {
+              audio.play().finally(() => document.removeEventListener('click', once));
+            };
+            document.addEventListener('click', once, { once: true });
+          });
+        }
         voice.signal?.('client_ready');
       } catch (e) {
         console.error('start failed', e);

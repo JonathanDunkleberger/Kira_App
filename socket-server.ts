@@ -155,8 +155,9 @@ wss.on('connection', async (ws, req) => {
     } catch {}
   }
 
-  let chunkBuffers: Buffer[] = [];
-  let flushTimer: NodeJS.Timeout | null = null;
+  // Utterance accumulation state (Fix A)
+  let pendingAudio: Buffer[] = [];
+  let currentMime: string = 'audio/webm';
   let isProcessing = false;
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
@@ -206,11 +207,11 @@ wss.on('connection', async (ws, req) => {
   } catch {}
 
   const flushNow = async () => {
-    if (!conversationId) return; // safety
-    if (isProcessing || chunkBuffers.length === 0) return;
+    if (!conversationId) return;
+    if (isProcessing || pendingAudio.length === 0) return;
     isProcessing = true;
-    const payload = Buffer.concat(chunkBuffers);
-    chunkBuffers = [];
+    const payload = Buffer.concat(pendingAudio);
+    pendingAudio = [];
     try {
       const turnStart = Date.now();
       console.time(`[srv] transcription`);
@@ -285,20 +286,29 @@ wss.on('connection', async (ws, req) => {
     }
   };
 
-  ws.on('message', (data: Buffer) => {
-    // Ping/Pong quick health
-    if (data?.toString?.() === 'ping') {
-      try {
-        ws.send('pong');
-      } catch {}
+  ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
+    if (isBinary) {
+      // accumulate binary into pending buffer (should be one blob but handle fragmentation)
+      pendingAudio.push(Buffer.from(data as any));
       return;
     }
+    // text control frames
     try {
-      console.log(`[Server] 📩 Received message chunk. Size: ${data?.byteLength ?? 0} bytes`);
-    } catch {}
-    chunkBuffers.push(data);
-    if (flushTimer) clearTimeout(flushTimer);
-    flushTimer = setTimeout(flushNow, Number(process.env.WS_UTTERANCE_SILENCE_MS || 700));
+      const txt = data.toString();
+      if (txt === 'ping') {
+        try { ws.send('pong'); } catch {}
+        return;
+      }
+      const msg = JSON.parse(txt);
+      if (msg.t === 'audio_begin') {
+        pendingAudio = [];
+        currentMime = msg.mime || 'audio/webm';
+      } else if (msg.t === 'audio_end') {
+        void flushNow();
+      }
+    } catch (e) {
+      console.warn('[Server] bad control frame', e);
+    }
   });
 
   ws.on('close', () => {

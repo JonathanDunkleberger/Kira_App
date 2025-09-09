@@ -48,7 +48,9 @@ type ConnectOpts = { persona?: string; conversationId?: string };
 
 async function getSupabaseAccessToken(): Promise<string | undefined> {
   try {
-    const { data: { session } } = await supaBrowser().auth.getSession();
+    const {
+      data: { session },
+    } = await supaBrowser().auth.getSession();
     return session?.access_token || undefined;
   } catch {
     return undefined;
@@ -60,7 +62,7 @@ function getVisitorId(): string {
     const k = 'kira_visitor_id';
     let id = localStorage.getItem(k);
     if (!id) {
-      id = (crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+      id = crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
       localStorage.setItem(k, id);
     }
     return id;
@@ -76,6 +78,9 @@ export function useVoiceSocket() {
 
   const recRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const partsRef = useRef<BlobPart[]>([]);
+  const mimeRef = useRef<string>('audio/webm');
+  const capturingRef = useRef(false);
 
   const [isConnected, setConnected] = useState(false);
   const [isMuted, setMuted] = useState(false);
@@ -97,8 +102,8 @@ export function useVoiceSocket() {
     if (cur && (cur.readyState === WebSocket.CONNECTING || cur.readyState === WebSocket.OPEN))
       return;
 
-  const base = resolveVoiceWsUrl();
-  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+    const base = resolveVoiceWsUrl();
+    const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
     if (opts?.persona) url.searchParams.set('persona', opts.persona);
     const savedId =
       opts?.conversationId ||
@@ -107,12 +112,15 @@ export function useVoiceSocket() {
         ? sessionStorage.getItem('kira_chat_session_id') || undefined
         : undefined);
     if (savedId) url.searchParams.set('conversationId', savedId);
-  // identity for RLS
-  const token = await getSupabaseAccessToken();
-  if (token) url.searchParams.set('token', token);
-  url.searchParams.set('visitor', getVisitorId());
-  if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
-  console.log('[voice][ws] connecting', { base, href: url.toString().replace(/token=[^&]+/, 'token=***') });
+    // identity for RLS
+    const token = await getSupabaseAccessToken();
+    if (token) url.searchParams.set('token', token);
+    url.searchParams.set('visitor', getVisitorId());
+    if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
+    console.log('[voice][ws] connecting', {
+      base,
+      href: url.toString().replace(/token=[^&]+/, 'token=***'),
+    });
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -173,46 +181,75 @@ export function useVoiceSocket() {
     });
   }, []);
 
-  const startMic = useCallback(
+  const ensureStream = useCallback(async (constraints?: MediaTrackConstraints) => {
+    if (streamRef.current) return streamRef.current;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000,
+        ...constraints,
+      },
+    });
+    streamRef.current = stream;
+    return stream;
+  }, []);
+
+  const startUtterance = useCallback(
     async (constraints?: MediaTrackConstraints) => {
-      // wait until WS is open (prevents "CLOSING/CLOSED" errors)
+      if (capturingRef.current) return; // already capturing
       await openPromiseRef.current;
-
-      // restart cleanly
-      try {
-        recRef.current?.stop();
-      } catch {}
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 48000,
-          ...constraints,
-        },
-      });
-      streamRef.current = stream;
-
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const stream = await ensureStream(constraints);
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
+      mimeRef.current = mime;
+      partsRef.current = [];
       const rec = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 });
       recRef.current = rec;
-
       rec.ondataavailable = (e) => {
-        if (!e.data || !e.data.size) return;
-        const ws = wsRef.current;
-        if (!ws || ws.readyState !== WebSocket.OPEN || isMuted) return;
-        ws.send(e.data);
+        if (e.data && e.data.size) partsRef.current.push(e.data);
       };
-
-      rec.start(250);
+      rec.onstop = async () => {
+        try {
+          const all = new Blob(partsRef.current, { type: mimeRef.current });
+          const buf = await all.arrayBuffer();
+          const ws2 = wsRef.current;
+          if (!ws2 || ws2.readyState !== WebSocket.OPEN) return;
+          ws2.send(JSON.stringify({ t: 'audio_begin', mime: mimeRef.current, size: buf.byteLength }));
+            ws2.send(buf);
+          ws2.send(JSON.stringify({ t: 'audio_end' }));
+        } catch (e) {
+          console.warn('[voice] failed to assemble utterance', e);
+        } finally {
+          partsRef.current = [];
+          capturingRef.current = false;
+        }
+      };
+      capturingRef.current = true;
+      rec.start(); // no timeslice => full header/footer
     },
-    [isMuted],
+    [ensureStream],
   );
+
+  const stopUtterance = useCallback(() => {
+    if (!capturingRef.current) return;
+    try {
+      recRef.current?.requestData();
+    } catch {}
+    try {
+      recRef.current?.stop();
+    } catch {}
+  }, []);
+
+  // Backwards compat: startMic now just ensures stream
+  const startMic = useCallback(async (c?: MediaTrackConstraints) => {
+    await ensureStream(c);
+  }, [ensureStream]);
 
   const stopMic = useCallback(() => {
     try {
@@ -268,12 +305,14 @@ export function useVoiceSocket() {
       isConnected,
       isMuted,
       connect,
-      startMic,
-      stopMic,
+  startMic, // legacy (ensures stream only)
+  stopMic,
+  startUtterance,
+  stopUtterance,
       setMuted: setMutedSafe,
       endCall,
       signal,
     }),
-    [isConnected, isMuted, connect, startMic, stopMic, setMutedSafe, endCall, signal],
+  [isConnected, isMuted, connect, startMic, stopMic, startUtterance, stopUtterance, setMutedSafe, endCall, signal],
   );
 }

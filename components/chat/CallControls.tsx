@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useState } from 'react';
 
 import { Mic, MicOff, Square } from 'lucide-react';
@@ -14,10 +14,31 @@ export default function CallControls({ voice }: { voice: ReturnType<typeof useVo
         <RestartChatButton />
         <Button
           variant={voice.isMuted ? 'primary' : 'outline'}
-          onClick={() => voice.setMuted(!voice.isMuted)}
+          onMouseDown={async () => {
+            if (voice.isMuted) {
+              voice.setMuted(false);
+              await voice.startUtterance?.();
+            }
+          }}
+          onMouseUp={() => {
+            if (!voice.isMuted) {
+              voice.stopUtterance?.();
+              voice.setMuted(true);
+            }
+          }}
+          onClick={() => {
+            // fallback toggle for keyboard users
+            const next = !voice.isMuted;
+            voice.setMuted(!next);
+            if (next) {
+              void voice.startUtterance?.();
+            } else {
+              voice.stopUtterance?.();
+            }
+          }}
         >
           {voice.isMuted ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
-          {voice.isMuted ? 'Unmute' : 'Mute'}
+          {voice.isMuted ? 'Hold to Talk' : 'Release to Stop'}
         </Button>
         <Button
           variant="primary"

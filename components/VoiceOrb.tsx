@@ -23,17 +23,16 @@ type Props = {
 };
 
 export default function VoiceOrb({ audioEl, size = 260, className, multiHue = true }: Props) {
-  const { level, isSpeaking: fromAudio } = useAudioLevel({ audioEl });
-  const [fromEvents, setFromEvents] = useState(false);
-  const isSpeaking = fromAudio || fromEvents;
+  const { level } = useAudioLevel({ audioEl });
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
-    const off = voiceBus.on<boolean>('speaking', (v) => setFromEvents(Boolean(v)));
+  const off = voiceBus.on<boolean>('speaking', (v) => setSpeaking(Boolean(v)));
     return off;
   }, []);
 
   // Baseline breathing scale
-  const breatheScale = useMemo(() => (isSpeaking ? 1.02 : 1.015), [isSpeaking]);
+  const breatheScale = useMemo(() => (speaking ? 1.02 : 1.015), [speaking]);
   const reactive = 1 + level * REACTIVE_GAIN; // gentler audio-reactive scale
 
   const s = size;
@@ -56,7 +55,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
       />
 
       {/* DECORATIONS — only while speaking */}
-      {isSpeaking && (
+  {speaking && (
         <>
           {/* soft halos while speaking */}
           <div

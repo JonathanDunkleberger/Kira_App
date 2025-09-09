@@ -1,0 +1,57 @@
+// This is your Prisma schema file.
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @unique
+  email         String    @unique
+  tier          String    @default("free") // "free" or "pro"
+  createdAt     DateTime  @default(now())
+  usage         Usage[]
+  conversations Conversation[]
+  @@map("app_users")
+}
+
+model Usage {
+  id        String   @id @default(cuid())
+  userId    String?  // Nullable to allow guest usage tracked by IP
+  user      User?    @relation(fields: [userId], references: [id])
+  ip        String?  // IP address for guest usage records
+  seconds   Int
+  date      DateTime @default(now())
+  @@index([userId, date])
+  @@index([ip, date])
+  // For quick lookup aggregate by identity (user or ip) within a day
+  @@map("app_usage")
+}
+
+model Conversation {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id])
+  title            String    @default("New Conversation")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  isGuest          Boolean   @default(false)
+  secondsRemaining Int?
+  messages         Message[]
+  @@map("app_conversations")
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id])
+  text            String
+  sender          String // "user" or "ai"
+  createdAt       DateTime      @default(now())
+  @@map("app_messages")
+}

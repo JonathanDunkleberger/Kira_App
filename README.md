@@ -83,8 +83,115 @@ Key client/server vars (non‑exhaustive):
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (client)
 - `SUPABASE_SERVICE_ROLE_KEY` (server only)
-- `AZURE_*` for TTS
+- `AZURE_*` for TTS (if using Azure provider)
+- `TTS_PROVIDER` ("azure" | "elevenlabs") defaults to azure
+- `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` (if using ElevenLabs fallback)
 - `FREE_TRIAL_SECONDS`, `FREE_DAILY_LIMIT`, `PRO_CHAT_SESSION_LIMIT` (usage tuning)
+- Clerk Auth:
+  - `CLERK_PUBLISHABLE_KEY`
+  - `CLERK_SECRET_KEY`
+  - `CLERK_WEBHOOK_SECRET` (for user sync route)
+  
+## Backend Data Flow (Phase 1 One-Shot Plan)
+
+This phase introduces Prisma-backed persistence for core objects while retaining existing Supabase-based endpoints during a short transition window:
+
+1. ensureUser(): called in new Prisma conversation/message endpoints to mirror Clerk users into the relational store.
+2. Conversations: `POST /api/conversations` (Prisma) creates row; existing Supabase conversation endpoints will be deprecated.
+3. Messages: future `POST /api/conversations/[id]/messages` route to append user/ai messages as they stream.
+4. Usage tracking: after a session ends, total seconds are aggregated into `Usage` (daily roll-up per user).
+5. Migration strategy: initial Prisma migration applied via `prisma migrate deploy` against the production Supabase PostgreSQL instance.
+
+During the cutover, UI calls will be updated incrementally to point from Supabase REST endpoints to the new Prisma-backed routes.
+
+### New Prisma Endpoints
+
+All conversation/message operations now backed by Prisma tables (`app_conversations`, `app_messages`, `app_users`). Response shape maintains legacy keys (`created_at`, `updated_at`) for UI compatibility.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/conversations` | GET | List user conversations |
+| `/api/conversations` | POST | Create new conversation |
+| `/api/conversations/[id]` | PATCH | Rename conversation |
+| `/api/conversations/[id]` | DELETE | Delete conversation |
+| `/api/conversations/[id]/messages` | GET | List messages (ascending) |
+| `/api/conversations/[id]/messages` | POST | Append message (text + sender) |
+
+Auth: Clerk user required (guest flow deferred). `ensureUser()` upserts into `app_users`.
+- Database:
+  - `DATABASE_URL` (Postgres for Prisma)
+
+### Unified Usage Tracking (Users & Guests)
+
+Daily usage seconds are persisted in the Prisma `Usage` model (`app_usage`). Authenticated users aggregate by `userId`. Guest users (no Clerk session) are aggregated by their IP address (from `x-forwarded-for` or `x-real-ip`).
+
+Endpoints (all dynamic – no caching):
+
+| Endpoint | Method | Purpose | Identity Strategy |
+|----------|--------|---------|-------------------|
+| `/api/usage` | GET | Backwards-compatible usage fetch | UserId → IP fallback |
+| `/api/usage` | POST | Backwards-compatible update (increment) | UserId → IP fallback |
+| `/api/usage/check` | GET | Explicit usage snapshot | UserId → IP fallback |
+| `/api/usage/update` | POST | Explicit usage increment | UserId → IP fallback |
+
+Request (POST /api/usage/update or /api/usage):
+
+```json
+{ "secondsUsed": 5 }
+```
+
+Response shape (all routes):
+
+```json
+{
+  "secondsRemaining": 123,
+  "dailyLimitSeconds": 900,
+  "subject": "user" | "ip"
+}
+```
+
+Implementation details:
+
+1. `userId` nullable & new `ip` column with indices for efficient day-range aggregation.
+2. Helper functions accept `{ userId }` or `{ ip }` identity object.
+3. Daily window: UTC day `[00:00, 24:00)`. Adjust if you later need locale-based rollover.
+4. Abuse considerations: IP-based limiting is coarse; consider adding lightweight cookie or signed fingerprint to reduce NAT collisions. Rate-limit bursts per IP if necessary.
+5. Migration name: `guest_usage_ip` (adds nullable userId, ip column, indices).
+
+Environment knobs:
+
+| Var | Meaning |
+|-----|---------|
+| `FREE_TRIAL_SECONDS` | Daily allowance applied to both authenticated and guest subjects |
+
+Future hardening ideas (not yet implemented):
+
+- Add soft session-bound accrual (conversation-level) for more granular gating.
+- Introduce HMAC-signed client fingerprint combining UA + coarse IP for better uniqueness.
+- Periodic cleanup task to prune stale guest IP rows (older than 30 days) to keep table lean.
+
+#### Realtime Enforcement
+
+Before processing audio, the voice WebSocket server calls `/api/usage/check`. If `secondsRemaining <= 0` it sends:
+
+```json
+{ "t": "limit_exceeded", "reason": "daily_limit", "message": "Daily free usage exhausted. Upgrade to continue." }
+```
+
+The client (`useVoiceSocket`) listens for this event, sets a global flag, and a lightweight `LimitBanner` component displays an upgrade prompt. This ensures no additional audio is processed post-limit.
+
+### Streaming TTS Protocol
+
+When a final transcript is produced:
+
+1. Server emits `{ t: 'transcript', text }`.
+2. Server generates LLM reply (history aware) then streams Azure TTS:
+
+- `{ t: 'tts_start' }`
+- Repeated `{ t: 'tts_chunk', b64: <base64 audio frame> }` (WebM Opus 24k mono)
+- `{ t: 'tts_end' }`
+
+Clients accumulate frames; large buffers flush early to reduce latency. Legacy `{ t: 'tts_url' }` messages still supported for non-streaming paths.
 
 ### Realtime Speech Recognition (Deepgram)
 
@@ -105,6 +212,18 @@ DEEPGRAM_API_KEY=dg_secret_...
 ```
 
 Future overrides (not yet parameterized): `model`, `tier`, `smart_format`, `punctuate`.
+
+### TTS Provider Switching
+
+By default Azure TTS is used. To switch to ElevenLabs, set:
+
+```bash
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=sk_your_key
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM # or preferred voice
+```
+
+If unset or invalid, Azure remains the default (requires `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`). The streaming helper currently streams only Azure; ElevenLabs path buffers full audio then emits a single chunk (upgrade: integrate official streaming endpoint later).
 
 ---
 

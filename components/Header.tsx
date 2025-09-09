@@ -1,12 +1,9 @@
-'use client';
+"use client";
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 
-import { openBillingPortal, signOut } from '@/lib/client-api';
-import { supabase } from '@/lib/client/supabaseClient';
-import { useConversation } from '@/lib/state/ConversationProvider';
-import UserProfile from '@/components/UserProfile';
+import { useConversation } from '../lib/state/ConversationProvider';
 
 function Pill({
   children,
@@ -23,26 +20,7 @@ function Pill({
 }
 
 export default function Header() {
-  const [email, setEmail] = useState<string | null>(null);
   const { isPro } = useConversation();
-
-  async function refresh() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    setEmail(session?.user?.email ?? null);
-  }
-
-  useEffect(() => {
-    refresh();
-    const onUpdate = () => refresh();
-    window.addEventListener('entitlement:updated', onUpdate);
-    return () => window.removeEventListener('entitlement:updated', onUpdate);
-  }, []);
-
-  const signedIn = !!email;
-  // TopCenterTimer now provides global elapsed time; no per-header timer.
-
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-[#0b0b12]/70 border-b border-white/5 w-full">
       <div className="px-4 md:px-6 h-14 flex items-center justify-between">
@@ -55,28 +33,23 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Countdown/CTA lives in HeaderUsageChip to avoid duplicates */}
-
-          {!signedIn ? (
-            <>
-              <Link
-                href="/sign-in"
-                className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/sign-up"
-                className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90"
-              >
-                Sign up
-              </Link>
-            </>
-          ) : (
-            <>
-              <UserProfile />
-            </>
-          )}
+          <SignedOut>
+            <Link
+              href="/sign-in"
+              className="px-3 py-1.5 rounded-lg border border-white/15 text-white/90 text-sm hover:bg-white/5"
+            >
+              Log in
+            </Link>
+            <Link
+              href="/sign-up"
+              className="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90"
+            >
+              Sign up
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
         </div>
       </div>
     </header>

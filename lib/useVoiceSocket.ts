@@ -80,6 +80,28 @@ function getVisitorId(): string {
 let wsRef: WebSocket | null = null;
 let connectingRef: Promise<WebSocket> | null = null;
 let connectedOnce = false;
+// Buffer for streaming TTS
+let ttsChunks: Uint8Array[] = [];
+let ttsPlaying = false;
+function flushTts() {
+  if (!ttsChunks.length) return;
+  try {
+    const parts: BlobPart[] = ttsChunks.map((u) => {
+      const slice = u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength);
+      // Force copy into ArrayBuffer if SharedArrayBuffer
+      if (slice instanceof ArrayBuffer) return slice;
+      return new Uint8Array(slice as any).buffer;
+    });
+    const blob = new Blob(parts, { type: 'audio/webm' });
+    ttsChunks = [];
+    const url = URL.createObjectURL(blob);
+    const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
+    if (el) {
+      el.src = url;
+      el.play().catch(() => {});
+    }
+  } catch {}
+}
 
 // Mic capture (streaming) – robust codec selection across browsers
 function pickMime(): string {
@@ -231,6 +253,22 @@ export async function connectVoice(opts: ConnectOpts) {
           if (!diag.firstTts) {
             diag.firstTts = true;
           }
+        } else if (msg.t === 'tts_start') {
+          ttsChunks = [];
+          ttsPlaying = true;
+        } else if (msg.t === 'tts_chunk' && typeof msg.b64 === 'string') {
+          try {
+            const bin = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0));
+            ttsChunks.push(bin);
+            // Optionally flush mid-way if large
+            const total = ttsChunks.reduce((n, c) => n + c.byteLength, 0);
+            if (total > 120_000) {
+              flushTts();
+            }
+          } catch {}
+        } else if (msg.t === 'tts_end') {
+          flushTts();
+          ttsPlaying = false;
         } else if (msg.t === 'speak') {
           import('./voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
           if (!diag.firstSpeak) diag.firstSpeak = true;
@@ -241,6 +279,14 @@ export async function connectVoice(opts: ConnectOpts) {
           if (as.streaming) as.finalize();
         } else if (msg.t === 'error') {
           console.warn('[voice][server][error]', msg.where, msg.message);
+        } else if (msg.t === 'limit_exceeded') {
+          console.warn('[voice][limit] server reported limit_exceeded');
+          // Broadcast via a lightweight global for now; a dedicated store could be added later
+            try {
+              (window as any).__kiraLimitExceeded = true;
+              const ev = new CustomEvent('kira-limit-exceeded', { detail: msg });
+              window.dispatchEvent(ev);
+            } catch {}
         } else if (msg.t === 'partial') {
           if (typeof msg.text === 'string') usePartialStore.getState().setPartial(msg.text);
         } else if (msg.t === 'transcript') {
@@ -248,8 +294,8 @@ export async function connectVoice(opts: ConnectOpts) {
           usePartialStore.getState().clear();
         } else if (msg.type === 'assistant_text_chunk') {
           const as = useAssistantStream.getState();
-            if (!as.streaming) as.start();
-            if (typeof msg.text === 'string') as.append(msg.text);
+          if (!as.streaming) as.start();
+          if (typeof msg.text === 'string') as.append(msg.text);
         }
       } catch {}
     });

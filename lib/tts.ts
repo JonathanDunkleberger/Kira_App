@@ -1,4 +1,8 @@
 export async function synthesizeSpeech(text: string): Promise<string> {
+  const provider = (process.env.TTS_PROVIDER || 'azure').toLowerCase();
+  if (provider === 'elevenlabs') {
+    return synthesizeElevenLabs(text);
+  }
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
   const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
@@ -45,6 +49,11 @@ export async function synthesizeSpeechStream(
   text: string,
   onChunk: (chunk: Uint8Array) => void | Promise<void>,
 ): Promise<void> {
+  const provider = (process.env.TTS_PROVIDER || 'azure').toLowerCase();
+  if (provider === 'elevenlabs') {
+    await synthesizeElevenLabsStream(text, onChunk);
+    return;
+  }
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
   const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
@@ -107,4 +116,39 @@ export async function synthesizeSpeechStream(
 
 function escapeXml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// --- ElevenLabs fallback ---
+async function synthesizeElevenLabs(text: string): Promise<string> {
+  const key = process.env.ELEVENLABS_API_KEY || '';
+  const voice = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+  if (!key) throw new Error('Missing ELEVENLABS_API_KEY');
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': key,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_MODEL || 'eleven_monolingual_v1' }),
+  });
+  if (!r.ok) {
+    const body = await r.text();
+    throw new Error(`ElevenLabs TTS failed: ${r.status} ${body}`);
+  }
+  const buf = Buffer.from(await r.arrayBuffer());
+  return buf.toString('base64');
+}
+
+async function synthesizeElevenLabsStream(
+  text: string,
+  onChunk: (chunk: Uint8Array) => void | Promise<void>,
+) {
+  // ElevenLabs streaming API (simplified) - if not available, fallback to non-stream
+  try {
+    const b64 = await synthesizeElevenLabs(text);
+    await onChunk(Uint8Array.from(Buffer.from(b64, 'base64')));
+  } catch (e) {
+    throw e;
+  }
 }

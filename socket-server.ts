@@ -157,6 +157,35 @@ wss.on('connection', async (ws, req) => {
     } catch {}
   }
 
+  // Before allowing any audio processing, enforce daily usage limit (user or IP)
+  try {
+    const origin = process.env.APP_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || '';
+    const base = origin || `http://localhost:${PORT}`;
+    const checkUrl = new URL('/api/usage/check', base);
+    const headers: Record<string, string> = {};
+    // Forward auth token via cookie header if present (only if user token exists in query)
+    if (token) headers['Authorization'] = `Bearer ${token}`; // may be ignored by route; route uses Clerk normally
+    // Attempt fetch; fallback to not blocking if unreachable (fail-open for now)
+    const resp = await fetch(checkUrl.toString(), { headers });
+    if (resp.ok) {
+      const data: any = await resp.json().catch(() => ({}));
+      const remaining = Number(data?.secondsRemaining ?? 0);
+      if (Number.isFinite(remaining) && remaining <= 0) {
+        sendJson(ws as any, {
+          t: 'limit_exceeded',
+          reason: 'daily_limit',
+          message: 'Daily free usage exhausted. Upgrade to continue.',
+        });
+        try {
+          ws.close(4001, 'limit_exceeded');
+        } catch {}
+        return; // Abort connection setup
+      }
+    }
+  } catch (e) {
+    console.warn('[Server] usage check failed (continuing)', (e as any)?.message);
+  }
+
   // Streaming state (no single-blob accumulation variables required now)
   let historyMem: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
@@ -186,7 +215,11 @@ wss.on('connection', async (ws, req) => {
         });
       } catch (e) {
         console.error('[srv] streamAssistantReply failed', e);
-        sendJson(ws, { t: 'error', where: 'assistant_stream', message: (e as any)?.message || 'assistant stream failed' });
+        sendJson(ws, {
+          t: 'error',
+          where: 'assistant_stream',
+          message: (e as any)?.message || 'assistant stream failed',
+        });
         return 'Sorry, I had a problem generating a reply.';
       }
       historyMem.push({ role: 'assistant', content: full });

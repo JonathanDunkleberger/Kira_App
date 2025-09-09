@@ -41,7 +41,10 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
   const ring2 = s * 1.65;
 
   return (
-    <div className={cn('relative mx-auto my-8 select-none', className)} style={{ width: s, height: s }}>
+    <div
+      className={cn('relative mx-auto my-8 select-none', className)}
+      style={{ width: s, height: s }}
+    >
       {/* always-on subtle glow */}
       <div
         className="absolute inset-0 rounded-full"
@@ -298,7 +301,7 @@ function Waves({
         }
 
         :global(.dark) .wave {
-          border-color: hsl(78 45% 72% / 0.50);
+          border-color: hsl(78 45% 72% / 0.5);
           mix-blend-mode: screen;
         }
 
@@ -330,9 +333,17 @@ function Waves({
         }
 
         @keyframes wave-expand {
-          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.28; }
-          60% { opacity: 0.16; }
-          100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.28;
+          }
+          60% {
+            opacity: 0.16;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(2.2);
+            opacity: 0;
+          }
         }
         @keyframes hue-shift {
           0% {

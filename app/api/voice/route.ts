@@ -25,11 +25,27 @@ export async function GET(req: Request) {
           hb = setInterval(() => {
             server.send(JSON.stringify({ t: 'heartbeat', now: Date.now() }));
           }, 1000) as any;
+
+          // DEMO speech sequence: toggle speaking on, send tts clip url, then off
+          try {
+            server.send(JSON.stringify({ t: 'speak', on: true }));
+            server.send(
+              JSON.stringify({
+                t: 'tts_url',
+                url: 'https://upload.wikimedia.org/wikipedia/commons/4/4f/Bicycle-bell-ring.ogg',
+              }),
+            );
+            setTimeout(() => {
+              try { server.send(JSON.stringify({ t: 'speak', on: false })); } catch {}
+            }, 2500);
+          } catch {}
           return;
         }
         if (msg.t === 'mute') return;
         if (msg.t === 'end_chat') {
-          try { if (hb) clearInterval(hb as any); } catch {}
+          try {
+            if (hb) clearInterval(hb as any);
+          } catch {}
           server.close();
           return;
         }
@@ -39,7 +55,9 @@ export async function GET(req: Request) {
   });
 
   server.addEventListener('close', () => {
-    try { if (hb) clearInterval(hb as any); } catch {}
+    try {
+      if (hb) clearInterval(hb as any);
+    } catch {}
   });
 
   // @ts-ignore Edge Response supports webSocket init property

@@ -27,6 +27,8 @@ export default function AppHeader() {
     <header className="relative h-12 flex items-center justify-center bg-transparent">
       <TopClockTimer />
       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+  {/* hidden programmatic billing trigger */}
+  <button data-open-billing className="hidden" onClick={() => handleBilling()} />
         <button
           aria-label="Open profile"
           className="h-9 w-9 rounded-full bg-primary/25 text-primary flex items-center justify-center text-xs font-medium hover:bg-primary/35 transition"

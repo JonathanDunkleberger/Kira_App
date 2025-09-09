@@ -1,29 +1,75 @@
 'use client';
-import TopClockTimer from '@/components/TopClockTimer';
 import { useState } from 'react';
+import { Sun, Moon, User, Settings, CreditCard, LogOut } from 'lucide-react';
+import { useTheme } from 'next-themes';
+
+import HeaderPanels, { type Panel } from './HeaderPanels';
+import TopClockTimer from '@/components/TopClockTimer';
+import { supaBrowser } from '@/lib/supabase-browser';
 
 export default function AppHeader() {
-  // Placeholder profile menu state (expand with real auth later)
-  const [open, setOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [panel, setPanel] = useState<Panel>(null);
+
+  async function handleBilling() {
+    try {
+      const supa = supaBrowser();
+      const { data } = await supa.auth.getUser();
+      if (!data.user) {
+        setPanel('auth');
+      } else {
+        setPanel('billing');
+      }
+    } catch {
+      setPanel('auth');
+    }
+  }
+
   return (
-    <header className="relative h-12 flex items-center justify-center border-b border-white/10 bg-black/40 backdrop-blur-sm">
+    <header className="relative h-12 flex items-center justify-center border-b border-border bg-background/80 backdrop-blur-sm">
       <TopClockTimer />
-      <div className="absolute right-4 top-1/2 -translate-y-1/2">
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+        <div className="relative group">
+          <button
+            aria-label="Open account menu"
+            className="h-8 w-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium hover:bg-primary/30 transition"
+            onClick={() => setPanel('profile')}
+          >
+            <User className="h-4 w-4" />
+          </button>
+        </div>
         <button
-          onClick={() => setOpen(o => !o)}
-          className="rounded-full bg-white/10 hover:bg-white/20 px-3 py-1 text-sm"
+          aria-label="Toggle theme"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="h-8 w-8 rounded-full border border-border flex items-center justify-center text-foreground hover:bg-muted transition"
         >
-          Profile
+          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
-        {open && (
-          <div className="mt-2 absolute right-0 w-48 rounded-md border border-white/10 bg-black/80 backdrop-blur p-2 text-sm space-y-1">
-            <button className="block w-full text-left px-2 py-1 rounded hover:bg-white/10">Account</button>
-            <button className="block w-full text-left px-2 py-1 rounded hover:bg-white/10">Upgrade</button>
-            <button className="block w-full text-left px-2 py-1 rounded hover:bg-white/10">Theme</button>
-            <button className="block w-full text-left px-2 py-1 rounded hover:bg-white/10">Sign out</button>
-          </div>
-        )}
+        <div className="relative">
+          <button
+            onClick={() => setPanel('settings')}
+            className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-muted"
+            aria-label="Settings"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        </div>
+        <button
+          onClick={handleBilling}
+          className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-muted"
+          aria-label="Billing"
+        >
+          <CreditCard className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => (window.location.href = '/logout')}
+          className="h-8 w-8 rounded-full border border-border flex items-center justify-center hover:bg-muted"
+          aria-label="Sign out"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
+      <HeaderPanels panel={panel} onOpenChange={(o) => !o && setPanel(null)} />
     </header>
   );
 }

@@ -2,27 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light theme (almond/pistachio) */
-:root {
-  --background: #f8f7f3;
-  --foreground: #1f2415;
-  --card: #ffffffcc;
-  --card-foreground: #1f2415;
-  --muted: #e5e7d8;
-  --muted-foreground: #5a6244;
-  --primary: #647a34;
-  --primary-foreground: #f5f8ec;
-  --accent: #c3d39a;
-  --accent-foreground: #243213;
-  --destructive: #b3261e;
-  --destructive-foreground: #fff;
-  --border: #d5dbc4;
-  --input: #d5dbc4;
-  --ring: #7f9944;
-  --radius: 0.7rem;
-  /* Legacy fallbacks */
-  --bg: var(--background);
-  --ink: var(--foreground);
+/* Light (cream/almond) */
+:root{
+  --background: 40 38% 96%;        /* warm cream */
+  --foreground: 24 16% 10%;
+
+  --card: 40 38% 98%;
+  --card-foreground: 24 16% 10%;
+
+  --popover: 40 38% 98%;
+  --popover-foreground: 24 16% 10%;
+
+  /* Pistachio/olive accents */
+  --primary: 78 28% 35%;           /* #566f2f */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 72 26% 46%;         /* #7a8b53 */
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 40 28% 94%;             /* almond card */
+  --muted-foreground: 24 10% 32%;
+
+  --accent: 78 30% 86%;            /* pale pistachio */
+  --accent-foreground: 24 16% 10%;
+
+  --border: 40 20% 88%;
+  --input: 40 20% 88%;
+  --ring: 78 28% 35%;
+
+  --radius: 1rem;
+  /* Legacy fallbacks for existing code expecting hex vars */
+  --bg: hsl(var(--background));
+  --ink: hsl(var(--foreground));
 }
 
 /* Dark theme */

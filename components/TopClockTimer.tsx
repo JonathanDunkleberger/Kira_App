@@ -4,7 +4,7 @@ import { useUsage } from '@/lib/useUsage';
 
 // Optional: environment-driven branding
 const NAME = process.env.NEXT_PUBLIC_AGENT_NAME ?? 'Kira';
-const BYLINE = process.env.NEXT_PUBLIC_BYLINE ?? 'by Elsa Research';
+const BYLINE = process.env.NEXT_PUBLIC_BYLINE ?? 'by elsa';
 
 function fmt(s: number) {
   const m = Math.floor(s / 60);

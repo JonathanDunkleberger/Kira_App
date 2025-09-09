@@ -28,7 +28,7 @@
     "test:ui": "vitest",
     "e2e": "playwright test",
     "flags:check": "node scripts/check-flag-expiry.mjs",
-    "postinstall": "lefthook install || true",
+  "postinstall": "node scripts/postinstall.cjs || true",
     "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID --schema public > types/supabase.ts",
     "db:migrate:new": "supabase migration new",
     "db:migrate:push": "supabase db push",

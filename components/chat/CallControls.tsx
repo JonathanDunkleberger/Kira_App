@@ -2,7 +2,7 @@
 import { useState } from 'react';
 
 import { Button } from '../ui/Button';
-import { startMic, stopMicForUtterance, setMuted, sendJson } from '../../lib/useVoiceSocket';
+import { startMic, stopMicForUtterance, setMuted, sendJson } from '../../lib/voice';
 import { useUsage } from '../../lib/useUsage';
 
 export default function CallControls() {

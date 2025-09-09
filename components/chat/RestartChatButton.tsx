@@ -1,7 +1,7 @@
 'use client';
 import { Button } from '../ui/Button';
 import { useUsage } from '../../lib/useUsage';
-import { connectVoice, startMic, endCall } from '../../lib/useVoiceSocket';
+import { connectVoice, startMic, endCall } from '../../lib/voice';
 
 export default function RestartChatButton({ persona = 'kira' }: { persona?: string }) {
   const usage: any = useUsage();

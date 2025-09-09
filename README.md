@@ -304,3 +304,7 @@ Released under the MIT License – see `LICENSE`.
 - Realtime pipeline: STT → limited history fetch → LLM response streaming → TTS stream → client playback.
 - Heartbeat authoritative usage prevents client spoofing & clock drift.
 - All timers in UI are display-only; enforcement lives server-side.
+
+### 2025-09 Voice Socket Consolidation
+
+Legacy `lib/useVoiceSocket.ts` (singleton helpers) was removed. Unified access lives in `lib/voice.ts`, which wraps the newer hook-based implementation in `lib/hooks/useVoiceSocket.ts` while presenting the familiar API (`connectVoice`, `startMic`, `stopMicForUtterance`, `endCall`, `sendJson`, `setMuted`). Extend `lib/voice.ts` if additional surface area is required instead of recreating parallel socket modules.

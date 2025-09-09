@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import ChatGuardrails from '../ChatGuardrails';
 import VoiceOrb from '../VoiceOrb';
 import { voiceBus } from '../../lib/voiceBus';
-import { connectVoice, startMic, setMuted } from '../../lib/useVoiceSocket';
+import { connectVoice, startMic, setMuted } from '../../lib/voice';
 import { useUsage } from '../../lib/useUsage';
 import CallControls from './CallControls';
 

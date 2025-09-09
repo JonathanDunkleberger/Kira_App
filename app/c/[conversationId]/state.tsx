@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import { useVoiceSocket, startMic, endCall } from '../../../lib/useVoiceSocket';
+import { useVoiceSocket, startMic, endCall } from '../../../lib/voice';
 import { ConversationOrb } from '../../../components/ui/ConversationOrb';
 import { Timer } from '../../../components/ui/Timer';
 import { Rating } from '../../../components/ui/Rating';
@@ -46,7 +46,7 @@ export default function ActiveConversation({ id }: Props) {
       {phase === 'active' && (
         <>
           <Timer start className="text-cream-200 text-sm tracking-wide" />
-          <ConversationOrb state={vs.isConnected ? 'listening' : 'idle'} />
+          <ConversationOrb state={vs.status === 'connected' ? 'listening' : 'idle'} />
           <div className="fixed bottom-8 left-0 right-0 flex justify-center">
             <CallControls />
           </div>

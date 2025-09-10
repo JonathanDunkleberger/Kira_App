@@ -4,7 +4,8 @@ import 'dotenv/config';
 import http from 'node:http';
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
+import { prisma as prismaSingleton } from './lib/prisma';
 
 import { getSupabaseServerAdmin } from './lib/server/supabaseAdmin';
 // Legacy STT & streaming TTS utilities retained for fallback, but primary path now uses
@@ -127,7 +128,7 @@ wss.on('connection', async (ws, req) => {
   const token = url.searchParams.get('token') || '';
   const ttsFmt = (url.searchParams.get('tts') as 'webm' | 'mp3' | null) || 'webm';
   const supa = getSupabaseServerAdmin();
-  const prisma = new PrismaClient();
+  const prisma = prismaSingleton;
   // If no conversationId provided, create a chat_session (conversation) row
   // TODO(auto-resume): In a future iteration we can accept a short-lived resume token here
   // and attempt to look up / re-associate the most recent active chat_session for the user
@@ -136,13 +137,10 @@ wss.on('connection', async (ws, req) => {
   // reconnection flows later without exposing history UI.
   if (!conversationId) {
     try {
-      // Create a guest conversation (no user association yet) using Prisma Conversation model
-      const convo = await prisma.conversation.create({
-        data: {
-          userId: 'guest', // placeholder; optionally replace with a synthetic per-visitor id strategy
-          title: 'New Conversation',
-          isGuest: true,
-        },
+      const convo = await createConversationWithRetry(prisma, {
+        userId: 'guest',
+        title: 'New Conversation',
+        isGuest: true,
       });
       conversationId = convo.id;
       if (conversationId && ws.readyState === 1) {
@@ -269,3 +267,29 @@ function sendJson(ws: WebSocket, data: object) {
 // Removed legacy flush-mode transcription helpers (transcribeViaOpenAI / guessExt)
 
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
+// Require critical env at startup (fail fast)
+function requireEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env ${name}`);
+  return v;
+}
+requireEnv('DATABASE_URL');
+requireEnv('DIRECT_URL');
+
+// Simple retry helper for transient DB errors
+async function createConversationWithRetry(
+  prisma: PrismaClient,
+  data: { userId: string; title: string; isGuest?: boolean },
+) {
+  const max = 3;
+  for (let attempt = 1; attempt <= max; attempt++) {
+    try {
+      return await prisma.conversation.create({ data });
+    } catch (err) {
+      if (attempt === max) throw err;
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+  throw new Error('unreachable');
+}

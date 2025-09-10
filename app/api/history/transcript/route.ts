@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -20,9 +20,8 @@ export async function GET(req: Request) {
   } = await supa.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const prisma = new PrismaClient();
   try {
-    const convo = await prisma.conversation.findFirst({
+  const convo = await prisma.conversation.findFirst({
       where: { id: chatSessionId, userId: user.id },
       select: { id: true },
     });
@@ -33,7 +32,7 @@ export async function GET(req: Request) {
       select: { id: true, text: true, sender: true, createdAt: true },
     });
     return NextResponse.json(
-  msgs.map((m: { id: string; text: string; sender: string; createdAt: Date }) => ({
+      msgs.map((m: { id: string; text: string; sender: string; createdAt: Date }) => ({
         id: m.id,
         role: m.sender,
         content: m.text,

@@ -24,25 +24,33 @@ export async function warmAzureTtsConnection(): Promise<void> {
   }
 }
 
+// --- Azure TTS settings live here ---
+// Voice, rate, and pitch are configured in code (can be overridden via env).
+const VOICE_NAME = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
+const RATE = process.env.AZURE_TTS_RATE || '+25%';
+const PITCH = process.env.AZURE_TTS_PITCH || '+25%';
+
+function createSSML(text: string): string {
+  return `
+  <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+    <voice name="${VOICE_NAME}">
+      <prosody rate="${RATE}" pitch="${PITCH}">${escapeXml(text)}</prosody>
+    </voice>
+  </speak>`.trim();
+}
+// --- end settings block ---
+
 export async function synthesizeSpeech(
   text: string,
   format: 'webm' | 'mp3' = 'webm',
 ): Promise<string> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
-  const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
-  const RATE = process.env.AZURE_TTS_RATE || '+25%';
-  const PITCH = process.env.AZURE_TTS_PITCH || '+25%';
 
   if (!KEY || !REGION) {
     throw new Error('Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION');
   }
-  const ssml = `
-  <speak version="1.0" xml:lang="en-US">
-    <voice name="${VOICE}">
-      <prosody rate="${RATE}" pitch="${PITCH}">${escapeXml(text)}</prosody>
-    </voice>
-  </speak>`.trim();
+  const ssml = createSSML(text);
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
   // Choose output format based on client preference
@@ -78,19 +86,11 @@ export async function synthesizeSpeechStream(
 ): Promise<void> {
   const KEY = process.env.AZURE_SPEECH_KEY || '';
   const REGION = process.env.AZURE_SPEECH_REGION || '';
-  const VOICE = process.env.AZURE_TTS_VOICE || 'en-US-AshleyNeural';
-  const RATE = process.env.AZURE_TTS_RATE || '+25%';
-  const PITCH = process.env.AZURE_TTS_PITCH || '+25%';
 
   if (!KEY || !REGION) {
     throw new Error('Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION');
   }
-  const ssml = `
-  <speak version="1.0" xml:lang="en-US">
-    <voice name="${VOICE}">
-      <prosody rate="${RATE}" pitch="${PITCH}">${escapeXml(text)}</prosody>
-    </voice>
-  </speak>`.trim();
+  const ssml = createSSML(text);
 
   const url = `https://${REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
   const outFmt =

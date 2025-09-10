@@ -1,8 +1,7 @@
 // lib/entitlements.ts
 // Utilities for loading entitlement + usage snapshot from new schema
 import { createClient } from '@supabase/supabase-js';
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { prisma } from './prisma';
 
 const svc = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

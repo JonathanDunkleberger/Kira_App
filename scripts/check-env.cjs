@@ -39,7 +39,9 @@ if (missingRuntime.length) {
 }
 
 if (process.env.VERCEL && !process.env.DATABASE_URL) {
-  console.warn('[build] Warning: DATABASE_URL missing during Vercel build. Prisma client should not initialize at build, but runtime queries will fail.');
+  console.warn(
+    '[build] Warning: DATABASE_URL missing during Vercel build. Prisma client should not initialize at build, but runtime queries will fail.',
+  );
 }
 
 console.log('[env] Build env check complete.');

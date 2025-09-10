@@ -6,11 +6,16 @@ services:
     region: oregon
     buildCommand: |
       npm ci --no-audit --no-fund --progress=false
+      npm run prisma:generate
       npm run build:server
-    startCommand: npm run start:server
+    startCommand: npm run prisma:deploy && npm run start:server
     envVars:
       - key: NODE_VERSION
-        value: 18.20.3
+        value: 20.12.2
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: AZURE_SPEECH_KEY

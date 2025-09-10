@@ -1,6 +1,4 @@
-import Link from 'next/link';
-
-import AuthForm from '@/components/AuthForm';
+import { SignUp } from '@clerk/nextjs';
 
 export default function SignUpPage() {
   return (
@@ -10,15 +8,9 @@ export default function SignUpPage() {
         <p className="text-sm text-white/60 text-center mt-1">
           You’ll be able to upgrade to Pro on the next step.
         </p>
-        <div className="mt-6">
-          <AuthForm mode="signup" afterSuccessHref="/?next=upgrade" />
+        <div className="mt-6 flex justify-center">
+          <SignUp routing="path" path="/sign-up" redirectUrl="/?next=upgrade" />
         </div>
-        <p className="text-sm text-white/50 mt-4 text-center">
-          Already have an account?{' '}
-          <Link href="/sign-in" className="text-white hover:underline">
-            Log in
-          </Link>
-        </p>
       </div>
     </main>
   );

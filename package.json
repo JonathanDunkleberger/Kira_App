@@ -8,12 +8,10 @@
   },
   "scripts": {
     "dev:next": "next dev -p 3000",
-    "dev:server": "tsx socket-server.ts",
-    "dev": "npm-run-all --parallel dev:next dev:server",
+  "dev": "npm-run-all dev:next",
     "build": "node scripts/check-env.cjs && next build",
-    "build:server": "tsc -p tsconfig.server.json && tsc-alias -p tsconfig.server.json --verbose --resolve-full-paths --resolve-full-extension .js",
-    "start": "node --loader tsconfig-paths/register dist/socket-server.js",
-    "start:server": "node dist/socket-server.js",
+    
+    
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
     "lint": "eslint .",
@@ -42,7 +40,6 @@
     "@prisma/client": "^6.15.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-icons": "^1.3.2",
     "@ricky0123/vad-web": "0.0.27",
     "@stripe/react-stripe-js": "2.8.0",
     "@stripe/stripe-js": "3.4.1",
@@ -64,7 +61,6 @@
     "stripe": "16.10.0",
     "svix": "^1.76.1",
     "tsconfig-paths": "^4.2.0",
-    "ws": "^8.18.3",
     "zod": "^4.0.0",
     "zustand": "^4.5.7"
   },

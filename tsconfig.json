@@ -30,7 +30,6 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "socket-server.ts",
     "lib/**/*.ts",
     "scripts/**/*.js",
     "types/**/*.d.ts",

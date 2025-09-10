@@ -56,19 +56,19 @@ export async function fetchSessionSeconds(): Promise<number | null> {
 }
 
 export async function startCheckout(): Promise<void> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) {
-    window.location.href = '/sign-up?next=upgrade';
-    return;
-  }
+  // Require Clerk session on client; redirect to Clerk sign up if missing
+  // We call the server route without bearer token (Clerk server reads from cookies)
+  // which avoids the previous Supabase token coupling.
+  // If unauthenticated, server will 401 and we send to sign-up.
   const r = await fetch('/api/stripe/create-checkout', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` },
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j?.url) {
+    if (r.status === 401) {
+      window.location.href = '/sign-up?next=upgrade';
+      return;
+    }
     alert(j?.error || `Server error: ${r.status}`);
     return;
   }
@@ -76,19 +76,15 @@ export async function startCheckout(): Promise<void> {
 }
 
 export async function openBillingPortal() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) {
-    window.location.href = '/sign-in';
-    return;
-  }
   const r = await fetch('/api/stripe/portal', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}` },
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j?.url) {
+    if (r.status === 401) {
+      window.location.href = '/sign-in';
+      return;
+    }
     alert(j?.error || 'Portal error');
     return;
   }

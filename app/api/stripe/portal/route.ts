@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { currentUser } from '@clerk/nextjs/server';
 import Stripe from 'stripe';
 
 import { envServer as env } from '@/lib/server/env.server';
@@ -8,16 +9,11 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = req.headers.get('authorization') || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const cu = await currentUser();
+  if (!cu) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const sb = getSupabaseServerAdmin();
-    const { data: userData, error } = await sb.auth.getUser(token);
-    if (error || !userData?.user)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const userId = userData.user.id;
+  const userId = cu.id;
+  const sb = getSupabaseServerAdmin();
     const { data: ent } = await sb
       .from('entitlements')
       .select('stripe_customer_id')
@@ -29,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     // If we don't have a stored Stripe customer, try to find by email and persist for next time
     if (!stripeCustomerId) {
-      const email = userData.user.email;
+      const email = cu.emailAddresses?.[0]?.emailAddress;
       if (!email)
         return NextResponse.json(
           { error: 'No email on account. Please contact support.' },

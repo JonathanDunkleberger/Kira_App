@@ -33,6 +33,7 @@
     "socket-server.ts",
     "lib/**/*.ts",
     "scripts/**/*.js",
+  "types/**/*.d.ts",
     ".next/types/**/*.ts"
   ],
   "exclude": ["node_modules", ".next", "dist", "build", "artifacts"]

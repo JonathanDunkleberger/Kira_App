@@ -17,7 +17,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   try {
-  const convos = await prisma.conversation.findMany({
+    const convos = await prisma.conversation.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
       take: 100,

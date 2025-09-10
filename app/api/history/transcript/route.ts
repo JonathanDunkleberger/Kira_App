@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   try {
-  const convo = await prisma.conversation.findFirst({
+    const convo = await prisma.conversation.findFirst({
       where: { id: chatSessionId, userId: user.id },
       select: { id: true },
     });

@@ -71,7 +71,7 @@ export async function synthesizeSpeech(
       synthesizer.speakSsmlAsync(
         ssml,
         (res: any) => resolve(res),
-    (err: string) => reject(err),
+        (err: string) => reject(err),
       );
     });
     const audio = Buffer.from(new Uint8Array((result as any).audioData));
@@ -116,11 +116,11 @@ export async function synthesizeSpeechStream(
         await Promise.resolve();
       }
     })();
-  await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       synthesizer.speakSsmlAsync(
         ssml,
         () => resolve(),
-    (err: string) => reject(err),
+        (err: string) => reject(err),
       );
     });
     await reader;

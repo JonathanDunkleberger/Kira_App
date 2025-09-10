@@ -9,6 +9,8 @@ out/
 # Builds
 build/
 dist/
+dist-server/
+artifacts/
 
 # Testing/coverage
 coverage/

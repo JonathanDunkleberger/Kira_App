@@ -49,7 +49,7 @@ Modern web architecture with a dedicated real‑time voice server. Business logi
 | Frontend                  | Next.js, React, Tailwind CSS, Framer Motion                         |
 | Voice backend (real‑time) | Node WebSocket server (ws) on Render                                |
 | App APIs                  | Next.js API Routes (Vercel or any Node host)                        |
-| Database (current)        | Transitional in-memory stubs (Prisma migration pending)            |
+| Database (current)        | Transitional in-memory stubs (Prisma migration pending)             |
 | AI                        | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
 | Payments                  | Stripe Checkout & Webhooks                                          |
 
@@ -306,3 +306,45 @@ Released under the MIT License – see `LICENSE`.
 ### 2025-09 Voice Socket Consolidation
 
 Legacy `lib/useVoiceSocket.ts` (singleton helpers) was removed. Unified access lives in `lib/voice.ts`, which wraps the newer hook-based implementation in `lib/hooks/useVoiceSocket.ts` while presenting the familiar API (`connectVoice`, `startMic`, `stopMicForUtterance`, `endCall`, `sendJson`, `setMuted`). Extend `lib/voice.ts` if additional surface area is required instead of recreating parallel socket modules.
+
+### Prisma Schema Overview (New)
+
+Core relational entities now defined with Prisma:
+
+- User (app_users): clerk-sourced id, plan tier (FREE/PRO), relations to conversations, usage days, subscriptions.
+- Conversation (app_conversations): belongs to user, has many messages.
+- Message (app_messages): role-based (user/assistant/system) text log, relational to conversation (and optional user).
+- DailyUsage (app_daily_usage): aggregated per-user daily seconds, unique(userId, day).
+- Subscription (app_subscriptions): Stripe subscription + status metadata.
+- PaymentEvent (app_payment_events): raw Stripe webhook events for audit.
+- Achievement / UserAchievement: static catalog + earned joins.
+
+Apply migrations locally:
+```powershell
+# Ensure env vars loaded (Windows PowerShell)
+$env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | ForEach-Object { ($_ -split '=',2)[1] })
+
+npx prisma migrate dev
+```
+
+Deploy migrations (CI / Production):
+```bash
+npx prisma migrate deploy
+```
+
+Generate client (after schema changes):
+```bash
+npx prisma generate
+```
+
+Seed (optional local):
+```bash
+node prisma/seed.ts
+```
+
+Next steps (Phase 1 follow-up):
+1. Implement `ensureUser()` middleware helper.
+2. Replace stub conversation endpoints with Prisma CRUD.
+3. Add usage accrual on heartbeat finalize.
+4. Wire Stripe webhooks -> Subscription & PaymentEvent tables.
+5. Populate Achievement catalog and award logic.

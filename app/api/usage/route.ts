@@ -5,21 +5,7 @@ import { recordUsageSeconds, getRemainingSeconds } from '@/lib/usage-prisma';
 
 export const dynamic = 'force-dynamic';
 
-function getClientIp(req: NextRequest | Request): string | undefined {
-  // Cast to NextRequest when possible to access headers the same way
-  // (Both have headers). We read typical proxy headers.
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0];
-    if (first) {
-      const ip = first.trim();
-      if (ip) return ip;
-    }
-  }
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp) return realIp;
-  return undefined;
-}
+// Guest/IP fallback removed: authenticated usage only for now.
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,14 +20,7 @@ export async function POST(req: NextRequest) {
         { headers: { 'Cache-Control': 'no-store, max-age=0' } },
       );
     }
-    const ip = getClientIp(req);
-    if (!ip) return NextResponse.json({ error: 'Unable to determine IP' }, { status: 400 });
-    if (secondsUsed > 0) await recordUsageSeconds({ ip }, secondsUsed);
-    const { remaining } = await getRemainingSeconds({ ip });
-    return NextResponse.json(
-      { secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'ip' },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
-    );
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage POST Error:', error.message);
@@ -61,13 +40,7 @@ export async function GET(req: NextRequest) {
         { headers: { 'Cache-Control': 'no-store, max-age=0' } },
       );
     }
-    const ip = getClientIp(req);
-    if (!ip) return NextResponse.json({ error: 'Unable to determine IP' }, { status: 400 });
-    const { remaining } = await getRemainingSeconds({ ip });
-    return NextResponse.json(
-      { secondsRemaining: remaining, dailyLimitSeconds: FREE_TRIAL_SECONDS, subject: 'ip' },
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
-    );
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage GET Error:', error.message);

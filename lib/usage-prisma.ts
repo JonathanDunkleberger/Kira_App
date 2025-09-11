@@ -5,37 +5,26 @@ function startOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
 
-type Identity = { userId?: string; ip?: string };
-
-function identityWhere(identity: Identity, start: Date, end: Date) {
-  if (identity.userId) {
-    return { userId: identity.userId, date: { gte: start, lt: end } };
-  }
-  if (identity.ip) {
-    return { ip: identity.ip, date: { gte: start, lt: end } };
-  }
-  // Impossible in normal usage; return clause that matches nothing
-  return { id: '__none__' };
-}
+type Identity = { userId?: string };
 
 export async function getDailyUsageSeconds(identity: Identity) {
+  if (!identity.userId) return 0; // guest flow deferred
   const start = startOfUtcDay();
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  const agg = await prisma.usage.aggregate({
-    _sum: { seconds: true },
-    where: identityWhere(identity, start, end),
-  });
-  return agg._sum.seconds ?? 0;
+  // @ts-ignore prisma client may expose as dailyUsage based on model name
+  const row = await prisma.dailyUsage.findFirst({ where: { userId: identity.userId, day: start } });
+  return row?.seconds ?? 0;
 }
 
 export async function recordUsageSeconds(identity: Identity, seconds: number) {
+  if (!identity.userId) return; // skip guest for now
   if (seconds <= 0) return;
-  const data: { userId?: string; ip?: string; seconds: number } = {
-    seconds: Math.ceil(seconds),
-  };
-  if (identity.userId) data.userId = identity.userId;
-  else if (identity.ip) data.ip = identity.ip;
-  await prisma.usage.create({ data });
+  const start = startOfUtcDay();
+  // @ts-ignore
+  await prisma.dailyUsage.upsert({
+    where: { userId_day: { userId: identity.userId, day: start } },
+    create: { userId: identity.userId, day: start, seconds: Math.ceil(seconds) },
+    update: { seconds: { increment: Math.ceil(seconds) } },
+  });
 }
 
 export async function getRemainingSeconds(identity: Identity) {

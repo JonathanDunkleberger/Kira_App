@@ -1,58 +1,128 @@
-// This is your Prisma schema file.
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id            String    @id @unique
-  email         String    @unique
-  tier          String    @default("free") // "free" or "pro"
-  createdAt     DateTime  @default(now())
-  usage         Usage[]
+  id            String            @id @unique
+  email         String            @unique
+  createdAt     DateTime          @default(now())
+  plan          PlanTier          @default(FREE)
+  updatedAt     DateTime          @updatedAt
   conversations Conversation[]
+  usageDays     DailyUsage[]
+  messages      Message[]         @relation("UserMessages")
+  paymentEvents PaymentEvent[]
+  subscriptions Subscription[]
+  achievements  UserAchievement[]
+
   @@map("app_users")
 }
 
-model Usage {
+model DailyUsage {
   id        String   @id @default(cuid())
-  userId    String?  // Nullable to allow guest usage tracked by IP
-  user      User?    @relation(fields: [userId], references: [id])
-  ip        String?  // IP address for guest usage records
-  seconds   Int
-  date      DateTime @default(now())
-  @@index([userId, date])
-  @@index([ip, date])
-  // For quick lookup aggregate by identity (user or ip) within a day
-  @@map("app_usage")
+  userId    String
+  day       DateTime
+  seconds   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, day])
+  @@index([day])
+  @@map("app_daily_usage")
 }
 
 model Conversation {
   id               String    @id @default(cuid())
   userId           String
-  user             User      @relation(fields: [userId], references: [id])
   title            String    @default("New Conversation")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   isGuest          Boolean   @default(false)
   secondsRemaining Int?
+  user             User      @relation(fields: [userId], references: [id])
   messages         Message[]
+
+  @@index([userId, createdAt])
   @@map("app_conversations")
 }
 
 model Message {
-  id              String        @id @default(cuid())
-  conversationId  String
-  conversation    Conversation  @relation(fields: [conversationId], references: [id])
-  text            String
-  sender          String // "user" or "ai"
-  createdAt       DateTime      @default(now())
+  id             String       @id @default(cuid())
+  conversationId String
+  text           String
+  createdAt      DateTime     @default(now())
+  role           String
+  userId         String?
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  user           User?        @relation("UserMessages", fields: [userId], references: [id])
+
+  @@index([conversationId, createdAt])
   @@map("app_messages")
+}
+
+model Subscription {
+  id               String    @id @default(cuid())
+  userId           String
+  stripeCustomer   String?   @unique
+  stripeSubId      String?   @unique
+  status           String    @default("inactive")
+  plan             PlanTier  @default(PRO)
+  currentPeriodEnd DateTime?
+  cancelAt         DateTime?
+  canceledAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("app_subscriptions")
+}
+
+model PaymentEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  stripeId    String   @unique
+  type        String
+  status      String?
+  amountCents Int?
+  currency    String?  @default("usd")
+  raw         Json
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("app_payment_events")
+}
+
+model Achievement {
+  id          String            @id
+  name        String
+  description String
+  createdAt   DateTime          @default(now())
+  userAwards  UserAchievement[]
+
+  @@map("app_achievements")
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime    @default(now())
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  user          User        @relation(fields: [userId], references: [id])
+
+  @@unique([userId, achievementId])
+  @@map("app_user_achievements")
+}
+
+enum PlanTier {
+  FREE
+  PRO
 }

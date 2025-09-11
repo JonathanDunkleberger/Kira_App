@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
         { headers: { 'Cache-Control': 'no-store, max-age=0' } },
       );
     }
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage/check GET Error:', error.message);

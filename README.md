@@ -320,6 +320,8 @@ Core relational entities now defined with Prisma:
 - Achievement / UserAchievement: static catalog + earned joins.
 
 Apply migrations locally:
+
+
 ```powershell
 # Ensure env vars loaded (Windows PowerShell)
 $env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | ForEach-Object { ($_ -split '=',2)[1] })
@@ -327,22 +329,30 @@ $env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | F
 npx prisma migrate dev
 ```
 
+
 Deploy migrations (CI / Production):
+
 ```bash
 npx prisma migrate deploy
 ```
 
+
 Generate client (after schema changes):
+
 ```bash
 npx prisma generate
+
 ```
 
 Seed (optional local):
+
 ```bash
+
 node prisma/seed.ts
 ```
 
 Next steps (Phase 1 follow-up):
+
 1. Implement `ensureUser()` middleware helper.
 2. Replace stub conversation endpoints with Prisma CRUD.
 3. Add usage accrual on heartbeat finalize.

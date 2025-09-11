@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         { headers: { 'Cache-Control': 'no-store, max-age=0' } },
       );
     }
-  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   } catch (e) {
     const error = e as Error;
     console.error('/api/usage/update POST Error:', error.message);

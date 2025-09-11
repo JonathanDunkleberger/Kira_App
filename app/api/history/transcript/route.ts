@@ -18,7 +18,9 @@ export async function GET(req: Request) {
     });
     if (!convo) return NextResponse.json({ error: 'not found' }, { status: 404 });
     // Raw query to ensure we read the current role column even if TS client cache lags
-    const rows = await prisma.$queryRaw<Array<{ id: string; text: string; role: string; createdAt: Date }>>`
+    const rows = await prisma.$queryRaw<
+      Array<{ id: string; text: string; role: string; createdAt: Date }>
+    >`
       SELECT id, text, role, "createdAt" FROM "public"."app_messages"
       WHERE "conversationId" = ${chatSessionId}
       ORDER BY "createdAt" ASC

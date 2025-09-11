@@ -17,7 +17,8 @@ export default function AccountPage() {
     if (!hydrated) return;
     if (!session) router.push('/sign-up');
   }, [hydrated, session, router]);
-  const email = session?.user?.email ?? null;
+    // Email no longer available (session now minimal with userId only)
+    const email = null;
   const plan = isPro ? 'supporter' : ('free' as const);
   const status = isPro ? 'active' : ('inactive' as const);
   const seconds = dailySecondsRemaining ?? 0;

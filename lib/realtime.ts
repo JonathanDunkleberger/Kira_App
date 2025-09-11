@@ -1,25 +1,10 @@
-import { supabase } from './supabaseClient';
+// Supabase realtime removed; this module can be refactored or deleted.
 
-export function subscribeToConversation(conversationId: string, callback: (message: any) => void) {
-  return supabase
-    .channel(`conversation:${conversationId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`,
-      },
-      (payload) => {
-        callback((payload as any).new);
-      },
-    )
-    .subscribe();
+export function subscribeToConversation(_conversationId: string, _callback: (message: any) => void) {
+  // Realtime disabled; return disposable no-op
+  return { unsubscribe: () => {} };
 }
 
-export function unsubscribeFromConversation(subscription: any) {
-  try {
-    supabase.removeChannel(subscription);
-  } catch {}
+export function unsubscribeFromConversation(_subscription: any) {
+  // No-op
 }

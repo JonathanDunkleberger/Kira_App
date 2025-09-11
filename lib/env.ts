@@ -11,9 +11,7 @@ const EnvSchema = z.object({
   AZURE_TTS_VOICE: z.string().default('en-US-AshleyNeural'),
   AZURE_TTS_RATE: z.string().default('+25%'),
   AZURE_TTS_PITCH: z.string().default('+25%'),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string(),
+  // Supabase (removed; no longer validated)
   STRIPE_SECRET_KEY: z.string(),
   STRIPE_PRICE_ID: z.string(),
   // Made optional to avoid build failures on missing secret in preview

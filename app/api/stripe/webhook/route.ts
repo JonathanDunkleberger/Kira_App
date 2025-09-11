@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
 import { envServer as env } from '@/lib/server/env.server';
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
@@ -23,66 +22,10 @@ export async function POST(req: NextRequest) {
     return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
-  const sb = getSupabaseServerAdmin();
-
-  async function activatePro(
-    userId: string,
-    customerId?: string | null,
-    subscriptionId?: string | null,
-  ) {
-    await sb.from('entitlements').upsert({
-      user_id: userId,
-      plan: 'supporter',
-      status: 'active',
-      seconds_remaining: 999_999_999,
-      stripe_customer_id: customerId ?? undefined,
-      stripe_subscription_id: subscriptionId ?? undefined,
-    });
-  }
-
-  async function updateStatusByCustomer(
-    customerId: string,
-    status: string,
-    subscriptionId?: string,
-  ) {
-    const { data } = await sb
-      .from('entitlements')
-      .select('user_id')
-      .eq('stripe_customer_id', customerId)
-      .maybeSingle();
-
-    if (data?.user_id) {
-      await sb.from('entitlements').upsert({
-        user_id: data.user_id,
-        plan: 'supporter',
-        status,
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-      });
-    }
-  }
-
-  async function updateStatusBySubscription(
-    subscriptionId: string,
-    status: string,
-    customerId?: string,
-  ) {
-    const { data } = await sb
-      .from('entitlements')
-      .select('user_id')
-      .eq('stripe_subscription_id', subscriptionId)
-      .maybeSingle();
-
-    if (data?.user_id) {
-      await sb.from('entitlements').upsert({
-        user_id: data.user_id,
-        plan: 'supporter',
-        status,
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-      });
-    }
-  }
+  // Supabase removed: skip persistence updates.
+  async function activatePro(_userId?: string, _customerId?: string | null, _subscriptionId?: string | null) { /* no-op */ }
+  async function updateStatusByCustomer(_customerId?: string, _status?: string, _subscriptionId?: string) { /* no-op */ }
+  async function updateStatusBySubscription(_subscriptionId?: string, _status?: string, _customerId?: string) { /* no-op */ }
 
   switch (event.type) {
     case 'checkout.session.completed': {

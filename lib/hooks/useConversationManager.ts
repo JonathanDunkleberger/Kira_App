@@ -2,7 +2,6 @@
 
 'use client';
 import { useCallback, useState, useEffect } from 'react';
-import { Session } from '@supabase/supabase-js';
 
 import {
   listConversations as apiListConversations,
@@ -14,23 +13,20 @@ import {
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
 type Convo = { id: string; title: string | null; updated_at: string };
 
-export function useConversationManager(session: Session | null) {
+// Session removed (Supabase dependency purged). Hook is now auth-agnostic; caller ensures user context.
+export function useConversationManager() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allConversations, setAllConversations] = useState<Convo[]>([]);
 
   const fetchAllConversations = useCallback(async () => {
-    if (!session) {
-      setAllConversations([]);
-      return;
-    }
     try {
       const convos = await apiListConversations();
       setAllConversations(convos);
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     }
-  }, [session]);
+  }, []);
 
   useEffect(() => {
     fetchAllConversations();

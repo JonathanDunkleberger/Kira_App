@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import OpenAI from '@/lib/server/openai-compat';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -26,7 +25,6 @@ JSON Output:
 export async function POST(req: NextRequest) {
   try {
     const { userId, messages } = await req.json();
-    const sbAdmin = getSupabaseServerAdmin();
 
     if (!userId || !messages || messages.length === 0) {
       return NextResponse.json(
@@ -79,8 +77,8 @@ export async function POST(req: NextRequest) {
       embedding: embeddingResponse.data[i].embedding,
     }));
 
-    const { error } = await sbAdmin.from('user_memories').insert(memoriesToInsert);
-    if (error) throw error;
+  // Skip persistence (stub)
+  console.log('[memory] (stub) would store', memoriesToInsert.length, 'facts');
 
     return NextResponse.json({ success: true, memories_saved: facts.length });
   } catch (error: any) {
@@ -95,19 +93,8 @@ export async function POST(req: NextRequest) {
 // Lightweight count endpoint: return number of memories for the authed user
 export async function GET(req: NextRequest) {
   try {
-    const sbAdmin = getSupabaseServerAdmin();
-    const token = req.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const { data: userData } = await sbAdmin.auth.getUser(token);
-    const userId = (userData as any)?.user?.id as string | undefined;
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { count, error } = await sbAdmin
-      .from('user_memories')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-    if (error) throw error;
-    return NextResponse.json({ count: count ?? 0 });
+  // Stubbed: always return zero for now
+  return NextResponse.json({ count: 0 });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Unknown error' }, { status: 500 });
   }

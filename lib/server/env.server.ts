@@ -16,10 +16,7 @@ const EnvSchema = z.object({
   AZURE_TTS_RATE: z.string().default('+25%'),
   AZURE_TTS_PITCH: z.string().default('+25%'),
 
-  // Supabase
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string(),
+  // Supabase (removed; no longer validated)
 
   // Stripe
   STRIPE_SECRET_KEY: z.string(),

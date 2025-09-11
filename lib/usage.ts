@@ -1,4 +1,3 @@
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
 
 /**
@@ -6,57 +5,13 @@ import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
  * FREE_TRIAL_SECONDS now means "per day".
  */
 export async function ensureEntitlements(userId: string, perDay: number = FREE_TRIAL_SECONDS) {
-  const sb = getSupabaseServerAdmin();
-
-  // Create row if missing
-  const { data } = await sb
-    .from('entitlements')
-    .select('user_id')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (!data) {
-    await sb.from('entitlements').insert({
-      user_id: userId,
-      plan: 'free',
-      status: 'inactive',
-      trial_seconds_per_day: perDay,
-      trial_last_reset: new Date().toISOString().slice(0, 10), // YYYY-MM-DD UTC date
-      trial_seconds_remaining: perDay,
-    });
-    return;
-  }
-
-  // Reset daily if date changed (UTC)
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: entRow } = await sb
-    .from('entitlements')
-    .select('trial_last_reset, trial_seconds_per_day, trial_seconds_remaining')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  // Always prefer the server-configured value (env) to avoid stale DB overrides
-  const perDayValue = perDay;
-  if (!entRow?.trial_last_reset || entRow.trial_last_reset !== today) {
-    await sb
-      .from('entitlements')
-      .update({
-        trial_last_reset: today,
-        trial_seconds_per_day: perDayValue,
-        trial_seconds_remaining: perDayValue,
-      })
-      .eq('user_id', userId);
-  }
+  // Placeholder no-op; Supabase removed. Future: implement via Prisma.
+  return;
 }
 
 export async function getEntitlement(userId: string) {
-  const sb = getSupabaseServerAdmin();
-  const { data } = await sb
-    .from('entitlements')
-    .select('status, plan, trial_seconds_remaining, trial_last_reset, trial_seconds_per_day')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  // Fallbacks keep API stable
+  // Static placeholder response until Prisma entitlements added.
+  const data: any = null;
   return {
     status: (data?.status ?? 'inactive') as 'inactive' | 'active' | 'past_due' | 'canceled',
     plan: (data?.plan ?? 'free') as 'free' | 'supporter',
@@ -86,17 +41,11 @@ export async function decrementDailySeconds(
   userId: string,
   secondsUsed: number,
 ): Promise<number | undefined> {
-  const sb = getSupabaseServerAdmin();
-  await ensureEntitlements(userId, FREE_TRIAL_SECONDS);
+  // Placeholder: no persistence. Returns decremented simulated value only.
   const ent = await getEntitlement(userId);
-  if (ent.status === 'active') return; // Pro users don’t decrement
-
-  const currentRemaining = ent.trial_seconds_remaining ?? 0;
+  if (ent.status === 'active') return;
+  const currentRemaining = ent.trial_seconds_remaining ?? FREE_TRIAL_SECONDS;
   const newRemaining = Math.max(0, currentRemaining - secondsUsed);
-  await sb
-    .from('entitlements')
-    .update({ trial_seconds_remaining: newRemaining })
-    .eq('user_id', userId);
   return newRemaining;
 }
 
@@ -115,12 +64,6 @@ export async function setPro(
     status?: 'active' | 'past_due' | 'canceled';
   },
 ) {
-  const sb = getSupabaseServerAdmin();
-  await sb.from('entitlements').upsert({
-    user_id: userId,
-    plan: 'supporter',
-    status: opts?.status ?? 'active',
-    stripe_customer_id: opts?.stripeCustomerId,
-    stripe_subscription_id: opts?.stripeSubscriptionId,
-  });
+  // Placeholder: would mark user as pro in future Prisma table.
+  return;
 }

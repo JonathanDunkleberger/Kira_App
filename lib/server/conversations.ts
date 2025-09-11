@@ -1,24 +1,36 @@
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
+// Supabase-based conversation helpers removed. Placeholder implementations provided.
+// TODO: Implement persistent storage with Prisma.
+
+import { randomUUID } from 'crypto';
+
 import { runChat } from '@/lib/llm';
 
-const supa = getSupabaseServerAdmin();
+interface MemoryConversationMeta {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string | null;
+  is_guest: boolean;
+}
+
+const memoryStore: Record<string, { meta: MemoryConversationMeta; messages: Array<{ role: 'user' | 'assistant'; content: string }> }> = {};
 
 export async function createNewConversation(userId: string | null, title?: string) {
-  const isGuest = !userId;
-  const { data, error } = await supa
-    .from('conversations')
-    .insert({
-      user_id: userId,
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  memoryStore[id] = {
+    meta: {
+      id,
       title: title || 'New Conversation',
-      is_guest: isGuest,
-      seconds_remaining: isGuest ? FREE_TRIAL_SECONDS : null,
-    })
-    .select('id, title, created_at, updated_at')
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as { id: string; title: string; created_at: string; updated_at: string };
+      created_at: now,
+      updated_at: now,
+      user_id: userId,
+      is_guest: !userId,
+    },
+    messages: [],
+  };
+  return memoryStore[id].meta;
 }
 
 export async function saveMessage(
@@ -27,19 +39,10 @@ export async function saveMessage(
   content: string,
   userId: string | null,
 ) {
-  const { error } = await supa
-    .from('messages')
-    .insert({ conversation_id: conversationId, role, content, user_id: userId });
-
-  if (error) {
-    console.error('[DB] Failed to insert message', { conversationId, error });
-    return;
-  }
-
-  await supa
-    .from('conversations')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', conversationId);
+  const convo = memoryStore[conversationId];
+  if (!convo) return;
+  convo.messages.push({ role, content });
+  convo.meta.updated_at = new Date().toISOString();
 }
 
 export async function generateConversationTitle(
@@ -47,42 +50,22 @@ export async function generateConversationTitle(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<string> {
   const content = history.map((m) => `${m.role}: ${m.content}`).join('\n');
-  const systemPrompt =
-    'Summarize the following conversation into a short, catchy title of 5 words or less. Just return the title, nothing else.';
-
-  const title = await runChat([
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content },
-  ]);
-  const cleanedTitle = (title || '').replace(/["\\]/g, '').trim();
-  if (cleanedTitle) {
-    await supa.from('conversations').update({ title: cleanedTitle }).eq('id', conversationId);
+  try {
+    const title = await runChat([
+      { role: 'system', content: 'Summarize the following conversation into ≤5 word title.' },
+      { role: 'user', content },
+    ]);
+    const cleaned = (title || '').replace(/["\\]/g, '').trim();
+    if (cleaned && memoryStore[conversationId]) memoryStore[conversationId].meta.title = cleaned;
+    return cleaned;
+  } catch {
+    return 'Conversation';
   }
-  return cleanedTitle;
 }
 
 export async function claimGuestConversation(userId: string, guestConvId: string) {
-  // Re-assign conversation ownership
-  await supa
-    .from('conversations')
-    .update({ user_id: userId, is_guest: false })
-    .eq('id', guestConvId);
-
-  // Transfer remaining free-trial seconds from guest to the new user's entitlement (best-effort)
-  try {
-    const { data: guestConv } = await supa
-      .from('conversations')
-      .select('seconds_remaining')
-      .eq('id', guestConvId)
-      .single();
-
-    if (guestConv && typeof (guestConv as any).seconds_remaining === 'number') {
-      await supa
-        .from('entitlements')
-        .update({ trial_seconds_remaining: (guestConv as any).seconds_remaining })
-        .eq('user_id', userId);
-    }
-  } catch (e) {
-    console.warn('Failed to transfer guest remaining seconds:', e);
-  }
+  const convo = memoryStore[guestConvId];
+  if (!convo) return;
+  convo.meta.user_id = userId;
+  convo.meta.is_guest = false;
 }

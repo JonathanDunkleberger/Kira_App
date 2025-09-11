@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-import { preferredTtsFormat } from '@/lib/audio';
-import { supabase } from '@/lib/client/supabaseClient';
-import { useUsage } from '@/lib/useUsage';
+import { preferredTtsFormat } from '../audio';
+import { useUsage } from '../useUsage';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -63,11 +62,7 @@ export function useVoiceSocket(
         if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current);
       } catch {}
       // token
-      try {
-        const { data } = await supabase.auth.getSession();
-        const token = data?.session?.access_token || '';
-        if (token) u.searchParams.set('token', token);
-      } catch {}
+  // Clerk cookie auth: no bearer token appended.
       // tts format
       try {
         const pref = preferredTtsFormat();

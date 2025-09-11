@@ -7,7 +7,9 @@ import { useEffect } from 'react';
 export default function CheckoutModal() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      console.warn('[Deprecated] CheckoutModal was rendered. Migrate to startCheckout()/openBillingPortal() flows.');
+      console.warn(
+        '[Deprecated] CheckoutModal was rendered. Migrate to startCheckout()/openBillingPortal() flows.',
+      );
     }
   }, []);
   return null;

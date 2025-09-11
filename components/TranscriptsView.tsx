@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
-import { supabase } from '@/lib/client/supabaseClient';
-import { subscribeToConversation, unsubscribeFromConversation } from '@/lib/realtime';
-import { AnimatedMessage } from '@/components/AnimatedTranscript';
+import { subscribeToConversation, unsubscribeFromConversation } from '../lib/realtime';
+import { AnimatedMessage } from './AnimatedTranscript';
+
 
 interface Message {
   role: 'user' | 'assistant';
@@ -45,14 +45,7 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
     if (!conversationId) return;
     setLoading(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(`/api/conversations/${conversationId}/messages`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+  const response = await fetch(`/api/conversations/${conversationId}/messages`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages || []);

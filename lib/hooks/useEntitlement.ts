@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { supabase } from '@/lib/client/supabaseClient';
 
 export type Entitlement = {
   userStatus: 'guest' | 'free' | 'pro';
@@ -53,11 +52,7 @@ export function useEntitlement(): Entitlement & {
       const guestId = getGuestId();
       const url = new URL('/api/session', window.location.origin);
       url.searchParams.set('guestId', guestId);
-      const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+  const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error('Failed to fetch session usage');
       const data = await res.json();
       // Derive userStatus from status/plan fields
@@ -118,21 +113,7 @@ export function useEntitlement(): Entitlement & {
   }, [setSecondsRemaining]);
 
   // Re-validate entitlement immediately on auth changes (login/logout/token refresh)
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'SIGNED_OUT' ||
-        event === 'TOKEN_REFRESHED' ||
-        event === 'USER_UPDATED'
-      ) {
-        fetchEnt();
-      }
-    });
-    return () => {
-      sub?.subscription?.unsubscribe();
-    };
-  }, [fetchEnt]);
+  // Auth change listener removed (Clerk handles reactive UI separately); periodic refresh remains.
 
   return { ...entitlement, refresh: fetchEnt, setSecondsRemaining };
 }

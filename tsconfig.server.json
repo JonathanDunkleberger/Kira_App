@@ -7,9 +7,6 @@
     "isolatedModules": false,
     "strict": false
   },
-  "include": [
-    
-    "types/**/*.d.ts"
-  ],
+  "include": ["types/**/*.d.ts"],
   "exclude": ["node_modules"]
 }

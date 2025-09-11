@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+// Supabase removed; placeholder auth until Clerk integration here.
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
@@ -9,20 +8,12 @@ export async function GET(req: Request) {
   const chatSessionId = url.searchParams.get('chatSessionId');
   if (!chatSessionId) return NextResponse.json({ error: 'missing chatSessionId' }, { status: 400 });
 
-  const cookieStore: any = cookies();
-  const supa = createServerClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-    },
-  });
-  const {
-    data: { user },
-  } = await supa.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const userId = null; // TODO: replace with Clerk user id
+  if (!userId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   try {
     const convo = await prisma.conversation.findFirst({
-      where: { id: chatSessionId, userId: user.id },
+  where: { id: chatSessionId, userId },
       select: { id: true },
     });
     if (!convo) return NextResponse.json({ error: 'not found' }, { status: 404 });

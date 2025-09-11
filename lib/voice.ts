@@ -2,7 +2,6 @@
 // Unified voice socket API bridging legacy singleton usage to the new hook-based implementation.
 // This lets components keep calling connectVoice/startMic/etc while we remove lib/useVoiceSocket.ts.
 
-import { supabase } from '@/lib/client/supabaseClient';
 import { preferredTtsFormat } from '@/lib/audio';
 import { useVoiceSocket as useVoiceHook } from '@/lib/hooks/useVoiceSocket';
 
@@ -31,11 +30,7 @@ async function resolveUrl(opts: ConnectArgs) {
   const u = new URL(WS_BASE);
   if (opts.conversationId) u.searchParams.set('conversationId', opts.conversationId);
   u.searchParams.set('persona', opts.persona);
-  try {
-    const { data } = await supabase.auth.getSession();
-    const token = data?.session?.access_token;
-    if (token) u.searchParams.set('token', token);
-  } catch {}
+  // Supabase auth token removed; Clerk cookies now used by backend directly.
   try {
     const pref = preferredTtsFormat();
     if (pref?.fmt) u.searchParams.set('tts', pref.fmt);

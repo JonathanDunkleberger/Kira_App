@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/client/supabaseClient';
+// Supabase client removed; adjust or replace data layer if needed.
 
 export async function sendUtterance(payload: { text: string }) {
   const r = await fetch('/api/utterance', {
@@ -30,14 +30,8 @@ export type Entitlement = {
 };
 
 export async function fetchEntitlement(): Promise<Entitlement | null> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return null;
-
-  const r = await fetch('/api/session', {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
+  // Supabase session removed; rely on server routes that read Clerk cookies directly.
+  const r = await fetch('/api/session', { headers: { 'Content-Type': 'application/json' } });
   if (!r.ok) return null;
 
   const j = await r.json();
@@ -92,37 +86,22 @@ export async function openBillingPortal() {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
-
-  // We intentionally DO NOT clear localStorage here.
-  // This ensures that after sign-out the browser falls back to the
-  // original guest identity (kiraGuestId) and does not get a new
-  // free allocation by generating a fresh guest.
-  window.location.reload();
+  // Redirect to Clerk sign out if available; fallback to location.
+  try {
+    window.location.href = '/sign-out';
+  } catch {
+    window.location.reload();
+  }
 }
 
 export async function ensureAnonSession(): Promise<void> {
-  // With email+password now in play, you might not want anon.
-  // Keep it no-op for now.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session) return;
+  // No-op: anon session concept removed with Clerk-only auth.
 }
 
 // --- Conversations (HTTP) ---
 async function getAuthHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  // Guests: no auth header, but keep JSON content-type by default
-  if (!session) {
-    return { 'Content-Type': 'application/json' } as Record<string, string>;
-  }
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${session.access_token}`,
-  } as Record<string, string>;
+  // Rely on Clerk cookie auth; no bearer header needed.
+  return { 'Content-Type': 'application/json' } as Record<string, string>;
 }
 
 export async function listConversations() {
@@ -182,12 +161,9 @@ export async function clearAllConversations() {
     'Are you sure you want to delete your entire chat history? This cannot be undone.',
   );
   if (!confirmed) return;
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Unauthorized');
-  const { error } = await supabase.from('conversations').delete().eq('user_id', user.id);
-  if (error) throw new Error(error.message);
+  // Replace with server route that performs authenticated purge
+  const res = await fetch('/api/conversations/purge', { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to clear conversations');
   window.location.reload();
 }
 
@@ -200,15 +176,7 @@ export async function deleteAccount() {
   if (!confirmed) return;
 
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) throw new Error('You must be logged in to delete your account.');
-
-    const response = await fetch('/api/user/delete', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
+  const response = await fetch('/api/user/delete', { method: 'POST' });
 
     if (!response.ok) {
       let msg = 'Failed to delete account.';
@@ -220,8 +188,7 @@ export async function deleteAccount() {
     }
 
     alert('Your account has been successfully deleted.');
-    await supabase.auth.signOut();
-    window.location.href = '/';
+  window.location.href = '/';
   } catch (error: any) {
     alert(`Error: ${error?.message || 'Unknown error'}`);
   }

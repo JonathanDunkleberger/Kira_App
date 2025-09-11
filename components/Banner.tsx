@@ -16,8 +16,8 @@ export default function Banner() {
     const q = new URLSearchParams(window.location.search);
     if (q.get('success') === '1') setMsg('Payment successful — Pro unlocked.');
     if (q.get('canceled') === '1') setMsg('Checkout canceled.');
-  // Clean success/canceled params after showing message once
-  if (q.get('success') === '1' || q.get('canceled') === '1') {
+    // Clean success/canceled params after showing message once
+    if (q.get('success') === '1' || q.get('canceled') === '1') {
       const url = new URL(window.location.href);
       url.searchParams.delete('success');
       url.searchParams.delete('canceled');

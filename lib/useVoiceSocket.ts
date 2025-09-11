@@ -2,7 +2,6 @@
 // Singleton voice WebSocket + mic helpers.
 import { useEffect, useState } from 'react';
 
-import { supaBrowser } from './supabase-browser';
 import { useUsage } from './useUsage';
 import { usePartialStore } from './partialStore';
 import { useAssistantStream } from './assistantStreamStore';
@@ -49,15 +48,9 @@ function resolveVoiceWsUrl(): string {
 
 type ConnectOpts = { persona: string; conversationId?: string };
 
+// Supabase removed: token retrieval stub
 async function getSupabaseAccessToken(): Promise<string | undefined> {
-  try {
-    const {
-      data: { session },
-    } = await supaBrowser().auth.getSession();
-    return session?.access_token || undefined;
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 function getVisitorId(): string {
@@ -166,14 +159,7 @@ function playTtsUrl(url: string) {
 }
 
 async function getToken(): Promise<string | undefined> {
-  try {
-    const {
-      data: { session },
-    } = await supaBrowser().auth.getSession();
-    return session?.access_token || undefined;
-  } catch {
-    return undefined;
-  }
+  return undefined; // auth stub
 }
 
 export async function connectVoice(opts: ConnectOpts) {

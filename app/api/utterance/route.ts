@@ -3,7 +3,6 @@ import { NextRequest } from 'next/server';
 // Legacy entitlement logic removed; new heartbeat-based usage accrual pending
 import OpenAI from '../../../lib/server/openai-compat';
 import { transcribeWebmToText } from '../../../lib/stt';
-import { getSupabaseServerAdmin } from '../../../lib/server/supabaseAdmin';
 // usageLimiter removed; heartbeat-based accrual will replace this
 type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -86,40 +85,17 @@ class StreamingTextResponse extends Response {
 // standardized paywall response imported from lib/http
 
 export async function POST(req: NextRequest) {
-  const sb = getSupabaseServerAdmin();
-  let userId: string | null = null;
+  // Supabase removed: use stub ids
+  let userId: string | null = req.headers.get('x-user-id');
   let conversationId: string | null = new URL(req.url).searchParams.get('conversationId');
   // legacy last-turn flag removed; client now uses automatic paywall watcher
 
   // Handle both authenticated and guest users
-  const token = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (token) {
-    const { data } = await sb.auth.getUser(token);
-    const user = (data as any)?.user;
-    if (user) userId = user.id;
-  }
+  // Auth stub: if no header userId treat as guest
   // New usage enforcement (authenticated users only). Guests still rely on conversation seconds.
   let isPro = false;
   if (userId) {
-    // TODO: enforce via entitlements/daily_usage once implemented
-  } else if (conversationId) {
-    // Guest conversation gating (unchanged for now)
-    try {
-      const { data: conv } = await sb
-        .from('conversations')
-        .select('seconds_remaining')
-        .eq('id', conversationId)
-        .single();
-      const secondsLeft = Number(conv?.seconds_remaining ?? 0);
-      if (secondsLeft <= 0) {
-        return new Response('Guest time limit exceeded.', {
-          status: 402,
-          headers: { 'X-Paywall-Required': 'true' },
-        });
-      }
-    } catch (e) {
-      console.warn('Guest usage enforcement check failed:', e);
-    }
+    // TODO future: enforce via entitlements/daily_usage
   }
 
   // (Legacy duplicate guest enforcement removed)
@@ -143,56 +119,12 @@ export async function POST(req: NextRequest) {
 
   // 2. Fetch History & Save User Message (now keyed solely on conversationId)
   let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  if (conversationId) {
-    try {
-      const { data: messages } = await sb
-        .from('messages')
-        .select('role, content')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .limit(20);
-      if (messages) {
-        history = messages.map((m: any) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content as string,
-        }));
-      }
-      // Save the current user message to DB for this conversation (works for guests too)
-      await sb
-        .from('messages')
-        .insert({ conversation_id: conversationId, role: 'user', content: transcript });
-    } catch (error: any) {
-      console.error('DB Error:', error);
-      return new Response(`Error fetching history or saving message: ${error.message}`, {
-        status: 500,
-      });
-    }
-  }
+  // History/load/save removed (Supabase). Placeholder empty history.
 
   // --- START RAG IMPLEMENTATION ---
   // 1) Retrieve relevant long-term memories for authenticated users
   let retrievedMemories = '';
-  try {
-    if (userId) {
-      const embeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: transcript,
-      });
-      const queryEmbedding = (embeddingResponse.data?.[0]?.embedding || []) as number[];
-      const { data: memories } = await sb.rpc('match_memories', {
-        p_user_id: userId,
-        query_embedding: queryEmbedding,
-        match_threshold: 0.75,
-        match_count: 5,
-      });
-      if (memories && (memories as any[]).length) {
-        const memoryContent = (memories as any[]).map((m: any) => `- ${m.content}`).join('\n');
-        retrievedMemories = `\n\nREMEMBER THESE FACTS FROM PAST CONVERSATIONS:\n${memoryContent}`;
-      }
-    }
-  } catch (err) {
-    console.error('Memory retrieval error:', err);
-  }
+  // RAG memory retrieval removed; will reintroduce via future datastore
   const augmentedSystemPrompt = CHARACTER_SYSTEM_PROMPT + retrievedMemories;
   // --- END RAG IMPLEMENTATION ---
 
@@ -221,15 +153,7 @@ export async function POST(req: NextRequest) {
 
     const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
-        if (conversationId) {
-          await sb
-            .from('messages')
-            .insert({ conversation_id: conversationId, role: 'assistant', content: completion });
-          await sb
-            .from('conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId);
-        }
+  // Persistence removed (Supabase). Future: store assistant reply via new datastore.
         // Fire-and-forget memory extraction with the last turn (authenticated users only)
         try {
           if (userId) {

@@ -1,27 +1,16 @@
 // In lib/server/conversation-logic.ts
 
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
-import { FREE_TRIAL_SECONDS } from '@/lib/server/env.server';
+import { randomUUID } from 'crypto';
 import { runChat } from '@/lib/llm';
 
-const supa = getSupabaseServerAdmin();
-
 // Creates a new conversation for a user or guest
-export async function createConversation(userId: string | null) {
-  const isGuest = !userId;
-  const { data, error } = await supa
-    .from('conversations')
-    .insert({
-      user_id: userId,
-      is_guest: isGuest,
-      seconds_remaining: isGuest ? FREE_TRIAL_SECONDS : null,
-      title: 'New Conversation',
-    })
-    .select('id, title, created_at, updated_at')
-    .single();
+const mem: Record<string, { id: string; title: string | null; created_at: string; updated_at: string; user_id: string | null; messages: Array<{ role: 'user' | 'assistant'; content: string }> }> = {};
 
-  if (error) throw new Error(`Failed to create conversation: ${error.message}`);
-  return data as { id: string; title: string | null; created_at: string; updated_at: string };
+export async function createConversation(userId: string | null) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  mem[id] = { id, title: 'New Conversation', created_at: now, updated_at: now, user_id: userId, messages: [] };
+  return { id, title: mem[id].title, created_at: now, updated_at: now };
 }
 
 // Saves a message and updates the conversation's timestamp
@@ -29,18 +18,12 @@ export async function saveMessage(
   convoId: string,
   role: 'user' | 'assistant',
   content: string,
-  userId: string | null,
+  _userId: string | null,
 ) {
-  const { error: msgError } = await supa
-    .from('messages')
-    .insert({ conversation_id: convoId, role, content, user_id: userId });
-  if (msgError) console.error(`[DB] Failed to insert message for ${convoId}:`, msgError);
-
-  const { error: convoError } = await supa
-    .from('conversations')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', convoId);
-  if (convoError) console.error(`[DB] Failed to update timestamp for ${convoId}:`, convoError);
+  const c = mem[convoId];
+  if (!c) return;
+  c.messages.push({ role, content });
+  c.updated_at = new Date().toISOString();
 }
 
 // Generates and saves an intelligent title
@@ -58,8 +41,6 @@ export async function generateAndSaveTitle(
   ]);
   const cleanedTitle = (title || '').replace(/["\\]/g, '').trim();
 
-  if (cleanedTitle) {
-    await supa.from('conversations').update({ title: cleanedTitle }).eq('id', convoId);
-  }
+  if (cleanedTitle && mem[convoId]) mem[convoId].title = cleanedTitle;
   return cleanedTitle;
 }

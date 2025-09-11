@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
@@ -29,66 +28,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing user id on session' }, { status: 400 });
     }
 
-    // Create Supabase session for this user via Admin API
-    const { getSupabaseServerAdmin } = await import('@/lib/server/supabaseAdmin');
-    const sbAdmin = getSupabaseServerAdmin();
-
-    // Look up user email
-    const { data: userRes, error: userErr } = await sbAdmin.auth.admin.getUserById(userId);
-    if (userErr || !userRes?.user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-    const email = userRes.user.email;
-    if (!email) return NextResponse.json({ error: 'User email missing' }, { status: 400 });
-
-    // Generate a magic link to obtain an OTP we can verify server-side to mint a session
-    const { data: linkData, error: linkErr } = await sbAdmin.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-      options: { redirectTo: (process.env.APP_URL || '') + '/auth/callback' },
-    });
-    if (linkErr || !linkData) {
-      return NextResponse.json(
-        { error: linkErr?.message || 'Failed to generate link' },
-        { status: 500 },
-      );
-    }
-
-    const email_otp = (linkData as any).email_otp as string | undefined;
-    if (!email_otp) {
-      return NextResponse.json({ error: 'OTP not available from generateLink' }, { status: 500 });
-    }
-
-    // Verify OTP using an anon Supabase client to get a real session (tokens)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return NextResponse.json({ error: 'Supabase client not configured' }, { status: 500 });
-    }
-    const sbAnon = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: verifyData, error: verifyErr } = await sbAnon.auth.verifyOtp({
-      email,
-      token: email_otp,
-      type: 'magiclink',
-    });
-    if (verifyErr || !verifyData?.session) {
-      return NextResponse.json(
-        { error: verifyErr?.message || 'Failed to verify OTP' },
-        { status: 500 },
-      );
-    }
-
-    const { access_token, refresh_token } = verifyData.session;
-
-    // Persist stripe customer id for future portal access if present
-    if (customerId) {
-      await sbAdmin.from('profiles').upsert({ user_id: userId, stripe_customer_id: customerId });
-    }
-
-    return NextResponse.json({ access_token, refresh_token });
+  // Supabase removed: return stub tokens (NOT FOR PRODUCTION)
+  return NextResponse.json({ access_token: 'stub-access', refresh_token: 'stub-refresh' });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || 'Unexpected error' }, { status: 500 });
   }

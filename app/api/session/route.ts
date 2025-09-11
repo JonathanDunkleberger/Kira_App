@@ -7,7 +7,6 @@ import {
   FREE_TRIAL_SECONDS,
   PRO_SESSION_SECONDS,
 } from '../../../lib/server/env.server';
-import { getSupabaseServerAdmin } from '../../../lib/server/supabaseAdmin';
 // Legacy entitlement helpers removed in usage migration.
 
 export const runtime = 'nodejs';
@@ -42,51 +41,25 @@ export async function GET(req: NextRequest) {
       } catch {}
       return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
     }
-    // Try to read server-side guest conversation remaining seconds
+    // Guest conversation lookup removed with Supabase purge—send baseline values.
+    const payload = {
+      status: 'inactive',
+      plan: 'free',
+      secondsRemaining: FREE_TRIAL_SECONDS,
+      dailyLimitSeconds: FREE_TRIAL_SECONDS,
+      trialPerDay: FREE_TRIAL_SECONDS,
+      proSessionLimit: PRO_SESSION_SECONDS,
+    } as const;
     try {
-      const sb = getSupabaseServerAdmin();
-      const { data } = await sb
-        .from('conversations')
-        .select('seconds_remaining')
-        .eq('id', guestId)
-        .maybeSingle();
-      const secondsRemaining = Number(data?.seconds_remaining ?? FREE_TRIAL_SECONDS);
-      const payload = {
-        status: 'inactive',
-        plan: 'free',
-        secondsRemaining,
-        dailyLimitSeconds: FREE_TRIAL_SECONDS,
-        trialPerDay: FREE_TRIAL_SECONDS,
-        proSessionLimit: PRO_SESSION_SECONDS,
-      } as const;
-      try {
-        console.log(
-          `[Entitlement Check] User: guest-id-${guestId} | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
-        );
-      } catch {}
-      return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
-    } catch {
-      const payload = {
-        status: 'inactive',
-        plan: 'free',
-        secondsRemaining: FREE_TRIAL_SECONDS,
-        dailyLimitSeconds: FREE_TRIAL_SECONDS,
-        trialPerDay: FREE_TRIAL_SECONDS,
-        proSessionLimit: PRO_SESSION_SECONDS,
-      } as const;
-      try {
-        console.log(
-          `[Entitlement Check] User: guest | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
-        );
-      } catch {}
-      return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
-    }
+      console.log(
+        `[Entitlement Check] User: guest-id-${guestId} | Status: Guest | Limit Sent (s): ${payload.dailyLimitSeconds}`,
+      );
+    } catch {}
+    return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });
   }
 
-  const sb = getSupabaseServerAdmin();
-  const { data: userData, error } = await sb.auth.getUser(token);
-  if (error || !userData?.user) return new NextResponse('Invalid auth', { status: 401 });
-  const userId = userData.user.id;
+  // Supabase removed. TODO: validate Clerk auth token (or rely on middleware) in future.
+  const userId = 'user';
 
   // TODO: replace with entitlements heartbeat lookup once implemented
   const isPro = false; // placeholder until new entitlements system
@@ -103,7 +76,7 @@ export async function GET(req: NextRequest) {
   } as const;
   try {
     console.log(
-      `[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`,
+  `[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`,
     );
   } catch {}
   return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });

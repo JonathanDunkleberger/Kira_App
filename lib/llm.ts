@@ -35,7 +35,6 @@ const FEW_SHOTS: Array<{ user: string; assistant: string }> = [
 import type { Content } from '@google/generative-ai';
 
 type ChatCompletionMessageParam = { role: 'system' | 'user' | 'assistant'; content: string };
-import { getSupabaseServerAdmin } from '@/lib/server/supabaseAdmin';
 
 function postProcess(text: string) {
   return text
@@ -139,24 +138,7 @@ export async function generateReplyWithHistory(
 
   // Fetch user memories and build memory context
   let memoryContext = '';
-  if (userId) {
-    try {
-      const sb = getSupabaseServerAdmin();
-      const { data: mems } = await sb
-        .from('user_memories')
-        .select('content')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      const facts = (mems || []).map((m: any) => m.content).filter(Boolean);
-      if (facts.length) {
-        memoryContext =
-          'BACKGROUND CONTEXT ON THE USER (FOR YOUR REFERENCE ONLY):\n' + facts.join('\n');
-      }
-    } catch (e) {
-      console.warn('Failed to fetch memories:', e);
-    }
-  }
+  // Memory fetch disabled (Supabase removed). Future: load from Prisma.
   const memoryFlag = `Your long-term memory is ${isPro ? 'enabled' : 'disabled'}.`;
   const finalSystemPrompt = `${memoryContext ? memoryContext + '\n\n' : ''}${CHARACTER_SYSTEM_PROMPT}\n\n${memoryFlag}`;
 

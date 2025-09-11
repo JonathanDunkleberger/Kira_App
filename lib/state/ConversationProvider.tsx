@@ -1,9 +1,8 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Session } from '@supabase/supabase-js';
-
-import { supabase } from '@/lib/client/supabaseClient';
+// Supabase session removed; Session type replaced with minimal placeholder.
+type Session = { userId: string } | null;
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
 import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
@@ -81,7 +80,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
     allConversations,
     fetchAllConversations,
     loadConversation,
-  } = useConversationManager(session);
+  } = useConversationManager();
 
   // Entitlement fields used widely across UI
   const {
@@ -243,15 +242,7 @@ export default function ConversationProvider({ children }: { children: React.Rea
   }, [disconnect, stopMicrophone, clearCurrentConversation]);
 
   // --- AUTH ---
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      // If user logs out, perform a hard reset
-      stopConversation();
-    });
-    return () => authListener.subscription.unsubscribe();
-  }, [stopConversation]);
+  // Auth syncing removed (Clerk handles globally); session kept null.
 
   const promptPaywall = useCallback(
     (source: 'proactive_click' | 'time_exhausted') => setPaywallSource(source),

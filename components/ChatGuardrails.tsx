@@ -1,8 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-
 import { useUsage } from '../lib/useUsage';
-import { supaBrowser } from '../lib/supabase-browser';
 
 import LimitDialog, { type LimitDialogMode } from './dialogs/LimitDialog';
 
@@ -19,16 +17,9 @@ export default function ChatGuardrails({ children }: { children: React.ReactNode
   const todayCap = server?.todaySecondsLimit ?? 0;
   const chatCap = server?.chatSecondsCap ?? 0;
 
+  // Supabase removed: auth status unavailable until Clerk integration; default to false.
   useEffect(() => {
-    (async () => {
-      try {
-        const supa = supaBrowser();
-        const { data } = await supa.auth.getUser();
-        setAuthed(!!data.user);
-      } catch {
-        setAuthed(false);
-      }
-    })();
+    setAuthed(false);
   }, []);
 
   useEffect(() => {

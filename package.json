@@ -27,10 +27,10 @@
     "e2e": "playwright test",
     "flags:check": "node scripts/check-flag-expiry.mjs",
     "postinstall": "prisma generate || true",
-    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID --schema public > types/supabase.ts",
-    "db:migrate:new": "supabase migration new",
-    "db:migrate:push": "supabase db push",
-    "db:migrate:status": "supabase migration list"
+    "db:types": "echo 'Supabase removed'",
+    "db:migrate:new": "echo 'Supabase removed'",
+    "db:migrate:push": "echo 'Supabase removed'",
+    "db:migrate:status": "echo 'Supabase removed'"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.31.10",

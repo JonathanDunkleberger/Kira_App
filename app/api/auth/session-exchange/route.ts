@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing user id on session' }, { status: 400 });
     }
 
-  // Supabase removed: return stub tokens (NOT FOR PRODUCTION)
-  return NextResponse.json({ access_token: 'stub-access', refresh_token: 'stub-refresh' });
+    // Supabase removed: return stub tokens (NOT FOR PRODUCTION)
+    return NextResponse.json({ access_token: 'stub-access', refresh_token: 'stub-refresh' });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || 'Unexpected error' }, { status: 500 });
   }

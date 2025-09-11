@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { subscribeToConversation, unsubscribeFromConversation } from '../lib/realtime';
 import { AnimatedMessage } from './AnimatedTranscript';
 
-
 interface Message {
   role: 'user' | 'assistant';
   content: string;
@@ -45,7 +44,7 @@ export default function TranscriptsView({ conversationId, isOpen, onClose }: Tra
     if (!conversationId) return;
     setLoading(true);
     try {
-  const response = await fetch(`/api/conversations/${conversationId}/messages`);
+      const response = await fetch(`/api/conversations/${conversationId}/messages`);
       if (response.ok) {
         const data = await response.json();
         setMessages(data.messages || []);

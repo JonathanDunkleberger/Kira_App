@@ -1,22 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { supaBrowser } from '@/lib/supabase-browser';
-import { signOut } from '@/lib/client-api';
+import { signOut } from '../../lib/client-api';
 
 type Variant = 'panel' | 'page';
 
 export default function AuthPanel({ variant = 'panel' }: { variant?: Variant }) {
-  const supa = supaBrowser();
-  const [email, setEmail] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    (async () => {
-      const { data } = await supa.auth.getUser();
-      setEmail(data.user?.email ?? null);
-      setHydrated(true);
-    })();
-  }, [supa]);
+  const [email] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(true);
 
   const shell =
     variant === 'panel'

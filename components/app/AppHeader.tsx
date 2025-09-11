@@ -4,7 +4,6 @@ import { User, Settings, CreditCard, MessageSquare } from 'lucide-react';
 
 import HeaderPanels, { type Panel } from './HeaderPanels';
 import TopClockTimer from '@/components/TopClockTimer';
-import { supaBrowser } from '@/lib/supabase-browser';
 
 export default function AppHeader() {
   const [panel, setPanel] = useState<Panel>(null);
@@ -22,17 +21,8 @@ export default function AppHeader() {
   }, [menuOpen]);
 
   async function handleBilling() {
-    try {
-      const supa = supaBrowser();
-      const { data } = await supa.auth.getUser();
-      if (!data.user) {
-        setPanel('auth');
-      } else {
-        setPanel('billing');
-      }
-    } catch {
-      setPanel('auth');
-    }
+    // Supabase removed; defer real auth check until Clerk wired. Assume unauthenticated.
+    setPanel('auth');
   }
 
   return (

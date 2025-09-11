@@ -25,7 +25,7 @@ The goal was to take the core concept of a voice‑first AI companion and re‑a
 - 📈 Freemium SaaS: Guest, Free, and Pro plans with Stripe subscriptions & upgrade nudges.
 - 🧠 Persistent memory (Pro): Long‑term memory context for more personalized replies.
 - 🌐 100% web‑based: Nothing to install; works in modern Chromium browsers.
-- 🔐 Secure & private: Supabase Auth, RLS, per‑user chat history APIs.
+- 🔐 Secure & private: Auth/storage migration in progress (Supabase removed; Clerk + Prisma planned).
 
 ### Unified Limit Dialog
 
@@ -49,7 +49,7 @@ Modern web architecture with a dedicated real‑time voice server. Business logi
 | Frontend                  | Next.js, React, Tailwind CSS, Framer Motion                         |
 | Voice backend (real‑time) | Node WebSocket server (ws) on Render                                |
 | App APIs                  | Next.js API Routes (Vercel or any Node host)                        |
-| Database                  | Supabase (Postgres), Supabase Auth, Row‑Level Security              |
+| Database (current)        | Transitional in-memory stubs (Prisma migration pending)            |
 | AI                        | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
 | Payments                  | Stripe Checkout & Webhooks                                          |
 
@@ -71,7 +71,6 @@ This project uses environment variables. Use `.env.example` as a template and co
 
 Required categories:
 
-- Supabase URL & keys
 - Stripe API & webhook secret
 - OpenAI & Azure API keys
 - Public app URL & free‑trial configuration
@@ -81,8 +80,7 @@ Key client/server vars (non‑exhaustive):
 
 - `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:8080 for dev)
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY` (client)
-- `SUPABASE_SERVICE_ROLE_KEY` (server only)
+<!-- Supabase variables removed after purge -->
 - `AZURE_*` for TTS (if using Azure provider)
 - `TTS_PROVIDER` ("azure" | "elevenlabs") defaults to azure
 - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` (if using ElevenLabs fallback)
@@ -94,15 +92,15 @@ Key client/server vars (non‑exhaustive):
 
 ## Backend Data Flow (Phase 1 One-Shot Plan)
 
-This phase introduces Prisma-backed persistence for core objects while retaining existing Supabase-based endpoints during a short transition window:
+This phase will introduce Prisma-backed persistence for core objects (Supabase endpoints already removed):
 
 1. ensureUser(): called in new Prisma conversation/message endpoints to mirror Clerk users into the relational store.
-2. Conversations: `POST /api/conversations` (Prisma) creates row; existing Supabase conversation endpoints will be deprecated.
+2. Conversations: `POST /api/conversations` (Prisma) will create rows; previous endpoints now stubbed.
 3. Messages: future `POST /api/conversations/[id]/messages` route to append user/ai messages as they stream.
 4. Usage tracking: after a session ends, total seconds are aggregated into `Usage` (daily roll-up per user).
-5. Migration strategy: initial Prisma migration applied via `prisma migrate deploy` against the production Supabase PostgreSQL instance.
+5. Migration strategy: first Prisma migration applied via `prisma migrate deploy` against the target Postgres instance.
 
-During the cutover, UI calls will be updated incrementally to point from Supabase REST endpoints to the new Prisma-backed routes.
+UI calls will be updated incrementally from stubbed helpers to the new Prisma-backed routes.
 
 ### New Prisma Endpoints
 
@@ -253,7 +251,7 @@ Notes:
 
 - `npm run dev` runs Next (port 3000) + WebSocket server (port 8080) concurrently.
 - Set `NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8080` in `.env.local`.
-- WS server: `/healthz` for liveness; requires Supabase auth token via `?token=` (attached automatically). Active chat session id via `?conversationId=`.
+- WS server: `/healthz` for liveness; auth token requirement removed (will use Clerk later). Active chat session id via `?conversationId=`.
 - Heartbeat: server emits usage every ~5s; client store interpolates elapsed seconds for smooth UI.
 
 ---

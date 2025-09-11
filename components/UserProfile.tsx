@@ -10,7 +10,7 @@ export default function UserProfile() {
 
   if (!session) return null;
 
-    const initial = session.userId?.[0]?.toUpperCase() || 'J';
+  const initial = session.userId?.[0]?.toUpperCase() || 'J';
 
   return (
     <DropdownMenu.Root>

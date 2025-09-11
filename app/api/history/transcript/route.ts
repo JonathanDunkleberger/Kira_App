@@ -13,7 +13,7 @@ export async function GET(req: Request) {
 
   try {
     const convo = await prisma.conversation.findFirst({
-  where: { id: chatSessionId, userId },
+      where: { id: chatSessionId, userId },
       select: { id: true },
     });
     if (!convo) return NextResponse.json({ error: 'not found' }, { status: 404 });

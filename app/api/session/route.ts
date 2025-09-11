@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   } as const;
   try {
     console.log(
-  `[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`,
+      `[Entitlement Check] User: ${userId} | Status: ${isPro ? 'Pro' : 'Registered Free'} | Limit Sent (s): ${isPro ? 'Infinity' : payload.dailyLimitSeconds}`,
     );
   } catch {}
   return NextResponse.json(payload, { headers: { 'Access-Control-Allow-Origin': origin } });

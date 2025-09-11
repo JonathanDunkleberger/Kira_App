@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
   const user = { id: req.headers.get('x-user-id') || 'stub-user' };
 
   try {
-  await claimGuestConversation(user.id, guestConvId);
-  return NextResponse.json({ success: true, userId: user.id, guestConvId });
+    await claimGuestConversation(user.id, guestConvId);
+    return NextResponse.json({ success: true, userId: user.id, guestConvId });
   } catch (e: any) {
     console.error('Claim conversation failed:', e?.message || e);
     return NextResponse.json({ error: 'Failed to claim conversation' }, { status: 500 });

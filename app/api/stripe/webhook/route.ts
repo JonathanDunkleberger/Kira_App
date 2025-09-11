@@ -23,9 +23,27 @@ export async function POST(req: NextRequest) {
   }
 
   // Supabase removed: skip persistence updates.
-  async function activatePro(_userId?: string, _customerId?: string | null, _subscriptionId?: string | null) { /* no-op */ }
-  async function updateStatusByCustomer(_customerId?: string, _status?: string, _subscriptionId?: string) { /* no-op */ }
-  async function updateStatusBySubscription(_subscriptionId?: string, _status?: string, _customerId?: string) { /* no-op */ }
+  async function activatePro(
+    _userId?: string,
+    _customerId?: string | null,
+    _subscriptionId?: string | null,
+  ) {
+    /* no-op */
+  }
+  async function updateStatusByCustomer(
+    _customerId?: string,
+    _status?: string,
+    _subscriptionId?: string,
+  ) {
+    /* no-op */
+  }
+  async function updateStatusBySubscription(
+    _subscriptionId?: string,
+    _status?: string,
+    _customerId?: string,
+  ) {
+    /* no-op */
+  }
 
   switch (event.type) {
     case 'checkout.session.completed': {

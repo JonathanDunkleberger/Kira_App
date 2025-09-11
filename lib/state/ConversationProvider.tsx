@@ -113,10 +113,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
   // --- SERVER MESSAGE HANDLING ---
   const handleServerMessage = useCallback(
     (msg: any) => {
-    // If the message is audio data, buffer for single-blob playback.
+      // If the message is audio data, buffer for single-blob playback.
       if (msg instanceof ArrayBuffer) {
         try {
-      audioPlayerRef.current?.appendChunk(msg);
+          audioPlayerRef.current?.appendChunk(msg);
         } catch {}
         return;
       }

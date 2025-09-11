@@ -176,7 +176,7 @@ export async function deleteAccount() {
   if (!confirmed) return;
 
   try {
-  const response = await fetch('/api/user/delete', { method: 'POST' });
+    const response = await fetch('/api/user/delete', { method: 'POST' });
 
     if (!response.ok) {
       let msg = 'Failed to delete account.';
@@ -188,7 +188,7 @@ export async function deleteAccount() {
     }
 
     alert('Your account has been successfully deleted.');
-  window.location.href = '/';
+    window.location.href = '/';
   } catch (error: any) {
     alert(`Error: ${error?.message || 'Unknown error'}`);
   }

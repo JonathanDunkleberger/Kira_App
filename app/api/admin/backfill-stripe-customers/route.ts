@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-
 export const runtime = 'nodejs';
 
 // One-off endpoint to backfill profiles.stripe_customer_id for existing supporters.

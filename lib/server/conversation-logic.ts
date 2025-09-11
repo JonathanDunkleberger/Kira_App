@@ -4,12 +4,29 @@ import { randomUUID } from 'crypto';
 import { runChat } from '@/lib/llm';
 
 // Creates a new conversation for a user or guest
-const mem: Record<string, { id: string; title: string | null; created_at: string; updated_at: string; user_id: string | null; messages: Array<{ role: 'user' | 'assistant'; content: string }> }> = {};
+const mem: Record<
+  string,
+  {
+    id: string;
+    title: string | null;
+    created_at: string;
+    updated_at: string;
+    user_id: string | null;
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  }
+> = {};
 
 export async function createConversation(userId: string | null) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  mem[id] = { id, title: 'New Conversation', created_at: now, updated_at: now, user_id: userId, messages: [] };
+  mem[id] = {
+    id,
+    title: 'New Conversation',
+    created_at: now,
+    updated_at: now,
+    user_id: userId,
+    messages: [],
+  };
   return { id, title: mem[id].title, created_at: now, updated_at: now };
 }
 

@@ -62,7 +62,7 @@ export function useVoiceSocket(
         if (convIdRef.current) u.searchParams.set('conversationId', convIdRef.current);
       } catch {}
       // token
-  // Clerk cookie auth: no bearer token appended.
+      // Clerk cookie auth: no bearer token appended.
       // tts format
       try {
         const pref = preferredTtsFormat();

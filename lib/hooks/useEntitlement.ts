@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 
-
 export type Entitlement = {
   userStatus: 'guest' | 'free' | 'pro';
   secondsRemaining: number;
@@ -52,7 +51,7 @@ export function useEntitlement(): Entitlement & {
       const guestId = getGuestId();
       const url = new URL('/api/session', window.location.origin);
       url.searchParams.set('guestId', guestId);
-  const res = await fetch(url.toString(), { method: 'GET' });
+      const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error('Failed to fetch session usage');
       const data = await res.json();
       // Derive userStatus from status/plan fields

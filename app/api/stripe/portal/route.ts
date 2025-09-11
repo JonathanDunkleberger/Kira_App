@@ -21,7 +21,9 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     const customers = await stripe.customers.list({ email, limit: 1 });
-    const customer = customers.data[0] || (await stripe.customers.create({ email, metadata: { user_id: userId } }));
+    const customer =
+      customers.data[0] ||
+      (await stripe.customers.create({ email, metadata: { user_id: userId } }));
     const stripeCustomerId = customer.id;
 
     const session = await stripe.billingPortal.sessions.create({

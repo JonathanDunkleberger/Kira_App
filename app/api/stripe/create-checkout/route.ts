@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
     const userId = cu.id;
     const email = cu.emailAddresses?.[0]?.emailAddress || undefined;
 
-  // Supabase removed: create a new customer each time (stub persistence)
-  const customer = await stripe.customers.create({ email, metadata: { user_id: userId } });
-  const stripeCustomerId = customer.id;
+    // Supabase removed: create a new customer each time (stub persistence)
+    const customer = await stripe.customers.create({ email, metadata: { user_id: userId } });
+    const stripeCustomerId = customer.id;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

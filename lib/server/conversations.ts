@@ -14,7 +14,10 @@ interface MemoryConversationMeta {
   is_guest: boolean;
 }
 
-const memoryStore: Record<string, { meta: MemoryConversationMeta; messages: Array<{ role: 'user' | 'assistant'; content: string }> }> = {};
+const memoryStore: Record<
+  string,
+  { meta: MemoryConversationMeta; messages: Array<{ role: 'user' | 'assistant'; content: string }> }
+> = {};
 
 export async function createNewConversation(userId: string | null, title?: string) {
   const id = randomUUID();

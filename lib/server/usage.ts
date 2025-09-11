@@ -8,9 +8,9 @@ export async function checkUsage(userId: string | null, guestId: string | null):
   // Logic for SIGNED-IN users
   if (userId) {
     try {
-  // Placeholder: assume zero usage recorded.
-  const secondsUsed = 0;
-  return Math.max(0, dailyLimit - secondsUsed);
+      // Placeholder: assume zero usage recorded.
+      const secondsUsed = 0;
+      return Math.max(0, dailyLimit - secondsUsed);
     } catch (e) {
       console.error('checkUsage for signed-in user failed:', e);
       return dailyLimit;
@@ -20,8 +20,8 @@ export async function checkUsage(userId: string | null, guestId: string | null):
   // Logic for GUEST users
   if (guestId) {
     try {
-  const secondsUsed = 0;
-  return Math.max(0, dailyLimit - secondsUsed);
+      const secondsUsed = 0;
+      return Math.max(0, dailyLimit - secondsUsed);
     } catch (e) {
       console.error('checkUsage for guest failed:', e);
       return dailyLimit;

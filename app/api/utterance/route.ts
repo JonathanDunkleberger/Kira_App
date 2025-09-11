@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
 
     const stream = OpenAIStream(response as any, {
       onCompletion: async (completion: string) => {
-  // Persistence removed (Supabase). Future: store assistant reply via new datastore.
+        // Persistence removed (Supabase). Future: store assistant reply via new datastore.
         // Fire-and-forget memory extraction with the last turn (authenticated users only)
         try {
           if (userId) {

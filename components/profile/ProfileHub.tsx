@@ -1,12 +1,11 @@
 'use client';
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { supaBrowser } from '@/lib/supabase-browser';
-import { Button } from '@/components/ui/Button';
+import { Button } from '../ui/Button';
 
 // TODO: Replace with real panels (using existing paths; fallbacks to stubs if missing)
 // For now, attempt imports dynamically (non-SSR) would add complexity; keep static assuming they exist.
-import ProfilePanel from '@/components/profile/ProfilePanel';
+import ProfilePanel from './ProfilePanel';
 // Optional specialized panels; if they do not exist, you can add them later.
 // import PreferencesPanel from '@/components/panels/PreferencesPanel';
 // import BillingPanel from '@/components/panels/BillingPanel';
@@ -52,26 +51,10 @@ export default function ProfileHub({ open, onOpenChange }: ProfileHubProps) {
 }
 
 function HubBody() {
-  const supa = supaBrowser();
-  const [session, setSession] = React.useState<any>(null);
-
-  useEffect(() => {
-    supa.auth.getSession().then(({ data }) => setSession(data.session));
-  }, [supa]);
-
-  if (!session) {
-    return (
-      <div className="py-6">
-        {/* Inline auth placeholder; if you have <AuthPanel /> import and render here */}
-        <ProfilePanel variant="panel" />
-      </div>
-    );
-  }
-
+  // Supabase removed: always show profile panel placeholder for now.
   return (
-    <div className="space-y-6">
+    <div className="py-6">
       <ProfilePanel variant="panel" />
-      {/* Additional sections (Preferences, Billing, Feedback, Danger Zone) can be inserted here */}
     </div>
   );
 }

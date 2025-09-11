@@ -23,7 +23,7 @@ export default function BillingPanel({ variant = 'panel' }: { variant?: Variant 
       <div className="space-y-2 text-white/70">
         {session ? (
           <>
-              <div>Email: (unavailable)</div>
+            <div>Email: (unavailable)</div>
             <div>Status: {isPro ? 'Pro' : 'Free'}</div>
             {!isPro && <div>Trial minutes left: {Math.ceil(seconds / 60)}</div>}
           </>

@@ -27,7 +27,13 @@ function isResetNeeded(last: string | null | undefined): boolean {
 export async function getCurrentUsage(userId: string | null): Promise<UsageResult> {
   // Without persistence we assume zero prior usage for authenticated users.
   if (!userId) {
-    return { used: 0, remaining: dailyLimit(), limit: dailyLimit(), isPro: false, hasReachedLimit: false };
+    return {
+      used: 0,
+      remaining: dailyLimit(),
+      limit: dailyLimit(),
+      isPro: false,
+      hasReachedLimit: false,
+    };
   }
   const isPro = false; // Placeholder; integrate with subscription system later.
   const limit = isPro ? proLimit() : dailyLimit();

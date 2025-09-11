@@ -77,8 +77,8 @@ export async function POST(req: NextRequest) {
       embedding: embeddingResponse.data[i].embedding,
     }));
 
-  // Skip persistence (stub)
-  console.log('[memory] (stub) would store', memoriesToInsert.length, 'facts');
+    // Skip persistence (stub)
+    console.log('[memory] (stub) would store', memoriesToInsert.length, 'facts');
 
     return NextResponse.json({ success: true, memories_saved: facts.length });
   } catch (error: any) {
@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
 // Lightweight count endpoint: return number of memories for the authed user
 export async function GET(req: NextRequest) {
   try {
-  // Stubbed: always return zero for now
-  return NextResponse.json({ count: 0 });
+    // Stubbed: always return zero for now
+    return NextResponse.json({ count: 0 });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Unknown error' }, { status: 500 });
   }

@@ -67,7 +67,7 @@ export default function Paywall({}: PaywallProps) {
   useEffect(() => {
     if (isOpen) {
       const properties: PaywallEventProperties = {
-          userId: session?.userId,
+        userId: session?.userId,
         userType: session ? 'authenticated' : 'guest',
         plan: isPro ? 'pro' : 'free',
         secondsRemaining: dailySecondsRemaining ?? undefined,
@@ -82,7 +82,7 @@ export default function Paywall({}: PaywallProps) {
 
   const handleUpgradeClick = () => {
     const properties: PaywallEventProperties = {
-        userId: session?.userId,
+      userId: session?.userId,
       userType: session ? 'authenticated' : 'guest',
       plan: 'free',
       secondsRemaining: dailySecondsRemaining ?? undefined,
@@ -188,7 +188,7 @@ export default function Paywall({}: PaywallProps) {
           <button
             onClick={() => {
               const properties: PaywallEventProperties = {
-                  userId: session?.userId,
+                userId: session?.userId,
                 userType: session ? 'authenticated' : 'guest',
                 plan: isPro ? 'pro' : 'free',
                 secondsRemaining: dailySecondsRemaining ?? undefined,

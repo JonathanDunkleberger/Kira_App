@@ -1,48 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { supaBrowser } from '@/lib/supabase-browser';
 
 type Variant = 'panel' | 'page';
 
 export default function ProfilePanel({ variant = 'panel' }: { variant?: Variant }) {
-  const supa = supaBrowser();
-  const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [email] = useState('');
   const [name, setName] = useState('');
   const [status, setStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const {
-          data: { user },
-        } = await supa.auth.getUser();
-        if (user) {
-          setEmail(user.email ?? '');
-          const { data } = await supa
-            .from('profiles')
-            .select('display_name')
-            .eq('id', user.id)
-            .maybeSingle();
-          setName(data?.display_name ?? '');
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [supa]);
-
+  // Placeholder save: no persistence until new datastore in place.
   async function save() {
-    setStatus(null);
-    const {
-      data: { user },
-    } = await supa.auth.getUser();
-    if (!user) {
-      setStatus('Not signed in');
-      return;
-    }
-    await supa.from('profiles').upsert({ id: user.id, display_name: name });
-    setStatus('Saved');
+    setStatus('Saved (placeholder)');
   }
 
   const shell =

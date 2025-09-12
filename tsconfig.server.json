@@ -2,11 +2,15 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "moduleResolution": "bundler",
-  "outDir": "./dist-server",
+    "outDir": "./dist-server",
     "noEmit": false,
     "isolatedModules": false,
     "strict": false
   },
-  "include": ["types/**/*.d.ts"],
+  "include": [
+    "socket-server.ts",
+    "src/**/*.ts",
+    "types/**/*.d.ts"
+  ],
   "exclude": ["node_modules"]
 }

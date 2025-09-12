@@ -1,15 +1,46 @@
-'use client';
-// Unified voice socket API bridging legacy singleton usage to the new hook-based implementation.
-// This lets components keep calling connectVoice/startMic/etc while we remove lib/useVoiceSocket.ts.
+"use client";
+// Unified voice socket API (standalone) – no external hook dependency.
+// Provides:
+// - connectVoice({ persona, conversationId })
+// - startMic()/stopMicForUtterance()/endCall()
+// - sendJson(obj) / sendBinary(buf)
+// - subscribe(fn) for raw server messages (JSON parsed or ArrayBuffer)
+// - useVoiceSocket() React hook exposing status + helper methods
 
+import { useEffect, useState, useCallback, useRef } from 'react';
+import type { ServerEvent, ClientEvent, AnyEvent } from '@/lib/voice-protocol';
 import { preferredTtsFormat } from '@/lib/audio';
-import { useVoiceSocket as useVoiceHook } from '@/lib/hooks/useVoiceSocket';
 
 // Internal singleton state (mimics old implementation minimal surface needed by components)
 let ws: WebSocket | null = null;
 let connecting: Promise<WebSocket> | null = null;
 let micStopper: (() => void) | null = null;
 let muted = false;
+let status: 'idle' | 'connecting' | 'connected' | 'disconnected' = 'idle';
+interface StatusMeta { __meta: 'status'; status: typeof status }
+type Emitted = ServerEvent | ArrayBuffer | StatusMeta;
+type Listener = (msg: Emitted) => void;
+const listeners = new Set<Listener>();
+
+function emit(msg: any) {
+  for (const l of [...listeners]) {
+    try {
+      l(msg);
+    } catch (e) {
+      console.error('voice listener error', e);
+    }
+  }
+}
+
+function setStatus(s: typeof status) {
+  status = s;
+  emit({ __meta: 'status', status: s });
+}
+
+export function subscribe(fn: Listener) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
 
 export function setMuted(v: boolean) {
   muted = v;
@@ -41,13 +72,39 @@ async function resolveUrl(opts: ConnectArgs) {
 export async function connectVoice(opts: ConnectArgs) {
   if (ws && ws.readyState === WebSocket.OPEN) return ws;
   if (connecting) return connecting;
+  setStatus('connecting');
   connecting = (async () => {
     const url = await resolveUrl(opts);
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
+    socket.onopen = () => {
+      setStatus('connected');
+    };
+    socket.onclose = () => {
+      setStatus('disconnected');
+    };
+    socket.onerror = () => {
+      setStatus('disconnected');
+    };
+    socket.onmessage = (evt) => {
+      if (evt.data instanceof ArrayBuffer) {
+        emit(evt.data);
+        return;
+      }
+      if (typeof evt.data === 'string') {
+        try {
+          const parsed = JSON.parse(evt.data) as ServerEvent;
+          emit(parsed);
+        } catch {
+          // ignore non-JSON noise
+        }
+        return;
+      }
+      emit(evt.data);
+    };
     await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => resolve();
-      socket.onerror = (e) => reject(e);
+      socket.addEventListener('open', () => resolve(), { once: true });
+      socket.addEventListener('error', (e) => reject(e), { once: true });
     });
     ws = socket;
     connecting = null;
@@ -60,7 +117,19 @@ export function sendJson(obj: any) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify(obj));
-    } catch {}
+    } catch (e) {
+      console.warn('sendJson failed', e);
+    }
+  }
+}
+
+export function sendBinary(buf: ArrayBuffer | Uint8Array) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(buf as any);
+    } catch (e) {
+      console.warn('sendBinary failed', e);
+    }
   }
 }
 
@@ -78,6 +147,7 @@ export function endCall() {
     } catch {}
   }
   micStopper = null;
+  setStatus('disconnected');
 }
 
 export async function startMic() {
@@ -125,15 +195,41 @@ export function stopMicForUtterance() {
   micStopper = null;
 }
 
-// Hook facade combining low-level status from new hook + legacy flags
-export function useVoiceSocket() {
-  const inner = useVoiceHook({ onMessage: () => {} });
+// React hook exposing status and allowing components to listen for messages
+export function useVoiceSocket(onMessage?: (m: ServerEvent | ArrayBuffer) => void) {
+  const [s, setS] = useState(status);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
+
+  useEffect(() => {
+    const unsub = subscribe((m) => {
+      if (typeof m === 'object' && m !== null && (m as any).__meta === 'status') {
+        setS((m as StatusMeta).status);
+        return;
+      }
+      if (onMessageRef.current) {
+        if (m instanceof ArrayBuffer) {
+          onMessageRef.current(m);
+        } else if ((m as ServerEvent).t) {
+          onMessageRef.current(m as ServerEvent);
+        }
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  const connect = useCallback((args: ConnectArgs) => connectVoice(args), []);
   return {
-    status: inner.status,
-    connect: connectVoice,
+    status: s,
+    connect,
     startMic,
     stopMicForUtterance,
     endCall,
     sendJson,
+    sendBinary,
   } as const;
 }
+
+export type VoiceStatus = ReturnType<typeof useVoiceSocket>['status'];

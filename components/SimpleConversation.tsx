@@ -1,12 +1,16 @@
 'use client';
 import { useConversationStore } from '@/lib/state/conversation-store';
-import { useSimpleVoiceSocket } from '@/lib/hooks/useSimpleVoiceSocket';
-import { useSimpleMicrophone } from '@/lib/hooks/useSimpleMicrophone';
+import { useEffect } from 'react';
+import { connectVoice, startMic } from '@/lib/voice';
 
 export default function SimpleConversation() {
   const { status, messages, setStatus } = useConversationStore();
-  useSimpleVoiceSocket();
-  useSimpleMicrophone();
+  useEffect(() => {
+    // Auto connect & start mic for simple demo
+    connectVoice({ persona: 'kira' }).then(() => {
+      startMic().catch(() => {});
+    }).catch(() => {});
+  }, []);
 
   const handleMicClick = () => {
     setStatus(status === 'listening' ? 'idle' : 'listening');

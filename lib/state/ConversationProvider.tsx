@@ -4,7 +4,8 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 // Supabase session removed; Session type replaced with minimal placeholder.
 type Session = { userId: string } | null;
 import { useConversationManager } from '@/lib/hooks/useConversationManager';
-import { useVoiceSocket } from '@/lib/hooks/useVoiceSocket';
+// Unified voice transport now sourced from single facade in lib/voice
+import { useVoiceSocket } from '@/lib/voice';
 import { useConditionalMicrophone } from '@/lib/hooks/useConditionalMicrophone';
 import { useEntitlement } from '@/lib/hooks/useEntitlement';
 import { AudioPlayer } from '@/lib/audio';
@@ -181,14 +182,10 @@ export default function ConversationProvider({ children }: { children: React.Rea
     [setMessages, refreshUsage],
   );
 
-  const {
-    status: connectionStatus,
-    send,
-    disconnect,
-  } = useVoiceSocket({
-    onMessage: handleServerMessage,
-    conversationId,
-  });
+  const voice = useVoiceSocket(handleServerMessage);
+  const connectionStatus = voice.status as any;
+  const send = useCallback((data: ArrayBuffer) => voice.sendBinary?.(data), [voice]);
+  const disconnect = useCallback(() => voice.endCall(), [voice]);
 
   const { start: startMicrophone, stop: stopMicrophone } = useConditionalMicrophone((audioBlob) => {
     audioBlob.arrayBuffer().then(send);

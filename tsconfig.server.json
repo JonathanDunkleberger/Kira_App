@@ -1,16 +1,12 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "moduleResolution": "bundler",
-    "outDir": "./dist-server",
-    "noEmit": false,
-    "isolatedModules": false,
-    "strict": false
+    "outDir": "dist-server",
+    "rootDir": ".",
+    "target": "ES2020",
+    "module": "CommonJS",
+    "esModuleInterop": true,
+    "lib": ["ES2020"],
+    "skipLibCheck": true
   },
-  "include": [
-    "socket-server.ts",
-    "src/**/*.ts",
-    "types/**/*.d.ts"
-  ],
-  "exclude": ["node_modules"]
+  "include": ["socket-server.ts" ]
 }

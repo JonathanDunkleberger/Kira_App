@@ -321,7 +321,6 @@ Core relational entities now defined with Prisma:
 
 Apply migrations locally:
 
-
 ```powershell
 # Ensure env vars loaded (Windows PowerShell)
 $env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | ForEach-Object { ($_ -split '=',2)[1] })
@@ -329,13 +328,11 @@ $env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | F
 npx prisma migrate dev
 ```
 
-
 Deploy migrations (CI / Production):
 
 ```bash
 npx prisma migrate deploy
 ```
-
 
 Generate client (after schema changes):
 

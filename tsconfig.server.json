@@ -8,7 +8,15 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./*"] }
   },
-  "include": ["socket-server.mts"]
+  "include": [
+    "socket-server.mts",
+    "lib/tts.ts",
+    "lib/llm.ts",
+    "lib/stt.ts",
+    "lib/server/openai-compat.ts"
+  ]
 }

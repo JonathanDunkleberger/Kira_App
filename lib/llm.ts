@@ -54,7 +54,7 @@ export async function generateReply(userText: string): Promise<string> {
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
       // Use fetch-based compat wrapper to avoid SDK dependency
-      const { default: OpenAI } = await import('@/lib/server/openai-compat');
+  const { default: OpenAI } = await import('./server/openai-compat.js');
       const openai = new OpenAI({ apiKey: openaiKey });
 
       // Properly structured message history
@@ -144,7 +144,7 @@ export async function generateReplyWithHistory(
 
   if ((provider === 'openai' || !geminiKey) && openaiKey) {
     try {
-      const { default: OpenAI } = await import('@/lib/server/openai-compat');
+  const { default: OpenAI } = await import('./server/openai-compat.js');
       const openai = new OpenAI({ apiKey: openaiKey });
 
       const messages: ChatCompletionMessageParam[] = [
@@ -217,7 +217,7 @@ export async function runChat(
   const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   if (provider === 'openai' && openaiKey) {
     try {
-      const { default: OpenAI } = await import('@/lib/server/openai-compat');
+  const { default: OpenAI } = await import('./server/openai-compat.js');
       const openai = new OpenAI({ apiKey: openaiKey });
       const resp = await openai.chat.completions.create({
         model: openaiModel,

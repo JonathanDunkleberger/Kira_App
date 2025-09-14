@@ -5,7 +5,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=web",
+    "dev:web": "npm run dev --workspace=web",
+    "dev:server": "npm run start --workspace=socket-server",
+    "dev": "npm-run-all -p dev:server dev:web",
     "build": "npm run build --workspace=web",
     "start": "npm run start --workspace=web"
   }

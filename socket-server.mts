@@ -112,7 +112,8 @@ wss.on('connection', async (ws, req) => {
   // Fallback to a no-op shim if unavailable to keep server stable.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dgAny: any = deepgram as any;
-  const deepgramLive = dgAny.transcription?.live?.({
+  // Updated for new Deepgram SDK: transcription.live -> listen.live
+  const deepgramLive = dgAny.listen?.live?.({
     smart_format: true,
     model: 'nova-2',
     language: 'en-US',

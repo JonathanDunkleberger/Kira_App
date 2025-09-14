@@ -23,52 +23,52 @@ model User {
   @@map("app_users")
 }
 
-model DailyUsage {
-  id        String   @id @default(cuid())
-  userId    String
-  day       DateTime
-  seconds   Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id])
+generator client {
+  provider = "prisma-client-js"
+}
 
-  @@unique([userId, day])
-  @@index([day])
-  @@map("app_daily_usage")
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String         @id @unique
+  email         String         @unique
+  tier          String         @default("free")
+  createdAt     DateTime       @default(now())
+  usage         Usage[]
+  conversations Conversation[]
+}
+
+model Usage {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  seconds   Int
+  date      DateTime @default(now())
+  ip        String?
 }
 
 model Conversation {
-  id               String    @id @default(cuid())
-  userId           String
-  title            String    @default("New Conversation")
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  isGuest          Boolean   @default(false)
-  secondsRemaining Int?
-  user             User      @relation(fields: [userId], references: [id])
-  messages         Message[]
-
-  @@index([userId, createdAt])
-  @@map("app_conversations")
+  id        String    @id @default(cuid())
+  userId    String? // optional for guests
+  user      User?     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  isGuest   Boolean   @default(true)
+  messages  Message[]
 }
 
 model Message {
   id             String       @id @default(cuid())
   conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // "user" or "assistant"
   text           String
   createdAt      DateTime     @default(now())
-  role           String
-  userId         String?
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  user           User?        @relation("UserMessages", fields: [userId], references: [id])
-
-  @@index([conversationId, createdAt])
-  @@map("app_messages")
 }
-
-model Subscription {
-  id               String    @id @default(cuid())
-  userId           String
   stripeCustomer   String?   @unique
   stripeSubId      String?   @unique
   status           String    @default("inactive")

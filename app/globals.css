@@ -2,60 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light (cream/almond) */
+/* Brand Palette (Light) - Cream + Lavender */
 :root {
-  /* Cream background stays */
-  --background: 40 38% 96%;
-  --foreground: 24 18% 14%; /* darker text for readability */
+  --bg: #FDFBF9;
+  --bg-muted: #F7F5F1;
+  --surface: #F2EEE9;
+  --text: #3A2E3F;
+  --muted-text: #8A7C8F;
+  --accent: #B28BD6;
+  --accent-strong: #9C75C3;
+  --danger: #E45D7E;
+  --overlay: rgba(40, 30, 50, 0.5);
 
-  --card: 40 38% 98%;
-  --card-foreground: 24 18% 14%;
-
-  --popover: 40 38% 98%;
-  --popover-foreground: 24 18% 14%;
-
-  /* Pistachio accents */
-  --primary: 78 28% 35%;
+  /* Legacy semantic tokens mapping (optional) */
+  --background: 36 44% 97%;
+  --foreground: 310 16% 22%;
+  --card: 36 44% 99%;
+  --card-foreground: var(--foreground);
+  --muted: 36 32% 94%;
+  --muted-foreground: 310 10% 45%;
+  --primary: 275 40% 65%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 72 26% 46%;
-  --secondary-foreground: 0 0% 100%;
-
-  /* Secondary text/background on cream */
-  --muted: 40 28% 94%;
-  --muted-foreground: 24 12% 30%;
-
-  /* Accent surfaces (chips/badges) */
-  --accent: 78 30% 86%;
-  --accent-foreground: 24 18% 14%;
-
-  --border: 40 20% 86%;
-  --input: 40 20% 86%;
-  --ring: 78 28% 35%;
-
+  --accent-foreground: var(--text);
+  --border: 275 25% 80%;
+  --ring: 275 40% 55%;
   --radius: 1rem;
-  --bg: hsl(var(--background));
-  --ink: hsl(var(--foreground));
+  --ink: var(--text);
 }
 
-/* Dark theme */
-.dark {
-  --background: #0b0f07;
-  --foreground: #f1f5e8;
-  --card: #161d11cc;
-  --card-foreground: #f1f5e8;
-  --muted: #1e2716;
-  --muted-foreground: #8aa06a;
-  --primary: #93b857;
-  --primary-foreground: #132004;
-  --accent: #4c5f2c;
-  --accent-foreground: #e6f2cf;
-  --destructive: #ff5a4e;
-  --destructive-foreground: #2a0907;
-  --border: #27341d;
-  --input: #27341d;
-  --ring: #a2d167;
-  --bg: var(--background);
-  --ink: var(--foreground);
+/* Brand Palette (Dark) - Deep Navy-Purple + Soft Lavender */
+.theme-dark {
+  --bg: #0F0D12;
+  --bg-muted: #18141C;
+  --surface: #221C2A;
+  --text: #ECE5F5;
+  --muted-text: #A594B5;
+  --accent: #A789D6;
+  --accent-strong: #C7A3F0;
+  --danger: #FF7A9C;
+  --overlay: rgba(0,0,0,0.55);
+
+  --background: 270 25% 6%;
+  --foreground: 285 40% 93%;
+  --card: #221C2A;
+  --card-foreground: var(--foreground);
+  --muted: 270 20% 16%;
+  --muted-foreground: 285 20% 68%;
+  --primary: 275 45% 68%;
+  --primary-foreground: 270 25% 6%;
+  --accent-foreground: var(--text);
+  --border: 275 20% 30%;
+  --ring: 275 50% 70%;
+  --ink: var(--text);
 }
 
 html,

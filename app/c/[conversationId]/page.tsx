@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation';
 
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/Button';
+import { connectWithBackoff, ConnectionState } from '../../../lib/socket-backoff';
+import { useAudioCapture } from '../../../lib/useAudioCapture';
 
 export default function ConversationPage({ params }: { params: { conversationId: string } }) {
   const { conversationId } = params;
@@ -12,42 +14,44 @@ export default function ConversationPage({ params }: { params: { conversationId:
   }
 
   const wsRef = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState('connecting');
+  const [connState, setConnState] = useState<ConnectionState>('retry');
   const [events, setEvents] = useState<string[]>([]);
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [input, setInput] = useState('');
+  const [muted, setMuted] = useState(false);
+
+  const { ready: micReady, rms } = useAudioCapture(!muted);
 
   useEffect(() => {
-    const url =
-      (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') +
-      `?conversationId=${conversationId}`;
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setStatus('open');
-      ws.send(JSON.stringify({ type: 'client_ready', conversationId }));
-    };
-    ws.onmessage = (ev) => {
-      setEvents((prev) => [...prev, ev.data]);
-      try {
-        const parsed = JSON.parse(ev.data);
-        if (parsed.type === 'transcript' && parsed.text) {
-          setMessages((m) => [...m, { role: parsed.role || 'assistant', text: parsed.text }]);
+    const url = (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') + `?conversationId=${conversationId}`;
+    const dispose = connectWithBackoff(
+      url,
+      (ev) => {
+        setEvents((prev) => [...prev, ev.data]);
+        try {
+          const parsed = JSON.parse(ev.data);
+          if (parsed.type === 'transcript' && parsed.text) {
+            setMessages((m) => [...m, { role: parsed.role || 'assistant', text: parsed.text }]);
+          }
+        } catch {}
+      },
+      (state) => {
+        setConnState(state);
+        if (state === 'open') {
+          // send ready once connected
+          wsRef.current?.send?.(JSON.stringify({ type: 'client_ready', conversationId }));
         }
-      } catch {
-        // non-JSON event
-      }
-    };
-    ws.onclose = () => setStatus('closed');
-    ws.onerror = () => setStatus('error');
-    return () => ws.close();
+      },
+    );
+    return () => dispose();
   }, [conversationId]);
 
   const sendMessage = useCallback(() => {
-    if (!input.trim() || wsRef.current?.readyState !== WebSocket.OPEN) return;
-    const payload = { type: 'user_message', text: input.trim(), conversationId };
-    wsRef.current.send(JSON.stringify(payload));
+    if (!input.trim()) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const payload = { type: 'user_message', text: input.trim(), conversationId };
+      wsRef.current.send(JSON.stringify(payload));
+    }
     setMessages((m) => [...m, { role: 'user', text: input.trim() }]);
     setInput('');
   }, [input, conversationId]);
@@ -56,9 +60,24 @@ export default function ConversationPage({ params }: { params: { conversationId:
     <main className="min-h-screen p-4 md:p-8 flex flex-col gap-6 max-w-5xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Conversation</h1>
-        <span className="text-xs rounded-full px-3 py-1 bg-gray-200 dark:bg-neutral-800 text-gray-700 dark:text-gray-300 capitalize">
-          {status}
-        </span>
+        <div className="flex items-center gap-2">
+          {connState === 'retry' && (
+            <span className="text-xs rounded-full px-3 py-1 bg-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 animate-pulse">
+              Reconnecting
+            </span>
+          )}
+          {connState === 'open' && (
+            <span className="text-xs rounded-full px-3 py-1 bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200">
+              Connected
+            </span>
+          )}
+          {connState === 'closed' && (
+            <span className="text-xs rounded-full px-3 py-1 bg-gray-300 dark:bg-neutral-700 text-gray-700 dark:text-gray-200">
+              Closed
+            </span>
+          )}
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">Mic: {micReady ? (muted ? 'Muted' : 'On') : 'Off'} {rms > 0.02 && !muted ? '•' : ''}</span>
+        </div>
       </div>
       <div className="grid gap-6 md:grid-cols-3 grid-cols-1">
         <Card className="md:col-span-2 flex flex-col h-[70vh]">
@@ -96,7 +115,7 @@ export default function ConversationPage({ params }: { params: { conversationId:
                   }
                 }}
               />
-              <Button onClick={sendMessage} disabled={status !== 'open' || !input.trim()}>
+              <Button onClick={sendMessage} disabled={connState !== 'open' || !input.trim()}>
                 Send
               </Button>
             </div>
@@ -123,12 +142,18 @@ export default function ConversationPage({ params }: { params: { conversationId:
             <CardContent className="space-y-2 text-sm">
               <Button
                 variant="ghost"
+                onClick={() => setMuted((m) => !m)}
+              >
+                {muted ? 'Unmute' : 'Mute'}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
-                  if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.close();
                   }
                 }}
-                disabled={status !== 'open'}
+                disabled={connState !== 'open'}
               >
                 Disconnect
               </Button>

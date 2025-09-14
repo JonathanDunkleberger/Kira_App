@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { PrismaClient } from '@prisma/client';
-import { Deepgram } from '@deepgram/sdk';
+import { createClient } from '@deepgram/sdk';
 import OpenAI from 'openai';
 import * as AzureSpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
@@ -21,7 +21,7 @@ const AZURE_SPEECH_REGION = requireEnv('AZURE_SPEECH_REGION');
 
 // --- Clients ---
 const prisma = new PrismaClient();
-const deepgram = new Deepgram(DEEPGRAM_API_KEY);
+const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // --- Main Server Logic ---
@@ -46,7 +46,7 @@ wss.on('connection', async (ws, req) => {
     }
     if (!clientIp) {
       // @ts-ignore node ws request socket
-      clientIp = (req.socket?.remoteAddress || null);
+      clientIp = req.socket?.remoteAddress || null;
     }
   } catch {}
   try {
@@ -60,7 +60,11 @@ wss.on('connection', async (ws, req) => {
 
   function safeSend(payload: unknown) {
     if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify(payload)); } catch (err) { console.error('[Server] send error', err); }
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (err) {
+        console.error('[Server] send error', err);
+      }
     }
   }
 
@@ -76,7 +80,9 @@ wss.on('connection', async (ws, req) => {
       if (DAILY_CAP > 0) {
         // compute start of today UTC
         const now = new Date();
-        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const startOfDay = new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+        );
         prisma.usage
           .aggregate({
             _sum: { seconds: true },
@@ -89,7 +95,9 @@ wss.on('connection', async (ws, req) => {
             const projected = prior + seconds; // approximate (session total counted each tick; acceptable for soft gating)
             if (projected >= DAILY_CAP) {
               safeSend({ type: 'limit_exceeded', remaining: 0 });
-              try { ws.close(); } catch {}
+              try {
+                ws.close();
+              } catch {}
             } else {
               const remaining = Math.max(0, DAILY_CAP - projected);
               safeSend({ type: 'usage_remaining', remaining });
@@ -104,7 +112,7 @@ wss.on('connection', async (ws, req) => {
   // Fallback to a no-op shim if unavailable to keep server stable.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dgAny: any = deepgram as any;
-  const deepgramLive = (dgAny.transcription?.live?.({
+  const deepgramLive = dgAny.transcription?.live?.({
     smart_format: true,
     model: 'nova-2',
     language: 'en-US',
@@ -112,7 +120,7 @@ wss.on('connection', async (ws, req) => {
     addListener: () => {},
     send: () => {},
     finish: () => {},
-  });
+  };
 
   let assistantBusy = false;
 
@@ -164,12 +172,15 @@ wss.on('connection', async (ws, req) => {
       try {
         const completion = await openai.chat.completions.create({
           model: 'gpt-3.5-turbo',
-            messages: [
-              { role: 'system', content: 'You are Kira, a concise, encouraging AI companion. Keep replies short.' },
-              { role: 'user', content: transcript },
-            ],
-            max_tokens: 60,
-            temperature: 0.7,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are Kira, a concise, encouraging AI companion. Keep replies short.',
+            },
+            { role: 'user', content: transcript },
+          ],
+          max_tokens: 60,
+          temperature: 0.7,
         });
         reply = completion.choices[0]?.message?.content?.trim() || reply;
         safeSend({ type: 'assistant_message', text: reply });
@@ -193,9 +204,14 @@ wss.on('connection', async (ws, req) => {
 
       // Azure Speech TTS synthesis (basic, whole utterance)
       try {
-        const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+        const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
+          AZURE_SPEECH_KEY,
+          AZURE_SPEECH_REGION,
+        );
         speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
-        const audioConfig = AzureSpeechSDK.AudioConfig.fromAudioFileOutput(undefined as unknown as string); // dummy sink
+        const audioConfig = AzureSpeechSDK.AudioConfig.fromAudioFileOutput(
+          undefined as unknown as string,
+        ); // dummy sink
         const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
         await new Promise<void>((resolve) => {
           synthesizer.speakTextAsync(
@@ -204,7 +220,12 @@ wss.on('connection', async (ws, req) => {
               try {
                 if (result?.audioData) {
                   const b64 = Buffer.from(result.audioData).toString('base64');
-                  safeSend({ type: 'assistant_audio', encoding: 'base64', mime: 'audio/wav', data: b64 });
+                  safeSend({
+                    type: 'assistant_audio',
+                    encoding: 'base64',
+                    mime: 'audio/wav',
+                    data: b64,
+                  });
                 }
               } catch (e) {
                 console.error('[Server] TTS processing error', e);
@@ -217,7 +238,7 @@ wss.on('connection', async (ws, req) => {
               console.error('[Server] TTS synthesis error', error);
               synthesizer.close();
               resolve();
-            }
+            },
           );
         });
       } catch (ttsErr) {

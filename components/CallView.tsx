@@ -21,13 +21,28 @@ export function CallView({ conversationId, onEnd }: CallViewProps) {
   const startTs = useRef<number>(Date.now());
   const [elapsed, setElapsed] = useState(0);
 
+  // Verify env var presence once on mount (client-side)
+  useEffect(() => {
+    // Using both possible names in case of naming mismatch
+    // eslint-disable-next-line no-console
+    console.log('VERIFYING ENV VAR: NEXT_PUBLIC_WEBSOCKET_URL =', process.env.NEXT_PUBLIC_WEBSOCKET_URL);
+    // eslint-disable-next-line no-console
+    console.log('VERIFYING ENV VAR (legacy NEXT_PUBLIC_WS_URL) =', process.env.NEXT_PUBLIC_WS_URL);
+  }, []);
+
   useEffect(() => {
     const id = setInterval(() => setElapsed(Date.now() - startTs.current), 1000);
     return () => clearInterval(id);
   }, []);
 
   const { state, send, close } = useConnection<{ type: string; text?: string; role?: string }>({
-    url: () => (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') + `?conversationId=${conversationId}`,
+    url: () => {
+      const base =
+        process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+        process.env.NEXT_PUBLIC_WS_URL ||
+        'ws://localhost:3001';
+      return `${base}?conversationId=${conversationId}`;
+    },
     onMessage: (msg) => {
       if (msg.type === 'transcript' && msg.text) {
         setTranscript((t) => [...t, { role: msg.role || 'assistant', text: msg.text! }]);

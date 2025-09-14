@@ -25,7 +25,9 @@ export function connectWithBackoff(
       await new Promise((r) => setTimeout(r, delay));
       open();
     };
-    ws.onerror = () => {/* handled by close */};
+    ws.onerror = () => {
+      /* handled by close */
+    };
   };
   open();
   return () => {

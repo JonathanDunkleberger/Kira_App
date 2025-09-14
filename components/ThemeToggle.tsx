@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useEffect, useState } from 'react';
 import { applyTheme, getInitialTheme, persistTheme, ThemeMode } from '../lib/theme';
 import { Button } from './ui/Button';

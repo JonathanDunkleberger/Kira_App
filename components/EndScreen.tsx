@@ -45,7 +45,9 @@ export function EndScreen({ conversationId, onRestart }: EndScreenProps) {
   return (
     <div className="max-w-md mx-auto w-full text-sm">
       <h2 className="text-xl font-semibold text-[var(--text)] mb-2">How was it?</h2>
-      <p className="text-xs text-[var(--muted-text)] mb-4">Rate your call and share optional feedback.</p>
+      <p className="text-xs text-[var(--muted-text)] mb-4">
+        Rate your call and share optional feedback.
+      </p>
       <div className="flex items-center gap-1 mb-4">
         {[1, 2, 3, 4, 5].map((n) => {
           const active = (hover || stars) >= n;
@@ -59,7 +61,9 @@ export function EndScreen({ conversationId, onRestart }: EndScreenProps) {
               onClick={() => setStars(n === stars ? 0 : n)}
               className="text-lg"
             >
-              <span className={active ? 'text-amber-400' : 'text-gray-400'}>{active ? '★' : '☆'}</span>
+              <span className={active ? 'text-amber-400' : 'text-gray-400'}>
+                {active ? '★' : '☆'}
+              </span>
             </button>
           );
         })}
@@ -77,7 +81,9 @@ export function EndScreen({ conversationId, onRestart }: EndScreenProps) {
         <Button variant="ghost" onClick={onRestart}>
           Restart
         </Button>
-        {submitted && !error && <span className="text-[10px] text-[var(--muted-text)]">Thanks!</span>}
+        {submitted && !error && (
+          <span className="text-[10px] text-[var(--muted-text)]">Thanks!</span>
+        )}
         {error && <span className="text-[10px] text-red-500">{error}</span>}
       </div>
     </div>

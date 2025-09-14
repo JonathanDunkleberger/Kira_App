@@ -3,7 +3,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 import { Inter } from 'next/font/google';
 
 import { ThemeProvider } from '../components/theme-provider';
-import AppHeader from '../components/AppHeader';
+import { AppHeader } from '../components/layout/AppHeader';
 import '../lib/bootlog'; // boot health logging
 import LimitBanner from '../components/LimitBanner';
 

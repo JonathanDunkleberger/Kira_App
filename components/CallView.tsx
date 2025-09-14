@@ -25,7 +25,10 @@ export function CallView({ conversationId, onEnd }: CallViewProps) {
   useEffect(() => {
     // Using both possible names in case of naming mismatch
     // eslint-disable-next-line no-console
-    console.log('VERIFYING ENV VAR: NEXT_PUBLIC_WEBSOCKET_URL =', process.env.NEXT_PUBLIC_WEBSOCKET_URL);
+    console.log(
+      'VERIFYING ENV VAR: NEXT_PUBLIC_WEBSOCKET_URL =',
+      process.env.NEXT_PUBLIC_WEBSOCKET_URL,
+    );
     // eslint-disable-next-line no-console
     console.log('VERIFYING ENV VAR (legacy NEXT_PUBLIC_WS_URL) =', process.env.NEXT_PUBLIC_WS_URL);
   }, []);

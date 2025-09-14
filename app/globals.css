@@ -4,14 +4,14 @@
 
 /* Brand Palette (Light) - Cream + Lavender */
 :root {
-  --bg: #FDFBF9;
-  --bg-muted: #F7F5F1;
-  --surface: #F2EEE9;
-  --text: #3A2E3F;
-  --muted-text: #8A7C8F;
-  --accent: #B28BD6;
-  --accent-strong: #9C75C3;
-  --danger: #E45D7E;
+  --bg: #fdfbf9;
+  --bg-muted: #f7f5f1;
+  --surface: #f2eee9;
+  --text: #3a2e3f;
+  --muted-text: #8a7c8f;
+  --accent: #b28bd6;
+  --accent-strong: #9c75c3;
+  --danger: #e45d7e;
   --overlay: rgba(40, 30, 50, 0.5);
 
   /* Legacy semantic tokens mapping (optional) */
@@ -32,19 +32,19 @@
 
 /* Brand Palette (Dark) - Deep Navy-Purple + Soft Lavender */
 .theme-dark {
-  --bg: #0F0D12;
-  --bg-muted: #18141C;
-  --surface: #221C2A;
-  --text: #ECE5F5;
-  --muted-text: #A594B5;
-  --accent: #A789D6;
-  --accent-strong: #C7A3F0;
-  --danger: #FF7A9C;
-  --overlay: rgba(0,0,0,0.55);
+  --bg: #0f0d12;
+  --bg-muted: #18141c;
+  --surface: #221c2a;
+  --text: #ece5f5;
+  --muted-text: #a594b5;
+  --accent: #a789d6;
+  --accent-strong: #c7a3f0;
+  --danger: #ff7a9c;
+  --overlay: rgba(0, 0, 0, 0.55);
 
   --background: 270 25% 6%;
   --foreground: 285 40% 93%;
-  --card: #221C2A;
+  --card: #221c2a;
   --card-foreground: var(--foreground);
   --muted: 270 20% 16%;
   --muted-foreground: 285 20% 68%;

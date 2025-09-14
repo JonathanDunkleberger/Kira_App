@@ -24,8 +24,8 @@ export function ConversationFeedback({ conversationId }: ConversationFeedbackPro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text.trim() || '(no message)',
-            rating: rating || null,
-            meta: { conversationId, ts: Date.now(), source: 'conversation_inline' },
+          rating: rating || null,
+          meta: { conversationId, ts: Date.now(), source: 'conversation_inline' },
         }),
       });
       if (!res.ok) throw new Error(await res.text().catch(() => 'Failed'));
@@ -45,7 +45,7 @@ export function ConversationFeedback({ conversationId }: ConversationFeedbackPro
       <div className="flex items-center gap-2">
         <span className="font-medium text-gray-700 dark:text-gray-300">Rating:</span>
         <div className="flex items-center gap-1">
-          {[1,2,3,4,5].map((n) => {
+          {[1, 2, 3, 4, 5].map((n) => {
             const active = (hover || rating) >= n;
             return (
               <button
@@ -57,7 +57,9 @@ export function ConversationFeedback({ conversationId }: ConversationFeedbackPro
                 onClick={() => setRating(n === rating ? 0 : n)}
                 className="transition-colors"
               >
-                <span className={active ? 'text-amber-400' : 'text-gray-400'}>{active ? '★' : '☆'}</span>
+                <span className={active ? 'text-amber-400' : 'text-gray-400'}>
+                  {active ? '★' : '☆'}
+                </span>
               </button>
             );
           })}
@@ -78,7 +80,9 @@ export function ConversationFeedback({ conversationId }: ConversationFeedbackPro
         >
           {submitting ? 'Sending…' : 'Submit'}
         </button>
-        {submitted && !error && <span className="text-[10px] text-gray-500 dark:text-gray-400">Thanks!</span>}
+        {submitted && !error && (
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">Thanks!</span>
+        )}
         {error && <span className="text-[10px] text-red-500">{error}</span>}
       </div>
     </div>

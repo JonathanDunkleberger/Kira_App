@@ -1,4 +1,4 @@
-"use client";
+'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type ConnState = 'idle' | 'connecting' | 'open' | 'retry' | 'closed';
@@ -20,7 +20,16 @@ function backoffFactory(min: number, max: number, factor: number) {
 }
 
 export function useConnection<T = any>(options: UseConnectionOptions<T>) {
-  const { url, parse, onMessage, auto = true, minDelay = 500, maxDelay = 10_000, factor = 1.7, jitter = 0.2 } = options;
+  const {
+    url,
+    parse,
+    onMessage,
+    auto = true,
+    minDelay = 500,
+    maxDelay = 10_000,
+    factor = 1.7,
+    jitter = 0.2,
+  } = options;
   const [state, setState] = useState<ConnState>(auto ? 'connecting' : 'idle');
   const [messages, setMessages] = useState<T[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -47,7 +56,7 @@ export function useConnection<T = any>(options: UseConnectionOptions<T>) {
       current.onmessage = (ev) => {
         let parsed: T | null = null;
         try {
-          parsed = parse ? parse(ev) : ((JSON.parse(ev.data) as any) as T);
+          parsed = parse ? parse(ev) : (JSON.parse(ev.data) as any as T);
         } catch {
           parsed = null;
         }

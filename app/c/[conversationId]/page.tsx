@@ -1,192 +1,224 @@
-'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { notFound } from 'next/navigation';
-
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../../components/ui/card';
+"use client";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { notFound, useRouter } from 'next/navigation';
+import { FeedbackScreen } from '../../../components/ui/FeedbackScreen';
 import { Button } from '../../../components/ui/Button';
-import { connectWithBackoff, ConnectionState } from '../../../lib/socket-backoff';
 import { useAudioCapture } from '../../../lib/useAudioCapture';
-import { ConversationFeedback } from '../../../components/feedback/ConversationFeedback';
+
+type CallState = 'connecting' | 'listening' | 'speaking' | 'ended';
 
 export default function ConversationPage({ params }: { params: { conversationId: string } }) {
   const { conversationId } = params;
-  if (!conversationId) {
-    notFound();
+  const router = useRouter();
+  if (!conversationId) notFound();
+
+  const [state, setState] = useState<CallState>('connecting');
+  const [muted, setMuted] = useState(false);
+  const [lastUserText, setLastUserText] = useState('');
+  const [lastAssistantText, setLastAssistantText] = useState('');
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [serverSeconds, setServerSeconds] = useState<number | null>(null);
+  const [limitReached, setLimitReached] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttempts = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const pendingSpeakingEndRef = useRef(false);
+
+  const { rms } = useAudioCapture(!muted && state !== 'ended');
+
+  // Timer
+  useEffect(() => {
+    if (state === 'ended') return;
+    if (!startedAt) return;
+    const id = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    return () => clearInterval(id);
+  }, [startedAt, state]);
+
+  // Connect WebSocket (minimal handshake; listen-first)
+  useEffect(() => {
+    if (state === 'ended') return;
+    const base =
+      process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+      process.env.NEXT_PUBLIC_WS_URL ||
+      'ws://localhost:10000';
+    const url = `${base}?conversationId=${conversationId}`;
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    ws.onopen = () => {
+      // Send handshake letting server know we are ready
+      ws.send(
+        JSON.stringify({
+          type: 'client_ready',
+          conversationId,
+          // userId omitted for guests (server treats absence as guest)
+        })
+      );
+    };
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        switch (msg.type) {
+          case 'server_ack':
+            setState('listening');
+            setStartedAt((s) => s || Date.now());
+            break;
+          case 'limit_exceeded':
+            setLimitReached(true);
+            endCall();
+            break;
+          case 'assistant_speaking_start':
+            setState('speaking');
+            break;
+          case 'assistant_speaking_end':
+            // If audio still playing, mark pending; else transition now
+            if (pendingSpeakingEndRef.current) {
+              // already pending
+            } else if (state === 'speaking') {
+              // Audio may not yet have arrived; set pending until playback finishes
+              pendingSpeakingEndRef.current = true;
+            } else {
+              setState('listening');
+            }
+            break;
+          case 'user_transcript':
+            setLastUserText(msg.text || '');
+            break;
+          case 'assistant_message':
+            setLastAssistantText(msg.text || '');
+            break;
+          case 'assistant_audio': {
+            // Lazy init audio context
+            if (!audioCtxRef.current) {
+              audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            }
+            const ctx = audioCtxRef.current;
+            const { data, encoding } = msg;
+            if (encoding === 'base64' && data) {
+              try {
+                setState('speaking');
+                const binary = atob(data);
+                const len = binary.length;
+                const buffer = new ArrayBuffer(len);
+                const view = new Uint8Array(buffer);
+                for (let i = 0; i < len; i++) view[i] = binary.charCodeAt(i);
+                ctx.decodeAudioData(buffer.slice(0)).then((audioBuffer) => {
+                  const src = ctx.createBufferSource();
+                  src.buffer = audioBuffer;
+                  src.connect(ctx.destination);
+                  src.onended = () => {
+                    if (pendingSpeakingEndRef.current) {
+                      pendingSpeakingEndRef.current = false;
+                      setState('listening');
+                    } else if (state === 'speaking') {
+                      setState('listening');
+                    }
+                  };
+                  src.start();
+                });
+              } catch {}
+            }
+            break;
+          }
+          case 'usage_update':
+            if (typeof msg.seconds === 'number') setServerSeconds(msg.seconds);
+            break;
+          default:
+            break;
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      // use functional update to read the latest state safely
+      setState((prev) => {
+        if (prev === 'ended') return prev;
+        if (reconnectAttempts.current < 1) {
+          reconnectAttempts.current += 1;
+          setTimeout(() => setState('connecting'), 400);
+          return prev; // keep prior state until reconnect attempt sets connecting
+        }
+        return 'ended';
+      });
+    };
+    ws.onerror = () => {
+      ws.close();
+    };
+    return () => {
+      ws.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, state === 'connecting']);
+
+  const endCall = useCallback(() => {
+    wsRef.current?.close();
+    setState('ended');
+  }, []);
+
+  // Animated orb style (scale with rms)
+  const orbScale = 1 + Math.min(1, rms * 40);
+
+  if (state === 'ended') {
+    return (
+      <main className="min-h-[calc(100vh-56px)] flex items-center justify-center p-6">
+        <FeedbackScreen onContinue={() => router.push('/')} />
+      </main>
+    );
   }
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const [connState, setConnState] = useState<ConnectionState>('retry');
-  const [events, setEvents] = useState<string[]>([]);
-  const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
-  const [input, setInput] = useState('');
-  const [muted, setMuted] = useState(false);
-
-  const { ready: micReady, rms } = useAudioCapture(!muted);
-
-  useEffect(() => {
-    const url =
-      (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') +
-      `?conversationId=${conversationId}`;
-    const dispose = connectWithBackoff(
-      url,
-      (ev) => {
-        setEvents((prev) => [...prev, ev.data]);
-        try {
-          const parsed = JSON.parse(ev.data);
-          if (parsed.type === 'transcript' && parsed.text) {
-            setMessages((m) => [...m, { role: parsed.role || 'assistant', text: parsed.text }]);
-          }
-        } catch {}
-      },
-      (state) => {
-        setConnState(state);
-        if (state === 'open') {
-          // send ready once connected
-          wsRef.current?.send?.(JSON.stringify({ type: 'client_ready', conversationId }));
-        }
-      },
-    );
-    return () => dispose();
-  }, [conversationId]);
-
-  const sendMessage = useCallback(() => {
-    if (!input.trim()) return;
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const payload = { type: 'user_message', text: input.trim(), conversationId };
-      wsRef.current.send(JSON.stringify(payload));
-    }
-    setMessages((m) => [...m, { role: 'user', text: input.trim() }]);
-    setInput('');
-  }, [input, conversationId]);
-
   return (
-    <main className="min-h-screen p-4 md:p-8 flex flex-col gap-6 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Conversation</h1>
-        <div className="flex items-center gap-2">
-          {connState === 'retry' && (
-            <span className="text-xs rounded-full px-3 py-1 bg-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 animate-pulse">
-              Reconnecting
-            </span>
-          )}
-          {connState === 'open' && (
-            <span className="text-xs rounded-full px-3 py-1 bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200">
-              Connected
-            </span>
-          )}
-          {connState === 'closed' && (
-            <span className="text-xs rounded-full px-3 py-1 bg-gray-300 dark:bg-neutral-700 text-gray-700 dark:text-gray-200">
-              Closed
-            </span>
-          )}
-          <span className="text-[10px] text-gray-500 dark:text-gray-400">
-            Mic: {micReady ? (muted ? 'Muted' : 'On') : 'Off'} {rms > 0.02 && !muted ? '•' : ''}
+    <main className="min-h-[calc(100vh-56px)] flex flex-col items-center justify-center gap-12 p-6 text-center">
+      {/* Timer */}
+  <div className="absolute top-20 text-xs tracking-wide text-neutral-600 dark:text-neutral-400 flex gap-2 items-center">
+        <span>
+          {state === 'connecting'
+            ? 'Connecting to Kira…'
+            : `${Math.floor(elapsed / 1000)}s ${state === 'speaking' ? '•' : ''}`}
+        </span>
+        {serverSeconds !== null && (
+          <span className="px-1.5 py-0.5 rounded bg-neutral-200/60 dark:bg-neutral-700/50 text-[10px] font-medium">
+            {serverSeconds}s
+          </span>
+        )}
+      </div>
+      {/* Orb */}
+      <div className="flex flex-col items-center gap-6">
+        <div
+          className="relative w-56 h-56 rounded-full bg-gradient-to-br from-amber-300/70 to-amber-500/60 dark:from-amber-400/40 dark:to-amber-600/30 shadow-lg transition-transform duration-150 ease-out flex items-center justify-center"
+          style={{ transform: `scale(${orbScale.toFixed(3)})`, filter: muted ? 'grayscale(0.5)' : 'none' }}
+        >
+          <div className="absolute inset-0 rounded-full animate-ping bg-amber-300/10 dark:bg-amber-500/10" />
+          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-100">
+            {state === 'connecting' && '...'}
+            {state === 'listening' && 'Listening'}
+            {state === 'speaking' && 'Speaking'}
           </span>
         </div>
-      </div>
-      <div className="grid gap-6 md:grid-cols-3 grid-cols-1">
-        <Card className="md:col-span-2 flex flex-col h-[70vh]">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Transcript</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto space-y-3 pr-2">
-            {messages.length === 0 && (
-              <div className="text-sm text-gray-500">
-                No messages yet. Start speaking or type below.
-              </div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className="flex gap-2 text-sm">
-                <span className="font-medium text-gray-700 dark:text-gray-300 min-w-[60px] text-right">
-                  {m.role === 'assistant' ? 'Kira' : 'You'}:
-                </span>
-                <span className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
-                  {m.text}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-          <CardFooter className="flex-col gap-3 items-stretch">
-            <div className="flex gap-2 w-full">
-              <input
-                className="flex-1 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                placeholder="Type a message..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
-              />
-              <Button onClick={sendMessage} disabled={connState !== 'open' || !input.trim()}>
-                Send
-              </Button>
-            </div>
-            <div className="text-[10px] text-gray-500 self-end">
-              Conversation ID: {conversationId}
-            </div>
-          </CardFooter>
-        </Card>
-        <div className="flex flex-col gap-6">
-          <Card className="h-[34vh]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Debug Events</CardTitle>
-            </CardHeader>
-            <CardContent className="h-full overflow-auto text-[10px] font-mono leading-relaxed space-y-1">
-              {events.slice(-300).map((e, i) => (
-                <div key={i}>{e}</div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card className="p-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Controls</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <Button variant="ghost" onClick={() => setMuted((m) => !m)}>
-                {muted ? 'Unmute' : 'Mute'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (wsRef.current?.readyState === WebSocket.OPEN) {
-                    wsRef.current.close();
-                  }
-                }}
-                disabled={connState !== 'open'}
-              >
-                Disconnect
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  window.location.reload();
-                }}
-              >
-                Reload
-              </Button>
-              <Button
-                variant="subtle"
-                onClick={() => {
-                  navigator.clipboard.writeText(conversationId).catch(() => {});
-                }}
-              >
-                Copy ID
-              </Button>
-            </CardContent>
-          </Card>
-          <Card className="p-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Feedback (stub)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ConversationFeedback conversationId={conversationId} />
-            </CardContent>
-          </Card>
+        <div className="w-72 text-left text-xs space-y-2 text-neutral-600 dark:text-neutral-300">
+          {limitReached && (
+            <p className="text-amber-600 dark:text-amber-400 font-medium">Daily free limit reached.</p>
+          )}
+          {lastUserText && (
+            <p><span className="font-semibold text-neutral-800 dark:text-neutral-100">You:</span> {lastUserText}</p>
+          )}
+          {lastAssistantText && (
+            <p><span className="font-semibold text-neutral-800 dark:text-neutral-100">Kira:</span> {lastAssistantText}</p>
+          )}
         </div>
       </div>
+      {/* Controls */}
+      <div className="flex items-center gap-6">
+        <Button
+          variant={muted ? 'outline' : 'secondary'}
+          onClick={() => setMuted((m) => !m)}
+          disabled={state === 'connecting' || limitReached}
+        >
+          {muted ? 'Unmute' : 'Mute'}
+        </Button>
+        <Button variant="destructive" onClick={endCall} disabled={state === 'connecting'}>
+          End call
+        </Button>
+      </div>
+      <div className="text-[10px] text-neutral-400">Session: {conversationId}</div>
     </main>
   );
 }

@@ -1,20 +1,11 @@
-'use client';
+"use client";
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
 
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from '../components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 
 export default function HomePage() {
   const router = useRouter();
-  const { user } = useUser();
 
   const startConversation = useCallback(() => {
     const id = crypto.randomUUID();
@@ -22,37 +13,29 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6">
-      <div className="max-w-md w-full flex flex-col items-center text-center gap-8">
-        <div className="space-y-3">
-          <h1 className="text-4xl font-bold tracking-tight">
-            Welcome{user?.firstName ? `, ${user.firstName}` : ''}
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-lg">
-            Ready to speak with Kira? Start a new voice conversation instantly.
-          </p>
-        </div>
-        <button
-          onClick={startConversation}
-          className="group w-full text-left focus:outline-none"
-          aria-label="Start a conversation"
-        >
-          <Card className="cursor-pointer group-hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <CardTitle>Start Conversation</CardTitle>
-              <CardDescription>Open a fresh session with Kira</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-gray-600 dark:text-gray-300">
-                A unique session ID will be created and you will connect to the real-time service.
+    <main className="min-h-[calc(100vh-56px)] flex items-center justify-center p-6">
+      <button
+        onClick={startConversation}
+        className="group w-full max-w-sm focus:outline-none"
+        aria-label="Talk to Kira"
+      >
+        <Card className="cursor-pointer border border-black/10 dark:border-white/10 hover:shadow-lg transition-all bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm">
+          <CardHeader className="space-y-3 py-10 flex items-center justify-center text-center">
+            <div className="w-14 h-14 rounded-full bg-amber-200/60 dark:bg-amber-400/10 flex items-center justify-center shadow-inner">
+              <span className="text-2xl">📞</span>
+            </div>
+            <CardTitle className="text-2xl font-semibold tracking-tight">Talk to Kira</CardTitle>
+            <CardDescription className="text-sm max-w-[18ch] mx-auto">
+              Start a real-time voice session instantly.
+            </CardDescription>
+            <CardContent className="p-0">
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 group-hover:underline">
+                Tap to begin →
               </div>
             </CardContent>
-            <CardFooter>
-              <div className="ml-auto text-primary font-medium group-hover:underline">Begin →</div>
-            </CardFooter>
-          </Card>
-        </button>
-      </div>
+          </CardHeader>
+        </Card>
+      </button>
     </main>
   );
 }

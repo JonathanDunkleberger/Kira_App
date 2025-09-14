@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { publicEnv } from '../lib/config';
 import { useConnection } from '../lib/useConnection';
 import { useAudioCapture } from '../lib/useAudioCapture';
+
 import { Button } from './ui/Button';
 
 interface CallViewProps {
@@ -25,10 +27,7 @@ export function CallView({ conversationId, onEnd }: CallViewProps) {
   useEffect(() => {
     // Using both possible names in case of naming mismatch
     // eslint-disable-next-line no-console
-    console.log(
-      'VERIFYING ENV VAR: NEXT_PUBLIC_WEBSOCKET_URL =',
-      process.env.NEXT_PUBLIC_WEBSOCKET_URL,
-    );
+    console.log('VERIFYING ENV VAR: NEXT_PUBLIC_WEBSOCKET_URL =', publicEnv.NEXT_PUBLIC_WEBSOCKET_URL);
     // eslint-disable-next-line no-console
     console.log('VERIFYING ENV VAR (legacy NEXT_PUBLIC_WS_URL) =', process.env.NEXT_PUBLIC_WS_URL);
   }, []);
@@ -41,7 +40,7 @@ export function CallView({ conversationId, onEnd }: CallViewProps) {
   const { state, send, close } = useConnection<{ type: string; text?: string; role?: string }>({
     url: () => {
       const base =
-        process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+        publicEnv.NEXT_PUBLIC_WEBSOCKET_URL ||
         process.env.NEXT_PUBLIC_WS_URL ||
         'ws://localhost:3001';
       return `${base}?conversationId=${conversationId}`;

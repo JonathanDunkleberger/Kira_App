@@ -8,8 +8,10 @@
 // - useVoiceSocket() React hook exposing status + helper methods
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { publicEnv } from './config';
+import { preferredTtsFormat } from './audio';
 import type { ServerEvent, ClientEvent, AnyEvent } from '@/lib/voice-protocol';
-import { preferredTtsFormat } from '@/lib/audio';
+
 
 // Internal singleton state (mimics old implementation minimal surface needed by components)
 let ws: WebSocket | null = null;
@@ -55,8 +57,9 @@ export function getMuted() {
 type ConnectArgs = { persona: string; conversationId?: string };
 
 const WS_BASE =
+  publicEnv.NEXT_PUBLIC_WEBSOCKET_URL ||
   process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD ||
-  process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+  process.env.NEXT_PUBLIC_WS_URL ||
   (process.env.NODE_ENV !== 'production' ? 'ws://localhost:10000' : undefined);
 
 async function resolveUrl(opts: ConnectArgs) {

@@ -1,9 +1,10 @@
-"use client";
+'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notFound, useRouter } from 'next/navigation';
 import { FeedbackScreen } from '../../../components/ui/FeedbackScreen';
 import { Button } from '../../../components/ui/Button';
 import { useAudioCapture } from '../../../lib/useAudioCapture';
+import { publicEnv } from '../../../lib/config';
 
 type CallState = 'connecting' | 'listening' | 'speaking' | 'ended';
 
@@ -39,7 +40,7 @@ export default function ConversationPage({ params }: { params: { conversationId:
   useEffect(() => {
     if (state === 'ended') return;
     const base =
-      process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+      publicEnv.NEXT_PUBLIC_WEBSOCKET_URL ||
       process.env.NEXT_PUBLIC_WS_URL ||
       'ws://localhost:10000';
     const url = `${base}?conversationId=${conversationId}`;
@@ -52,7 +53,7 @@ export default function ConversationPage({ params }: { params: { conversationId:
           type: 'client_ready',
           conversationId,
           // userId omitted for guests (server treats absence as guest)
-        })
+        }),
       );
     };
     ws.onmessage = (ev) => {
@@ -90,7 +91,8 @@ export default function ConversationPage({ params }: { params: { conversationId:
           case 'assistant_audio': {
             // Lazy init audio context
             if (!audioCtxRef.current) {
-              audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+              audioCtxRef.current = new (window.AudioContext ||
+                (window as any).webkitAudioContext)();
             }
             const ctx = audioCtxRef.current;
             const { data, encoding } = msg;
@@ -168,7 +170,7 @@ export default function ConversationPage({ params }: { params: { conversationId:
   return (
     <main className="min-h-[calc(100vh-56px)] flex flex-col items-center justify-center gap-12 p-6 text-center">
       {/* Timer */}
-  <div className="absolute top-20 text-xs tracking-wide text-neutral-600 dark:text-neutral-400 flex gap-2 items-center">
+      <div className="absolute top-20 text-xs tracking-wide text-neutral-600 dark:text-neutral-400 flex gap-2 items-center">
         <span>
           {state === 'connecting'
             ? 'Connecting to Kira…'
@@ -184,7 +186,10 @@ export default function ConversationPage({ params }: { params: { conversationId:
       <div className="flex flex-col items-center gap-6">
         <div
           className="relative w-56 h-56 rounded-full bg-gradient-to-br from-amber-300/70 to-amber-500/60 dark:from-amber-400/40 dark:to-amber-600/30 shadow-lg transition-transform duration-150 ease-out flex items-center justify-center"
-          style={{ transform: `scale(${orbScale.toFixed(3)})`, filter: muted ? 'grayscale(0.5)' : 'none' }}
+          style={{
+            transform: `scale(${orbScale.toFixed(3)})`,
+            filter: muted ? 'grayscale(0.5)' : 'none',
+          }}
         >
           <div className="absolute inset-0 rounded-full animate-ping bg-amber-300/10 dark:bg-amber-500/10" />
           <span className="text-sm font-medium text-neutral-700 dark:text-neutral-100">
@@ -195,13 +200,21 @@ export default function ConversationPage({ params }: { params: { conversationId:
         </div>
         <div className="w-72 text-left text-xs space-y-2 text-neutral-600 dark:text-neutral-300">
           {limitReached && (
-            <p className="text-amber-600 dark:text-amber-400 font-medium">Daily free limit reached.</p>
+            <p className="text-amber-600 dark:text-amber-400 font-medium">
+              Daily free limit reached.
+            </p>
           )}
           {lastUserText && (
-            <p><span className="font-semibold text-neutral-800 dark:text-neutral-100">You:</span> {lastUserText}</p>
+            <p>
+              <span className="font-semibold text-neutral-800 dark:text-neutral-100">You:</span>{' '}
+              {lastUserText}
+            </p>
           )}
           {lastAssistantText && (
-            <p><span className="font-semibold text-neutral-800 dark:text-neutral-100">Kira:</span> {lastAssistantText}</p>
+            <p>
+              <span className="font-semibold text-neutral-800 dark:text-neutral-100">Kira:</span>{' '}
+              {lastAssistantText}
+            </p>
           )}
         </div>
       </div>

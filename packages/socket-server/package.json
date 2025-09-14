@@ -1,0 +1,21 @@
+{
+  "name": "socket-server",
+  "private": true,
+  "type": "module",
+  "main": "dist/socket-server.mjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/socket-server.mjs"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^4.11.2",
+    "@prisma/client": "^6.15.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.38.0",
+    "openai": "^5.20.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "prisma": "^6.15.0",
+    "typescript": "^5.9.2"
+  }
+}

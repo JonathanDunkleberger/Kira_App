@@ -67,14 +67,18 @@ export default function ConversationPage({ params }: { params: { conversationId:
           </CardHeader>
           <CardContent className="flex-1 overflow-auto space-y-3 pr-2">
             {messages.length === 0 && (
-              <div className="text-sm text-gray-500">No messages yet. Start speaking or type below.</div>
+              <div className="text-sm text-gray-500">
+                No messages yet. Start speaking or type below.
+              </div>
             )}
             {messages.map((m, i) => (
               <div key={i} className="flex gap-2 text-sm">
                 <span className="font-medium text-gray-700 dark:text-gray-300 min-w-[60px] text-right">
                   {m.role === 'assistant' ? 'Kira' : 'You'}:
                 </span>
-                <span className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{m.text}</span>
+                <span className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                  {m.text}
+                </span>
               </div>
             ))}
           </CardContent>

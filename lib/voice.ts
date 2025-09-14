@@ -1,4 +1,4 @@
-"use client";
+'use client';
 // Unified voice socket API (standalone) – no external hook dependency.
 // Provides:
 // - connectVoice({ persona, conversationId })
@@ -17,7 +17,10 @@ let connecting: Promise<WebSocket> | null = null;
 let micStopper: (() => void) | null = null;
 let muted = false;
 let status: 'idle' | 'connecting' | 'connected' | 'disconnected' = 'idle';
-interface StatusMeta { __meta: 'status'; status: typeof status }
+interface StatusMeta {
+  __meta: 'status';
+  status: typeof status;
+}
 type Emitted = ServerEvent | ArrayBuffer | StatusMeta;
 type Listener = (msg: Emitted) => void;
 const listeners = new Set<Listener>();

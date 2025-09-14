@@ -7,9 +7,11 @@ export default function SimpleConversation() {
   const { status, messages, setStatus } = useConversationStore();
   useEffect(() => {
     // Auto connect & start mic for simple demo
-    connectVoice({ persona: 'kira' }).then(() => {
-      startMic().catch(() => {});
-    }).catch(() => {});
+    connectVoice({ persona: 'kira' })
+      .then(() => {
+        startMic().catch(() => {});
+      })
+      .catch(() => {});
   }, []);
 
   const handleMicClick = () => {

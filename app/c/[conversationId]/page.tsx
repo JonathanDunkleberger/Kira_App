@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../../../c
 import { Button } from '../../../components/ui/Button';
 import { connectWithBackoff, ConnectionState } from '../../../lib/socket-backoff';
 import { useAudioCapture } from '../../../lib/useAudioCapture';
+import { ConversationFeedback } from '../../../components/feedback/ConversationFeedback';
 
 export default function ConversationPage({ params }: { params: { conversationId: string } }) {
   const { conversationId } = params;
@@ -23,7 +24,9 @@ export default function ConversationPage({ params }: { params: { conversationId:
   const { ready: micReady, rms } = useAudioCapture(!muted);
 
   useEffect(() => {
-    const url = (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') + `?conversationId=${conversationId}`;
+    const url =
+      (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001') +
+      `?conversationId=${conversationId}`;
     const dispose = connectWithBackoff(
       url,
       (ev) => {
@@ -76,7 +79,9 @@ export default function ConversationPage({ params }: { params: { conversationId:
               Closed
             </span>
           )}
-          <span className="text-[10px] text-gray-500 dark:text-gray-400">Mic: {micReady ? (muted ? 'Muted' : 'On') : 'Off'} {rms > 0.02 && !muted ? '•' : ''}</span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">
+            Mic: {micReady ? (muted ? 'Muted' : 'On') : 'Off'} {rms > 0.02 && !muted ? '•' : ''}
+          </span>
         </div>
       </div>
       <div className="grid gap-6 md:grid-cols-3 grid-cols-1">
@@ -140,10 +145,7 @@ export default function ConversationPage({ params }: { params: { conversationId:
               <CardTitle className="text-sm">Controls</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <Button
-                variant="ghost"
-                onClick={() => setMuted((m) => !m)}
-              >
+              <Button variant="ghost" onClick={() => setMuted((m) => !m)}>
                 {muted ? 'Unmute' : 'Mute'}
               </Button>
               <Button
@@ -173,6 +175,14 @@ export default function ConversationPage({ params }: { params: { conversationId:
               >
                 Copy ID
               </Button>
+            </CardContent>
+          </Card>
+          <Card className="p-0">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Feedback (stub)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ConversationFeedback conversationId={conversationId} />
             </CardContent>
           </Card>
         </div>

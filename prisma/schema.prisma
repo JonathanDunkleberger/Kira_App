@@ -37,6 +37,7 @@ model Conversation {
   updatedAt DateTime  @updatedAt
   isGuest   Boolean   @default(true)
   messages  Message[]
+  feedbacks Feedback[]
 }
 
 model Message {
@@ -46,6 +47,16 @@ model Message {
   role           String
   text           String
   createdAt      DateTime     @default(now())
+}
+
+model Feedback {
+  id             String        @id @default(cuid())
+  stars          Int
+  note           String?
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  userId         String?
+  createdAt      DateTime      @default(now())
 }
 
 model Subscription {

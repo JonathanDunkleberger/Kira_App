@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { UserButton, useUser } from '@clerk/nextjs';
 
 import { ProfileDialog } from './profile/ProfileDialog';
+import { ThemeToggle } from './ThemeToggle';
 
 export default function AppHeader() {
   const [open, setOpen] = useState(false);
@@ -14,6 +15,7 @@ export default function AppHeader() {
         Kira
       </div>
       <div className="pointer-events-auto flex items-center gap-2">
+        <ThemeToggle />
         <button
           aria-label="Open profile dialog"
           onClick={() => setOpen(true)}

@@ -1,357 +1,265 @@
-# ✨ Kira AI — The Web‑Based Media Companion
+# ✨ Kira AI — Monorepo (Web + Realtime Voice Server)
 
-Your voice‑first AI companion, re‑imagined for the web.
+Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebSocket server for STT → LLM → TTS. This README documents the *current* monorepo layout and deployment model (Vercel + Render).
 
-Live Demo: [kira-ai-2.vercel.app](https://kira-ai-2.vercel.app)
-
-<!-- Demo screenshot -->
-
-![Kira – voice companion demo](public/KIRA_2_Preview.png)
+> Live demo (frontend): https://kira-ai-2.vercel.app
 
 ---
 
-## 🚀 From Desktop Hobby Project to Scalable SaaS
+## 📦 Packages
 
-This project is the professional, web-based evolution of the original open-source Kira AI VTuber, a Python-based desktop application.
+| Path | Name | Purpose |
+| ---- | ---- | ------- |
+| `packages/web` | `web` | Next.js App Router frontend (UI, auth, billing UX) |
+| `packages/socket-server` | `socket-server` | Plain Node WS server: Deepgram STT, OpenAI responses, Azure TTS, usage metering |
+| `prisma/` (root) | — | Shared Prisma schema + migrations used by both packages |
 
-The goal was to take the core concept of a voice‑first AI companion and re‑architect it as a scalable, accessible, and commercially viable SaaS. By moving to a web‑native stack, Kira becomes a seamless, browser‑based experience.
-
----
-
-## 🎯 Key Features
-
-- 🎙️ Seamless voice conversations: Voice Activity Detection (VAD) lets you just start talking—no push‑to‑talk.
-- ⏱️ Server‑authoritative usage & limits: Heartbeat accrual (every few seconds) updates daily + per‑chat usage; no client drift.
-- 📈 Freemium SaaS: Guest, Free, and Pro plans with Stripe subscriptions & upgrade nudges.
-- 🧠 Persistent memory (Pro): Long‑term memory context for more personalized replies.
-- 🌐 100% web‑based: Nothing to install; works in modern Chromium browsers.
-- 🔐 Secure & private: Auth/storage migration in progress (Supabase removed; Clerk + Prisma planned).
-
-### Unified Limit Dialog
-
-A single `LimitDialog` component presents both daily free paywall and per‑chat cap limits. It subscribes to heartbeat payloads (`t: 'heartbeat'`) via a lightweight global callback `(window as any).__onHeartbeat(msg)` triggered after the usage store updates. This keeps enforcement server‑side while ensuring consistent, minimal UI.
-
-```tsx
-// Example wrapper
-<ChatGuardrails>
-  <YourChatUI />
-</ChatGuardrails>
-```
+Root `package.json` exposes convenience scripts for parallel dev.
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## 🚀 Key Capabilities
 
-Modern web architecture with a dedicated real‑time voice server. Business logic (entitlements, usage, plans) is server‑authoritative; the UI uses centralized state for predictability.
-
-| Category                  | Technology                                                          |
-| ------------------------- | ------------------------------------------------------------------- |
-| Frontend                  | Next.js, React, Tailwind CSS, Framer Motion                         |
-| Voice backend (real‑time) | Node WebSocket server (ws) on Render                                |
-| App APIs                  | Next.js API Routes (Vercel or any Node host)                        |
-| Database (current)        | Transitional in-memory stubs (Prisma migration pending)             |
-| AI                        | Whisper (STT), OpenAI Chat Completions (LLM), Azure TTS (streaming) |
-| Payments                  | Stripe Checkout & Webhooks                                          |
+- Low‑latency voice loop: microphone → streaming STT → LLM → streaming TTS.
+- Server‑authoritative usage & limits (daily seconds, guest IP fallback).
+- Upgrade nudges & limit banner (`LimitBanner`) triggered by `limit_exceeded` event.
+- Pluggable TTS (Azure default, ElevenLabs optional).
+- Clean public env surface via `publicEnv` (only `NEXT_PUBLIC_*`).
 
 ---
 
-## 🏆 Highlights & Engineering Challenges
-
-- Heartbeat usage accrual: Server ticks entitlements & emits authoritative snapshots (eliminates race/drift).
-- Entitlements schema: `user_entitlements`, `daily_usage`, `chat_sessions` plus RPC for atomic increments.
-- Frictionless conversion funnel: Guest → signup → resume chat, upgrade surfaces when limits near.
-- Guardrails UX: Unified LimitDialog handles both paywall and per‑chat cap states (one component, two modes).
-- Polished UX: Dynamic voice orb (Web Audio API), tuned VAD, streaming TTS for rapid first phoneme.
-
----
-
-## 🔑 Environment Setup
-
-This project uses environment variables. Use `.env.example` as a template and copy to `.env.local`.
-
-Required categories:
-
-- Stripe API & webhook secret
-- OpenAI & Azure API keys
-- Public app URL & free‑trial configuration
-- WebSocket URL(s) for the voice server
-
-Key client/server vars (non‑exhaustive):
-
-- `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:8080 for dev)
-- `OPENAI_API_KEY`, `OPENAI_MODEL`
-<!-- Supabase variables removed after purge -->
-- `AZURE_*` for TTS (if using Azure provider)
-- `TTS_PROVIDER` ("azure" | "elevenlabs") defaults to azure
-- `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` (if using ElevenLabs fallback)
-- `FREE_TRIAL_SECONDS`, `FREE_DAILY_LIMIT`, `PRO_CHAT_SESSION_LIMIT` (usage tuning)
-- Clerk Auth:
-  - `CLERK_PUBLISHABLE_KEY`
-  - `CLERK_SECRET_KEY`
-  - `CLERK_WEBHOOK_SECRET` (for user sync route)
-
-## Backend Data Flow (Phase 1 One-Shot Plan)
-
-This phase will introduce Prisma-backed persistence for core objects (Supabase endpoints already removed):
-
-1. ensureUser(): called in new Prisma conversation/message endpoints to mirror Clerk users into the relational store.
-2. Conversations: `POST /api/conversations` (Prisma) will create rows; previous endpoints now stubbed.
-3. Messages: future `POST /api/conversations/[id]/messages` route to append user/ai messages as they stream.
-4. Usage tracking: after a session ends, total seconds are aggregated into `Usage` (daily roll-up per user).
-5. Migration strategy: first Prisma migration applied via `prisma migrate deploy` against the target Postgres instance.
-
-UI calls will be updated incrementally from stubbed helpers to the new Prisma-backed routes.
-
-### New Prisma Endpoints
-
-All conversation/message operations now backed by Prisma tables (`app_conversations`, `app_messages`, `app_users`). Response shape maintains legacy keys (`created_at`, `updated_at`) for UI compatibility.
-
-| Endpoint                           | Method | Description                    |
-| ---------------------------------- | ------ | ------------------------------ |
-| `/api/conversations`               | GET    | List user conversations        |
-| `/api/conversations`               | POST   | Create new conversation        |
-| `/api/conversations/[id]`          | PATCH  | Rename conversation            |
-| `/api/conversations/[id]`          | DELETE | Delete conversation            |
-| `/api/conversations/[id]/messages` | GET    | List messages (ascending)      |
-| `/api/conversations/[id]/messages` | POST   | Append message (text + sender) |
-
-Auth: Clerk user required (guest flow deferred). `ensureUser()` upserts into `app_users`.
-
-- Database:
-  - `DATABASE_URL` (Postgres for Prisma)
-
-### Unified Usage Tracking (Users & Guests)
-
-Daily usage seconds are persisted in the Prisma `Usage` model (`app_usage`). Authenticated users aggregate by `userId`. Guest users (no Clerk session) are aggregated by their IP address (from `x-forwarded-for` or `x-real-ip`).
-
-Endpoints (all dynamic – no caching):
-
-| Endpoint            | Method | Purpose                                 | Identity Strategy    |
-| ------------------- | ------ | --------------------------------------- | -------------------- |
-| `/api/usage`        | GET    | Backwards-compatible usage fetch        | UserId → IP fallback |
-| `/api/usage`        | POST   | Backwards-compatible update (increment) | UserId → IP fallback |
-| `/api/usage/check`  | GET    | Explicit usage snapshot                 | UserId → IP fallback |
-| `/api/usage/update` | POST   | Explicit usage increment                | UserId → IP fallback |
-
-Request (POST /api/usage/update or /api/usage):
-
-```json
-{ "secondsUsed": 5 }
-```
-
-Response shape (all routes):
-
-```json
-{
-  "secondsRemaining": 123,
-  "dailyLimitSeconds": 900,
-  "subject": "user" | "ip"
-}
-```
-
-Implementation details:
-
-1. `userId` nullable & new `ip` column with indices for efficient day-range aggregation.
-2. Helper functions accept `{ userId }` or `{ ip }` identity object.
-3. Daily window: UTC day `[00:00, 24:00)`. Adjust if you later need locale-based rollover.
-4. Abuse considerations: IP-based limiting is coarse; consider adding lightweight cookie or signed fingerprint to reduce NAT collisions. Rate-limit bursts per IP if necessary.
-5. Migration name: `guest_usage_ip` (adds nullable userId, ip column, indices).
-
-Environment knobs:
-
-| Var                  | Meaning                                                          |
-| -------------------- | ---------------------------------------------------------------- |
-| `FREE_TRIAL_SECONDS` | Daily allowance applied to both authenticated and guest subjects |
-
-Future hardening ideas (not yet implemented):
-
-- Add soft session-bound accrual (conversation-level) for more granular gating.
-- Introduce HMAC-signed client fingerprint combining UA + coarse IP for better uniqueness.
-- Periodic cleanup task to prune stale guest IP rows (older than 30 days) to keep table lean.
-
-#### Realtime Enforcement
-
-Before processing audio, the voice WebSocket server calls `/api/usage/check`. If `secondsRemaining <= 0` it sends:
-
-```json
-{
-  "t": "limit_exceeded",
-  "reason": "daily_limit",
-  "message": "Daily free usage exhausted. Upgrade to continue."
-}
-```
-
-The client (`useVoiceSocket`) listens for this event, sets a global flag, and a lightweight `LimitBanner` component displays an upgrade prompt. This ensures no additional audio is processed post-limit.
-
-### Streaming TTS Protocol
-
-When a final transcript is produced:
-
-1. Server emits `{ t: 'transcript', text }`.
-2. Server generates LLM reply (history aware) then streams Azure TTS:
-
-- `{ t: 'tts_start' }`
-- Repeated `{ t: 'tts_chunk', b64: <base64 audio frame> }` (WebM Opus 24k mono)
-- `{ t: 'tts_end' }`
-
-Clients accumulate frames; large buffers flush early to reduce latency. Legacy `{ t: 'tts_url' }` messages still supported for non-streaming paths.
-
-### Realtime Speech Recognition (Deepgram)
-
-Add `DEEPGRAM_API_KEY` to enable production streaming STT (model `nova-2`).
-
-Client sends `audio/webm;codecs=opus` 48k mono chunks; server opens a Deepgram websocket with matching params (`encoding=opus&sample_rate=48000&channels=1`). Partial transcripts are emitted with `{ t: 'partial' }`, finals as `{ t: 'transcript' }` followed by assistant reply `{ t: 'speak' }`.
-
-If the key is absent the server falls back to a lightweight mock transcriber so voice flow still works locally without external spend.
-
-Partial Captions: While you speak, interim hypotheses stream in and render as a faint italic line at the bottom of the conversation (`partialStore`). They are cleared when a final transcript arrives or when the assistant begins speaking.
-
-Auto-Retry: The Deepgram websocket now reconnects with exponential backoff (500ms doubling, capped at 8s) if the connection drops mid‑session. Audio chunks are queued while reconnecting; if reconnection fails they are discarded when the transcriber closes.
-
-Environment only (never expose to browser):
+## 🗂️ Monorepo Scripts (Root)
 
 ```bash
-DEEPGRAM_API_KEY=dg_secret_...
+npm run dev         # Run socket server (port 10000 or PORT) + web (3000) in parallel
+npm run dev:server  # Only websocket server
+npm run dev:web     # Only frontend
+npm run build       # Build frontend (web)
+npm run start       # Start production frontend
 ```
 
-Future overrides (not yet parameterized): `model`, `tier`, `smart_format`, `punctuate`.
-
-### TTS Provider Switching
-
-By default Azure TTS is used. To switch to ElevenLabs, set:
-
-```bash
-TTS_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=sk_your_key
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM # or preferred voice
-```
-
-If unset or invalid, Azure remains the default (requires `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`). The streaming helper currently streams only Azure; ElevenLabs path buffers full audio then emits a single chunk (upgrade: integrate official streaming endpoint later).
+Package‑local scripts follow conventional names (`npm run build --workspace=socket-server`, etc.).
 
 ---
 
-## ⏯️ Getting Started (Local)
+## 🔑 Environment Variables
 
-1. Copy environment template and fill values
+Copy `.env.example` → `.env.local`. Frontend only sees `NEXT_PUBLIC_*`.
 
-```bash
-cp .env.example .env.local
-```
+| Category | Vars |
+| -------- | ---- |
+| Auth (Clerk) | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` (server only) |
+| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| Deepgram STT | `DEEPGRAM_API_KEY` |
+| Azure TTS | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` |
+| ElevenLabs (optional) | `TTS_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` |
+| Usage limits | `FREE_DAILY_LIMIT_SECONDS`, `FREE_TRIAL_SECONDS` (names may evolve) |
+| Realtime | `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:10000) |
+| Database | `DATABASE_URL` (Postgres for Prisma) |
 
-1. Install dependencies and run both Next.js and the voice WS server
+Only the websocket server needs the STT / TTS secrets; keep them out of `NEXT_PUBLIC_*`.
+
+---
+
+## 🔁 Realtime Event Protocol (Representative)
+
+| Direction | Event | Payload Notes |
+| --------- | ----- | ------------- |
+| server→client | `server_ack` | Initial confirmation + usage snapshot |
+| client→server | `user_audio` | Binary Opus/WebM frames (48k) |
+| server→client | `user_transcript` | Final STT segment (text) |
+| server→client | `assistant_message` | Assistant text (complete or streaming) |
+| server→client | `assistant_audio` | Base64 WAV/Opus chunk(s) |
+| server→client | `assistant_speaking_start` / `assistant_speaking_end` | Playback lifecycle |
+| server→client | `usage_update` | Periodic seconds used / remaining |
+| server→client | `limit_exceeded` | Hard stop message & UI trigger |
+
+Client renders interim partials locally; authoritative usage ticks originate from server heartbeat.
+
+---
+
+## 🛠️ Local Development
 
 ```bash
 npm install
+cp .env.example .env.local
+# edit .env.local -> set NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:10000
 npm run dev
 ```
 
-The app runs at [http://localhost:3000](http://localhost:3000)
+Frontend: http://localhost:3000
+WebSocket server: ws://localhost:10000 (health: GET http://localhost:10000/healthz)
 
-Notes:
-
-- `npm run dev` runs Next (port 3000) + WebSocket server (port 8080) concurrently.
-- Set `NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:8080` in `.env.local`.
-- WS server: `/healthz` for liveness; auth token requirement removed (will use Clerk later). Active chat session id via `?conversationId=`.
-- Heartbeat: server emits usage every ~5s; client store interpolates elapsed seconds for smooth UI.
-
----
-
-## 🧪 Testing
-
-Basic Playwright scaffolding is included. Microphone permissions are granted in `playwright.config.ts`.
-
-```bash
-npx playwright test
-```
+Typical troubleshooting:
+| Symptom | Check |
+| ------- | ----- |
+| No audio transcription | `DEEPGRAM_API_KEY` present? MIME type Opus/WebM chunking? |
+| Limit banner instantly | FREE limit env values too low / usage persisted from previous day |
+| 404 on assets | Ensure running from repo root (so Next sees `public/`) |
 
 ---
 
-## 📦 Build & Deploy
+## 🧪 Testing & Quality
 
-- Frontend (Next.js)
-  - Build: `npm run build`
-  - Host on Vercel or any Node host.
+| Command | Purpose |
+| ------- | ------- |
+| `npm run lint --workspace=web` | ESLint (import order, TS rules) |
+| `npm run test --workspace=web` | Unit tests (Vitest) |
+| `npx playwright test --workspace=web` | E2E (browser + mic permissions) |
+| `npm run typecheck --workspace=web` | TypeScript diagnostics |
 
-- Voice server (WebSocket on Render)
-  - Build: `npm run build:server`
-  - Start: `npm run start:server` (runs `dist/socket-server.js`)
-  - Render deployment supported via `render.yaml` (binds to `PORT`, exposes `/healthz`).
+Pre-commit (lefthook) runs prettier + lint.
 
-## 🤝 Contributing
+---
 
-Contributions welcome! Ways to help:
+## 🚢 Deployment
 
-1. Open an issue for bugs, DX papercuts, or enhancement ideas.
-2. Submit a PR (small, focused changes preferred). Include context in the description.
-3. Improve docs: clearer env var explanations, architecture diagrams, or onboarding notes.
+### Frontend (Vercel)
+1. Set project root to `packages/web` in Vercel settings.
+2. Install build command: `npm install --workspace=web && npm run build --workspace=web` (Vercel auto handles if root has workspaces). Simpler: keep root; Vercel will detect Next in subfolder if configured.
+3. Output: `.next` (served by Vercel). Ensure env vars (all needed `CLERK_*`, `NEXT_PUBLIC_WEBSOCKET_URL`, etc.) configured in Vercel dashboard.
+4. Optional: set `NEXT_TELEMETRY_DISABLED=1`.
 
-Guidelines:
+### Realtime WebSocket Server (Render)
+1. New Render Web Service → Root = `packages/socket-server`.
+2. Build command:
+   ```bash
+   npm install --production=false --workspace=socket-server && npm run build --workspace=socket-server
+   ```
+3. Start command:
+   ```bash
+   npm run start --workspace=socket-server
+   ```
+4. Exposes `$PORT` (Render injects). Health check path: `/healthz`.
+5. Set secrets: `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, TTS provider keys, `DATABASE_URL` (if Prisma used), usage limit vars.
+6. After deploy, update Vercel `NEXT_PUBLIC_WEBSOCKET_URL` to the Render wss URL.
 
-- Run `npm run typecheck && npm test && npm run lint` before opening a PR.
-- Keep commits scoped; squash or rebase noisy fixups.
-- Avoid introducing breaking env vars without documenting them in `.env.example`.
-
-If you're unsure whether a feature fits, open an issue for discussion first.
-
-## 📄 License
-
-Released under the MIT License – see `LICENSE`.
-
-## 📝 Notes
-
-- Realtime pipeline: STT → limited history fetch → LLM response streaming → TTS stream → client playback.
-- Heartbeat authoritative usage prevents client spoofing & clock drift.
-- All timers in UI are display-only; enforcement lives server-side.
-
-### 2025-09 Voice Socket Consolidation
-
-Legacy `lib/useVoiceSocket.ts` (singleton helpers) was removed. Unified access lives in `lib/voice.ts`, which wraps the newer hook-based implementation in `lib/hooks/useVoiceSocket.ts` while presenting the familiar API (`connectVoice`, `startMic`, `stopMicForUtterance`, `endCall`, `sendJson`, `setMuted`). Extend `lib/voice.ts` if additional surface area is required instead of recreating parallel socket modules.
-
-### Prisma Schema Overview (New)
-
-Core relational entities now defined with Prisma:
-
-- User (app_users): clerk-sourced id, plan tier (FREE/PRO), relations to conversations, usage days, subscriptions.
-- Conversation (app_conversations): belongs to user, has many messages.
-- Message (app_messages): role-based (user/assistant/system) text log, relational to conversation (and optional user).
-- DailyUsage (app_daily_usage): aggregated per-user daily seconds, unique(userId, day).
-- Subscription (app_subscriptions): Stripe subscription + status metadata.
-- PaymentEvent (app_payment_events): raw Stripe webhook events for audit.
-- Achievement / UserAchievement: static catalog + earned joins.
-
-Apply migrations locally:
-
-```powershell
-# Ensure env vars loaded (Windows PowerShell)
-$env:DATABASE_URL = (Get-Content .env.local | Select-String '^DATABASE_URL=' | ForEach-Object { ($_ -split '=',2)[1] })
-
-npx prisma migrate dev
-```
-
-Deploy migrations (CI / Production):
-
+### Database / Prisma
+If Postgres backing is enabled:
 ```bash
 npx prisma migrate deploy
 ```
+You can run this either in a separate migration job or as a pre-start script for both services needing DB access.
 
-Generate client (after schema changes):
+---
+
+## 🔄 Usage & Limits Model (Summary)
+
+Server increments per active second (heartbeat interval). Guests identified by IP; authenticated users by Clerk user id. When remaining seconds ≤ 0, server sends `limit_exceeded` and ceases processing audio.
+
+---
+
+## 🧬 TTS / STT Switching
+
+Azure default. For ElevenLabs add:
+```bash
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=sk_...
+ELEVENLABS_VOICE_ID=voice_id_here
+```
+Deepgram STT requires only `DEEPGRAM_API_KEY`. Without it, a mock path can emit placeholder transcripts (development convenience).
+
+---
+
+## 🗺️ Roadmap (Next)
+1. Prisma endpoint wiring (`conversations`, `messages`, `usage` persistence).
+2. Stripe webhooks → subscription state / entitlement elevation.
+3. Achievement catalog + toast awarding pipeline.
+4. ElevenLabs streaming upgrade (true chunked Opus).
+5. Fine‑grained conversation memory windows.
+
+---
+
+## 💳 Billing & Subscription UX
+
+The app offers a free daily usage tier and a single Pro subscription (Stripe) that unlocks unlimited conversation time.
+
+### Components & Pages
+
+| Path | Purpose |
+| ---- | ------- |
+| `app/account/billing/page.tsx` | Billing management page (plan status + actions) |
+| `components/BillingStatus.tsx` | Client component fetching `/api/billing/subscription` |
+| `components/Paywall.tsx` | Upgrade modal triggered by usage exhaustion / proactive click |
+| `components/auth/ProfileSettingsModal.tsx` | Quick access links to billing page & portal |
+
+### API Routes
+
+| Route | Method | Description |
+| ----- | ------ | ----------- |
+| `/api/billing/subscription` | GET | Current subscription snapshot (status, plan, renewal dates) |
+| `/api/billing/checkout` | POST | Creates Stripe Checkout session (requires auth) |
+| `/api/billing/portal` | POST | Opens Stripe Billing Portal for customer |
+| `/api/stripe/webhook` | POST | Stripe events (subscription lifecycle, invoices) |
+
+### Client Helpers
+
+Located in `lib/client-api.ts`:
+
+- `startCheckout()` → POST `/api/billing/checkout` then `window.location.href` to Stripe.
+- `openBillingPortal()` → POST `/api/billing/portal` then redirect.
+
+### Subscription Sync
+
+`/api/stripe/webhook` updates `Subscription` + `User.tier` on:
+
+- `customer.subscription.created|updated|deleted`
+- `checkout.session.completed` (provisional elevation)
+- `invoice.payment_succeeded|invoice.payment_failed` (logs `PaymentEvent` + tier adjust)
+
+Downgrade currently immediate on failure / cancellation (no grace window). Adjust in `syncSubscription` if you add grace logic.
+
+### Environment Vars (Stripe)
+
+| Var | Purpose |
+| --- | ------- |
+| `STRIPE_SECRET_KEY` | Server-side API key |
+| `STRIPE_PRICE_ID` | Recurring price id for Pro plan |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signature validation |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | (Optional) For any future client-side Stripe elements |
+
+### Local Testing (Stripe CLI)
 
 ```bash
-npx prisma generate
+stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.payment_succeeded,invoice.payment_failed --forward-to localhost:3000/api/stripe/webhook
 
+# Create a checkout session
+stripe checkout sessions create \
+   --mode subscription \
+   --success_url http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID} \
+   --cancel_url http://localhost:3000/account/billing?canceled=1 \
+   --line-items price=$STRIPE_PRICE_ID,quantity=1 \
+   --metadata userId=clerk_user_123
 ```
 
-Seed (optional local):
+### Future Enhancements
 
-```bash
+- Grace period + scheduled downgrade job
+- Multiple plan tiers / usage entitlements
+- In-app invoice list (surface `PaymentEvent` history)
+- Email notifications on payment failure / trial ending
 
-node prisma/seed.ts
+---
+
+---
+
+\n## 🤝 Contributing
+Small, focused PRs welcome. Please run:
+\n```bash
+npm run lint --workspace=web
+npm run typecheck --workspace=web
+npm test --workspace=web
 ```
+Document any new env vars in `.env.example`.
 
-Next steps (Phase 1 follow-up):
+---
 
-1. Implement `ensureUser()` middleware helper.
-2. Replace stub conversation endpoints with Prisma CRUD.
-3. Add usage accrual on heartbeat finalize.
-4. Wire Stripe webhooks -> Subscription & PaymentEvent tables.
-5. Populate Achievement catalog and award logic.
+\n## 📄 License
+MIT — see `LICENSE`.
+
+---
+
+\n## 📝 Historical Notes
+Voice socket consolidated into `lib/voice.ts`; Deepgram client updated (`createClient` + `listen.live`). Limit banner shows after authoritative `limit_exceeded`.
+

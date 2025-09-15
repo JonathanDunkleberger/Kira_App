@@ -5,8 +5,7 @@
   "main": "dist/socket-server.mjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node --enable-source-maps dist/socket-server.mjs",
-  "start:server": "node --enable-source-maps dist-server/socket-server.mjs"
+    "start": "node --enable-source-maps dist/socket-server.mjs"
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",

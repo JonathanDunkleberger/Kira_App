@@ -8,8 +8,9 @@
   },
   "scripts": {
     "dev": "next dev -p 3000",
-  "build": "node scripts/check-env.cjs && prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
     "lint": "eslint .",
@@ -83,5 +84,8 @@
     "typescript": "^5.9.2",
     "vitest": "^2.1.1",
     "zx": "^8.8.1"
+  },
+  "prisma": {
+    "schema": "../../prisma/schema.prisma"
   }
 }

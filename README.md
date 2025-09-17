@@ -112,6 +112,40 @@ The WebSocket server manages: audio ingestion, transcription buffering, LLM stre
 
 ---
 
+### Architecture Diagram
+
+```mermaid
+flowchart LR
+    subgraph Browser (Vercel - packages/web)
+        MIC[Microphone]
+        HK[useKiraSocket Hook]
+        Q[Playback Queue]
+        UI[Chat / Transcript UI]
+    end
+
+    subgraph Render (packages/socket-server)
+        WS[WebSocket Server]
+        STT[Deepgram Streaming STT]
+        LLM[OpenAI Streaming Response]
+        SB[Sentence Buffer]
+        TTS[Azure Speech TTS]
+        USG[Usage Meter]
+        DB[(Postgres / Supabase)]
+    end
+
+    MIC -->|Opus/WebM chunks| HK -->|binary frames| WS
+    WS -->|audio stream| STT -->|final sentences| SB
+    SB -->|prompt segments| LLM -->|token stream| SB
+    SB -->|complete sentence text| TTS -->|audio chunks (base64)| WS -->|assistant_audio events| Q --> UI
+    STT -->|user_transcript events| WS --> HK --> UI
+    LLM -->|assistant_message events| WS --> HK --> UI
+    USG -->|usage_update events| WS --> HK --> UI
+    WS -->|persist user/assistant messages| DB
+    USG -->|read/write usage| DB
+```
+
+---
+
 ## Getting Started
 
 ### 1. Clone

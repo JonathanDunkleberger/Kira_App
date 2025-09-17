@@ -2,6 +2,7 @@ services:
   - type: web
     name: kira-voice-ws
     env: node
+    rootDir: ai-media-companion/packages/socket-server
     plan: starter
     region: oregon
     buildCommand: |

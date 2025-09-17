@@ -15,10 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      - name: Install deps
-        run: npm ci
+          cache: 'pnpm'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: true
       - name: Check flag expiries
-        run: npm run flags:check
+        run: pnpm run flags:check
       - name: Verify
-        run: npm run verify
+        run: pnpm run verify

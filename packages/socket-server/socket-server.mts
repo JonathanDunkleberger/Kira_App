@@ -1,10 +1,11 @@
-// moved from root
+import 'dotenv/config';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
 import { PrismaClient } from '@prisma/client';
-import { createClient } from '@deepgram/sdk';
+import { createClient as createDeepgramClient } from '@deepgram/sdk';
 import OpenAI from 'openai';
 import * as AzureSpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
+import type { ServerEvent } from '../web/lib/voice-protocol';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -15,273 +16,165 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// --- CONFIGURATION ---
 const DEEPGRAM_API_KEY = requireEnv('DEEPGRAM_API_KEY');
 const OPENAI_API_KEY = requireEnv('OPENAI_API_KEY');
 const AZURE_SPEECH_KEY = requireEnv('AZURE_SPEECH_KEY');
 const AZURE_SPEECH_REGION = requireEnv('AZURE_SPEECH_REGION');
+const PORT = parseInt(process.env.PORT || '10000', 10);
 
+// --- SERVICES ---
 const prisma = new PrismaClient();
-const deepgram = createClient(DEEPGRAM_API_KEY);
+const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// --- HTTP SERVER for Health Checks & WebSocket Upgrades ---
 const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/healthz') {
     res.statusCode = 200;
     res.end('ok');
-    return;
+  } else {
+    res.statusCode = 404;
+    res.end();
   }
-  res.statusCode = 404;
-  res.end();
 });
+
 const wss = new WebSocketServer({ noServer: true });
-const PORT = parseInt(process.env.PORT || '10000', 10);
-server.listen(PORT, () => {
-  console.log(`Voice pipeline server listening on :${PORT}`);
-});
 
 server.on('upgrade', (req, socket, head) => {
   const origin = req.headers.origin || '';
-  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/.*\.vercel\.app|https?:\/\/.+)$/i;
+  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/.*\.vercel\.app)$/i;
   if (!allowed.test(origin)) {
+    console.warn(`[Server] Denying connection from origin: ${origin}`);
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
 });
 
+// --- WEBSOCKET CONNECTION HANDLING ---
 wss.on('connection', async (ws, req) => {
   console.log('[Server] ✅ New client connected.');
-  let conversationId: string | null = null;
-  let userId: string | null = null;
-  let isGuest = true;
-  let conversationCreated = false;
-  let clientIp: string | null = null;
-  try {
-    const fwd = req.headers['x-forwarded-for'];
-    if (typeof fwd === 'string') clientIp = fwd.split(',')[0].trim();
-    else if (Array.isArray(fwd) && fwd.length) clientIp = fwd[0];
-    if (!clientIp)
-      // @ts-ignore
-      clientIp = req.socket?.remoteAddress || null;
-  } catch {}
-  try {
-    if (req.url) {
-      const u = new URL(req.url, 'http://localhost');
-      conversationId = u.searchParams.get('conversationId');
-      userId = u.searchParams.get('userId');
-      isGuest = !userId;
-    }
-  } catch {}
-
-  function safeSend(payload: unknown) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify(payload));
-      } catch (err) {
-        console.error('[Server] send error', err);
-      }
-    }
+  const conversationId = new URL(req.url!, 'http://localhost').searchParams.get('conversationId');
+  if (!conversationId) {
+    ws.close(1008, 'Missing conversationId');
+    return;
   }
 
-  const sessionStarted = Date.now();
-  let usageInterval: NodeJS.Timeout | null = null;
-  function startUsageTicks() {
-    if (usageInterval) return;
-    usageInterval = setInterval(() => {
-      const seconds = Math.floor((Date.now() - sessionStarted) / 1000);
-      safeSend({ type: 'usage_update', seconds });
-      const DAILY_CAP = parseInt(process.env.FREE_TRIAL_SECONDS || '300', 10);
-      if (DAILY_CAP > 0) {
-        const now = new Date();
-        const startOfDay = new Date(
-          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-        );
-        prisma.usage
-          .aggregate({
-            _sum: { seconds: true },
-            where: userId
-              ? { userId, date: { gte: startOfDay } }
-              : { userId: null, ip: clientIp || undefined, date: { gte: startOfDay } },
-          })
-          .then((agg) => {
-            const prior = agg._sum.seconds || 0;
-            const projected = prior + seconds;
-            if (projected >= DAILY_CAP) {
-              safeSend({ type: 'limit_exceeded', remaining: 0 });
-              try {
-                ws.close();
-              } catch {}
-            } else {
-              const remaining = Math.max(0, DAILY_CAP - projected);
-              safeSend({ type: 'usage_remaining', remaining });
-            }
-          })
-          .catch((e) => console.error('[Server] Usage aggregate error', e));
-      }
-    }, 5000);
-  }
+  const safeSend = (payload: ServerEvent) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+  };
 
-  const dgAny: any = deepgram as any;
-  const deepgramLive = dgAny.listen?.live?.({
-    smart_format: true,
-    model: 'nova-2',
-    language: 'en-US',
-  }) ?? { addListener: () => {}, send: () => {}, finish: () => {} };
+  const deepgramLive = deepgram.listen.live({
+    smart_format: true, model: 'nova-2', language: 'en-US', encoding: 'opus',
+  });
+
+  deepgramLive.on('error', (e) => console.error('[DG] Error:', e));
 
   let assistantBusy = false;
+  let sentenceBuffer = '';
 
-  deepgramLive.addListener('transcriptReceived', async (data: any) => {
+  deepgramLive.on('transcript', async (data: any) => {
+    const transcript = data.channel?.alternatives?.[0]?.transcript?.trim();
+    if (!transcript || assistantBusy) return;
+
+    assistantBusy = true;
+    safeSend({ t: 'transcript', text: transcript });
+    safeSend({ t: 'speak', on: true });
+
+    await prisma.message.create({
+      data: { conversationId, role: 'user', text: transcript },
+  }).catch((e: unknown) => console.error('[DB] Failed to save user message:', e));
+
+    let fullResponse = '';
+
+    const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+    speechConfig.speechSynthesisOutputFormat = AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
+    speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
+    const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(speechConfig, undefined);
+
     try {
-      const parsed = JSON.parse(data);
-      const transcript = parsed.channel?.alternatives?.[0]?.transcript?.trim();
-      if (!transcript) return;
-      safeSend({ type: 'user_transcript', text: transcript });
-      if (!conversationCreated && conversationId) {
-        try {
-          await prisma.conversation.create({
-            data: { id: conversationId, userId: isGuest ? null : userId || null, isGuest: true },
-          });
-          conversationCreated = true;
-        } catch (err) {
-          console.error('[Server] Failed to create conversation on first transcript:', err);
-        }
-      }
-      if (assistantBusy) return;
-      assistantBusy = true;
-      safeSend({ type: 'assistant_speaking_start' });
-      if (conversationCreated && conversationId) {
-        try {
-          await prisma.message.create({ data: { conversationId, role: 'user', text: transcript } });
-        } catch (msgErr) {
-          console.error('[Server] Failed to persist user message', msgErr);
-        }
-      }
-      let reply = 'Okay.';
-      try {
-        const completion = await openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are Kira, a concise, encouraging AI companion. Keep replies short.',
-            },
-            { role: 'user', content: transcript },
-          ],
-          max_tokens: 60,
-          temperature: 0.7,
-        });
-        reply = completion.choices[0]?.message?.content?.trim() || reply;
-        safeSend({ type: 'assistant_message', text: reply });
-        if (conversationCreated && conversationId) {
-          try {
-            await prisma.message.create({
-              data: { conversationId, role: 'assistant', text: reply },
-            });
-          } catch (assistErr) {
-            console.error('[Server] Failed to persist assistant message', assistErr);
-          }
-        }
-      } catch (err) {
-        console.error('[Server] Assistant generation error', err);
-        safeSend({ type: 'assistant_message', text: reply });
-      }
-      try {
-        const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
-          AZURE_SPEECH_KEY,
-          AZURE_SPEECH_REGION,
-        );
-        speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
-        const audioConfig = AzureSpeechSDK.AudioConfig.fromAudioFileOutput(
-          undefined as unknown as string,
-        );
-        const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
-        await new Promise<void>((resolve) => {
-          synthesizer.speakTextAsync(
-            reply,
-            (result) => {
-              try {
-                if (result?.audioData) {
-                  const b64 = Buffer.from(result.audioData).toString('base64');
-                  safeSend({
-                    type: 'assistant_audio',
-                    encoding: 'base64',
-                    mime: 'audio/wav',
-                    data: b64,
-                  });
-                }
-              } catch (e) {
-                console.error('[Server] TTS processing error', e);
-              } finally {
-                synthesizer.close();
-                resolve();
-              }
-            },
-            (error) => {
-              console.error('[Server] TTS synthesis error', error);
-              synthesizer.close();
-              resolve();
-            },
-          );
-        });
-      } catch (ttsErr) {
-        console.error('[Server] TTS outer error', ttsErr);
-      } finally {
-        safeSend({ type: 'assistant_speaking_end' });
-        assistantBusy = false;
-      }
-    } catch (err) {
-      console.error('[Server] transcriptReceived handler error', err);
-    }
-  });
-
-  const ka = setInterval(() => {
-    try { ws.ping(); } catch {}
-  }, 25000);
-  ws.on('close', () => clearInterval(ka));
-  ws.on('pong', () => { });
-
-  ws.on('message', async (message) => {
-    if (typeof message === 'string') {
-      const event = JSON.parse(message);
-      if (event.type === 'client_ready') {
-        conversationId = event.conversationId;
-        userId = event.userId || null;
-        isGuest = !userId;
-        safeSend({ type: 'server_ack', conversationId, guest: isGuest });
-        startUsageTicks();
-      } else if (event.type === 'user_message') {
-        if (!conversationCreated && conversationId) {
-          try {
-            await prisma.conversation.create({
-              data: { id: conversationId, userId: isGuest ? null : userId || null, isGuest },
-            });
-            conversationCreated = true;
-          } catch (err) {
-            console.error('[Server] Failed to create conversation on first user text:', err);
-          }
-        }
-      }
-    } else if (message instanceof Buffer) {
-      deepgramLive.send(message);
-    }
-  });
-
-  ws.on('close', async () => {
-    deepgramLive.finish();
-    if (usageInterval) clearInterval(usageInterval);
-    const seconds = Math.max(1, Math.floor((Date.now() - sessionStarted) / 1000));
-    try {
-      await prisma.usage.create({
-        data: { userId: userId || null, seconds, ip: userId ? undefined : clientIp || undefined },
+      const stream = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'system', content: 'You are Kira, a concise, encouraging AI companion.' }, { role: 'user', content: transcript }],
+        stream: true,
       });
-    } catch (uErr) {
-      console.error('[Server] Failed to persist usage', uErr);
+
+      for await (const chunk of stream) {
+        const content = (chunk as any).choices?.[0]?.delta?.content || '';
+        if (content) {
+          fullResponse += content;
+          sentenceBuffer += content;
+          safeSend({ t: 'assistant_text_chunk', text: content });
+
+          // Check for sentence-ending punctuation
+          const sentenceEnd = /[.!?]/.exec(sentenceBuffer);
+          if (sentenceEnd) {
+            const sentence = sentenceBuffer.substring(0, sentenceEnd.index + 1);
+            sentenceBuffer = sentenceBuffer.substring(sentenceEnd.index + 1);
+
+            synthesizer.speakTextAsync(sentence, result => {
+              if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                const audioData = (result as any).audioData;
+                if (audioData) {
+                  safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // Synthesize any remaining text in the buffer
+      if (sentenceBuffer.trim().length > 0) {
+        synthesizer.speakTextAsync(sentenceBuffer.trim(), result => {
+          if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+            const audioData = (result as any).audioData;
+            if (audioData) {
+              safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
+            }
+          }
+          safeSend({ t: 'tts_end' });
+          synthesizer.close();
+        });
+      } else {
+        safeSend({ t: 'tts_end' });
+        synthesizer.close();
+      }
+
+    } catch (err) {
+      console.error('[OpenAI] Completion error:', err);
+      safeSend({ t: 'error', message: 'Sorry, I had trouble responding.' });
+      synthesizer.close();
+    } finally {
+      if (fullResponse) {
+        await prisma.message.create({
+          data: { conversationId, role: 'assistant', text: fullResponse },
+  }).catch((e: unknown) => console.error('[DB] Failed to save assistant message:', e));
+      }
+      safeSend({ t: 'speak', on: false });
+      assistantBusy = false;
+      sentenceBuffer = '';
     }
+  });
+
+  ws.on('message', (message: Buffer) => {
+    if ((deepgramLive as any).getReadyState() === 1) (deepgramLive as any).send(message);
+  });
+
+  ws.on('close', () => {
+    console.log('[Server] Client disconnected.');
+    (deepgramLive as any).finish();
   });
 
   ws.on('error', (error) => {
     console.error('[Server] WebSocket Error:', error);
-    deepgramLive.finish();
-    if (usageInterval) clearInterval(usageInterval);
+    (deepgramLive as any).finish();
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀 Voice pipeline server listening on :${PORT}`);
 });

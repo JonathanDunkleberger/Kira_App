@@ -1,36 +1,38 @@
-// lib/state/conversation-store.ts
-'use client';
 import { create } from 'zustand';
 
-interface ConversationMessage {
+type Message = {
   role: 'user' | 'assistant';
   content: string;
-}
-
-type ConversationStatus = 'idle' | 'listening' | 'processing' | 'speaking';
+};
 
 interface ConversationState {
-  status: ConversationStatus;
-  messages: ConversationMessage[];
-  currentAudio: Blob | null;
-  wsConnection: WebSocket | null;
-
-  setStatus: (status: ConversationStatus) => void;
-  addMessage: (message: ConversationMessage) => void;
-  setAudio: (audio: Blob | null) => void;
-  setWsConnection: (ws: WebSocket | null) => void;
-  reset: () => void;
+  messages: Message[];
+  isSpeaking: boolean;
+  setSpeaking: (isSpeaking: boolean) => void;
+  addMessage: (message: { role: 'user' | 'assistant'; content: string; isPartial?: boolean }) => void;
+  clearMessages: () => void;
 }
 
 export const useConversationStore = create<ConversationState>((set, get) => ({
-  status: 'idle',
   messages: [],
-  currentAudio: null,
-  wsConnection: null,
+  isSpeaking: false,
 
-  setStatus: (status) => set({ status }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
-  setAudio: (audio) => set({ currentAudio: audio }),
-  setWsConnection: (ws) => set({ wsConnection: ws }),
-  reset: () => set({ status: 'idle', messages: [], currentAudio: null, wsConnection: null }),
+  setSpeaking: (isSpeaking) => set({ isSpeaking }),
+
+  addMessage: ({ role, content, isPartial }) => {
+    set((state) => {
+      const lastMessage = state.messages[state.messages.length - 1];
+      if (isPartial && lastMessage?.role === 'assistant') {
+        const updatedMessages = [...state.messages];
+        updatedMessages[updatedMessages.length - 1] = {
+          ...lastMessage,
+          content: lastMessage.content + content,
+        };
+        return { messages: updatedMessages };
+      }
+      return { messages: [...state.messages, { role, content }] };
+    });
+  },
+
+  clearMessages: () => set({ messages: [] }),
 }));

@@ -9,6 +9,14 @@
     "dev:server": "npm run start --workspace=socket-server",
     "dev": "npm-run-all -p dev:server dev:web",
     "build": "npm run build --workspace=web",
-    "start": "npm run start --workspace=web"
+    "start": "npm run start --workspace=web",
+    "dump:code": "node scripts/dump-code.js"
+  },
+  "packageManager": "pnpm@9.12.1",
+  "devDependencies": {
+    "prisma": "6.16.2"
+  },
+  "dependencies": {
+    "@prisma/client": "6.16.2"
   }
 }

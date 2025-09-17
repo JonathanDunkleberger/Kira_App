@@ -9,7 +9,8 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node"]
   },
   "include": ["socket-server.mts"],
   "exclude": ["node_modules", "dist"]

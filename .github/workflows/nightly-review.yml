@@ -11,12 +11,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: true
       - name: Install graphviz & ripgrep
         run: sudo apt-get update && sudo apt-get install -y graphviz ripgrep
-      - name: Install deps
-        run: npm ci
       - name: Generate packet
-        run: npm run review:packet
+        run: pnpm run review:packet
       - uses: actions/upload-artifact@v4
         with:
           name: llm-review-packet

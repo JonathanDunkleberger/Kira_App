@@ -1,62 +1,68 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
+import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
+import { useConversationStore } from '../../lib/state/conversation-store';
 
-import ChatGuardrails from '../ChatGuardrails';
-import VoiceOrb from '../VoiceOrb';
-import { voiceBus } from '../../lib/voiceBus';
-import { connectVoice, startMic, setMuted } from '../../lib/voice';
-import { useUsage } from '../../lib/useUsage';
+const CallControls = ({ isMuted, onMuteToggle }: { isMuted: boolean; onMuteToggle: () => void }) => (
+  <div className="flex gap-4">
+    <button onClick={onMuteToggle} className="px-4 py-2 bg-gray-700 rounded">
+      {isMuted ? 'Unmute' : 'Mute'}
+    </button>
+    <button onClick={() => window.location.assign('/')} className="px-4 py-2 bg-red-700 rounded">
+      End Call
+    </button>
+  </div>
+);
 
-import CallControls from './CallControls';
+const VoiceOrb = ({ isSpeaking }: { isSpeaking: boolean }) => (
+  <div
+    className={`w-72 h-72 rounded-full transition-all ${
+      isSpeaking ? 'bg-purple-500 animate-pulse' : 'bg-purple-800'
+    }`}
+  ></div>
+);
 
-export default function ChatClient({ persona = 'kira' }: { persona?: string }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const usage: any = useUsage();
-  const once = useRef(false);
+const AnimatedTranscript = ({
+  messages,
+}: {
+  messages: { role: string; content: string }[];
+}) => (
+  <div className="text-white text-center h-full overflow-y-auto">
+    {messages.map((msg, i) => (
+      <p key={i}>
+        <strong>{msg.role}:</strong> {msg.content}
+      </p>
+    ))}
+  </div>
+);
+
+export default function ChatClient({ conversationId }: { conversationId: string }) {
+  const { status, startMic, stopMic } = useKiraSocket(conversationId);
+  const { messages, isSpeaking } = useConversationStore();
+  const [isMuted, setIsMuted] = useState(false);
 
   useEffect(() => {
-    if (once.current) return;
-    once.current = true;
-    (async () => {
-      setMuted(false);
-      await connectVoice({
-        persona,
-        conversationId:
-          usage.server?.chatSessionId ??
-          (typeof window !== 'undefined'
-            ? sessionStorage.getItem('kira_chat_session_id') || undefined
-            : undefined),
-      });
-      await startMic();
-    })().catch(console.error);
-  }, [persona, usage.server?.chatSessionId]);
+    if (status === 'connected' && !isMuted) {
+      startMic();
+    } else {
+      stopMic();
+    }
+  }, [status, isMuted, startMic, stopMic]);
 
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    const onStart = () => voiceBus.emit('speaking', true);
-    const onEnd = () => voiceBus.emit('speaking', false);
-    el.addEventListener('play', onStart);
-    el.addEventListener('playing', onStart);
-    el.addEventListener('pause', onEnd);
-    el.addEventListener('ended', onEnd);
-    return () => {
-      el.removeEventListener('play', onStart);
-      el.removeEventListener('playing', onStart);
-      el.removeEventListener('pause', onEnd);
-      el.removeEventListener('ended', onEnd);
-    };
-  }, []);
+  const handleMuteToggle = () => setIsMuted((p) => !p);
 
   return (
-    <ChatGuardrails>
-      <audio ref={audioRef} className="hidden" id="tts-audio" />
+    <div className="flex flex-col items-center justify-center h-full w-full">
+      <audio id="tts-audio" className="hidden" />
       <div className="mt-10" />
-      <VoiceOrb audioEl={audioRef.current} size={280} />
+      <VoiceOrb isSpeaking={isSpeaking} />
       <div className="mt-10" />
-      <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
-        <CallControls />
+      <div className="w-full max-w-2xl h-24">
+        <AnimatedTranscript messages={messages} />
       </div>
-    </ChatGuardrails>
+      <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
+        <CallControls isMuted={isMuted} onMuteToggle={handleMuteToggle} />
+      </div>
+    </div>
   );
 }

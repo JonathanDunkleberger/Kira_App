@@ -9,7 +9,7 @@ export default function HomePage() {
 
   const startConversation = useCallback(() => {
     const id = crypto.randomUUID();
-    router.push(`/c/${id}`);
+  router.push(`/chat/${id}`);
   }, [router]);
 
   return (
@@ -22,7 +22,7 @@ export default function HomePage() {
         <Card className="cursor-pointer border border-black/10 dark:border-white/10 hover:shadow-lg transition-all bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm">
           <CardHeader className="space-y-3 py-10 flex items-center justify-center text-center">
             <div className="w-14 h-14 rounded-full bg-amber-200/60 dark:bg-amber-400/10 flex items-center justify-center shadow-inner">
-              <span className="text-2xl">📞</span>
+              <span className="text-2xl">🎙️</span>
             </div>
             <CardTitle className="text-2xl font-semibold tracking-tight">Talk to Kira</CardTitle>
             <CardDescription className="text-sm max-w-[18ch] mx-auto">

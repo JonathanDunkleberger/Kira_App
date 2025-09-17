@@ -6,10 +6,10 @@ services:
     plan: starter
     region: oregon
     buildCommand: |
-      npm ci --no-audit --no-fund --progress=false
-      npm run prisma:generate
-      npm run build:server
-    startCommand: npm run prisma:deploy && npm run start:server
+      pnpm install --frozen-lockfile
+      pnpm --filter socket-server prisma:generate
+      pnpm --filter socket-server build
+    startCommand: pnpm --filter socket-server prisma:deploy && pnpm --filter socket-server start
     envVars:
       - key: NODE_VERSION
         value: 20.12.2

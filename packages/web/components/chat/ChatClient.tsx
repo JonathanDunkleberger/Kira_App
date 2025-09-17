@@ -1,67 +1,62 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
 import { useConversationStore } from '../../lib/state/conversation-store';
+import VoiceOrb from '../VoiceOrb';
 
-const CallControls = ({ isMuted, onMuteToggle }: { isMuted: boolean; onMuteToggle: () => void }) => (
+const AnimatedTranscript = ({ messages }: { messages: {role: string, content: string}[]}) => {
+  const lastMessage = messages[messages.length - 1];
+  return (
+    <div className="text-white text-center h-full overflow-y-auto text-lg leading-relaxed">
+      {lastMessage && (
+        <p>
+          <strong className="text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong> {lastMessage.content}
+          {useConversationStore.getState().isSpeaking && <span className="animate-pulse">▍</span>}
+        </p>
+      )}
+    </div>
+  );
+};
+
+const CallControls = ({ onEndCall }: { onEndCall: () => void }) => (
   <div className="flex gap-4">
-    <button onClick={onMuteToggle} className="px-4 py-2 bg-gray-700 rounded">
-      {isMuted ? 'Unmute' : 'Mute'}
-    </button>
-    <button onClick={() => window.location.assign('/')} className="px-4 py-2 bg-red-700 rounded">
-      End Call
-    </button>
-  </div>
-);
-
-const VoiceOrb = ({ isSpeaking }: { isSpeaking: boolean }) => (
-  <div
-    className={`w-72 h-72 rounded-full transition-all ${
-      isSpeaking ? 'bg-purple-500 animate-pulse' : 'bg-purple-800'
-    }`}
-  ></div>
-);
-
-const AnimatedTranscript = ({
-  messages,
-}: {
-  messages: { role: string; content: string }[];
-}) => (
-  <div className="text-white text-center h-full overflow-y-auto">
-    {messages.map((msg, i) => (
-      <p key={i}>
-        <strong>{msg.role}:</strong> {msg.content}
-      </p>
-    ))}
+    <button onClick={onEndCall} className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-semibold">End Call</button>
   </div>
 );
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
   const { status, startMic, stopMic } = useKiraSocket(conversationId);
-  const { messages, isSpeaking } = useConversationStore();
-  const [isMuted, setIsMuted] = useState(false);
+  const { messages, isSpeaking, clearMessages } = useConversationStore();
+  const router = useRouter();
 
   useEffect(() => {
-    if (status === 'connected' && !isMuted) {
+    clearMessages();
+  }, [clearMessages]);
+
+  useEffect(() => {
+    if (status === 'connected') {
       startMic();
-    } else {
-      stopMic();
+      const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
+      audioEl?.play().catch(() => console.warn('Audio context requires user gesture.'));
     }
-  }, [status, isMuted, startMic, stopMic]);
+    return () => stopMic();
+  }, [status, startMic, stopMic]);
 
-  const handleMuteToggle = () => setIsMuted((p) => !p);
-
+  const handleEndCall = () => {
+    stopMic();
+    router.push('/');
+  };
+  
   return (
     <div className="flex flex-col items-center justify-center h-full w-full">
-      <audio id="tts-audio" className="hidden" />
-      <div className="mt-10" />
-      <VoiceOrb isSpeaking={isSpeaking} />
-      <div className="mt-10" />
-      <div className="w-full max-w-2xl h-24">
-        <AnimatedTranscript messages={messages} />
+      <audio id="tts-audio" className="hidden" autoPlay />
+      <div className="absolute top-1/4 w-full max-w-3xl px-4">
+         <AnimatedTranscript messages={messages} />
       </div>
-      <div className="fixed left-1/2 bottom-6 -translate-x-1/2">
-        <CallControls isMuted={isMuted} onMuteToggle={handleMuteToggle} />
+  <VoiceOrb size={280} />
+      <div className="fixed left-1/2 bottom-10 -translate-x-1/2">
+        <CallControls onEndCall={handleEndCall} />
       </div>
     </div>
   );

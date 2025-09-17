@@ -1,3 +1,4 @@
+// FILE: packages/socket-server/socket-server.mts
 import 'dotenv/config';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
@@ -28,7 +29,6 @@ const prisma = new PrismaClient();
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// --- HTTP SERVER for Health Checks & WebSocket Upgrades ---
 const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/healthz') {
     res.statusCode = 200;
@@ -45,7 +45,6 @@ server.on('upgrade', (req, socket, head) => {
   const origin = req.headers.origin || '';
   const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/.*\.vercel\.app)$/i;
   if (!allowed.test(origin)) {
-    console.warn(`[Server] Denying connection from origin: ${origin}`);
     socket.destroy();
     return;
   }
@@ -54,7 +53,6 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-// --- WEBSOCKET CONNECTION HANDLING ---
 wss.on('connection', async (ws, req) => {
   console.log('[Server] ✅ New client connected.');
   const conversationId = new URL(req.url!, 'http://localhost').searchParams.get('conversationId');
@@ -76,8 +74,8 @@ wss.on('connection', async (ws, req) => {
   let assistantBusy = false;
   let sentenceBuffer = '';
 
-  deepgramLive.on('transcript', async (data: any) => {
-    const transcript = data.channel?.alternatives?.[0]?.transcript?.trim();
+  deepgramLive.on('transcript', async (data) => {
+    const transcript = (data as any).channel.alternatives[0].transcript.trim();
     if (!transcript || assistantBusy) return;
 
     assistantBusy = true;
@@ -101,33 +99,33 @@ wss.on('connection', async (ws, req) => {
         messages: [{ role: 'system', content: 'You are Kira, a concise, encouraging AI companion.' }, { role: 'user', content: transcript }],
         stream: true,
       });
+      
+      safeSend({ t: 'tts_start' });
 
       for await (const chunk of stream) {
-        const content = (chunk as any).choices?.[0]?.delta?.content || '';
+        const content = (chunk as any).choices[0]?.delta?.content || '';
         if (content) {
           fullResponse += content;
-          sentenceBuffer += content;
-          safeSend({ t: 'assistant_text_chunk', text: content });
+            sentenceBuffer += content;
+            safeSend({ t: 'assistant_text_chunk', text: content });
 
-          // Check for sentence-ending punctuation
-          const sentenceEnd = /[.!?]/.exec(sentenceBuffer);
-          if (sentenceEnd) {
-            const sentence = sentenceBuffer.substring(0, sentenceEnd.index + 1);
-            sentenceBuffer = sentenceBuffer.substring(sentenceEnd.index + 1);
-
-            synthesizer.speakTextAsync(sentence, result => {
-              if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-                const audioData = (result as any).audioData;
-                if (audioData) {
-                  safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
+            const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
+            if (sentenceEndMatch) {
+              const sentence = sentenceEndMatch[0];
+              sentenceBuffer = sentenceBuffer.substring(sentence.length);
+              
+              synthesizer.speakTextAsync(sentence, result => {
+                if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                  const audioData = (result as any).audioData;
+                  if (audioData) {
+                    safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
+                  }
                 }
-              }
-            });
-          }
+              });
+            }
         }
       }
 
-      // Synthesize any remaining text in the buffer
       if (sentenceBuffer.trim().length > 0) {
         synthesizer.speakTextAsync(sentenceBuffer.trim(), result => {
           if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {

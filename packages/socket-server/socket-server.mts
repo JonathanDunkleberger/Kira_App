@@ -1,5 +1,6 @@
 // moved from root
 import { WebSocketServer, WebSocket } from 'ws';
+import http from 'node:http';
 import { PrismaClient } from '@prisma/client';
 import { createClient } from '@deepgram/sdk';
 import OpenAI from 'openai';
@@ -23,8 +24,30 @@ const prisma = new PrismaClient();
 const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const wss = new WebSocketServer({ port: 10000 });
-console.log('Voice pipeline server listening on port 10000');
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/healthz') {
+    res.statusCode = 200;
+    res.end('ok');
+    return;
+  }
+  res.statusCode = 404;
+  res.end();
+});
+const wss = new WebSocketServer({ noServer: true });
+const PORT = parseInt(process.env.PORT || '10000', 10);
+server.listen(PORT, () => {
+  console.log(`Voice pipeline server listening on :${PORT}`);
+});
+
+server.on('upgrade', (req, socket, head) => {
+  const origin = req.headers.origin || '';
+  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/.*\.vercel\.app|https?:\/\/.+)$/i;
+  if (!allowed.test(origin)) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
 
 wss.on('connection', async (ws, req) => {
   console.log('[Server] ✅ New client connected.');
@@ -67,7 +90,7 @@ wss.on('connection', async (ws, req) => {
     usageInterval = setInterval(() => {
       const seconds = Math.floor((Date.now() - sessionStarted) / 1000);
       safeSend({ type: 'usage_update', seconds });
-      const DAILY_CAP = parseInt(process.env.FREE_DAILY_SECONDS || '300', 10);
+      const DAILY_CAP = parseInt(process.env.FREE_TRIAL_SECONDS || '300', 10);
       if (DAILY_CAP > 0) {
         const now = new Date();
         const startOfDay = new Date(
@@ -210,6 +233,12 @@ wss.on('connection', async (ws, req) => {
       console.error('[Server] transcriptReceived handler error', err);
     }
   });
+
+  const ka = setInterval(() => {
+    try { ws.ping(); } catch {}
+  }, 25000);
+  ws.on('close', () => clearInterval(ka));
+  ws.on('pong', () => { });
 
   ws.on('message', async (message) => {
     if (typeof message === 'string') {

@@ -1,7 +1,7 @@
 // lib/hooks/useSimpleVoiceSocket.ts
 'use client';
 import { useEffect, useRef } from 'react';
-
+import { envClient } from '@/lib/client/env.client';
 import { useConversationStore } from '@/lib/state/conversation-store';
 
 export const useSimpleVoiceSocket = () => {
@@ -12,42 +12,48 @@ export const useSimpleVoiceSocket = () => {
 
   useEffect(() => {
     const connectWebSocket = () => {
-      const url = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:10000';
+      const url = envClient.NEXT_PUBLIC_WEBSOCKET_URL;
       const ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
         setWsConnection(ws);
         wsRef.current = ws;
+        try {
+          ws.send(JSON.stringify({ type: 'client_ready' }));
+        } catch {}
       };
 
       ws.onmessage = (event) => {
         try {
+          // Text events from server; binary (audio) handled elsewhere
           const data = JSON.parse(event.data);
           switch (data.type) {
-            case 'transcript':
+            case 'server_ack':
+              setStatus('listening');
+              break;
+            case 'user_transcript':
               addMessage({ role: 'user', content: data.text });
               setStatus('processing');
               break;
-            case 'assistant_response':
+            case 'assistant_message':
               addMessage({ role: 'assistant', content: data.text });
               if (!firstTextLoggedRef.current) {
-                try {
-                  console.timeLog('full-response-latency', 'First text chunk received');
-                } catch {}
+                try { console.timeLog('full-response-latency', 'First text chunk received'); } catch {}
                 firstTextLoggedRef.current = true;
               }
               break;
-            case 'audio_ready':
+            case 'assistant_speaking_start':
               setStatus('speaking');
-              try {
-                console.timeLog('full-response-latency', 'Audio started playing');
-                console.timeEnd('full-response-latency');
-              } catch {}
+              break;
+            case 'assistant_speaking_end':
+              setStatus('listening');
+              try { console.timeEnd('full-response-latency'); } catch {}
               timerStartedRef.current = false;
               firstTextLoggedRef.current = false;
               break;
-            case 'ready_for_input':
-              setStatus('listening');
+            case 'limit_exceeded':
+              setStatus('blocked');
               break;
           }
         } catch (error) {

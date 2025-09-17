@@ -6,7 +6,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node --enable-source-maps dist/socket-server.mjs",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:generate": "prisma generate",
+    "build:server": "npm run build",
+    "start:server": "npm run start"
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",

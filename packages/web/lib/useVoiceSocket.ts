@@ -1,4 +1,4 @@
-// useVoiceSocket: single WS env path via NEXT_PUBLIC_WEBSOCKET_URL
+﻿// useVoiceSocket: single WS env path via NEXT_PUBLIC_WEBSOCKET_URL
 'use client';
 // Singleton voice WebSocket + mic helpers.
 import { useEffect, useState } from 'react';
@@ -75,7 +75,7 @@ function flushTts() {
   } catch {}
 }
 
-// Mic capture (streaming) – robust codec selection across browsers
+// Mic capture (streaming)     robust codec selection across browsers
 function pickMime(): string {
   if (typeof window === 'undefined') return '';
   const can = (t: string) =>
@@ -400,3 +400,4 @@ export function useVoiceSocket() {
     sendJson,
   } as const;
 }
+

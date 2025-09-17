@@ -24,3 +24,6 @@ Logs
 Build artifacts
 .vercel/
 artifacts/
+CODE_DUMP_GEMINI.txt
+PROJECT_CODE_DUMP.txt
+

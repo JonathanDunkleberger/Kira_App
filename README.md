@@ -63,203 +63,223 @@ Only the websocket server needs the STT / TTS secrets; keep them out of `NEXT_PU
 ---
 
 ## 🔁 Realtime Event Protocol (Representative)
+﻿# ✨ Kira AI — Voice‑First Media Companion
 
-| Direction | Event | Payload Notes |
-| --------- | ----- | ------------- |
-| server→client | `server_ack` | Initial confirmation + usage snapshot |
-| client→server | `user_audio` | Binary Opus/WebM frames (48k) |
-| server→client | `user_transcript` | Final STT segment (text) |
-| server→client | `assistant_message` | Assistant text (complete or streaming) |
-| server→client | `assistant_audio` | Base64 WAV/Opus chunk(s) |
-| server→client | `assistant_speaking_start` / `assistant_speaking_end` | Playback lifecycle |
-| server→client | `usage_update` | Periodic seconds used / remaining |
-| server→client | `limit_exceeded` | Hard stop message & UI trigger |
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJonathanDunkleberger%2FKira_AI_2)
 
-Client renders interim partials locally; authoritative usage ticks originate from server heartbeat.
+Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency conversational UX of apps like Sesami AI. The goal: eliminate alt‑tab friction so you can talk to an AI while gaming, reading, or watching media—hands free.
+
+**Live Demo:** <https://kira-ai-2.vercel.app>
 
 ---
 
-## 🛠️ Local Development
+## Core Features
+
+- **End-to-End Voice Streaming:** Real-time pipeline: client microphone → Deepgram STT (streaming) → OpenAI response (streaming) → Azure Speech TTS (sentence streaming back to browser).
+- **Dual-Service Architecture:** Stateless Next.js frontend (Vercel) + dedicated Node WebSocket server (Render) for persistent audio sessions.
+- **Authentication:** Clerk-powered user accounts (sign up, sign in, profile management).
+- **Subscription Billing:** Stripe Checkout + Billing Portal; server-side webhook processing (subscription lifecycle).
+- **Modern Monorepo:** `pnpm` workspaces (`packages/web`, `packages/socket-server`) with shared Prisma schema.
+
+---
+
+## Tech Stack
+
+| Area | Technology / Service |
+| :--- | :--- |
+| **Frontend** | Next.js 14 (App Router), React 18, Tailwind CSS, Vercel |
+| **Realtime Backend** | Node.js, `ws` WebSocket server (Render) |
+| **Database** | Supabase (PostgreSQL) + Prisma ORM |
+| **Auth** | Clerk |
+| **Billing** | Stripe (Checkout + Portal + Webhooks) |
+| **Speech-to-Text** | Deepgram Live |
+| **Language Model** | OpenAI (streamed responses) |
+| **Text-to-Speech** | Azure Speech (per-sentence streaming) |
+
+---
+
+## Architecture Overview
+
+Monorepo layout:
+
+| Path | Description |
+| ---- | ----------- |
+| `packages/web` | Next.js frontend (UI, auth, billing routes, static assets) |
+| `packages/socket-server` | Long-running WebSocket server orchestrating STT → LLM → TTS pipeline |
+| `prisma/` | Shared Prisma schema & migrations |
+
+The WebSocket server manages: audio ingestion, transcription buffering, LLM stream aggregation, sentence boundary detection, Azure TTS synthesis, usage accounting, and event emission back to the client.
+
+---
+
+## Getting Started
+
+### 1. Clone
 
 ```bash
-npm install
-cp .env.example .env.local
-# edit .env.local -> set NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:10000
-npm run dev
+git clone https://github.com/JonathanDunkleberger/Kira_AI_2.git
+cd Kira_AI_2/ai-media-companion
 ```
 
-Frontend: http://localhost:3000
-WebSocket server: ws://localhost:10000 (health: GET http://localhost:10000/healthz)
+### 2. Install Dependencies (pnpm preferred)
 
-Typical troubleshooting:
-| Symptom | Check |
-| ------- | ----- |
-| No audio transcription | `DEEPGRAM_API_KEY` present? MIME type Opus/WebM chunking? |
-| Limit banner instantly | FREE limit env values too low / usage persisted from previous day |
-| 404 on assets | Ensure running from repo root (so Next sees `public/`) |
+```bash
+pnpm install
+```
+
+### 3. Environment Variables
+
+Two `.env.local` files are required for local dev:
+
+**A. Frontend (root `./.env.local`)** — copy `./.env.example`.
+
+**B. Socket Server (`./packages/socket-server/.env.local`)** — copy `./packages/socket-server/.env.example`.
+
+Fill in service keys (leave `NEXT_PUBLIC_*` only in the root file). Never commit secrets.
+
+### 4. Run Locally
+
+```bash
+pnpm dev
+```
+Frontend: <http://localhost:3000>  
+WebSocket server: ws://localhost:10000 (health: GET <http://localhost:10000/healthz>)
+
+Root scripts:
+
+```bash
+pnpm run dev        # parallel: socket-server + web
+pnpm run dev:server # only socket-server
+pnpm run dev:web    # only web
+pnpm run build      # build web
+pnpm run start      # start production web
+```
 
 ---
 
-## 🧪 Testing & Quality
+## Environment Reference (Union of Examples)
+
+Frontend `.env.example`:
+```text
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+CLERK_WEBHOOK_SECRET=
+DATABASE_URL=
+DIRECT_URL=
+STRIPE_SECRET_KEY=
+STRIPE_PRICE_ID=
+STRIPE_WEBHOOK_SECRET=
+NEXT_PUBLIC_APP_URL=https://kira-ai-2.vercel.app
+NEXT_PUBLIC_WEBSOCKET_URL=wss://kira-voice-ws.onrender.com
+```
+
+Socket server `.env.example`:
+```text
+DATABASE_URL=
+DIRECT_URL=
+DEEPGRAM_API_KEY=
+OPENAI_API_KEY=
+AZURE_SPEECH_KEY=
+AZURE_SPEECH_REGION=
+```
+
+Keep STT / LLM / TTS secrets out of any `NEXT_PUBLIC_*` names.
+
+---
+
+## Realtime Flow (High Level)
+
+1. Browser captures mic (MediaRecorder WebM Opus) → sends binary chunks via WS.
+2. Server streams audio to Deepgram → receives interim/final transcripts.
+3. Final sentence aggregated → prompt sent to OpenAI (streaming tokens).
+4. Sentence buffer triggers Azure TTS; audio chunks base64-encoded → client.
+5. Client queues & plays audio while next sentence is already processing.
+6. Usage metering updates sent periodically; limits enforced server-side.
+
+---
+
+## Deployment
+
+### Frontend (Vercel)
+
+1. Import repo → set root (or monorepo framework auto-detect) pointing to repository root (build script targets `packages/web`).
+1. Configure env vars from root example (exclude STT/LLM/TTS secrets unless needed by API routes).
+1. Build output: `.next` (handled automatically).
+
+### WebSocket Server (Render)
+
+1. New Web Service → Root Directory: `packages/socket-server`.
+1. Build Command:
+```bash
+pnpm install --filter socket-server... && pnpm --filter socket-server run build
+```
+1. Start Command:
+```bash
+pnpm --filter socket-server start
+```
+1. Set env vars: `DATABASE_URL`, `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, Stripe keys, Clerk secrets.
+1. Copy deployed wss URL into Vercel `NEXT_PUBLIC_WEBSOCKET_URL`.
+
+### Prisma
+Run migrations anywhere both services can reach the DB:
+```bash
+pnpm --filter web prisma:deploy
+```
+or
+```bash
+pnpm --filter socket-server prisma:deploy
+```
+
+---
+
+## Testing & Quality
 
 | Command | Purpose |
 | ------- | ------- |
-| `npm run lint --workspace=web` | ESLint (import order, TS rules) |
-| `npm run test --workspace=web` | Unit tests (Vitest) |
-| `npx playwright test --workspace=web` | E2E (browser + mic permissions) |
-| `npm run typecheck --workspace=web` | TypeScript diagnostics |
+| `pnpm --filter web lint` | Lint code (web) |
+| `pnpm --filter web test` | Unit tests (Vitest) |
+| `pnpm --filter web typecheck` | TypeScript diagnostics |
+| `pnpm --filter web build` | Build Next.js app |
+| `pnpm --filter socket-server build` | Compile server TS → JS |
 
-Pre-commit (lefthook) runs prettier + lint.
+Add Playwright tests as needed for end-to-end voice flows.
 
 ---
 
-## 🚢 Deployment
+## Security & Secrets
 
-### Frontend (Vercel)
-1. Set project root to `packages/web` in Vercel settings.
-2. Install build command: `npm install --workspace=web && npm run build --workspace=web` (Vercel auto handles if root has workspaces). Simpler: keep root; Vercel will detect Next in subfolder if configured.
-3. Output: `.next` (served by Vercel). Ensure env vars (all needed `CLERK_*`, `NEXT_PUBLIC_WEBSOCKET_URL`, etc.) configured in Vercel dashboard.
-4. Optional: set `NEXT_TELEMETRY_DISABLED=1`.
+History was scrubbed to remove an accidental code dump. If rotating keys:
+1. Revoke old Azure / OpenAI / Stripe / Clerk / Supabase keys.
+2. Issue new keys; store only in appropriate `.env.local` / hosting provider dashboard.
+3. Never commit raw dumps containing secrets.
 
-### Realtime WebSocket Server (Render)
-1. New Render Web Service → Root = `packages/socket-server`.
-2. Build command:
-   ```bash
-   npm install --production=false --workspace=socket-server && npm run build --workspace=socket-server
-   ```
-3. Start command:
-   ```bash
-   npm run start --workspace=socket-server
-   ```
-4. Exposes `$PORT` (Render injects). Health check path: `/healthz`.
-5. Set secrets: `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, TTS provider keys, `DATABASE_URL` (if Prisma used), usage limit vars.
-6. After deploy, update Vercel `NEXT_PUBLIC_WEBSOCKET_URL` to the Render wss URL.
+---
 
-### Database / Prisma
-If Postgres backing is enabled:
+## Roadmap (Sample)
+1. Conversation persistence + titles.
+2. Rich memory window / context summarization.
+3. Improved adaptive VAD + silence trimming.
+4. Fine-grained streaming prosody controls.
+5. Progressive enhancement for low-bandwidth clients.
+
+---
+
+## Contributing
+PRs welcome. Before submitting:
 ```bash
-npx prisma migrate deploy
+pnpm --filter web lint
+pnpm --filter web typecheck
+pnpm --filter web test
 ```
-You can run this either in a separate migration job or as a pre-start script for both services needing DB access.
+Document any new env var in BOTH example files.
 
 ---
 
-## 🔄 Usage & Limits Model (Summary)
-
-Server increments per active second (heartbeat interval). Guests identified by IP; authenticated users by Clerk user id. When remaining seconds ≤ 0, server sends `limit_exceeded` and ceases processing audio.
-
----
-
-## 🧬 TTS / STT Switching
-
-Azure default. For ElevenLabs add:
-```bash
-TTS_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=sk_...
-ELEVENLABS_VOICE_ID=voice_id_here
-```
-Deepgram STT requires only `DEEPGRAM_API_KEY`. Without it, a mock path can emit placeholder transcripts (development convenience).
-
----
-
-## 🗺️ Roadmap (Next)
-1. Prisma endpoint wiring (`conversations`, `messages`, `usage` persistence).
-2. Stripe webhooks → subscription state / entitlement elevation.
-3. Achievement catalog + toast awarding pipeline.
-4. ElevenLabs streaming upgrade (true chunked Opus).
-5. Fine‑grained conversation memory windows.
-
----
-
-## 💳 Billing & Subscription UX
-
-The app offers a free daily usage tier and a single Pro subscription (Stripe) that unlocks unlimited conversation time.
-
-### Components & Pages
-
-| Path | Purpose |
-| ---- | ------- |
-| `app/account/billing/page.tsx` | Billing management page (plan status + actions) |
-| `components/BillingStatus.tsx` | Client component fetching `/api/billing/subscription` |
-| `components/Paywall.tsx` | Upgrade modal triggered by usage exhaustion / proactive click |
-| `components/auth/ProfileSettingsModal.tsx` | Quick access links to billing page & portal |
-
-### API Routes
-
-| Route | Method | Description |
-| ----- | ------ | ----------- |
-| `/api/billing/subscription` | GET | Current subscription snapshot (status, plan, renewal dates) |
-| `/api/billing/checkout` | POST | Creates Stripe Checkout session (requires auth) |
-| `/api/billing/portal` | POST | Opens Stripe Billing Portal for customer |
-| `/api/stripe/webhook` | POST | Stripe events (subscription lifecycle, invoices) |
-
-### Client Helpers
-
-Located in `lib/client-api.ts`:
-
-- `startCheckout()` → POST `/api/billing/checkout` then `window.location.href` to Stripe.
-- `openBillingPortal()` → POST `/api/billing/portal` then redirect.
-
-### Subscription Sync
-
-`/api/stripe/webhook` updates `Subscription` + `User.tier` on:
-
-- `customer.subscription.created|updated|deleted`
-- `checkout.session.completed` (provisional elevation)
-- `invoice.payment_succeeded|invoice.payment_failed` (logs `PaymentEvent` + tier adjust)
-
-Downgrade currently immediate on failure / cancellation (no grace window). Adjust in `syncSubscription` if you add grace logic.
-
-### Environment Vars (Stripe)
-
-| Var | Purpose |
-| --- | ------- |
-| `STRIPE_SECRET_KEY` | Server-side API key |
-| `STRIPE_PRICE_ID` | Recurring price id for Pro plan |
-| `STRIPE_WEBHOOK_SECRET` | Webhook signature validation |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | (Optional) For any future client-side Stripe elements |
-
-### Local Testing (Stripe CLI)
-
-```bash
-stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.payment_succeeded,invoice.payment_failed --forward-to localhost:3000/api/stripe/webhook
-
-# Create a checkout session
-stripe checkout sessions create \
-   --mode subscription \
-   --success_url http://localhost:3000/success?session_id={CHECKOUT_SESSION_ID} \
-   --cancel_url http://localhost:3000/account/billing?canceled=1 \
-   --line-items price=$STRIPE_PRICE_ID,quantity=1 \
-   --metadata userId=clerk_user_123
-```
-
-### Future Enhancements
-
-- Grace period + scheduled downgrade job
-- Multiple plan tiers / usage entitlements
-- In-app invoice list (surface `PaymentEvent` history)
-- Email notifications on payment failure / trial ending
-
----
-
----
-
-\n## 🤝 Contributing
-Small, focused PRs welcome. Please run:
-\n```bash
-npm run lint --workspace=web
-npm run typecheck --workspace=web
-npm test --workspace=web
-```
-Document any new env vars in `.env.example`.
-
----
-
-\n## 📄 License
+## License
 MIT — see `LICENSE`.
 
 ---
 
-\n## 📝 Historical Notes
-Voice socket consolidated into `lib/voice.ts`; Deepgram client updated (`createClient` + `listen.live`). Limit banner shows after authoritative `limit_exceeded`.
+## Attribution / Inspiration
+Inspired by modern low-latency conversational assistants (e.g., Sesami AI) emphasizing real-time bidirectional streaming UX.
 

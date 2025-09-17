@@ -2,7 +2,7 @@ services:
   - type: web
     name: kira-voice-ws
     env: node
-    rootDir: ai-media-companion/packages/socket-server
+    rootDir: packages/socket-server # Adjusted rootDir to be relative from monorepo root if needed
     plan: starter
     region: oregon
     buildCommand: |
@@ -14,18 +14,20 @@ services:
       - key: NODE_VERSION
         value: 20.12.2
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: your-db-name # Replace with your Render database name
+          property: connectionString
       - key: DIRECT_URL
-        sync: false
+        fromDatabase:
+          name: your-db-name # Replace with your Render database name
+          property: directConnectionString
       - key: OPENAI_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY   # <-- ADDED THIS
         sync: false
       - key: AZURE_SPEECH_KEY
         sync: false
       - key: AZURE_SPEECH_REGION
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: DEV_ALLOW_NOAUTH
         value: 'false'

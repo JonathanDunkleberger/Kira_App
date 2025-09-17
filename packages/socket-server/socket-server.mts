@@ -61,6 +61,13 @@ wss.on('connection', async (ws, req) => {
     return;
   }
 
+  // Send initial session + heartbeat ack so client can confirm liveness.
+  try {
+    const chatSessionId = crypto.randomUUID();
+    ws.send(JSON.stringify({ t: 'chat_session', chatSessionId }));
+    ws.send(JSON.stringify({ t: 'heartbeat', now: Date.now(), chatSessionId }));
+  } catch {}
+
   const safeSend = (payload: ServerEvent) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   };

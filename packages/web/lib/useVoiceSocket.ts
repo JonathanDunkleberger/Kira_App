@@ -6,41 +6,10 @@ import { useUsage } from './useUsage';
 import { usePartialStore } from './partialStore';
 import { useAssistantStream } from './assistantStreamStore';
 
-// Unified URL resolution supporting legacy + new env vars and runtime override
 function resolveVoiceWsUrl(): string {
-  // Highest priority: explicit runtime override for debugging
-  if (typeof window !== 'undefined' && (window as any).__VOICE_WS__) {
-    return (window as any).__VOICE_WS__;
-  }
-
-  // Support BOTH old and new env names
-  const newVar = process.env.NEXT_PUBLIC_VOICE_WS_URL; // new
-  const oldDev = process.env.NEXT_PUBLIC_WEBSOCKET_URL; // old (dev)
-  const oldProd = process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD; // old (prod)
-
-  // Prefer explicit new var if present
-  let candidate = newVar;
-
-  // Otherwise pick env by NODE_ENV
-  if (!candidate) {
-    candidate = process.env.NODE_ENV === 'production' ? oldProd : oldDev;
-  }
-
-  // If someone set localhost for "All Environments", ignore it in prod/preview
-  if (candidate && typeof window !== 'undefined') {
-    const isLocal = candidate.includes('localhost') || candidate.includes('127.0.0.1');
-    const host = window.location.hostname;
-    const onRemote = host !== 'localhost' && host !== '127.0.0.1';
-    if (isLocal && onRemote) candidate = ''; // force fallback
-  }
-
-  // Normalize http(s) -> ws(s)
-  if (candidate?.startsWith('http')) {
-    candidate = candidate.replace(/^http/i, 'ws');
-  }
-
-  // Final fallback: same-origin edge route (works if you kept /api/voice)
-  return candidate || '/api/voice';
+  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL || '';
+  if (!url) throw new Error('Missing NEXT_PUBLIC_WEBSOCKET_URL');
+  return url.replace(/^http/i, 'ws');
 }
 
 /** Prefer an explicit backend if you have one; else use local /api/voice (Edge). */
@@ -256,7 +225,6 @@ export async function connectVoice(opts: ConnectOpts) {
           flushTts();
           ttsPlaying = false;
         } else if (msg.t === 'speak') {
-          import('./voiceBus').then(({ voiceBus }) => voiceBus.emit('speaking', !!msg.on));
           if (!diag.firstSpeak) diag.firstSpeak = true;
           // On bot speak, clear any lingering partial
           usePartialStore.getState().clear();

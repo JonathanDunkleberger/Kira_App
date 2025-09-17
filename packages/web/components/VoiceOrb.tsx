@@ -1,7 +1,5 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-
-import { voiceBus } from '@/lib/voiceBus';
 import { useAudioLevel } from '@/lib/hooks/useAudioLevel';
 import { cn } from '@/lib/utils';
 
@@ -30,10 +28,7 @@ export default function VoiceOrb({ audioEl, size = 260, className, multiHue = tr
   const { level } = useAudioLevel({ audioEl });
   const [speaking, setSpeaking] = useState(false);
 
-  useEffect(() => {
-    const off = voiceBus.on<boolean>('speaking', (v) => setSpeaking(Boolean(v)));
-    return off;
-  }, []);
+  
 
   // Baseline breathing scale
   const breatheScale = useMemo(() => (speaking ? 1.02 : 1.015), [speaking]);

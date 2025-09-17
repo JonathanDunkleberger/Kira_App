@@ -5,9 +5,9 @@
 (function bootLog() {
   if (typeof window === 'undefined') return; // only client
   try {
-    const prod = process.env.NEXT_PUBLIC_WEBSOCKET_URL_PROD;
+    const prod = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
     const legacy = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-    const modern = process.env.NEXT_PUBLIC_VOICE_WS_URL;
+    const modern = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
     const resolved = modern || (process.env.NODE_ENV === 'production' ? prod : legacy) || '(unset)';
     if (!prod && !legacy && !modern) {
       console.warn('[boot] No NEXT_PUBLIC_WEBSOCKET_URL* envs found; voice ws disabled until set');

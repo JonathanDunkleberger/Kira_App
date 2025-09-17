@@ -1,3 +1,4 @@
+// useVoiceSocket: single WS env path via NEXT_PUBLIC_WEBSOCKET_URL
 'use client';
 // Singleton voice WebSocket + mic helpers.
 import { useEffect, useState } from 'react';
@@ -7,12 +8,18 @@ import { usePartialStore } from './partialStore';
 import { useAssistantStream } from './assistantStreamStore';
 
 function resolveVoiceWsUrl(): string {
-  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL || '';
+  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  if (!url) {
+    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
+  }
   if (!url) throw new Error('Missing NEXT_PUBLIC_WEBSOCKET_URL');
   return url.replace(/^http/i, 'ws');
 }
 
-/** Prefer an explicit backend if you have one; else use local /api/voice (Edge). */
+ param($m)
+    # Remove the old JSDoc if it references /api/voice, then add a tiny clean header at top
+    if ($m.Value -match '/api/voice') { '' } else { $m.Value }
+
 // (legacy normalizeWsUrl removed in favor of resolveVoiceWsUrl logic above)
 
 type ConnectOpts = { persona: string; conversationId?: string };
@@ -56,7 +63,10 @@ function flushTts() {
     });
     const blob = new Blob(parts, { type: 'audio/webm' });
     ttsChunks = [];
-    const url = URL.createObjectURL(blob);
+    const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  if (!url) {
+    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
+  }
     const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
     if (el) {
       el.src = url;
@@ -134,7 +144,10 @@ async function getToken(): Promise<string | undefined> {
 export async function connectVoice(opts: ConnectOpts) {
   // Build URL
   const base = resolveVoiceWsUrl();
-  const url = base.startsWith('ws') ? new URL(base) : new URL(base, window.location.origin);
+  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  if (!url) {
+    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
+  }
   if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
   url.searchParams.set('persona', opts.persona);
   if (opts.conversationId) url.searchParams.set('conversationId', opts.conversationId);

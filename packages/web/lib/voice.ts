@@ -81,7 +81,8 @@ export async function connectVoice(opts: ConnectArgs) {
   if (connecting) return connecting;
   setStatus('connecting');
   connecting = (async () => {
-    const url = await resolveUrl(opts);
+    const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  if (!url) throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
     socket.onopen = () => {

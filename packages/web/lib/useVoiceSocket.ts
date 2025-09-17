@@ -7,18 +7,32 @@ import { useUsage } from './useUsage';
 import { usePartialStore } from './partialStore';
 import { useAssistantStream } from './assistantStreamStore';
 
+// Single source of truth for WS endpoint
 function resolveVoiceWsUrl(): string {
-  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-  if (!url) {
-    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
-  }
-  if (!url) throw new Error('Missing NEXT_PUBLIC_WEBSOCKET_URL');
-  return url.replace(/^http/i, 'ws');
+  const val = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+  if (!val) throw new Error('Missing NEXT_PUBLIC_WEBSOCKET_URL');
+  return val; // keep exact value (no protocol rewrite)
 }
 
- param($m)
-    # Remove the old JSDoc if it references /api/voice, then add a tiny clean header at top
-    if ($m.Value -match '/api/voice') { '' } else { $m.Value }
+// Reusable <audio> element for TTS playback
+const _ttsAudioEl: HTMLAudioElement | null =
+  typeof window === 'undefined'
+    ? null
+    : ((document.getElementById('tts-audio') as HTMLAudioElement) || ((): HTMLAudioElement => {
+        const el = document.createElement('audio');
+        el.id = 'tts-audio';
+        el.preload = 'auto';
+        el.hidden = true;
+        document.body.appendChild(el);
+        return el;
+      })());
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 // (legacy normalizeWsUrl removed in favor of resolveVoiceWsUrl logic above)
 
@@ -51,29 +65,6 @@ let connectingRef: Promise<WebSocket> | null = null;
 let connectedOnce = false;
 // Buffer for streaming TTS
 let ttsChunks: Uint8Array[] = [];
-let ttsPlaying = false;
-function flushTts() {
-  if (!ttsChunks.length) return;
-  try {
-    const parts: BlobPart[] = ttsChunks.map((u) => {
-      const slice = u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength);
-      // Force copy into ArrayBuffer if SharedArrayBuffer
-      if (slice instanceof ArrayBuffer) return slice;
-      return new Uint8Array(slice as any).buffer;
-    });
-    const blob = new Blob(parts, { type: 'audio/webm' });
-    ttsChunks = [];
-    const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-  if (!url) {
-    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
-  }
-    const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
-    if (el) {
-      el.src = url;
-      el.play().catch(() => {});
-    }
-  } catch {}
-}
 
 // Mic capture (streaming)     robust codec selection across browsers
 function pickMime(): string {
@@ -142,25 +133,21 @@ async function getToken(): Promise<string | undefined> {
 }
 
 export async function connectVoice(opts: ConnectOpts) {
-  // Build URL
   const base = resolveVoiceWsUrl();
-  const url = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-  if (!url) {
-    throw new Error("Missing NEXT_PUBLIC_WEBSOCKET_URL");
-  }
-  if (!url.pathname || url.pathname === '/') url.pathname = '/ws';
-  url.searchParams.set('persona', opts.persona);
-  if (opts.conversationId) url.searchParams.set('conversationId', opts.conversationId);
+  const urlObj = new URL(base);
+  if (!urlObj.pathname || urlObj.pathname === '/') urlObj.pathname = '/ws';
+  urlObj.searchParams.set('persona', opts.persona);
+  if (opts.conversationId) urlObj.searchParams.set('conversationId', opts.conversationId);
   const token = await getToken();
-  if (token) url.searchParams.set('token', token);
-  url.searchParams.set('visitor', getVisitorId());
+  if (token) urlObj.searchParams.set('token', token);
+  urlObj.searchParams.set('visitor', getVisitorId());
 
   if (wsRef && wsRef.readyState === WebSocket.OPEN) return wsRef;
   if (connectingRef) return connectingRef;
 
   connectingRef = new Promise<WebSocket>((resolve, reject) => {
-    const ws = new WebSocket(url);
-    ws.binaryType = 'arraybuffer';
+  const ws = new WebSocket(urlObj.toString());
+  ws.binaryType = 'arraybuffer';
     ws.addEventListener('open', () => {
       wsRef = ws;
       connectingRef = null;
@@ -223,20 +210,23 @@ export async function connectVoice(opts: ConnectOpts) {
           }
         } else if (msg.t === 'tts_start') {
           ttsChunks = [];
-          ttsPlaying = true;
         } else if (msg.t === 'tts_chunk' && typeof msg.b64 === 'string') {
           try {
-            const bin = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0));
-            ttsChunks.push(bin);
-            // Optionally flush mid-way if large
-            const total = ttsChunks.reduce((n, c) => n + c.byteLength, 0);
-            if (total > 120_000) {
-              flushTts();
-            }
+            ttsChunks.push(b64ToBytes(msg.b64));
           } catch {}
         } else if (msg.t === 'tts_end') {
-          flushTts();
-          ttsPlaying = false;
+          if (ttsChunks.length && _ttsAudioEl) {
+            const total = ttsChunks.reduce((n, c) => n + c.byteLength, 0);
+            const buf = new Uint8Array(total);
+            let off = 0;
+            for (const part of ttsChunks) { buf.set(part, off); off += part.byteLength; }
+            const blob = new Blob([buf], { type: 'audio/mpeg' });
+            const objUrl = URL.createObjectURL(blob);
+            _ttsAudioEl.src = objUrl;
+            _ttsAudioEl.play?.().catch(() => {});
+            setTimeout(() => URL.revokeObjectURL(objUrl), 10_000);
+          }
+          ttsChunks = [];
         } else if (msg.t === 'speak') {
           if (!diag.firstSpeak) diag.firstSpeak = true;
           // On bot speak, clear any lingering partial
@@ -268,7 +258,7 @@ export async function connectVoice(opts: ConnectOpts) {
     });
   });
   console.log('[voice][ws] connecting', {
-    href: url.toString().replace(/token=[^&]+/, 'token=***'),
+    href: urlObj.toString().replace(/token=[^&]+/, 'token=***'),
   });
   // After open if client_ready not sent within 1s (should be immediate) warn
   setTimeout(() => {

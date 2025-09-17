@@ -53,7 +53,7 @@ export const useSimpleVoiceSocket = () => {
               firstTextLoggedRef.current = false;
               break;
             case 'limit_exceeded':
-              setStatus('blocked');
+              setStatus('idle');
               break;
           }
         } catch (error) {

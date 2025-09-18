@@ -73,7 +73,8 @@ wss.on("connection", async (ws, req) => {
 
   const deepgramLive = deepgram.listen.live({
     smart_format: true,
-    model: "nova-2",
+    // THE FIX IS HERE: Changed "nova-2" to a more general model
+    model: "nova-2-general",
     language: "en-US",
     encoding: "opus",
   });
@@ -205,8 +206,6 @@ wss.on("connection", async (ws, req) => {
 
   ws.on("message", (message: Buffer) => {
     console.log(`[Server Log] Received audio packet from client. Size: ${message.length}`);
-    // THE FIX IS HERE: We removed the `if` check.
-    // The Deepgram SDK handles buffering, so we can send immediately.
     (deepgramLive as any).send(message);
   });
   ws.on("close", () => {

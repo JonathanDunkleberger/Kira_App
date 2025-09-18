@@ -68,11 +68,28 @@ export function useKiraSocket(conversationId: string | null) {
     ws.onclose = () => {
       setStatus('disconnected');
       wsRef.current = null;
+      // simple backoff reconnect
+      let attempt = 0;
+      const retry = () => {
+        if (wsRef.current) return; // already reconnected
+        const delay = Math.min(8000, 500 * 2 ** attempt++);
+        setTimeout(() => connect(), delay);
+      };
+      retry();
     };
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       switch (msg.t) {
+        case 'tts_start': { // Lazily create MediaSource pipeline on first audio
+          setupAudioPlayback();
+          const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
+            if (el) {
+              el.muted = false; // reliable cross-browser
+              el.play?.().catch(() => {}); // autoplay policy guard
+            }
+          break;
+        }
         case 'transcript':
           addMessage({ role: 'user', content: msg.text });
           break;
@@ -82,14 +99,6 @@ export function useKiraSocket(conversationId: string | null) {
         case 'speak':
           setSpeaking(msg.on);
           break;
-        case 'tts_start': {
-          const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
-          if (audioEl) {
-            audioEl.muted = false;
-            audioEl.play().catch(() => {});
-          }
-          break;
-        }
         case 'tts_chunk':
           const audioChunk = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0)).buffer;
           audioQueue.current.push(audioChunk);
@@ -107,7 +116,7 @@ export function useKiraSocket(conversationId: string | null) {
           break;
       }
     };
-  }, [conversationId, addMessage, setSpeaking, playFromQueue]);
+  }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback]);
 
   const startMic = useCallback(async () => {
     if (mediaRecorderRef.current) return;
@@ -137,14 +146,12 @@ export function useKiraSocket(conversationId: string | null) {
   }, []);
 
   useEffect(() => {
-    const cleanup = setupAudioPlayback();
     connect();
     return () => {
       wsRef.current?.close();
       stopMic();
-      if (cleanup) cleanup();
     };
-  }, [connect, stopMic, setupAudioPlayback]);
+  }, [connect, stopMic]);
 
   return { status, startMic, stopMic };
 }

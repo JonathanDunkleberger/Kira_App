@@ -74,6 +74,7 @@ wss.on("connection", async (ws, req) => {
   const deepgramLive = deepgram.listen.live({
     model: "nova-2-general",
     language: "en-US",
+    // Don't set encoding/sample_rate for WebM/Opus from the browser.
     smart_format: true,
     vad_events: true,
     utterance_end_ms: 800,
@@ -87,7 +88,7 @@ wss.on("connection", async (ws, req) => {
     console.error("[Server Log] Deepgram Error:", e)
   );
   deepgramLive.on("close", (ev: any) =>
-    console.error("[Server Log] Deepgram connection closed.", ev?.code, ev?.reason)
+    console.error("[Server Log] Deepgram close", ev?.code, ev?.reason)
   );
   deepgramLive.on("warning", (w: any) =>
     console.warn("[Server Log] Deepgram warn:", w)

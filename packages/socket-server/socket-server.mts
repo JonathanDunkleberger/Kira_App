@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { createClient as createDeepgramClient } from '@deepgram/sdk';
 import OpenAI from 'openai';
 import * as AzureSpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
-import type { ServerEvent } from '../web/lib/voice-protocol';
+import type { ServerEvent } from '../web/lib/voice-protocol.js';
 
 function requireEnv(name: string): string {
   const value = process.env[name];

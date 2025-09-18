@@ -71,13 +71,13 @@ wss.on("connection", async (ws, req) => {
   };
 
   const deepgramLive = deepgram.listen.live({
-    smart_format: true,
     model: "nova-2-general",
     language: "en-US",
-    encoding: "opus",      // streaming WebM/Opus from browser
-    container: "webm",      // declare container for correct handshake
+    smart_format: true,
     vad_events: true,
     interim_results: false,
+    utterance_end_ms: 800,
+    // Auto-detect container & encoding (MediaRecorder WebM/Opus)
   });
 
   deepgramLive.on("open", () => console.log("[DG] open"));

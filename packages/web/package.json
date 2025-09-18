@@ -25,7 +25,7 @@
     "next-themes": "^0.3.0",
     "react": "19.0.0-rc-f994737d14-20240522",
     "react-dom": "19.0.0-rc-f994737d14-20240522",
-    "stripe": "latest",
+    "stripe": "^16.2.0",
     "svix": "^1.25.0",
     "zod": "^3.23.8",
     "zustand": "^4.5.4"
@@ -41,6 +41,7 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.5",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-unused-imports": "^3.2.0",
     "postcss": "^8.4.39",
     "prettier": "^3.3.3",
     "prettier-plugin-tailwindcss": "^0.6.5",

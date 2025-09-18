@@ -2,33 +2,19 @@ services:
   - type: web
     name: kira-voice-ws
     env: node
-    rootDir: packages/socket-server # Adjusted rootDir to be relative from monorepo root if needed
+    # The root directory for this service is the socket-server package
+    rootDir: packages/socket-server
     plan: starter
     region: oregon
     buildCommand: |
+      # Enable pnpm, install dependencies, and build the TypeScript code
+      corepack enable
       pnpm install --frozen-lockfile
-      pnpm --filter socket-server prisma:generate
-      pnpm --filter socket-server build
-  startCommand: pnpm --filter socket-server start:server
+      pnpm run build
+    startCommand: |
+      # Run database migrations first, then start the server
+      pnpm run prisma:deploy && pnpm run start
     envVars:
       - key: NODE_VERSION
-        value: 20.12.2
-      - key: DATABASE_URL
-        fromDatabase:
-          name: your-db-name # Replace with your Render database name
-          property: connectionString
-      - key: DIRECT_URL
-        fromDatabase:
-          name: your-db-name # Replace with your Render database name
-          property: directConnectionString
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: DEEPGRAM_API_KEY   # <-- ADDED THIS
-        sync: false
-      - key: AZURE_SPEECH_KEY
-        sync: false
-      - key: AZURE_SPEECH_REGION
-        sync: false
-      - key: DEV_ALLOW_NOAUTH
-        value: 'false'
+        value: '20.x'
     healthCheckPath: /healthz

@@ -72,16 +72,26 @@ wss.on("connection", async (ws, req) => {
   };
 
   const deepgramLive = deepgram.listen.live({
-    smart_format: true,
-    // THE FIX IS HERE: Changed "nova-2" to a more general model
     model: "nova-2-general",
     language: "en-US",
     encoding: "opus",
+    sample_rate: 48000,
+    channels: 1,
+    smart_format: true,
+    interim_results: false,
+    vad_events: true,
+    utterance_end_ms: 800,
   });
 
-  deepgramLive.on("open", () => console.log("[Server Log] Deepgram connection opened."));
-  deepgramLive.on("error", (e) => console.error("[Server Log] Deepgram Error:", e));
-  deepgramLive.on("close", () => console.log("[Server Log] Deepgram connection closed."));
+  deepgramLive.on("open", () =>
+    console.log("[Server Log] Deepgram connection opened.")
+  );
+  deepgramLive.on("error", (e) =>
+    console.error("[Server Log] Deepgram Error:", e)
+  );
+  deepgramLive.on("close", () =>
+    console.log("[Server Log] Deepgram connection closed.")
+  );
 
   let assistantBusy = false;
   let sentenceBuffer = "";
@@ -139,7 +149,9 @@ wss.on("connection", async (ws, req) => {
           const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
           if (sentenceEndMatch) {
             const sentence = sentenceEndMatch[0];
-            console.log(`[Server Log] Sending sentence to Azure TTS: "${sentence}"`);
+            console.log(
+              `[Server Log] Sending sentence to Azure TTS: "${sentence}"`
+            );
             sentenceBuffer = sentenceBuffer.substring(sentence.length);
 
             synthesizer.speakTextAsync(sentence, (result) => {
@@ -148,10 +160,14 @@ wss.on("connection", async (ws, req) => {
                 AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
               ) {
                 if ((result as any).audioData) {
-                  console.log(`[Server Log] Received audio chunk from Azure. Size: ${result.audioData.byteLength}`);
+                  console.log(
+                    `[Server Log] Received audio chunk from Azure. Size: ${result.audioData.byteLength}`
+                  );
                   safeSend({
                     t: "tts_chunk",
-                    b64: Buffer.from((result as any).audioData).toString("base64"),
+                    b64: Buffer.from((result as any).audioData).toString(
+                      "base64"
+                    ),
                   });
                 }
               }
@@ -159,17 +175,23 @@ wss.on("connection", async (ws, req) => {
           }
         }
       }
-      console.log(`[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`);
+      console.log(
+        `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
+      );
 
       if (sentenceBuffer.trim().length > 0) {
-        console.log(`[Server Log] Sending final sentence fragment to Azure TTS: "${sentenceBuffer.trim()}"`);
+        console.log(
+          `[Server Log] Sending final sentence fragment to Azure TTS: "${sentenceBuffer.trim()}"`
+        );
         synthesizer.speakTextAsync(sentenceBuffer.trim(), (result) => {
           if (
             result.reason ===
             AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
           ) {
             if ((result as any).audioData) {
-               console.log(`[Server Log] Received final audio chunk from Azure. Size: ${result.audioData.byteLength}`);
+              console.log(
+                `[Server Log] Received final audio chunk from Azure. Size: ${result.audioData.byteLength}`
+              );
               safeSend({
                 t: "tts_chunk",
                 b64: Buffer.from((result as any).audioData).toString("base64"),
@@ -183,7 +205,6 @@ wss.on("connection", async (ws, req) => {
         safeSend({ t: "tts_end" });
         synthesizer.close();
       }
-
     } catch (err) {
       console.error("[Server Log] OpenAI/TTS Error:", err);
       safeSend({ t: "error", message: "Sorry, I had trouble responding." });
@@ -204,9 +225,20 @@ wss.on("connection", async (ws, req) => {
     }
   });
 
-  ws.on("message", (message: Buffer) => {
-    console.log(`[Server Log] Received audio packet from client. Size: ${message.length}`);
-    (deepgramLive as any).send(message);
+  ws.on("message", (message: Buffer, isBinary) => {
+    if (isBinary) {
+      console.log(
+        `[Server Log] Received audio packet (binary). Size: ${message.length}`
+      );
+      if ((deepgramLive as any).getReadyState?.() === 1) {
+        (deepgramLive as any).send(message);
+      } else {
+        // Fallback: attempt send anyway (SDK may buffer) if method absent
+        try {
+          (deepgramLive as any).send(message);
+        } catch {}
+      }
+    }
   });
   ws.on("close", () => {
     console.log("[Server Log] Client disconnected.");

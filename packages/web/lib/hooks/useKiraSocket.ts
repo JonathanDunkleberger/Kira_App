@@ -78,6 +78,11 @@ export function useKiraSocket(conversationId: string | null) {
         case 'speak':
           setSpeaking(msg.on);
           break;
+        case 'tts_start': {
+          const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
+          audioEl?.play().catch(() => {});
+          break;
+        }
         case 'tts_chunk':
           const audioChunk = Uint8Array.from(atob(msg.b64), c => c.charCodeAt(0)).buffer;
           audioQueue.current.push(audioChunk);

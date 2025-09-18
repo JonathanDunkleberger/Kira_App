@@ -43,8 +43,7 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
-  const allowed =
-    /^(https?:\/\/localhost(:\d+)?|https?:\/\/kira-umber\.vercel\.app)$/i;
+  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/[a-z0-9-]+\.vercel\.app)$/i; // allow all vercel preview domains
   if (!allowed.test(origin)) {
     console.warn(`[Server] Denying connection from origin: ${origin}`);
     socket.destroy();
@@ -72,29 +71,25 @@ wss.on("connection", async (ws, req) => {
   };
 
   const deepgramLive = deepgram.listen.live({
+    smart_format: true,
     model: "nova-2-general",
     language: "en-US",
-    // Don't set encoding/sample_rate for WebM/Opus from the browser.
-    smart_format: true,
+    encoding: "opus",      // streaming WebM/Opus from browser
+    container: "webm",      // declare container for correct handshake
     vad_events: true,
-    utterance_end_ms: 800,
     interim_results: false,
   });
 
-  deepgramLive.on("open", () =>
-    console.log("[Server Log] Deepgram connection opened.")
-  );
-  deepgramLive.on("error", (e) =>
-    console.error("[Server Log] Deepgram Error:", e)
-  );
-  deepgramLive.on("close", (ev: any) =>
-    console.error("[Server Log] Deepgram close", ev?.code, ev?.reason)
-  );
-  deepgramLive.on("warning", (w: any) =>
-    console.warn("[Server Log] Deepgram warn:", w)
-  );
+  deepgramLive.on("open", () => console.log("[DG] open"));
   deepgramLive.on("metadata", (m: any) =>
-    console.log("[Server Log] Deepgram meta:", m)
+    console.log("[DG] metadata", JSON.stringify(m))
+  );
+  deepgramLive.on("warning", (w: any) => console.warn("[DG] warning", w));
+  deepgramLive.on("close", (c: any) =>
+    console.log("[DG] close", c?.code, c?.reason)
+  );
+  deepgramLive.on("error", (e: any) =>
+    console.error("[DG] error", e?.message || e)
   );
 
   let assistantBusy = false;
@@ -230,18 +225,9 @@ wss.on("connection", async (ws, req) => {
   });
 
   ws.on("message", (message: Buffer, isBinary) => {
-    if (isBinary) {
-      console.log(
-        `[Server Log] Received audio packet (binary). Size: ${message.length}`
-      );
-      if ((deepgramLive as any).getReadyState?.() === 1) {
-        (deepgramLive as any).send(message);
-      } else {
-        // Fallback: attempt send anyway (SDK may buffer) if method absent
-        try {
-          (deepgramLive as any).send(message);
-        } catch {}
-      }
+    if (!isBinary) return;
+    if ((deepgramLive as any).getReadyState?.() === 1) {
+      (deepgramLive as any).send(message);
     }
   });
   ws.on("close", () => {

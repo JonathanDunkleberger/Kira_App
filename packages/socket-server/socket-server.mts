@@ -39,13 +39,12 @@ const server = http.createServer((req, res) => {
     res.end();
   }
 });
-
 const wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
-  // Allow localhost and the specific production Vercel deployment
-  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/kira-umber\.vercel\.app)$/i;
+  const allowed =
+    /^(https?:\/\/localhost(:\d+)?|https?:\/\/kira-umber\.vercel\.app)$/i;
   if (!allowed.test(origin)) {
     console.warn(`[Server] Denying connection from origin: ${origin}`);
     socket.destroy();
@@ -58,12 +57,12 @@ server.on("upgrade", (req, socket, head) => {
 
 // --- WEBSOCKET CONNECTION HANDLING ---
 wss.on("connection", async (ws, req) => {
-  console.log("[Server] ✅ New client connected.");
+  console.log("[Server Log] ✅ New client connected.");
   const conversationId = new URL(req.url!, "http://localhost").searchParams.get(
     "conversationId"
   );
   if (!conversationId) {
-    console.warn("[Server] Connection closed: Missing conversationId");
+    console.warn("[Server Log] Connection closed: Missing conversationId");
     ws.close(1008, "Missing conversationId");
     return;
   }
@@ -79,7 +78,9 @@ wss.on("connection", async (ws, req) => {
     encoding: "opus",
   });
 
-  deepgramLive.on("error", (e) => console.error("[DG] Error:", e));
+  deepgramLive.on("open", () => console.log("[Server Log] Deepgram connection opened."));
+  deepgramLive.on("error", (e) => console.error("[Server Log] Deepgram Error:", e));
+  deepgramLive.on("close", () => console.log("[Server Log] Deepgram connection closed."));
 
   let assistantBusy = false;
   let sentenceBuffer = "";
@@ -88,6 +89,7 @@ wss.on("connection", async (ws, req) => {
     const transcript = (data as any).channel.alternatives[0].transcript.trim();
     if (!transcript || assistantBusy) return;
 
+    console.log(`[Server Log] Received transcript: "${transcript}"`);
     assistantBusy = true;
     safeSend({ t: "transcript", text: transcript });
     safeSend({ t: "speak", on: true });
@@ -97,7 +99,6 @@ wss.on("connection", async (ws, req) => {
         data: { conversationId, role: "user", text: transcript },
       })
       .catch((e) => console.error("[DB] Failed to save user message:", e));
-
     let fullResponse = "";
 
     const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
@@ -113,6 +114,7 @@ wss.on("connection", async (ws, req) => {
     );
 
     try {
+      console.log("[Server Log] Sending transcript to OpenAI...");
       const stream = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -124,7 +126,6 @@ wss.on("connection", async (ws, req) => {
         ],
         stream: true,
       });
-
       safeSend({ t: "tts_start" });
 
       for await (const chunk of stream) {
@@ -134,10 +135,10 @@ wss.on("connection", async (ws, req) => {
           sentenceBuffer += content;
           safeSend({ t: "assistant_text_chunk", text: content });
 
-          // Check for sentence-ending punctuation and flush to TTS
           const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
           if (sentenceEndMatch) {
             const sentence = sentenceEndMatch[0];
+            console.log(`[Server Log] Sending sentence to Azure TTS: "${sentence}"`);
             sentenceBuffer = sentenceBuffer.substring(sentence.length);
 
             synthesizer.speakTextAsync(sentence, (result) => {
@@ -146,11 +147,10 @@ wss.on("connection", async (ws, req) => {
                 AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
               ) {
                 if ((result as any).audioData) {
+                  console.log(`[Server Log] Received audio chunk from Azure. Size: ${result.audioData.byteLength}`);
                   safeSend({
                     t: "tts_chunk",
-                    b64: Buffer.from((result as any).audioData).toString(
-                      "base64"
-                    ),
+                    b64: Buffer.from((result as any).audioData).toString("base64"),
                   });
                 }
               }
@@ -158,15 +158,17 @@ wss.on("connection", async (ws, req) => {
           }
         }
       }
+      console.log(`[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`);
 
-      // Synthesize any remaining text in the buffer after the stream ends
       if (sentenceBuffer.trim().length > 0) {
+        console.log(`[Server Log] Sending final sentence fragment to Azure TTS: "${sentenceBuffer.trim()}"`);
         synthesizer.speakTextAsync(sentenceBuffer.trim(), (result) => {
           if (
             result.reason ===
             AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
           ) {
             if ((result as any).audioData) {
+               console.log(`[Server Log] Received final audio chunk from Azure. Size: ${result.audioData.byteLength}`);
               safeSend({
                 t: "tts_chunk",
                 b64: Buffer.from((result as any).audioData).toString("base64"),
@@ -180,8 +182,9 @@ wss.on("connection", async (ws, req) => {
         safeSend({ t: "tts_end" });
         synthesizer.close();
       }
+
     } catch (err) {
-      console.error("[OpenAI] Completion error:", err);
+      console.error("[Server Log] OpenAI/TTS Error:", err);
       safeSend({ t: "error", message: "Sorry, I had trouble responding." });
       synthesizer.close();
     } finally {
@@ -201,21 +204,19 @@ wss.on("connection", async (ws, req) => {
   });
 
   ws.on("message", (message: Buffer) => {
+    console.log(`[Server Log] Received audio packet from client. Size: ${message.length}`);
     if ((deepgramLive as any).getReadyState() === 1)
       (deepgramLive as any).send(message);
   });
-
   ws.on("close", () => {
-    console.log("[Server] Client disconnected.");
+    console.log("[Server Log] Client disconnected.");
     (deepgramLive as any).finish();
   });
-
   ws.on("error", (error) => {
-    console.error("[Server] WebSocket Error:", error);
+    console.error("[Server Log] WebSocket Error:", error);
     (deepgramLive as any).finish();
   });
 });
-
 server.listen(PORT, () => {
   console.log(`🚀 Voice pipeline server listening on :${PORT}`);
 });

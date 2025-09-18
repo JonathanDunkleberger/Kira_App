@@ -2,18 +2,16 @@ services:
   - type: web
     name: kira-voice-ws
     env: node
-    # The root directory for this service is the socket-server package
     rootDir: packages/socket-server
     plan: starter
     region: oregon
     buildCommand: |
-      # Enable pnpm, install dependencies, and build the TypeScript code
       corepack enable
       pnpm install --frozen-lockfile
       pnpm run build
     startCommand: |
-      # Run database migrations first, then start the server
-      pnpm run prisma:deploy && pnpm run start
+      # Force Prisma to use the DIRECT_URL for migrations, then start the app
+      DATABASE_URL="$DIRECT_URL" pnpm run prisma:deploy && pnpm run start
     envVars:
       - key: NODE_VERSION
         value: '20.x'

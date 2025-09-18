@@ -205,8 +205,9 @@ wss.on("connection", async (ws, req) => {
 
   ws.on("message", (message: Buffer) => {
     console.log(`[Server Log] Received audio packet from client. Size: ${message.length}`);
-    if ((deepgramLive as any).getReadyState() === 1)
-      (deepgramLive as any).send(message);
+    // THE FIX IS HERE: We removed the `if` check.
+    // The Deepgram SDK handles buffering, so we can send immediately.
+    (deepgramLive as any).send(message);
   });
   ws.on("close", () => {
     console.log("[Server Log] Client disconnected.");

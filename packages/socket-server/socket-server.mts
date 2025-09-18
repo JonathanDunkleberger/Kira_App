@@ -29,6 +29,7 @@ const prisma = new PrismaClient();
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// --- HTTP SERVER for Health Checks & WebSocket Upgrades ---
 const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/healthz') {
     res.statusCode = 200;
@@ -43,8 +44,10 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
   const origin = req.headers.origin || '';
+  // Allow localhost and Vercel deployments
   const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/.*\.vercel\.app)$/i;
   if (!allowed.test(origin)) {
+    console.warn(`[Server] Denying connection from origin: ${origin}`);
     socket.destroy();
     return;
   }
@@ -53,20 +56,15 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
+// --- WEBSOCKET CONNECTION HANDLING ---
 wss.on('connection', async (ws, req) => {
   console.log('[Server] ✅ New client connected.');
   const conversationId = new URL(req.url!, 'http://localhost').searchParams.get('conversationId');
   if (!conversationId) {
+    console.warn('[Server] Connection closed: Missing conversationId');
     ws.close(1008, 'Missing conversationId');
     return;
   }
-
-  // Send initial session + heartbeat ack so client can confirm liveness.
-  try {
-    const chatSessionId = crypto.randomUUID();
-    ws.send(JSON.stringify({ t: 'chat_session', chatSessionId }));
-    ws.send(JSON.stringify({ t: 'heartbeat', now: Date.now(), chatSessionId }));
-  } catch {}
 
   const safeSend = (payload: ServerEvent) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
@@ -91,7 +89,7 @@ wss.on('connection', async (ws, req) => {
 
     await prisma.message.create({
       data: { conversationId, role: 'user', text: transcript },
-  }).catch((e: unknown) => console.error('[DB] Failed to save user message:', e));
+    }).catch(e => console.error('[DB] Failed to save user message:', e));
 
     let fullResponse = '';
 
@@ -113,32 +111,32 @@ wss.on('connection', async (ws, req) => {
         const content = (chunk as any).choices[0]?.delta?.content || '';
         if (content) {
           fullResponse += content;
-            sentenceBuffer += content;
-            safeSend({ t: 'assistant_text_chunk', text: content });
+          sentenceBuffer += content;
+          safeSend({ t: 'assistant_text_chunk', text: content });
 
-            const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
-            if (sentenceEndMatch) {
-              const sentence = sentenceEndMatch[0];
-              sentenceBuffer = sentenceBuffer.substring(sentence.length);
-              
-              synthesizer.speakTextAsync(sentence, result => {
-                if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-                  const audioData = (result as any).audioData;
-                  if (audioData) {
-                    safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
-                  }
+          // Check for sentence-ending punctuation and flush to TTS
+          const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
+          if (sentenceEndMatch) {
+            const sentence = sentenceEndMatch[0];
+            sentenceBuffer = sentenceBuffer.substring(sentence.length);
+            
+            synthesizer.speakTextAsync(sentence, result => {
+              if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                if ((result as any).audioData) {
+                  safeSend({ t: 'tts_chunk', b64: Buffer.from((result as any).audioData).toString('base64') });
                 }
-              });
-            }
+              }
+            });
+          }
         }
       }
 
+      // Synthesize any remaining text in the buffer after the stream ends
       if (sentenceBuffer.trim().length > 0) {
         synthesizer.speakTextAsync(sentenceBuffer.trim(), result => {
           if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-            const audioData = (result as any).audioData;
-            if (audioData) {
-              safeSend({ t: 'tts_chunk', b64: Buffer.from(audioData).toString('base64') });
+            if ((result as any).audioData) {
+              safeSend({ t: 'tts_chunk', b64: Buffer.from((result as any).audioData).toString('base64') });
             }
           }
           safeSend({ t: 'tts_end' });
@@ -157,7 +155,7 @@ wss.on('connection', async (ws, req) => {
       if (fullResponse) {
         await prisma.message.create({
           data: { conversationId, role: 'assistant', text: fullResponse },
-  }).catch((e: unknown) => console.error('[DB] Failed to save assistant message:', e));
+        }).catch(e => console.error('[DB] Failed to save assistant message:', e));
       }
       safeSend({ t: 'speak', on: false });
       assistantBusy = false;

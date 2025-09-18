@@ -1,22 +1,21 @@
 {
   "name": "kira-ai-monorepo",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev:web": "npm run dev --workspace=web",
-    "dev:server": "npm run start --workspace=socket-server",
-    "dev": "npm-run-all -p dev:server dev:web",
-    "build": "npm run build --workspace=web",
-    "start": "npm run start --workspace=web",
-    "dump:code": "node scripts/dump-code.js"
+    "dev": "pnpm --parallel --stream dev",
+    "build": "pnpm --filter web... build",
+    "db:migrate": "dotenv -e ./.env -- pnpm prisma migrate dev",
+    "db:reset": "dotenv -e ./.env -- pnpm prisma db push --force-reset",
+    "db:generate": "pnpm --filter web prisma generate",
+    "lint": "pnpm --filter \"./packages/**\" lint",
+    "typecheck": "pnpm --filter \"./packages/**\" typecheck"
   },
   "packageManager": "pnpm@9.12.1",
   "devDependencies": {
-    "prisma": "6.16.2"
+    "prisma": "^5.17.0",
+    "dotenv-cli": "^7.4.2"
   },
   "dependencies": {
-    "@prisma/client": "6.16.2"
+    "@prisma/client": "^5.17.0"
   }
 }

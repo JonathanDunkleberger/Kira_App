@@ -18,6 +18,8 @@ model User {
   conversations  Conversation[]
   subscriptions  Subscription[]
   paymentEvents  PaymentEvent[]
+
+  @@map("User")
 }
 
 model Usage {
@@ -31,7 +33,7 @@ model Usage {
 
 model Conversation {
   id        String    @id @default(cuid())
-  userId    String? // optional for guests
+  userId    String?   // optional for guests
   user      User?     @relation(fields: [userId], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

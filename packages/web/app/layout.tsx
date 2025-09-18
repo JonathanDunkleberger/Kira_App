@@ -6,6 +6,7 @@ import { ThemeProvider } from '../components/theme-provider';
 import { AppHeader } from '../components/layout/AppHeader';
 import '../lib/bootlog'; // boot health logging
 import { LimitBanner } from '../components/LimitBanner';
+import { publicEnv } from '../lib/config'; // <-- ADD THIS IMPORT
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -15,7 +16,8 @@ export const metadata = { title: 'Kira — AI Media Companion', description: 'Ta
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <ClerkProvider>
+      {/* THE FIX IS HERE: Manually pass the publishableKey */}
+      <ClerkProvider publishableKey={publicEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
         <body
           className={`min-h-screen bg-background text-foreground antialiased ${inter.className}`}
         >

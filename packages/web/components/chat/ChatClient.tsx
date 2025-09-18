@@ -1,3 +1,4 @@
+// FILE: packages/web/components/chat/ChatClient.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -38,7 +39,8 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     if (status === 'connected') {
       startMic();
       const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
-      audioEl?.play().catch(() => console.warn('Audio context requires user gesture.'));
+      // THE FIX IS HERE: We change 'play()' to 'audioEl.muted = false'
+      if (audioEl) audioEl.muted = false;
     }
     return () => stopMic();
   }, [status, startMic, stopMic]);
@@ -47,14 +49,14 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     stopMic();
     router.push('/');
   };
-  
+
   return (
     <div className="flex flex-col items-center justify-center h-full w-full">
-      <audio id="tts-audio" className="hidden" autoPlay />
+      <audio id="tts-audio" className="hidden" autoPlay muted />
       <div className="absolute top-1/4 w-full max-w-3xl px-4">
          <AnimatedTranscript messages={messages} />
       </div>
-  <VoiceOrb size={280} />
+      <VoiceOrb size={280} />
       <div className="fixed left-1/2 bottom-10 -translate-x-1/2">
         <CallControls onEndCall={handleEndCall} />
       </div>

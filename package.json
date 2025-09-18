@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --parallel --stream dev",
-    "build": "pnpm --filter web... build",
+    "build": "dotenv -e ./.env -- pnpm --filter web... build",
     "db:migrate": "dotenv -e ./.env -- pnpm prisma migrate dev",
     "db:reset": "dotenv -e ./.env -- pnpm prisma db push --force-reset",
     "db:generate": "pnpm --filter web prisma generate",

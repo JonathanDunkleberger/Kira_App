@@ -74,13 +74,10 @@ wss.on("connection", async (ws, req) => {
   const deepgramLive = deepgram.listen.live({
     model: "nova-2-general",
     language: "en-US",
-    encoding: "opus",
-    sample_rate: 48000,
-    channels: 1,
     smart_format: true,
-    interim_results: false,
     vad_events: true,
     utterance_end_ms: 800,
+    interim_results: false,
   });
 
   deepgramLive.on("open", () =>
@@ -89,8 +86,14 @@ wss.on("connection", async (ws, req) => {
   deepgramLive.on("error", (e) =>
     console.error("[Server Log] Deepgram Error:", e)
   );
-  deepgramLive.on("close", () =>
-    console.log("[Server Log] Deepgram connection closed.")
+  deepgramLive.on("close", (ev: any) =>
+    console.error("[Server Log] Deepgram connection closed.", ev?.code, ev?.reason)
+  );
+  deepgramLive.on("warning", (w: any) =>
+    console.warn("[Server Log] Deepgram warn:", w)
+  );
+  deepgramLive.on("metadata", (m: any) =>
+    console.log("[Server Log] Deepgram meta:", m)
   );
 
   let assistantBusy = false;

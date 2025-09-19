@@ -43,9 +43,12 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
-  const allowed = /^(https?:\/\/localhost(:\d+)?|https?:\/\/[a-z0-9-]+\.vercel\.app)$/i; // allow all vercel preview domains
-  if (!allowed.test(origin)) {
-    console.warn(`[Server] Denying connection from origin: ${origin}`);
+  const allowedOrigin = process.env.ALLOWED_ORIGIN;
+  const isAllowed = process.env.NODE_ENV === "development"
+    ? (!!allowedOrigin && origin === allowedOrigin) || origin.startsWith("http://localhost")
+    : !!allowedOrigin && origin === allowedOrigin;
+  if (!isAllowed) {
+    console.warn(`[Server] Denying connection from mismatched origin: ${origin}. Expected: ${allowedOrigin}`);
     socket.destroy();
     return;
   }

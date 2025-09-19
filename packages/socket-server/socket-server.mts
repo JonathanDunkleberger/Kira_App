@@ -29,6 +29,36 @@ const prisma = new PrismaClient();
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+// =================================================================
+// START: ADD THIS DIAGNOSTIC BLOCK
+// =================================================================
+(async () => {
+  try {
+    const { result, error } = await deepgram.projects.list();
+    if (error) {
+      throw error;
+    }
+    if (result?.projects) {
+      console.log(
+        "[DG Test] ✅ Deepgram connection test successful. Projects found:",
+        result.projects.length
+      );
+    } else {
+      console.warn(
+        "[DG Test] 🟡 Deepgram connection test passed, but no projects found."
+      );
+    }
+  } catch (e: any) {
+    console.error(
+      "[DG Test] ❌ Deepgram connection test FAILED.",
+      e?.message || e
+    );
+  }
+})();
+// =================================================================
+// END: DIAGNOSTIC BLOCK
+// =================================================================
+
 // --- HTTP SERVER for Health Checks & WebSocket Upgrades ---
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/healthz") {
@@ -44,11 +74,15 @@ const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
   const allowedOrigin = process.env.ALLOWED_ORIGIN;
-  const isAllowed = process.env.NODE_ENV === "development"
-    ? (!!allowedOrigin && origin === allowedOrigin) || origin.startsWith("http://localhost")
-    : !!allowedOrigin && origin === allowedOrigin;
+  const isAllowed =
+    process.env.NODE_ENV === "development"
+      ? (!!allowedOrigin && origin === allowedOrigin) ||
+        origin.startsWith("http://localhost")
+      : !!allowedOrigin && origin === allowedOrigin;
   if (!isAllowed) {
-    console.warn(`[Server] Denying connection from mismatched origin: ${origin}. Expected: ${allowedOrigin}`);
+    console.warn(
+      `[Server] Denying connection from mismatched origin: ${origin}. Expected: ${allowedOrigin}`
+    );
     socket.destroy();
     return;
   }

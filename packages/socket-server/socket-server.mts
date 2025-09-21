@@ -36,12 +36,14 @@ const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // =================================================================
-// START: ADD THIS DIAGNOSTIC BLOCK
+// UPDATED DEEPGRAM DIAGNOSTIC BLOCK (v3 note + legacy projects.list per request)
 // =================================================================
 (async () => {
   try {
-    const { result, error } = await deepgram.manage.getProjects();
-    if (error) throw error;
+    const { result, error } = await (deepgram as any).projects.list();
+    if (error) {
+      throw error;
+    }
     if (result?.projects) {
       console.log(
         "[DG Test] ✅ Deepgram connection test successful. Projects found:",
@@ -160,7 +162,7 @@ async function initDeepgramWithMode() {
     console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
     return { mode: "disabled" } as const;
   }
-  const DG_MODEL = "nova-3"; // adjust to nova-2 if account lacks nova-3
+  const DG_MODEL = "nova-2"; // per user request use nova-2
   const base = {
     model: DG_MODEL,
     language: "en-US",
@@ -170,12 +172,7 @@ async function initDeepgramWithMode() {
     utterance_end_ms: 800,
   };
   // v3: do not send 'container'; keep encoding/sample_rate/channels only
-  const explicit = {
-    ...base,
-    encoding: "opus",
-    sample_rate: 48000,
-    channels: 1,
-  };
+  const explicit = { ...base, encoding: "webm", sample_rate: 48000, channels: 1 };
   const minimal = { ...base };
   const auto = { model: DG_MODEL, language: "en-US" };
 
@@ -235,15 +232,12 @@ wss.on("connection", async (ws, req) => {
           .map((a: any) => `${a.label}:${a.ok ? "ok" : "fail"}`)
           .join(",")}`
       );
-      deepgramLive.on("metadata", (m: any) =>
-        console.log("[DG] metadata", JSON.stringify(m))
-      );
-      deepgramLive.on("warning", (w: any) => console.warn("[DG] warning", w));
+      deepgramLive.on("open", () => console.log("[DG] Connection opened"));
       deepgramLive.on("close", (c: any) =>
-        console.log("[DG] close", c?.code, c?.reason)
+        console.log("[DG] Connection closed", c?.code, c?.reason)
       );
       deepgramLive.on("error", (e: any) =>
-        console.error("[DG] error", e?.message || e, e)
+        console.error("[DG] Error", e?.message || e, e)
       );
       // KeepAlive every 8s to avoid NET-0001 closes during silence
       const ka = setInterval(() => {
@@ -271,10 +265,8 @@ wss.on("connection", async (ws, req) => {
   let sentenceBuffer = "";
 
   if (deepgramLive)
-    deepgramLive.on("transcript", async (data: any) => {
-      const transcript = (
-        data as any
-      ).channel.alternatives[0].transcript.trim();
+    deepgramLive.on("Results", async (data: any) => {
+      const transcript = data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
       if (!transcript || assistantBusy) return;
 
       console.log(`[Server Log] Received transcript: "${transcript}"`);

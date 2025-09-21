@@ -45,8 +45,10 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     if (status === 'connected') {
       startMic();
       const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
-      // THE FIX IS HERE: We change 'play()' to 'audioEl.muted = false'
-      if (audioEl) audioEl.muted = false;
+      if (audioEl) {
+        audioEl.muted = false;
+        audioEl.play?.().catch(() => {});
+      }
     }
     return () => stopMic();
   }, [status, startMic, stopMic]);

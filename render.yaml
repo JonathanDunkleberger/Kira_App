@@ -14,5 +14,5 @@ services:
       DATABASE_URL="$DIRECT_URL" pnpm run prisma:deploy && pnpm run start
     envVars:
       - key: NODE_VERSION
-        value: '20.x'
+        value: "20.x"
     healthCheckPath: /healthz

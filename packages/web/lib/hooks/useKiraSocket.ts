@@ -81,13 +81,14 @@ export function useKiraSocket(conversationId: string | null) {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       switch (msg.t) {
-        case 'tts_start': { // Lazily create MediaSource pipeline on first audio
+        case 'tts_start': {
+          // Lazily create MediaSource pipeline on first audio
           setupAudioPlayback();
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
-            if (el) {
-              el.muted = false; // reliable cross-browser
-              el.play?.().catch(() => {}); // autoplay policy guard
-            }
+          if (el) {
+            el.muted = false; // reliable cross-browser
+            el.play?.().catch(() => {}); // autoplay policy guard
+          }
           break;
         }
         case 'transcript':

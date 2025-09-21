@@ -6,13 +6,14 @@ import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
 import { useConversationStore } from '../../lib/state/conversation-store';
 import VoiceOrb from '../VoiceOrb';
 
-const AnimatedTranscript = ({ messages }: { messages: {role: string, content: string}[]}) => {
+const AnimatedTranscript = ({ messages }: { messages: { role: string; content: string }[] }) => {
   const lastMessage = messages[messages.length - 1];
   return (
     <div className="text-white text-center h-full overflow-y-auto text-lg leading-relaxed">
       {lastMessage && (
         <p>
-          <strong className="text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong> {lastMessage.content}
+          <strong className="text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong>{' '}
+          {lastMessage.content}
           {useConversationStore.getState().isSpeaking && <span className="animate-pulse">▍</span>}
         </p>
       )}
@@ -22,7 +23,12 @@ const AnimatedTranscript = ({ messages }: { messages: {role: string, content: st
 
 const CallControls = ({ onEndCall }: { onEndCall: () => void }) => (
   <div className="flex gap-4">
-    <button onClick={onEndCall} className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-semibold">End Call</button>
+    <button
+      onClick={onEndCall}
+      className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-semibold"
+    >
+      End Call
+    </button>
   </div>
 );
 
@@ -54,7 +60,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     <div className="flex flex-col items-center justify-center h-full w-full">
       <audio id="tts-audio" className="hidden" autoPlay muted />
       <div className="absolute top-1/4 w-full max-w-3xl px-4">
-         <AnimatedTranscript messages={messages} />
+        <AnimatedTranscript messages={messages} />
       </div>
       <VoiceOrb size={280} />
       <div className="fixed left-1/2 bottom-10 -translate-x-1/2">

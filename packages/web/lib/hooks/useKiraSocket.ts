@@ -54,13 +54,11 @@ export function useKiraSocket(conversationId: string | null) {
   }, [playFromQueue]);
 
   const connect = useCallback(() => {
-    if (wsRef.current || !conversationId) return;
-
+    if (wsRef.current) return;
     const url = new URL(process.env.NEXT_PUBLIC_WEBSOCKET_URL!);
-    url.searchParams.set('conversationId', conversationId);
-
+    if (conversationId) url.searchParams.set('conversationId', conversationId);
     setStatus('connecting');
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url.toString());
     wsRef.current = ws;
 
     ws.onopen = () => setStatus('connected');
@@ -127,7 +125,12 @@ export function useKiraSocket(conversationId: string | null) {
     try {
       console.log('[Audio] Requesting microphone permission...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
       });
       console.log('[Audio] ✅ Microphone permission granted.');
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm; codecs=opus' });

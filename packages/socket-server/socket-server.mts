@@ -40,10 +40,8 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 // =================================================================
 (async () => {
   try {
-    const { result, error } = await deepgram.projects.list();
-    if (error) {
-      throw error;
-    }
+    const { result, error } = await deepgram.manage.getProjects();
+    if (error) throw error;
     if (result?.projects) {
       console.log(
         "[DG Test] ✅ Deepgram connection test successful. Projects found:",
@@ -162,23 +160,24 @@ async function initDeepgramWithMode() {
     console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
     return { mode: "disabled" } as const;
   }
+  const DG_MODEL = "nova-3"; // adjust to nova-2 if account lacks nova-3
   const base = {
-    model: "nova-2",
+    model: DG_MODEL,
     language: "en-US",
     smart_format: true,
     vad_events: true,
     interim_results: false,
     utterance_end_ms: 800,
   };
+  // v3: do not send 'container'; keep encoding/sample_rate/channels only
   const explicit = {
     ...base,
-    container: "webm",
     encoding: "opus",
     sample_rate: 48000,
     channels: 1,
   };
-  const minimal = { ...base }; // rely on Deepgram defaults for container/encoding
-  const auto = { model: "nova-2", language: "en-US" };
+  const minimal = { ...base };
+  const auto = { model: DG_MODEL, language: "en-US" };
 
   if (DEEPGRAM_MODE === "explicit") {
     return {
@@ -246,6 +245,16 @@ wss.on("connection", async (ws, req) => {
       deepgramLive.on("error", (e: any) =>
         console.error("[DG] error", e?.message || e, e)
       );
+      // KeepAlive every 8s to avoid NET-0001 closes during silence
+      const ka = setInterval(() => {
+        try {
+          if (deepgramLive?.getReadyState?.() === 1) {
+            deepgramLive.send(JSON.stringify({ type: "KeepAlive" }));
+          }
+        } catch {}
+      }, 8000);
+      ws.on("close", () => clearInterval(ka));
+      ws.on("error", () => clearInterval(ka));
     } else {
       console.error(
         `[DG] All Deepgram attempts failed (mode=${dgInit.mode}). Details:`,

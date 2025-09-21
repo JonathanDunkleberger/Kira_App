@@ -103,16 +103,53 @@ export function useKiraSocket(conversationId: string | null) {
           audioQueue.current.push(audioChunk);
           playFromQueue();
           break;
-        case 'tts_end':
-          const checkBuffer = () => {
-            if (sourceBufferRef.current && !sourceBufferRef.current.updating) {
-              mediaSourceRef.current?.endOfStream();
-            } else {
-              setTimeout(checkBuffer, 100);
+        case 'tts_end': {
+          // Attempt to finalize the MediaSource stream safely.
+          const ms = mediaSourceRef.current;
+          if (!ms) break; // Nothing to finalize.
+
+            // Drain any remaining queued chunks first.
+          playFromQueue();
+
+          const finalize = () => {
+            if (!mediaSourceRef.current) return;
+            try {
+              mediaSourceRef.current.endOfStream();
+            } catch (e) {
+              console.warn('[TTS] endOfStream() failed (will ignore):', e);
             }
           };
-          checkBuffer();
+
+          const sb = sourceBufferRef.current;
+          // If no SourceBuffer ever created, try to end immediately.
+          if (!sb) {
+            finalize();
+            break;
+          }
+
+          // Wait until SourceBuffer not updating AND local queue drained.
+          const tryClose = (attempt = 0) => {
+            // Keep nudging playback of any leftover queued chunks.
+            playFromQueue();
+            if (!sourceBufferRef.current) {
+              finalize();
+              return;
+            }
+            const busy = sourceBufferRef.current.updating;
+            const hasQueue = audioQueue.current.length > 0;
+            if (!busy && !hasQueue) {
+              finalize();
+            } else if (attempt < 100) { // ~12s worst-case @120ms
+              setTimeout(() => tryClose(attempt + 1), 120);
+            } else {
+              console.warn('[TTS] Forcing endOfStream after timeout. busy:', busy, 'queue:', hasQueue);
+              finalize();
+            }
+          };
+
+          tryClose();
           break;
+        }
       }
     };
   }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback]);

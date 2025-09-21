@@ -120,22 +120,46 @@ export function useKiraSocket(conversationId: string | null) {
   }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback]);
 
   const startMic = useCallback(async () => {
-    if (mediaRecorderRef.current) return;
+    if (mediaRecorderRef.current) {
+      console.log('[Audio] Mic already started.');
+      return;
+    }
     try {
+      console.log('[Audio] Requesting microphone permission...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       });
+      console.log('[Audio] ✅ Microphone permission granted.');
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm; codecs=opus' });
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log(`[Audio] ➡️ Sending audio chunk of size: ${event.data.size}`);
           wsRef.current.send(event.data);
+        } else {
+          if (event.data.size > 0) {
+            console.log('[Audio] Skipped chunk: WS not open or size zero.', {
+              size: event.data.size,
+              readyState: wsRef.current?.readyState,
+            });
+          }
         }
       };
-      recorder.start(250);
+
+      recorder.onstart = () => {
+        console.log('[Audio] ✅ MediaRecorder started.');
+      };
+      recorder.onerror = (e: any) => {
+        console.error('[Audio] ❌ MediaRecorder error:', e);
+      };
+      recorder.onstop = () => {
+        console.log('[Audio] ⏹️ MediaRecorder stopped.');
+      };
+
+      recorder.start(250); // Will trigger ondataavailable every 250ms
     } catch (error) {
-      console.error('Error starting microphone:', error);
+      console.error('[Audio] ❌ Error starting microphone:', error);
     }
   }, []);
 

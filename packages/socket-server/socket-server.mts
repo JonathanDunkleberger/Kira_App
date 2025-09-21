@@ -29,6 +29,8 @@ const DEEPGRAM_DISABLED = /^true$/i.test(
 );
 // Modes: explicit (current explicit params), minimal (remove container/encoding/sample_rate/channels), auto (let SDK infer), fallback (try explicit -> minimal -> auto)
 const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
+const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
+const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
 
 // --- SERVICES ---
 const prisma = new PrismaClient();
@@ -162,7 +164,7 @@ async function initDeepgramWithMode() {
     console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
     return { mode: "disabled" } as const;
   }
-  const DG_MODEL = "nova-2"; // per user request use nova-2
+  const DG_MODEL = DEEPGRAM_MODEL; // env override
   const base = {
     model: DG_MODEL,
     language: "en-US",
@@ -171,8 +173,7 @@ async function initDeepgramWithMode() {
     interim_results: false,
     utterance_end_ms: 800,
   };
-  // v3: do not send 'container'; keep encoding/sample_rate/channels only
-  const explicit = { ...base, encoding: "webm", sample_rate: 48000, channels: 1 };
+  const explicit = { ...base, encoding: DEEPGRAM_ENCODING, sample_rate: 48000, channels: 1 };
   const minimal = { ...base };
   const auto = { model: DG_MODEL, language: "en-US" };
 
@@ -205,6 +206,9 @@ async function initDeepgramWithMode() {
 }
 
 wss.on("connection", async (ws, req) => {
+  // reset counters per connection
+  let audioChunkCount = 0;
+  let totalBytesSent = 0;
   console.log("[Server Log] ✅ New client connected.");
   const conversationId = new URL(req.url!, "http://localhost").searchParams.get(
     "conversationId"
@@ -219,45 +223,35 @@ wss.on("connection", async (ws, req) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   };
 
-  const dgInit = await initDeepgramWithMode();
   let deepgramLive: any = null;
-  if (dgInit.mode === "disabled") {
-    console.warn("[DG] STT disabled; transcripts will not be generated.");
+  if (DEEPGRAM_DISABLED) {
+    console.warn('[DG] STT disabled via env.');
   } else {
-    const successAttempt = dgInit.attempts.find((a: any) => a.ok);
-    if (successAttempt) {
-      deepgramLive = successAttempt.conn;
-      console.log(
-        `[DG] Using config '${successAttempt.label}'. Attempts summary: ${dgInit.attempts
-          .map((a: any) => `${a.label}:${a.ok ? "ok" : "fail"}`)
-          .join(",")}`
-      );
-      deepgramLive.on("open", () => console.log("[DG] Connection opened"));
-      deepgramLive.on("close", (c: any) =>
-        console.log("[DG] Connection closed", c?.code, c?.reason)
-      );
-      deepgramLive.on("error", (e: any) =>
-        console.error("[DG] Error", e?.message || e, e)
-      );
-      // KeepAlive every 8s to avoid NET-0001 closes during silence
+    try {
+      deepgramLive = await (async () => {
+        const MODEL_NAME = DEEPGRAM_MODEL;
+        const primary = await initDeepgramWithMode();
+        const successAttempt = (primary as any).attempts?.find((a: any) => a.ok);
+        if (successAttempt) { console.log(`[DG] Connected with ${successAttempt.label} config`); return successAttempt.conn; }
+        console.log('[DG] Primary fallback chain failed; trying minimal_retry...');
+        const minimalRetry = await attemptDeepgramLive('minimal_retry', { model: MODEL_NAME, language: 'en-US', smart_format: true, vad_events: true, interim_results: false, utterance_end_ms: 800 });
+        if (minimalRetry.ok) { console.log('[DG] minimal_retry succeeded'); return minimalRetry.conn; }
+        console.log('[DG] minimal_retry failed; trying auto_retry...');
+        const autoRetry = await attemptDeepgramLive('auto_retry', { model: MODEL_NAME, language: 'en-US' });
+        if (autoRetry.ok) { console.log('[DG] auto_retry succeeded'); return autoRetry.conn; }
+        throw new Error('All Deepgram connection attempts failed');
+      })();
+      deepgramLive.on('open', () => console.log('[DG] Connection opened'));
+      deepgramLive.on('close', (c: any) => console.log('[DG] Connection closed', c?.code, c?.reason));
+      deepgramLive.on('error', (e: any) => console.error('[DG] Error', e?.message || e, e));
       const ka = setInterval(() => {
-        try {
-          if (deepgramLive?.getReadyState?.() === 1) {
-            deepgramLive.send(JSON.stringify({ type: "KeepAlive" }));
-          }
-        } catch {}
+        try { if (deepgramLive?.getReadyState?.() === 1) deepgramLive.send(JSON.stringify({ type: 'KeepAlive' })); } catch {}
       }, 8000);
-      ws.on("close", () => clearInterval(ka));
-      ws.on("error", () => clearInterval(ka));
-    } else {
-      console.error(
-        `[DG] All Deepgram attempts failed (mode=${dgInit.mode}). Details:`,
-        dgInit.attempts.map((a: any) => ({
-          label: a.label,
-          error: a.error?.message || a.error,
-        }))
-      );
-      safeSend({ t: "error", message: "Speech recognition unavailable." });
+      ws.on('close', () => clearInterval(ka));
+      ws.on('error', () => clearInterval(ka));
+    } catch (err) {
+      console.error('[DG] Failed to connect after retries:', (err as any)?.message || err);
+      safeSend({ t: 'error', message: 'Speech recognition unavailable.' });
     }
   }
 
@@ -266,7 +260,8 @@ wss.on("connection", async (ws, req) => {
 
   if (deepgramLive)
     deepgramLive.on("Results", async (data: any) => {
-      const transcript = data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
+      const transcript =
+        data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
       if (!transcript || assistantBusy) return;
 
       console.log(`[Server Log] Received transcript: "${transcript}"`);
@@ -398,12 +393,15 @@ wss.on("connection", async (ws, req) => {
 
   ws.on("message", (message: Buffer, isBinary) => {
     if (!isBinary) return;
-    if (!deepgramLive) return; // disabled or failed
+    if (!deepgramLive) return;
+    audioChunkCount++;
+    totalBytesSent += message.length;
+    console.log(`[Audio] Chunk ${audioChunkCount}: ${message.length} bytes (total: ${totalBytesSent} bytes)`);
     try {
       const ready = (deepgramLive as any).getReadyState?.();
       if (ready === 1) (deepgramLive as any).send(message);
     } catch (err) {
-      console.error("[DG] send error", (err as any)?.message || err);
+      console.error('[DG] send error', (err as any)?.message || err);
     }
   });
   ws.on("close", () => {

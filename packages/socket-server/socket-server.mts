@@ -6,6 +6,8 @@ import { PrismaClient } from "@prisma/client";
 import { createClient } from "@deepgram/sdk";
 import OpenAI from "openai";
 import * as AzureSpeechSDK from "microsoft-cognitiveservices-speech-sdk";
+import fs from "node:fs";
+import path from "node:path";
 import type { ServerEvent } from "./lib/voice-protocol.js";
 
 function requireEnv(name: string): string {
@@ -28,10 +30,32 @@ const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
 // New: Allow pitch / rate adjustments via SSML (percent or absolute values Azure accepts)
 const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+0%"; // e.g. "+25%"
 const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+0%"; // e.g. "+25%"
-// Personality / system prompt override
-const PERSONALITY_PROMPT =
-  process.env.PERSONALITY_PROMPT ||
-  "You are Kira, an encouraging, upbeat AI companion. You speak concisely, with warmth and playful optimism. Stay supportive, avoid overlong rambling, and keep responses naturally conversational.";
+// Personality / system prompt loading strategy:
+// 1. If PERSONALITY_PROMPT_PATH provided, load that file.
+// 2. Else attempt default prompts/kira-persona.txt
+// 3. Else fallback to short default.
+function loadPersona(): string {
+  const explicitPath = process.env.PERSONALITY_PROMPT_PATH;
+  const tryPaths = [] as string[];
+  if (explicitPath) tryPaths.push(explicitPath);
+  tryPaths.push(path.join(process.cwd(), "packages", "socket-server", "prompts", "kira-persona.txt"));
+  for (const p of tryPaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const txt = fs.readFileSync(p, "utf8").trim();
+        if (txt) {
+          console.log(`[Persona] Loaded persona prompt from: ${p}`);
+          return txt;
+        }
+      }
+    } catch (e) {
+      console.warn(`[Persona] Failed reading ${p}:`, (e as any)?.message || e);
+    }
+  }
+  console.warn("[Persona] Falling back to built-in short prompt.");
+  return "You are Kira, an encouraging, upbeat AI companion.";
+}
+const PERSONALITY_PROMPT = loadPersona();
 
 const DEEPGRAM_DISABLED = /^true$/i.test(
   process.env.DEEPGRAM_DISABLED || "false"
@@ -241,7 +265,10 @@ wss.on("connection", async (ws, req) => {
         data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
       if (!transcript) return;
       if (assistantBusy) {
-        console.log('[Server Log] Ignoring transcript while assistant busy:', transcript);
+        console.log(
+          "[Server Log] Ignoring transcript while assistant busy:",
+          transcript
+        );
         return;
       }
       console.log(`[Server Log] Received transcript: "${transcript}"`);
@@ -320,10 +347,10 @@ wss.on("connection", async (ws, req) => {
         console.log("[Server Log] Sending transcript to OpenAI...");
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: PERSONALITY_PROMPT },
-              { role: "user", content: transcript },
-            ],
+          messages: [
+            { role: "system", content: PERSONALITY_PROMPT },
+            { role: "user", content: transcript },
+          ],
           stream: true,
         });
 

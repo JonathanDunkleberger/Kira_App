@@ -108,7 +108,7 @@ export function useKiraSocket(conversationId: string | null) {
           const ms = mediaSourceRef.current;
           if (!ms) break; // Nothing to finalize.
 
-            // Drain any remaining queued chunks first.
+          // Drain any remaining queued chunks first.
           playFromQueue();
 
           const finalize = () => {
@@ -139,10 +139,16 @@ export function useKiraSocket(conversationId: string | null) {
             const hasQueue = audioQueue.current.length > 0;
             if (!busy && !hasQueue) {
               finalize();
-            } else if (attempt < 100) { // ~12s worst-case @120ms
+            } else if (attempt < 100) {
+              // ~12s worst-case @120ms
               setTimeout(() => tryClose(attempt + 1), 120);
             } else {
-              console.warn('[TTS] Forcing endOfStream after timeout. busy:', busy, 'queue:', hasQueue);
+              console.warn(
+                '[TTS] Forcing endOfStream after timeout. busy:',
+                busy,
+                'queue:',
+                hasQueue,
+              );
               finalize();
             }
           };

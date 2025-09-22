@@ -1,12 +1,13 @@
 // packages/web/components/layout/AppHeader.tsx
 'use client';
-import { UserButton } from '@clerk/nextjs';
+import { UserButton, SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import { useState } from 'react';
 import { ProfileOverlay } from '../auth/ProfileOverlay';
 
 export function AppHeader() {
   const [isProfileOpen, setProfileOpen] = useState(false);
+  const { isLoaded, isSignedIn } = useUser();
 
   return (
     <>
@@ -16,9 +17,20 @@ export function AppHeader() {
           <Link href="/" className="text-xl font-semibold text-neutral-800 dark:text-neutral-200">
             Kira
           </Link>
-          {/* FIX: This clickable icon opens the profile overlay */}
-          <div className="cursor-pointer" onClick={() => setProfileOpen(true)}>
-            <UserButton afterSignOutUrl="/" />
+          {/* Profile / Auth Area */}
+          <div className="flex items-center gap-3">
+            <SignedIn>
+              <div className="cursor-pointer" onClick={() => setProfileOpen(true)}>
+                <UserButton afterSignOutUrl="/" />
+              </div>
+            </SignedIn>
+            <SignedOut>
+              <SignInButton mode="modal">
+                <button className="rounded-md border border-black/10 px-4 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-black/5 dark:border-white/20 dark:text-neutral-200 dark:hover:bg-white/10">
+                  Sign In
+                </button>
+              </SignInButton>
+            </SignedOut>
           </div>
         </div>
       </header>

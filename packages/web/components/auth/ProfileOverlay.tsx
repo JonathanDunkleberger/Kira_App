@@ -4,11 +4,11 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useTheme } from 'next-themes';
-import { 
-  startCheckout, 
-  openBillingPortal, 
-  clearAllConversations, 
-  deleteAccount 
+import {
+  startCheckout,
+  openBillingPortal,
+  clearAllConversations,
+  deleteAccount,
 } from '../../lib/client-api';
 
 interface ProfileOverlayProps {
@@ -76,7 +76,9 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
         </div>
         {/* Preferred Name */}
         <div className="mb-6">
-          <label htmlFor="name" className="mb-2 block text-sm text-neutral-500">What should we call you?</label>
+          <label htmlFor="name" className="mb-2 block text-sm text-neutral-500">
+            What should we call you?
+          </label>
           <div className="relative">
             <input
               id="name"
@@ -94,17 +96,23 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="w-full rounded-lg p-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          >Toggle Theme</button>
+          >
+            Toggle Theme
+          </button>
           {isProUser ? (
             <button
               onClick={openBillingPortal}
               className="w-full rounded-lg p-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-            >Manage Billing</button>
+            >
+              Manage Billing
+            </button>
           ) : (
             <button
               onClick={startCheckout}
               className="w-full rounded-lg p-2 text-left font-medium text-green-700 transition-colors hover:bg-black/5 dark:text-green-400 dark:hover:bg-white/5"
-            >Subscribe to Pro</button>
+            >
+              Subscribe to Pro
+            </button>
           )}
         </div>
         {/* Danger Zone */}
@@ -112,11 +120,15 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
           <button
             onClick={clearAllConversations}
             className="w-full rounded-lg p-2 text-left transition-colors hover:bg-red-500/10"
-          >Delete Conversation History</button>
+          >
+            Delete Conversation History
+          </button>
           <button
             onClick={deleteAccount}
             className="w-full rounded-lg p-2 text-left transition-colors hover:bg-red-500/10"
-          >Delete Account</button>
+          >
+            Delete Account
+          </button>
         </div>
       </div>
     </div>

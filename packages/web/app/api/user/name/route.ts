@@ -7,7 +7,10 @@ export async function GET() {
   const { userId } = auth();
   if (!userId) return new NextResponse('Unauthorized', { status: 401 });
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true },
+    });
     if (!user) return new NextResponse('Not found', { status: 404 });
     return NextResponse.json(user);
   } catch (e) {

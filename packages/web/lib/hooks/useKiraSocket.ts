@@ -84,9 +84,30 @@ export function useKiraSocket(conversationId: string | null) {
       const msg = JSON.parse(event.data);
       switch (msg.t) {
         case 'tts_start': {
-          // Reset any leftover buffered audio from previous response
+          // Hard reset media pipeline so prior buffered data cannot replay.
           audioQueue.current = [];
+          // Tear down existing SourceBuffer / MediaSource completely.
+          try {
+            const sb = sourceBufferRef.current;
+            if (sb && (sb as any).abort) {
+              try { (sb as any).abort(); } catch {}
+            }
+          } catch {}
+          sourceBufferRef.current = null;
+          sourceBufferCreatedRef.current = false;
+          if (mediaSourceRef.current) {
+            try { mediaSourceRef.current.removeEventListener('sourceopen', () => {}); } catch {}
+          }
+          mediaSourceRef.current = null;
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
+            if (el) {
+              // Force new MediaSource instance
+              el.pause();
+              el.removeAttribute('src');
+              try { el.load(); } catch {}
+            }
+          // Recreate media chain lazily
+          setupAudioPlayback();
           if (el) {
             el.muted = false;
             el.play?.().catch(() => {});

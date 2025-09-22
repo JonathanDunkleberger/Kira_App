@@ -320,6 +320,28 @@ wss.on("connection", async (ws, req) => {
         await prisma.message
           .create({ data: { conversationId, role: "user", text: transcript } })
           .catch((e) => console.error("[DB] Failed to save user message:", e));
+
+        // --- Conversation History (Memory) ---
+        // Fetch last 10 messages (including the one we just saved) in chronological order.
+        let history: { role: string; text: string }[] = [];
+        try {
+          const recent = await prisma.message.findMany({
+            where: { conversationId },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          });
+          history = recent.reverse(); // chronological (oldest -> newest)
+        } catch (e) {
+          console.warn("[Memory] Failed to load history (continuing without):", e);
+        }
+
+        const messagesForAPI: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+          { role: "system", content: PERSONALITY_PROMPT },
+          ...history.map((m) => ({
+            role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+            content: m.text,
+          })),
+        ];
         let fullResponse = "";
 
         const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
@@ -391,10 +413,7 @@ wss.on("connection", async (ws, req) => {
           console.log("[Server Log] Sending transcript to OpenAI...");
           const stream = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: PERSONALITY_PROMPT },
-              { role: "user", content: transcript },
-            ],
+            messages: messagesForAPI,
             stream: true,
           });
 
@@ -413,7 +432,9 @@ wss.on("connection", async (ws, req) => {
           if (cleanedFull) {
             safeSend({ t: "speak", on: true });
             safeSend({ t: "tts_start" });
-            console.log(`[Server Log] Synthesizing full response (${cleanedFull.length} chars).`);
+            console.log(
+              `[Server Log] Synthesizing full response (${cleanedFull.length} chars).`
+            );
             try {
               await synthesizeSentence(cleanedFull);
             } catch (e) {

@@ -8,7 +8,9 @@ import { Mic, PhoneOff } from 'lucide-react';
 
 // Helper to format seconds into MM:SS format
 const formatTime = (seconds: number) => {
-  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const mins = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0');
   const secs = (seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
 };
@@ -58,7 +60,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
       <audio id="tts-audio" className="hidden" autoPlay muted />
-      
+
       <div className="absolute top-16 text-center">
         <h2 className="text-2xl font-medium">Kira</h2>
         <p className="text-lg text-neutral-500">{formatTime(timer)}</p>

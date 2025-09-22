@@ -53,7 +53,7 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
 
         <div className="mb-6 text-sm">
           <p className="text-neutral-500">Logged in as</p>
-            <p>{user?.primaryEmailAddress?.toString()}</p>
+          <p>{user?.primaryEmailAddress?.toString()}</p>
         </div>
 
         <div className="mb-6">

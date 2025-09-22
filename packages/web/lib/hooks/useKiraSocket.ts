@@ -90,22 +90,28 @@ export function useKiraSocket(conversationId: string | null) {
           try {
             const sb = sourceBufferRef.current;
             if (sb && (sb as any).abort) {
-              try { (sb as any).abort(); } catch {}
+              try {
+                (sb as any).abort();
+              } catch {}
             }
           } catch {}
           sourceBufferRef.current = null;
           sourceBufferCreatedRef.current = false;
           if (mediaSourceRef.current) {
-            try { mediaSourceRef.current.removeEventListener('sourceopen', () => {}); } catch {}
+            try {
+              mediaSourceRef.current.removeEventListener('sourceopen', () => {});
+            } catch {}
           }
           mediaSourceRef.current = null;
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
-            if (el) {
-              // Force new MediaSource instance
-              el.pause();
-              el.removeAttribute('src');
-              try { el.load(); } catch {}
-            }
+          if (el) {
+            // Force new MediaSource instance
+            el.pause();
+            el.removeAttribute('src');
+            try {
+              el.load();
+            } catch {}
+          }
           // Recreate media chain lazily
           setupAudioPlayback();
           if (el) {

@@ -332,13 +332,21 @@ wss.on("connection", async (ws, req) => {
           });
           history = recent.reverse(); // chronological (oldest -> newest)
         } catch (e) {
-          console.warn("[Memory] Failed to load history (continuing without):", e);
+          console.warn(
+            "[Memory] Failed to load history (continuing without):",
+            e
+          );
         }
 
-        const messagesForAPI: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        const messagesForAPI: Array<{
+          role: "system" | "user" | "assistant";
+          content: string;
+        }> = [
           { role: "system", content: PERSONALITY_PROMPT },
           ...history.map((m) => ({
-            role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+            role: (m.role === "assistant" ? "assistant" : "user") as
+              | "user"
+              | "assistant",
             content: m.text,
           })),
         ];

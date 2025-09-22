@@ -15,7 +15,7 @@ model User {
   tier           String          @default("free")
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  usage          Usage[]
+  dailyUsage     DailyUsage[]
   conversations  Conversation[]
   subscriptions  Subscription[]
   paymentEvents  PaymentEvent[]
@@ -23,13 +23,16 @@ model User {
   @@map("User")
 }
 
-model Usage {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  seconds   Int
-  date      DateTime @default(now())
-  ip        String?
+model DailyUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day         DateTime @db.Date
+  secondsUsed Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, day])
 }
 
 model Conversation {

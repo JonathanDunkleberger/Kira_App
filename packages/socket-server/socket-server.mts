@@ -10,6 +10,27 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ServerEvent } from "./lib/voice-protocol.js";
 
+// Usage / Paywall limits
+const FREE_DAILY_LIMIT_SECONDS = parseInt(
+  process.env.FREE_DAILY_LIMIT_SECONDS || "300",
+  10
+); // 5 minutes default
+const PRO_SESSION_LIMIT_SECONDS = parseInt(
+  process.env.PRO_SESSION_LIMIT_SECONDS || "1800",
+  10
+); // 30 minutes default per session (example)
+
+interface ActiveSessionInfo {
+  userId: string | null; // null until resolved (auth TBD)
+  conversationId: string;
+  startedAt: number; // ms
+  secondsAccumulated: number; // this session
+  interval?: NodeJS.Timer;
+  limitReached?: boolean;
+}
+
+const activeSessions = new Map<WebSocket, ActiveSessionInfo>();
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -262,6 +283,43 @@ wss.on("connection", async (ws, req) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   };
 
+  // Initialize usage tracking for this connection (auth/user resolution TBD => null userId placeholder)
+  activeSessions.set(ws, {
+    userId: null,
+    conversationId,
+    startedAt: Date.now(),
+    secondsAccumulated: 0,
+  });
+
+  function cleanupSession() {
+    const info = activeSessions.get(ws);
+    if (!info) return;
+    if (info.interval) clearInterval(info.interval as any);
+    // Persist session usage to DailyUsage (best-effort) if we have a userId
+    if (info.userId) {
+      const day = new Date();
+      day.setHours(0, 0, 0, 0);
+      // @ts-expect-error: dailyUsage model may not exist until migration applied
+      if (prisma.dailyUsage) {
+        // @ts-ignore dynamic access
+        prisma.dailyUsage
+          .upsert({
+            where: { userId_day: { userId: info.userId, day } },
+            update: { secondsUsed: { increment: info.secondsAccumulated } },
+            create: {
+              userId: info.userId,
+              day,
+              secondsUsed: info.secondsAccumulated,
+            },
+          })
+          .catch((e: any) =>
+            console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e)
+          );
+      }
+    }
+    activeSessions.delete(ws);
+  }
+
   let deepgramLive: any = null;
   if (!DEEPGRAM_DISABLED) {
     try {
@@ -303,6 +361,14 @@ wss.on("connection", async (ws, req) => {
   if (deepgramLive)
     deepgramLive.on("Results", async (data: any) => {
       try {
+        // Start per-connection usage timer if not yet started
+        const session = activeSessions.get(ws);
+        if (session && !session.interval) {
+          session.interval = setInterval(() => {
+            session.secondsAccumulated += 1;
+          }, 1000);
+        }
+
         const transcript =
           data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
         if (!transcript) return;
@@ -312,6 +378,29 @@ wss.on("connection", async (ws, req) => {
             transcript
           );
           return;
+        }
+
+        // Enforce limits before accepting new user input
+        if (session && !session.limitReached) {
+          // TODO: Replace placeholder user logic with real auth user lookup
+          const isPro = false; // placeholder; integrate with subscription check
+          const sessionLimit = isPro
+            ? PRO_SESSION_LIMIT_SECONDS
+            : FREE_DAILY_LIMIT_SECONDS; // reuse daily limit as session limit for free users
+          if (session.secondsAccumulated >= sessionLimit) {
+            session.limitReached = true;
+            console.log(
+              `[Usage] Limit reached for conversation ${session.conversationId}. Seconds=${session.secondsAccumulated} Limit=${sessionLimit}`
+            );
+            safeSend({
+              // @ts-ignore extending protocol for now
+              t: "limit_reached",
+              reason: isPro ? "session_limit" : "daily_limit",
+              seconds: session.secondsAccumulated,
+              limit: sessionLimit,
+            } as any);
+            return; // ignore further transcripts
+          }
         }
         console.log(`[Server Log] Received transcript: "${transcript}"`);
         assistantBusy = true;
@@ -493,12 +582,14 @@ wss.on("connection", async (ws, req) => {
     try {
       (deepgramLive as any)?.finish?.();
     } catch {}
+    cleanupSession();
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);
     try {
       (deepgramLive as any)?.finish?.();
     } catch {}
+    cleanupSession();
   });
 });
 

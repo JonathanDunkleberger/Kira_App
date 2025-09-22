@@ -1,10 +1,11 @@
 // packages/web/components/chat/ChatClient.tsx
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
-import VoiceOrb from '../VoiceOrb';
 import { Mic, PhoneOff } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import VoiceOrb from '../VoiceOrb';
+import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
+import { PaywallModal } from './PaywallModal';
 
 // Helper to format seconds into MM:SS format
 const formatTime = (seconds: number) => {
@@ -30,7 +31,7 @@ const CallControls = ({ onEndCall }: { onEndCall: () => void }) => (
 );
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
-  const { status, startMic, stopMic } = useKiraSocket(conversationId);
+  const { status, startMic, stopMic, limitReachedReason } = useKiraSocket(conversationId);
   const router = useRouter();
   const [timer, setTimer] = useState(0);
 
@@ -57,6 +58,8 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     router.push('/');
   };
 
+  const paywalled = !!limitReachedReason;
+
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
       <audio id="tts-audio" className="hidden" autoPlay muted />
@@ -66,11 +69,27 @@ export default function ChatClient({ conversationId }: { conversationId: string 
         <p className="text-lg text-neutral-500">{formatTime(timer)}</p>
       </div>
 
-      <VoiceOrb size={280} />
+      <div className={paywalled ? 'pointer-events-none opacity-40 transition' : ''}>
+        <VoiceOrb size={280} />
+      </div>
 
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2">
-        <CallControls onEndCall={handleEndCall} />
+        <div className={paywalled ? 'pointer-events-none opacity-40' : ''}>
+          <CallControls onEndCall={handleEndCall} />
+        </div>
       </div>
+
+      <PaywallModal
+        reason={limitReachedReason}
+        onUpgrade={() => {
+          // Placeholder: integrate with subscription checkout
+          window.location.href = '/billing';
+        }}
+        onClose={() => {
+          // Allow user to dismiss but keep disabled state; optional: route home
+        }}
+        isPro={false}
+      />
     </div>
   );
 }

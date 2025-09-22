@@ -13,6 +13,7 @@ export function useKiraSocket(conversationId: string | null) {
   const audioQueue = useRef<ArrayBuffer[]>([]);
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const { addMessage, setSpeaking } = useConversationStore();
+  const [limitReachedReason, setLimitReachedReason] = useState<string | null>(null);
 
   const playFromQueue = useCallback(() => {
     if (
@@ -57,6 +58,51 @@ export function useKiraSocket(conversationId: string | null) {
     }
   }, [playFromQueue]);
 
+  const startMic = useCallback(async () => {
+    if (mediaRecorderRef.current) {
+      console.log('[Audio] Mic already started.');
+      return;
+    }
+    try {
+      console.log('[Audio] Requesting microphone permission...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+      });
+      console.log('[Audio] ✅ Microphone permission granted.');
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm; codecs=opus' });
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log(`[Audio] ➡️ Sending audio chunk of size: ${event.data.size}`);
+          wsRef.current.send(event.data);
+        } else if (event.data.size > 0) {
+          console.log('[Audio] Skipped chunk: WS not open or size zero.', {
+            size: event.data.size,
+            readyState: wsRef.current?.readyState,
+          });
+        }
+      };
+      recorder.onstart = () => console.log('[Audio] ✅ MediaRecorder started.');
+      recorder.onerror = (e: any) => console.error('[Audio] ❌ MediaRecorder error:', e);
+      recorder.onstop = () => console.log('[Audio] ⏹️ MediaRecorder stopped.');
+      recorder.start(250);
+    } catch (error) {
+      console.error('[Audio] ❌ Error starting microphone:', error);
+    }
+  }, []);
+
+  const stopMic = useCallback(() => {
+    if (!mediaRecorderRef.current) return;
+    mediaRecorderRef.current.stop();
+    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+    mediaRecorderRef.current = null;
+  }, []);
+
   const connect = useCallback(() => {
     if (wsRef.current) return;
     const url = new URL(process.env.NEXT_PUBLIC_WEBSOCKET_URL!);
@@ -83,6 +129,14 @@ export function useKiraSocket(conversationId: string | null) {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       switch (msg.t) {
+        case 'limit_reached': {
+          setLimitReachedReason(msg.reason || 'limit');
+          // Stop microphone to cease further audio capture
+          try {
+            stopMic();
+          } catch {}
+          break;
+        }
         case 'tts_start': {
           // Hard reset media pipeline so prior buffered data cannot replay.
           audioQueue.current = [];
@@ -167,52 +221,7 @@ export function useKiraSocket(conversationId: string | null) {
         }
       }
     };
-  }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback]);
-
-  const startMic = useCallback(async () => {
-    if (mediaRecorderRef.current) {
-      console.log('[Audio] Mic already started.');
-      return;
-    }
-    try {
-      console.log('[Audio] Requesting microphone permission...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-          sampleRate: 48000,
-        },
-      });
-      console.log('[Audio] ✅ Microphone permission granted.');
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm; codecs=opus' });
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-          console.log(`[Audio] ➡️ Sending audio chunk of size: ${event.data.size}`);
-          wsRef.current.send(event.data);
-        } else if (event.data.size > 0) {
-          console.log('[Audio] Skipped chunk: WS not open or size zero.', {
-            size: event.data.size,
-            readyState: wsRef.current?.readyState,
-          });
-        }
-      };
-      recorder.onstart = () => console.log('[Audio] ✅ MediaRecorder started.');
-      recorder.onerror = (e: any) => console.error('[Audio] ❌ MediaRecorder error:', e);
-      recorder.onstop = () => console.log('[Audio] ⏹️ MediaRecorder stopped.');
-      recorder.start(250);
-    } catch (error) {
-      console.error('[Audio] ❌ Error starting microphone:', error);
-    }
-  }, []);
-
-  const stopMic = useCallback(() => {
-    if (!mediaRecorderRef.current) return;
-    mediaRecorderRef.current.stop();
-    mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-    mediaRecorderRef.current = null;
-  }, []);
+  }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback, stopMic]);
 
   useEffect(() => {
     connect();
@@ -222,5 +231,5 @@ export function useKiraSocket(conversationId: string | null) {
     };
   }, [connect, stopMic]);
 
-  return { status, startMic, stopMic };
+  return { status, startMic, stopMic, limitReachedReason };
 }

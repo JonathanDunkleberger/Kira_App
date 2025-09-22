@@ -32,7 +32,8 @@ export default function HomePage() {
     <main className="flex min-h-screen w-full flex-col items-center justify-center p-4">
       <div className="w-full max-w-xs text-center">
         <h1 className="mb-8 text-2xl font-medium text-neutral-800 dark:text-neutral-200">
-          {greeting}{displayName ? `, ${displayName}` : ''}
+          {greeting}
+          {displayName ? `, ${displayName}` : ''}
         </h1>
         <button
           onClick={startConversation}

@@ -4,7 +4,12 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { useTheme } from 'next-themes';
-import { startCheckout } from '../../lib/client-api';
+import { 
+  startCheckout, 
+  openBillingPortal, 
+  clearAllConversations, 
+  deleteAccount 
+} from '../../lib/client-api';
 
 interface ProfileOverlayProps {
   isOpen: boolean;
@@ -16,12 +21,26 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
   const { theme, setTheme } = useTheme();
   const [name, setName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const isProUser = false; // Placeholder until subscription lookup added
 
   useEffect(() => {
-    if (user) {
-      setName(user.firstName || '');
-    }
-  }, [user]);
+    const fetchName = async () => {
+      if (isOpen && user) {
+        try {
+          const response = await fetch('/api/user/name');
+          if (response.ok) {
+            const data = await response.json();
+            setName(data.name || user.firstName || '');
+          } else {
+            setName(user.firstName || '');
+          }
+        } catch {
+          setName(user.firstName || '');
+        }
+      }
+    };
+    fetchName();
+  }, [isOpen, user]);
 
   const handleSaveName = async () => {
     setIsSaving(true);
@@ -50,16 +69,14 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-4 text-xl font-medium">Your Account</h2>
-
+        {/* User Info */}
         <div className="mb-6 text-sm">
           <p className="text-neutral-500">Logged in as</p>
           <p>{user?.primaryEmailAddress?.toString()}</p>
         </div>
-
+        {/* Preferred Name */}
         <div className="mb-6">
-          <label htmlFor="name" className="mb-2 block text-sm text-neutral-500">
-            What should we call you?
-          </label>
+          <label htmlFor="name" className="mb-2 block text-sm text-neutral-500">What should we call you?</label>
           <div className="relative">
             <input
               id="name"
@@ -72,23 +89,35 @@ export function ProfileOverlay({ isOpen, onClose }: ProfileOverlayProps) {
             />
           </div>
         </div>
-
-        <div className="space-y-4">
+        {/* Settings & Actions */}
+        <div className="mt-6 space-y-2 border-t border-black/10 pt-4 dark:border-white/10">
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="w-full rounded-lg p-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            Toggle Theme
-          </button>
-          <button
-            onClick={startCheckout}
-            className="w-full rounded-lg p-2 text-left font-medium text-green-700 transition-colors hover:bg-black/5 dark:text-green-400 dark:hover:bg-white/5"
-          >
-            Subscribe to Pro
-          </button>
+          >Toggle Theme</button>
+          {isProUser ? (
+            <button
+              onClick={openBillingPortal}
+              className="w-full rounded-lg p-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            >Manage Billing</button>
+          ) : (
+            <button
+              onClick={startCheckout}
+              className="w-full rounded-lg p-2 text-left font-medium text-green-700 transition-colors hover:bg-black/5 dark:text-green-400 dark:hover:bg-white/5"
+            >Subscribe to Pro</button>
+          )}
         </div>
-
-        <div className="mt-8 border-t border-black/10 pt-4 dark:border-white/10" />
+        {/* Danger Zone */}
+        <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm text-red-600 dark:text-red-500">
+          <button
+            onClick={clearAllConversations}
+            className="w-full rounded-lg p-2 text-left transition-colors hover:bg-red-500/10"
+          >Delete Conversation History</button>
+          <button
+            onClick={deleteAccount}
+            className="w-full rounded-lg p-2 text-left transition-colors hover:bg-red-500/10"
+          >Delete Account</button>
+        </div>
       </div>
     </div>
   );

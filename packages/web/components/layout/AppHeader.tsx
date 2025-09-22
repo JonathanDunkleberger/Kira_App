@@ -12,9 +12,11 @@ export function AppHeader() {
     <>
       <header className="fixed top-0 left-0 right-0 z-40 h-16 bg-transparent">
         <div className="mx-auto flex h-full max-w-5xl items-center justify-between px-4">
-          <Link href="/" aria-label="Home">
-            <span className="text-2xl">🎙️</span>
+          {/* FIX: Changed the icon to be the text "Kira" */}
+          <Link href="/" className="text-xl font-semibold text-neutral-800 dark:text-neutral-200">
+            Kira
           </Link>
+          {/* FIX: This clickable icon opens the profile overlay */}
           <div className="cursor-pointer" onClick={() => setProfileOpen(true)}>
             <UserButton afterSignOutUrl="/" />
           </div>

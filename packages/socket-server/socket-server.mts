@@ -23,10 +23,19 @@ const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
 const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
 const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
 const PORT = parseInt(process.env.PORT || "10000", 10);
-// FIX: Allow overriding the TTS voice via environment variable
-const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-JennyNeural";
+// FIX: Allow overriding the TTS voice via environment variable (default Ashley)
+const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
+// New: Allow pitch / rate adjustments via SSML (percent or absolute values Azure accepts)
+const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+0%"; // e.g. "+25%"
+const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+0%"; // e.g. "+25%"
+// Personality / system prompt override
+const PERSONALITY_PROMPT =
+  process.env.PERSONALITY_PROMPT ||
+  "You are Kira, an encouraging, upbeat AI companion. You speak concisely, with warmth and playful optimism. Stay supportive, avoid overlong rambling, and keep responses naturally conversational.";
 
-const DEEPGRAM_DISABLED = /^true$/i.test(process.env.DEEPGRAM_DISABLED || "false");
+const DEEPGRAM_DISABLED = /^true$/i.test(
+  process.env.DEEPGRAM_DISABLED || "false"
+);
 const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
 const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
@@ -81,42 +90,62 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 // Deepgram helper
-async function attemptDeepgramLive(label: string, cfg: Record<string, any>, timeoutMs = 4000) {
-  return new Promise<{ ok: boolean; conn: any; label: string; error?: any }>((resolve) => {
-    let settled = false;
-    try {
-      const conn = deepgram.listen.live(cfg);
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try { (conn as any).finish?.(); } catch {}
-        resolve({ ok: false, conn, label, error: new Error("timeout") });
-      }, timeoutMs);
-      conn.on("open", () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        console.log(`[DG Fallback] ✅ Open using config: ${label}`);
-        resolve({ ok: true, conn, label });
-      });
-      conn.on("error", (e: any) => {
-        console.error(`[DG Fallback] ❌ Error on config ${label}:`, e?.message || e, e);
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve({ ok: false, conn, label, error: e });
-      });
-      conn.on("close", (c: any) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve({ ok: false, conn, label, error: { code: c?.code, reason: c?.reason } });
-      });
-    } catch (err) {
-      console.error(`[DG Fallback] 🚫 Exception creating config ${label}:`, (err as any)?.message || err);
-      resolve({ ok: false, conn: null, label, error: err });
+async function attemptDeepgramLive(
+  label: string,
+  cfg: Record<string, any>,
+  timeoutMs = 4000
+) {
+  return new Promise<{ ok: boolean; conn: any; label: string; error?: any }>(
+    (resolve) => {
+      let settled = false;
+      try {
+        const conn = deepgram.listen.live(cfg);
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            (conn as any).finish?.();
+          } catch {}
+          resolve({ ok: false, conn, label, error: new Error("timeout") });
+        }, timeoutMs);
+        conn.on("open", () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          console.log(`[DG Fallback] ✅ Open using config: ${label}`);
+          resolve({ ok: true, conn, label });
+        });
+        conn.on("error", (e: any) => {
+          console.error(
+            `[DG Fallback] ❌ Error on config ${label}:`,
+            e?.message || e,
+            e
+          );
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ ok: false, conn, label, error: e });
+        });
+        conn.on("close", (c: any) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({
+            ok: false,
+            conn,
+            label,
+            error: { code: c?.code, reason: c?.reason },
+          });
+        });
+      } catch (err) {
+        console.error(
+          `[DG Fallback] 🚫 Exception creating config ${label}:`,
+          (err as any)?.message || err
+        );
+        resolve({ ok: false, conn: null, label, error: err });
+      }
     }
-  });
+  );
 }
 
 async function initDeepgramWithMode() {
@@ -125,15 +154,29 @@ async function initDeepgramWithMode() {
     return { mode: "disabled" } as const;
   }
   const DG_MODEL = DEEPGRAM_MODEL;
-  const base = { model: DG_MODEL, language: "en-US", smart_format: true, vad_events: true, interim_results: false, utterance_end_ms: 800 };
-  const explicit = { ...base, encoding: DEEPGRAM_ENCODING, sample_rate: 48000, channels: 1 };
+  const base = {
+    model: DG_MODEL,
+    language: "en-US",
+    smart_format: true,
+    vad_events: true,
+    interim_results: false,
+    utterance_end_ms: 800,
+  };
+  const explicit = {
+    ...base,
+    encoding: DEEPGRAM_ENCODING,
+    sample_rate: 48000,
+    channels: 1,
+  };
   const minimal = { ...base };
   const auto = { model: DG_MODEL, language: "en-US" };
   // Reordered: try auto first since it succeeds.
   const attempts: any[] = [];
   attempts.push(await attemptDeepgramLive("auto", auto));
-  if (!attempts[attempts.length - 1].ok) attempts.push(await attemptDeepgramLive("explicit", explicit));
-  if (!attempts[attempts.length - 1].ok) attempts.push(await attemptDeepgramLive("minimal", minimal));
+  if (!attempts[attempts.length - 1].ok)
+    attempts.push(await attemptDeepgramLive("explicit", explicit));
+  if (!attempts[attempts.length - 1].ok)
+    attempts.push(await attemptDeepgramLive("minimal", minimal));
   return { mode: "fallback", attempts } as const;
 }
 
@@ -141,7 +184,9 @@ wss.on("connection", async (ws, req) => {
   let audioChunkCount = 0;
   let totalBytesSent = 0;
   console.log("[Server Log] ✅ New client connected.");
-  const conversationId = new URL(req.url!, "http://localhost").searchParams.get("conversationId");
+  const conversationId = new URL(req.url!, "http://localhost").searchParams.get(
+    "conversationId"
+  );
   if (!conversationId) {
     console.warn("[Server Log] Connection closed: Missing conversationId");
     ws.close(1008, "Missing conversationId");
@@ -156,23 +201,35 @@ wss.on("connection", async (ws, req) => {
   if (!DEEPGRAM_DISABLED) {
     try {
       const primary = await initDeepgramWithMode();
-  const successAttempt = (primary as any).attempts?.find((a: any) => a.ok);
+      const successAttempt = (primary as any).attempts?.find((a: any) => a.ok);
       if (successAttempt) {
         console.log(`[DG] Connected with ${successAttempt.label} config`);
         deepgramLive = successAttempt.conn;
       } else {
-        throw new Error("All Deepgram connection attempts failed after reordering.");
+        throw new Error(
+          "All Deepgram connection attempts failed after reordering."
+        );
       }
       deepgramLive.on("open", () => console.log("[DG] Connection opened"));
-      deepgramLive.on("close", (c: any) => console.log("[DG] Connection closed", c?.code, c?.reason));
-      deepgramLive.on("error", (e: any) => console.error("[DG] Error", e?.message || e, e));
+      deepgramLive.on("close", (c: any) =>
+        console.log("[DG] Connection closed", c?.code, c?.reason)
+      );
+      deepgramLive.on("error", (e: any) =>
+        console.error("[DG] Error", e?.message || e, e)
+      );
       const ka = setInterval(() => {
-        try { if (deepgramLive?.getReadyState?.() === 1) deepgramLive.send(JSON.stringify({ type: "KeepAlive" })); } catch {}
+        try {
+          if (deepgramLive?.getReadyState?.() === 1)
+            deepgramLive.send(JSON.stringify({ type: "KeepAlive" }));
+        } catch {}
       }, 8000);
       ws.on("close", () => clearInterval(ka));
       ws.on("error", () => clearInterval(ka));
     } catch (err) {
-      console.error("[DG] Failed to connect after retries:", (err as any)?.message || err);
+      console.error(
+        "[DG] Failed to connect after retries:",
+        (err as any)?.message || err
+      );
       safeSend({ t: "error", message: "Speech recognition unavailable." });
     }
   }
@@ -180,38 +237,79 @@ wss.on("connection", async (ws, req) => {
   let assistantBusy = false;
   if (deepgramLive)
     deepgramLive.on("Results", async (data: any) => {
-      const transcript = data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
-      if (!transcript || assistantBusy) return;
+      const transcript =
+        data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
+      if (!transcript) return;
+      if (assistantBusy) {
+        console.log('[Server Log] Ignoring transcript while assistant busy:', transcript);
+        return;
+      }
       console.log(`[Server Log] Received transcript: "${transcript}"`);
       assistantBusy = true;
       safeSend({ t: "transcript", text: transcript });
 
-      await prisma.message.create({ data: { conversationId, role: "user", text: transcript } }).catch((e) => console.error("[DB] Failed to save user message:", e));
+      await prisma.message
+        .create({ data: { conversationId, role: "user", text: transcript } })
+        .catch((e) => console.error("[DB] Failed to save user message:", e));
       let fullResponse = "";
 
-      const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
-      speechConfig.speechSynthesisOutputFormat = AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
+      const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
+        AZURE_SPEECH_KEY,
+        AZURE_SPEECH_REGION
+      );
+      speechConfig.speechSynthesisOutputFormat =
+        AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
       speechConfig.speechSynthesisVoiceName = AZURE_TTS_VOICE;
-      const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(speechConfig, undefined);
+      const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(
+        speechConfig,
+        undefined
+      );
+
+      function escapeXml(s: string) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
+      }
 
       const synthesizeSentence = (sentence: string): Promise<void> => {
+        const ssml = `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xml:lang="en-US"><voice name="${AZURE_TTS_VOICE}"><prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">${escapeXml(
+          sentence
+        )}</prosody></voice></speak>`;
         return new Promise((resolve, reject) => {
-          synthesizer.speakTextAsync(
-            sentence,
+          synthesizer.speakSsmlAsync(
+            ssml,
             (result) => {
-              if (result.reason === AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+              if (
+                result.reason ===
+                AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
+              ) {
                 if ((result as any).audioData) {
-                  console.log(`[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`);
-                  safeSend({ t: "tts_chunk", b64: Buffer.from((result as any).audioData).toString("base64") });
+                  console.log(
+                    `[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`
+                  );
+                  safeSend({
+                    t: "tts_chunk",
+                    b64: Buffer.from((result as any).audioData).toString(
+                      "base64"
+                    ),
+                  });
                 }
                 resolve();
               } else {
-                console.error(`[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`);
+                console.error(
+                  `[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`
+                );
                 reject(new Error(result.errorDetails));
               }
             },
             (error) => {
-              console.error("[Server Log] speakTextAsync error callback:", error);
+              console.error(
+                "[Server Log] speakSsmlAsync error callback:",
+                error
+              );
               reject(error);
             }
           );
@@ -223,9 +321,9 @@ wss.on("connection", async (ws, req) => {
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
             messages: [
-            { role: "system", content: "You are Kira, a concise, encouraging AI companion." },
-            { role: "user", content: transcript },
-          ],
+              { role: "system", content: PERSONALITY_PROMPT },
+              { role: "user", content: transcript },
+            ],
           stream: true,
         });
 
@@ -246,15 +344,22 @@ wss.on("connection", async (ws, req) => {
             }
           }
         }
-        if (sentenceBuffer.trim().length > 0) sentenceQueue.push(sentenceBuffer.trim());
-        console.log(`[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`);
+        if (sentenceBuffer.trim().length > 0)
+          sentenceQueue.push(sentenceBuffer.trim());
+        console.log(
+          `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
+        );
 
         if (sentenceQueue.length > 0) {
           safeSend({ t: "speak", on: true });
           safeSend({ t: "tts_start" });
           for (const sentence of sentenceQueue) {
             console.log(`[Server Log] Synthesizing sentence: "${sentence}"`);
-            try { await synthesizeSentence(sentence); } catch (e) { console.error("[TTS] Sentence synthesis failed, continuing:", e); }
+            try {
+              await synthesizeSentence(sentence);
+            } catch (e) {
+              console.error("[TTS] Sentence synthesis failed, continuing:", e);
+            }
           }
         }
       } catch (err) {
@@ -264,7 +369,13 @@ wss.on("connection", async (ws, req) => {
         safeSend({ t: "tts_end" });
         synthesizer.close();
         if (fullResponse) {
-          await prisma.message.create({ data: { conversationId, role: "assistant", text: fullResponse } }).catch((e) => console.error("[DB] Failed to save assistant message:", e));
+          await prisma.message
+            .create({
+              data: { conversationId, role: "assistant", text: fullResponse },
+            })
+            .catch((e) =>
+              console.error("[DB] Failed to save assistant message:", e)
+            );
         }
         safeSend({ t: "speak", on: false });
         assistantBusy = false;
@@ -276,18 +387,23 @@ wss.on("connection", async (ws, req) => {
     audioChunkCount++;
     totalBytesSent += message.length;
     try {
-      if ((deepgramLive as any).getReadyState?.() === 1) (deepgramLive as any).send(message);
+      if ((deepgramLive as any).getReadyState?.() === 1)
+        (deepgramLive as any).send(message);
     } catch (err) {
       console.error("[DG] send error", (err as any)?.message || err);
     }
   });
   ws.on("close", () => {
     console.log("[Server Log] Client disconnected.");
-    try { (deepgramLive as any)?.finish?.(); } catch {}
+    try {
+      (deepgramLive as any)?.finish?.();
+    } catch {}
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);
-    try { (deepgramLive as any)?.finish?.(); } catch {}
+    try {
+      (deepgramLive as any)?.finish?.();
+    } catch {}
   });
 });
 

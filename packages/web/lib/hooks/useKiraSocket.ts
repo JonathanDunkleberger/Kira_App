@@ -9,34 +9,52 @@ export function useKiraSocket(conversationId: string | null) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const sourceBufferCreatedRef = useRef<boolean>(false);
   const audioQueue = useRef<ArrayBuffer[]>([]);
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const { addMessage, setSpeaking } = useConversationStore();
 
   const playFromQueue = useCallback(() => {
-    if (!sourceBufferRef.current || sourceBufferRef.current.updating || audioQueue.current.length === 0) return;
+    if (
+      !sourceBufferRef.current ||
+      sourceBufferRef.current.updating ||
+      audioQueue.current.length === 0
+    )
+      return;
     const chunk = audioQueue.current.shift();
     if (!chunk) return;
-    try { sourceBufferRef.current.appendBuffer(chunk); } catch (e) { console.error('Error appending audio buffer:', e); }
+    try {
+      sourceBufferRef.current.appendBuffer(chunk);
+    } catch (e) {
+      console.error('Error appending audio buffer:', e);
+    }
   }, []);
 
   const setupAudioPlayback = useCallback(() => {
     const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
-    if (!audioEl || mediaSourceRef.current) return;
-    const ms = new MediaSource();
-    mediaSourceRef.current = ms;
-    audioEl.src = URL.createObjectURL(ms);
-    const onSourceOpen = () => {
-      if (mediaSourceRef.current?.readyState !== 'open') return;
-      if (MediaSource.isTypeSupported('audio/webm; codecs=opus')) {
-        const sb = ms.addSourceBuffer('audio/webm; codecs=opus');
-        sb.addEventListener('updateend', playFromQueue);
-        sourceBufferRef.current = sb;
-      } else {
-        console.error('Unsupported MIME type for MediaSource');
-      }
-    };
-    ms.addEventListener('sourceopen', onSourceOpen);
+    if (!audioEl) return;
+    if (!mediaSourceRef.current) {
+      const ms = new MediaSource();
+      mediaSourceRef.current = ms;
+      audioEl.src = URL.createObjectURL(ms);
+      ms.addEventListener('sourceopen', () => {
+        if (sourceBufferCreatedRef.current) return; // Already created
+        if (ms.readyState !== 'open') return;
+        if (!MediaSource.isTypeSupported('audio/webm; codecs=opus')) {
+          console.error('[Audio] Unsupported MIME type for MediaSource');
+          return;
+        }
+        try {
+          const sb = ms.addSourceBuffer('audio/webm; codecs=opus');
+          sourceBufferCreatedRef.current = true;
+          sb.addEventListener('updateend', playFromQueue);
+          sourceBufferRef.current = sb;
+          console.log('[Audio] ✅ SourceBuffer created.');
+        } catch (e) {
+          console.error('[Audio] Failed to add SourceBuffer:', e);
+        }
+      });
+    }
   }, [playFromQueue]);
 
   const connect = useCallback(() => {
@@ -46,7 +64,10 @@ export function useKiraSocket(conversationId: string | null) {
     setStatus('connecting');
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
-    ws.onopen = () => { setStatus('connected'); setupAudioPlayback(); };
+    ws.onopen = () => {
+      setStatus('connected');
+      setupAudioPlayback();
+    };
     ws.onerror = (err) => console.error('[WS] Error:', err);
     ws.onclose = () => {
       setStatus('disconnected');
@@ -64,7 +85,10 @@ export function useKiraSocket(conversationId: string | null) {
       switch (msg.t) {
         case 'tts_start': {
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
-          if (el) { el.muted = false; el.play?.().catch(() => {}); }
+          if (el) {
+            el.muted = false;
+            el.play?.().catch(() => {});
+          }
           break;
         }
         case 'transcript':
@@ -78,31 +102,34 @@ export function useKiraSocket(conversationId: string | null) {
           break;
         case 'tts_chunk': {
           const audioChunk = Uint8Array.from(atob(msg.b64), (c) => c.charCodeAt(0)).buffer;
-            audioQueue.current.push(audioChunk);
-            playFromQueue();
-            break;
+          audioQueue.current.push(audioChunk);
+          playFromQueue();
+          break;
         }
         case 'tts_end': {
           const ms = mediaSourceRef.current;
           if (!ms) break;
           playFromQueue();
           const finalize = () => {
-            if (!mediaSourceRef.current) return;
-            try { mediaSourceRef.current.endOfStream(); } catch (e) { console.warn('[TTS] endOfStream() failed (will ignore):', e); }
+            try {
+              if (mediaSourceRef.current && ms.readyState === 'open') {
+                mediaSourceRef.current.endOfStream();
+              }
+            } catch (e) {
+              console.warn('[TTS] endOfStream() failed (ignored):', e);
+            }
           };
-          const sb = sourceBufferRef.current;
-          if (!sb) { finalize(); break; }
           const tryClose = (attempt = 0) => {
             playFromQueue();
-            if (!sourceBufferRef.current) { finalize(); return; }
-            const busy = sourceBufferRef.current.updating;
+            const sb = sourceBufferRef.current;
+            const busy = sb?.updating;
             const hasQueue = audioQueue.current.length > 0;
             if (!busy && !hasQueue) {
               finalize();
-            } else if (attempt < 100) {
+            } else if (attempt < 60) {
               setTimeout(() => tryClose(attempt + 1), 120);
             } else {
-              console.warn('[TTS] Forcing endOfStream after timeout. busy:', busy, 'queue:', hasQueue);
+              console.warn('[TTS] Forcing endOfStream after timeout.');
               finalize();
             }
           };
@@ -114,11 +141,19 @@ export function useKiraSocket(conversationId: string | null) {
   }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback]);
 
   const startMic = useCallback(async () => {
-    if (mediaRecorderRef.current) { console.log('[Audio] Mic already started.'); return; }
+    if (mediaRecorderRef.current) {
+      console.log('[Audio] Mic already started.');
+      return;
+    }
     try {
       console.log('[Audio] Requesting microphone permission...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1, sampleRate: 48000 },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
       });
       console.log('[Audio] ✅ Microphone permission granted.');
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm; codecs=opus' });
@@ -128,7 +163,10 @@ export function useKiraSocket(conversationId: string | null) {
           console.log(`[Audio] ➡️ Sending audio chunk of size: ${event.data.size}`);
           wsRef.current.send(event.data);
         } else if (event.data.size > 0) {
-          console.log('[Audio] Skipped chunk: WS not open or size zero.', { size: event.data.size, readyState: wsRef.current?.readyState });
+          console.log('[Audio] Skipped chunk: WS not open or size zero.', {
+            size: event.data.size,
+            readyState: wsRef.current?.readyState,
+          });
         }
       };
       recorder.onstart = () => console.log('[Audio] ✅ MediaRecorder started.');
@@ -149,9 +187,11 @@ export function useKiraSocket(conversationId: string | null) {
 
   useEffect(() => {
     connect();
-    return () => { wsRef.current?.close(); stopMic(); };
+    return () => {
+      wsRef.current?.close();
+      stopMic();
+    };
   }, [connect, stopMic]);
 
   return { status, startMic, stopMic };
 }
-

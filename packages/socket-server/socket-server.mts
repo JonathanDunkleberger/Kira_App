@@ -67,12 +67,16 @@ const PERSONALITY_PROMPT = loadPersona();
 
 // Remove emojis / unsupported glyphs for TTS safety
 function cleanTextForTTS(text: string): string {
-  const emojiRegex =
-    /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
-  return text
-    .replace(emojiRegex, "")
+  const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
+  const cleaned = text
+    .replace(emojiRegex, " ") // space preserves cadence
     .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replace(/\s+/g, " ")
     .trim();
+  if (cleaned !== text) {
+    console.log('[TTS Clean] Modified sentence before synthesis.', { original: text, cleaned });
+  }
+  return cleaned;
 }
 
 const DEEPGRAM_DISABLED = /^true$/i.test(
@@ -202,8 +206,8 @@ async function initDeepgramWithMode() {
     smart_format: true,
     vad_events: true,
     interim_results: false,
-  // Increased to allow longer thinking pauses before finalizing
-  utterance_end_ms: 2000,
+    // Increased to allow longer thinking pauses before finalizing
+    utterance_end_ms: 2000,
   };
   const explicit = {
     ...base,

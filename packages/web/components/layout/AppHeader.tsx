@@ -1,26 +1,17 @@
+// packages/web/components/layout/AppHeader.tsx
 'use client';
 import { UserButton } from '@clerk/nextjs';
-import { useState } from 'react';
-
-import { ProfileSettingsModal } from '../auth/ProfileSettingsModal';
+import Link from 'next/link';
 
 export function AppHeader() {
-  const [open, setOpen] = useState(false);
   return (
-    <header className="w-full border-b border-black/5 dark:border-white/10 bg-[#f8f5ef] dark:bg-neutral-900/70 backdrop-blur-sm">
-      <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
-        <div className="font-semibold text-lg tracking-tight text-neutral-800 dark:text-neutral-100 select-none">
-          Kira
-        </div>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-full focus:outline-none focus:ring-2 focus:ring-black/20 dark:focus:ring-white/30"
-        >
-          <UserButton afterSignOutUrl="/" />
-        </button>
+    <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-transparent">
+      <div className="mx-auto flex h-full max-w-5xl items-center justify-between px-4">
+        <Link href="/" aria-label="Home">
+          <span className="text-2xl">🎙️</span>
+        </Link>
+        <UserButton afterSignOutUrl="/" />
       </div>
-      <ProfileSettingsModal open={open} onOpenChange={setOpen} />
     </header>
   );
 }

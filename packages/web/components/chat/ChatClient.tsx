@@ -1,45 +1,36 @@
-// FILE: packages/web/components/chat/ChatClient.tsx
+// packages/web/components/chat/ChatClient.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
-import { useConversationStore } from '../../lib/state/conversation-store';
 import VoiceOrb from '../VoiceOrb';
+import { Mic, PhoneOff } from 'lucide-react';
 
-const AnimatedTranscript = ({ messages }: { messages: { role: string; content: string }[] }) => {
-  const lastMessage = messages[messages.length - 1];
-  return (
-    <div className="text-neutral-800 dark:text-white text-center h-full overflow-y-auto text-lg leading-relaxed">
-      {lastMessage && (
-        <p>
-          <strong className="text-neutral-500 dark:text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong>{' '}
-          {lastMessage.content}
-          {useConversationStore.getState().isSpeaking && <span className="animate-pulse">▍</span>}
-        </p>
-      )}
-    </div>
-  );
+// Helper to format seconds into MM:SS format
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const secs = (seconds % 60).toString().padStart(2, '0');
+  return `${mins}:${secs}`;
 };
 
 const CallControls = ({ onEndCall }: { onEndCall: () => void }) => (
-  <div className="flex gap-4">
+  <div className="flex items-center justify-center gap-4">
+    <button className="flex h-14 w-14 cursor-not-allowed items-center justify-center rounded-full bg-neutral-500/20 text-white opacity-50">
+      <Mic size={24} />
+    </button>
     <button
       onClick={onEndCall}
-      className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-full text-white font-semibold"
+      className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
     >
-      End Call
+      <PhoneOff size={24} />
     </button>
   </div>
 );
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
   const { status, startMic, stopMic } = useKiraSocket(conversationId);
-  const { messages, isSpeaking, clearMessages } = useConversationStore();
   const router = useRouter();
-
-  useEffect(() => {
-    clearMessages();
-  }, [clearMessages]);
+  const [timer, setTimer] = useState(0);
 
   useEffect(() => {
     if (status === 'connected') {
@@ -49,23 +40,33 @@ export default function ChatClient({ conversationId }: { conversationId: string 
         audioEl.muted = false;
         audioEl.play?.().catch(() => {});
       }
+      // Start timer
+      const interval = setInterval(() => {
+        setTimer((prev) => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
     }
     return () => stopMic();
   }, [status, startMic, stopMic]);
 
   const handleEndCall = () => {
     stopMic();
+    // In the future, this will go to the feedback page. For now, it goes home.
     router.push('/');
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full">
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
       <audio id="tts-audio" className="hidden" autoPlay muted />
-      <div className="absolute top-1/4 w-full max-w-3xl px-4">
-        <AnimatedTranscript messages={messages} />
+      
+      <div className="absolute top-16 text-center">
+        <h2 className="text-2xl font-medium">Kira</h2>
+        <p className="text-lg text-neutral-500">{formatTime(timer)}</p>
       </div>
+
       <VoiceOrb size={280} />
-      <div className="fixed left-1/2 bottom-10 -translate-x-1/2">
+
+      <div className="fixed bottom-16 left-1/2 -translate-x-1/2">
         <CallControls onEndCall={handleEndCall} />
       </div>
     </div>

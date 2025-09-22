@@ -9,10 +9,10 @@ import VoiceOrb from '../VoiceOrb';
 const AnimatedTranscript = ({ messages }: { messages: { role: string; content: string }[] }) => {
   const lastMessage = messages[messages.length - 1];
   return (
-    <div className="text-white text-center h-full overflow-y-auto text-lg leading-relaxed">
+    <div className="text-neutral-800 dark:text-white text-center h-full overflow-y-auto text-lg leading-relaxed">
       {lastMessage && (
         <p>
-          <strong className="text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong>{' '}
+          <strong className="text-neutral-500 dark:text-white/60">{lastMessage.role === 'user' ? 'You' : 'Kira'}:</strong>{' '}
           {lastMessage.content}
           {useConversationStore.getState().isSpeaking && <span className="animate-pulse">▍</span>}
         </p>

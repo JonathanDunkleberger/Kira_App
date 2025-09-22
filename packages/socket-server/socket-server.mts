@@ -38,7 +38,15 @@ function loadPersona(): string {
   const explicitPath = process.env.PERSONALITY_PROMPT_PATH;
   const tryPaths = [] as string[];
   if (explicitPath) tryPaths.push(explicitPath);
-  tryPaths.push(path.join(process.cwd(), "packages", "socket-server", "prompts", "kira-persona.txt"));
+  tryPaths.push(
+    path.join(
+      process.cwd(),
+      "packages",
+      "socket-server",
+      "prompts",
+      "kira-persona.txt"
+    )
+  );
   for (const p of tryPaths) {
     try {
       if (fs.existsSync(p)) {
@@ -56,6 +64,12 @@ function loadPersona(): string {
   return "You are Kira, an encouraging, upbeat AI companion.";
 }
 const PERSONALITY_PROMPT = loadPersona();
+
+// Remove emojis / unsupported glyphs for TTS safety
+function cleanTextForTTS(text: string): string {
+  const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
+  return text.replace(emojiRegex, "").replace(/[\p{Cc}\p{Cf}]/gu, "").trim();
+}
 
 const DEEPGRAM_DISABLED = /^true$/i.test(
   process.env.DEEPGRAM_DISABLED || "false"
@@ -217,6 +231,20 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
+  // Ensure conversation exists (id may come from client for continuity)
+  try {
+    await prisma.conversation.upsert({
+      where: { id: conversationId },
+      update: {},
+      create: { id: conversationId, title: "New Conversation" },
+    });
+    console.log(`[DB] Upserted conversation with ID: ${conversationId}`);
+  } catch (e) {
+    console.error(`[DB] Failed to upsert conversation ${conversationId}:`, e);
+    ws.close(1011, "Conversation setup failed");
+    return;
+  }
+
   const safeSend = (payload: ServerEvent) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
   };
@@ -261,24 +289,25 @@ wss.on("connection", async (ws, req) => {
   let assistantBusy = false;
   if (deepgramLive)
     deepgramLive.on("Results", async (data: any) => {
-      const transcript =
-        data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
-      if (!transcript) return;
-      if (assistantBusy) {
-        console.log(
-          "[Server Log] Ignoring transcript while assistant busy:",
-          transcript
-        );
-        return;
-      }
-      console.log(`[Server Log] Received transcript: "${transcript}"`);
-      assistantBusy = true;
-      safeSend({ t: "transcript", text: transcript });
+      try {
+        const transcript =
+          data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
+        if (!transcript) return;
+        if (assistantBusy) {
+          console.log(
+            "[Server Log] Ignoring transcript while assistant busy:",
+            transcript
+          );
+          return;
+        }
+        console.log(`[Server Log] Received transcript: "${transcript}"`);
+        assistantBusy = true;
+        safeSend({ t: "transcript", text: transcript });
 
-      await prisma.message
-        .create({ data: { conversationId, role: "user", text: transcript } })
-        .catch((e) => console.error("[DB] Failed to save user message:", e));
-      let fullResponse = "";
+        await prisma.message
+          .create({ data: { conversationId, role: "user", text: transcript } })
+          .catch((e) => console.error("[DB] Failed to save user message:", e));
+        let fullResponse = "";
 
       const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
         AZURE_SPEECH_KEY,
@@ -301,49 +330,51 @@ wss.on("connection", async (ws, req) => {
           .replace(/'/g, "&apos;");
       }
 
-      const synthesizeSentence = (sentence: string): Promise<void> => {
-        const ssml = `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xml:lang="en-US"><voice name="${AZURE_TTS_VOICE}"><prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">${escapeXml(
-          sentence
-        )}</prosody></voice></speak>`;
-        return new Promise((resolve, reject) => {
-          synthesizer.speakSsmlAsync(
-            ssml,
-            (result) => {
-              if (
-                result.reason ===
-                AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
-              ) {
-                if ((result as any).audioData) {
-                  console.log(
-                    `[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`
+        const synthesizeSentence = (sentence: string): Promise<void> => {
+          const cleaned = cleanTextForTTS(sentence);
+          if (!cleaned) return Promise.resolve();
+          const ssml = `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xml:lang="en-US"><voice name="${AZURE_TTS_VOICE}"><prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">${escapeXml(
+            cleaned
+          )}</prosody></voice></speak>`;
+          return new Promise((resolve, reject) => {
+            synthesizer.speakSsmlAsync(
+              ssml,
+              (result) => {
+                if (
+                  result.reason ===
+                  AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
+                ) {
+                  if ((result as any).audioData) {
+                    console.log(
+                      `[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`
+                    );
+                    safeSend({
+                      t: "tts_chunk",
+                      b64: Buffer.from((result as any).audioData).toString(
+                        "base64"
+                      ),
+                    });
+                  }
+                  resolve();
+                } else {
+                  console.error(
+                    `[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`
                   );
-                  safeSend({
-                    t: "tts_chunk",
-                    b64: Buffer.from((result as any).audioData).toString(
-                      "base64"
-                    ),
-                  });
+                  reject(new Error(result.errorDetails));
                 }
-                resolve();
-              } else {
+              },
+              (error) => {
                 console.error(
-                  `[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`
+                  "[Server Log] speakSsmlAsync error callback:",
+                  error
                 );
-                reject(new Error(result.errorDetails));
+                reject(error);
               }
-            },
-            (error) => {
-              console.error(
-                "[Server Log] speakSsmlAsync error callback:",
-                error
-              );
-              reject(error);
-            }
-          );
-        });
-      };
+            );
+          });
+        };
 
-      try {
+        try {
         console.log("[Server Log] Sending transcript to OpenAI...");
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -389,10 +420,10 @@ wss.on("connection", async (ws, req) => {
             }
           }
         }
-      } catch (err) {
+        } catch (err) {
         console.error("[Server Log] OpenAI/TTS Error:", err);
         safeSend({ t: "error", message: "Sorry, I had trouble responding." });
-      } finally {
+        } finally {
         safeSend({ t: "tts_end" });
         synthesizer.close();
         if (fullResponse) {
@@ -405,6 +436,11 @@ wss.on("connection", async (ws, req) => {
             );
         }
         safeSend({ t: "speak", on: false });
+        assistantBusy = false;
+        }
+      } catch (outerErr) {
+        console.error('[Server Log] FATAL processing transcript event:', outerErr);
+        safeSend({ t: 'error', message: 'Internal processing error.' });
         assistantBusy = false;
       }
     });

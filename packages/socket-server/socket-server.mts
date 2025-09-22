@@ -67,8 +67,12 @@ const PERSONALITY_PROMPT = loadPersona();
 
 // Remove emojis / unsupported glyphs for TTS safety
 function cleanTextForTTS(text: string): string {
-  const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
-  return text.replace(emojiRegex, "").replace(/[\p{Cc}\p{Cf}]/gu, "").trim();
+  const emojiRegex =
+    /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
+  return text
+    .replace(emojiRegex, "")
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .trim();
 }
 
 const DEEPGRAM_DISABLED = /^true$/i.test(
@@ -198,7 +202,8 @@ async function initDeepgramWithMode() {
     smart_format: true,
     vad_events: true,
     interim_results: false,
-    utterance_end_ms: 800,
+  // Increased to allow longer thinking pauses before finalizing
+  utterance_end_ms: 2000,
   };
   const explicit = {
     ...base,
@@ -309,26 +314,26 @@ wss.on("connection", async (ws, req) => {
           .catch((e) => console.error("[DB] Failed to save user message:", e));
         let fullResponse = "";
 
-      const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
-        AZURE_SPEECH_KEY,
-        AZURE_SPEECH_REGION
-      );
-      speechConfig.speechSynthesisOutputFormat =
-        AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
-      speechConfig.speechSynthesisVoiceName = AZURE_TTS_VOICE;
-      const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(
-        speechConfig,
-        undefined
-      );
+        const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
+          AZURE_SPEECH_KEY,
+          AZURE_SPEECH_REGION
+        );
+        speechConfig.speechSynthesisOutputFormat =
+          AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
+        speechConfig.speechSynthesisVoiceName = AZURE_TTS_VOICE;
+        const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(
+          speechConfig,
+          undefined
+        );
 
-      function escapeXml(s: string) {
-        return s
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;")
-          .replace(/'/g, "&apos;");
-      }
+        function escapeXml(s: string) {
+          return s
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&apos;");
+        }
 
         const synthesizeSentence = (sentence: string): Promise<void> => {
           const cleaned = cleanTextForTTS(sentence);
@@ -375,72 +380,78 @@ wss.on("connection", async (ws, req) => {
         };
 
         try {
-        console.log("[Server Log] Sending transcript to OpenAI...");
-        const stream = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: PERSONALITY_PROMPT },
-            { role: "user", content: transcript },
-          ],
-          stream: true,
-        });
+          console.log("[Server Log] Sending transcript to OpenAI...");
+          const stream = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: PERSONALITY_PROMPT },
+              { role: "user", content: transcript },
+            ],
+            stream: true,
+          });
 
-        let sentenceBuffer = "";
-        const sentenceQueue: string[] = [];
+          let sentenceBuffer = "";
+          const sentenceQueue: string[] = [];
 
-        for await (const chunk of stream) {
-          const content = (chunk as any).choices[0]?.delta?.content || "";
-          if (content) {
-            fullResponse += content;
-            sentenceBuffer += content;
-            safeSend({ t: "assistant_text_chunk", text: content });
-            const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
-            if (sentenceEndMatch) {
-              const sentence = sentenceEndMatch[0];
-              sentenceQueue.push(sentence);
-              sentenceBuffer = sentenceBuffer.substring(sentence.length);
+          for await (const chunk of stream) {
+            const content = (chunk as any).choices[0]?.delta?.content || "";
+            if (content) {
+              fullResponse += content;
+              sentenceBuffer += content;
+              safeSend({ t: "assistant_text_chunk", text: content });
+              const sentenceEndMatch = sentenceBuffer.match(/[^.!?]+[.!?]+/);
+              if (sentenceEndMatch) {
+                const sentence = sentenceEndMatch[0];
+                sentenceQueue.push(sentence);
+                sentenceBuffer = sentenceBuffer.substring(sentence.length);
+              }
             }
           }
-        }
-        if (sentenceBuffer.trim().length > 0)
-          sentenceQueue.push(sentenceBuffer.trim());
-        console.log(
-          `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
-        );
+          if (sentenceBuffer.trim().length > 0)
+            sentenceQueue.push(sentenceBuffer.trim());
+          console.log(
+            `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
+          );
 
-        if (sentenceQueue.length > 0) {
-          safeSend({ t: "speak", on: true });
-          safeSend({ t: "tts_start" });
-          for (const sentence of sentenceQueue) {
-            console.log(`[Server Log] Synthesizing sentence: "${sentence}"`);
-            try {
-              await synthesizeSentence(sentence);
-            } catch (e) {
-              console.error("[TTS] Sentence synthesis failed, continuing:", e);
+          if (sentenceQueue.length > 0) {
+            safeSend({ t: "speak", on: true });
+            safeSend({ t: "tts_start" });
+            for (const sentence of sentenceQueue) {
+              console.log(`[Server Log] Synthesizing sentence: "${sentence}"`);
+              try {
+                await synthesizeSentence(sentence);
+              } catch (e) {
+                console.error(
+                  "[TTS] Sentence synthesis failed, continuing:",
+                  e
+                );
+              }
             }
           }
-        }
         } catch (err) {
-        console.error("[Server Log] OpenAI/TTS Error:", err);
-        safeSend({ t: "error", message: "Sorry, I had trouble responding." });
+          console.error("[Server Log] OpenAI/TTS Error:", err);
+          safeSend({ t: "error", message: "Sorry, I had trouble responding." });
         } finally {
-        safeSend({ t: "tts_end" });
-        synthesizer.close();
-        if (fullResponse) {
-          await prisma.message
-            .create({
-              data: { conversationId, role: "assistant", text: fullResponse },
-            })
-            .catch((e) =>
-              console.error("[DB] Failed to save assistant message:", e)
-            );
-        }
-        safeSend({ t: "speak", on: false });
-        assistantBusy = false;
+          safeSend({ t: "tts_end" });
+          synthesizer.close();
+          if (fullResponse) {
+            await prisma.message
+              .create({
+                data: { conversationId, role: "assistant", text: fullResponse },
+              })
+              .catch((e) =>
+                console.error("[DB] Failed to save assistant message:", e)
+              );
+          }
+          safeSend({ t: "speak", on: false });
+          assistantBusy = false;
         }
       } catch (outerErr) {
-        console.error('[Server Log] FATAL processing transcript event:', outerErr);
-        safeSend({ t: 'error', message: 'Internal processing error.' });
+        console.error(
+          "[Server Log] FATAL processing transcript event:",
+          outerErr
+        );
+        safeSend({ t: "error", message: "Internal processing error." });
         assistantBusy = false;
       }
     });

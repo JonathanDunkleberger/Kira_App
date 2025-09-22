@@ -84,6 +84,8 @@ export function useKiraSocket(conversationId: string | null) {
       const msg = JSON.parse(event.data);
       switch (msg.t) {
         case 'tts_start': {
+          // Reset any leftover buffered audio from previous response
+          audioQueue.current = [];
           const el = document.getElementById('tts-audio') as HTMLAudioElement | null;
           if (el) {
             el.muted = false;

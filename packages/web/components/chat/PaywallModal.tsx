@@ -8,8 +8,13 @@ interface PaywallModalProps {
   isPro?: boolean;
 }
 
-const reasonCopy: Record<string, { title: string; body: string; cta: string }> = {
+const reasonCopy = {
   daily_limit: {
+    title: 'Daily Limit Reached',
+    body: "You've hit today's free talking time. Upgrade to keep the conversation going without interruptions.",
+    cta: 'Upgrade to Pro',
+  },
+  daily_limit_exceeded: {
     title: 'Daily Limit Reached',
     body: "You've hit today's free talking time. Upgrade to keep the conversation going without interruptions.",
     cta: 'Upgrade to Pro',
@@ -19,16 +24,22 @@ const reasonCopy: Record<string, { title: string; body: string; cta: string }> =
     body: "You've reached the maximum session duration. Upgrade for extended, uninterrupted sessions.",
     cta: 'Upgrade to Pro',
   },
+  session_limit_exceeded: {
+    title: 'Session Limit Reached',
+    body: "You've reached the maximum session duration. Upgrade for extended, uninterrupted sessions.",
+    cta: 'Upgrade to Pro',
+  },
   limit: {
     title: 'Limit Reached',
     body: "You've reached a usage limit. Upgrade to continue.",
     cta: 'Upgrade',
   },
-};
+} as const;
 
 export function PaywallModal({ reason, onUpgrade, onClose, isPro }: PaywallModalProps) {
   if (!reason || isPro) return null;
-  const copy = reasonCopy[reason] ?? reasonCopy.limit;
+  const copyKey = (reason in reasonCopy ? reason : 'limit') as keyof typeof reasonCopy;
+  const copy = reasonCopy[copyKey];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-xl border border-white/10 bg-neutral-900 p-6 shadow-xl">

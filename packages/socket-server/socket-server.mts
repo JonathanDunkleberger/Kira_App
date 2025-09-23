@@ -164,7 +164,26 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ noServer: true });
+
+// Secure origin validation for WebSocket upgrade
 server.on("upgrade", (req, socket, head) => {
+  const origin = req.headers.origin || "";
+  const allowedOrigin = process.env.ALLOWED_ORIGIN;
+
+  const isAllowed =
+    process.env.NODE_ENV === "development"
+      ? (!!allowedOrigin && origin === allowedOrigin) ||
+        origin.startsWith("http://localhost")
+      : !!allowedOrigin && origin === allowedOrigin;
+
+  if (!isAllowed) {
+    console.warn(
+      `[Security] Denying connection from mismatched origin: "${origin}". Expected: "${allowedOrigin}"`
+    );
+    socket.destroy();
+    return;
+  }
+
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit("connection", ws, req);
   });

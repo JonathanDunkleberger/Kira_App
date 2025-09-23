@@ -289,7 +289,11 @@ wss.on("connection", async (ws, req) => {
   const conversationId = url.searchParams.get("conversationId");
   const token = url.searchParams.get("token");
   if (!conversationId || !token) {
-    console.warn("[Auth] Connection closed: Missing conversationId or token");
+    console.warn("[Auth] Connection closed: Missing conversationId or token", {
+      conversationIdPresent: !!conversationId,
+      tokenPresent: !!token,
+      query: url.searchParams.toString(),
+    });
     ws.close(1008, "Missing credentials");
     return;
   }

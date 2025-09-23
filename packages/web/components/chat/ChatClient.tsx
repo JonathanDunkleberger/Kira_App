@@ -36,20 +36,25 @@ export default function ChatClient({ conversationId }: { conversationId: string 
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
+    let interval: any;
     if (status === 'connected') {
-      startMic();
+      // Defer mic start very slightly to ensure media pipeline prepared
+      const openTimeout = setTimeout(() => {
+        startMic();
+      }, 50);
       const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
       if (audioEl) {
         audioEl.muted = false;
         audioEl.play?.().catch(() => {});
       }
-      // Start timer
-      const interval = setInterval(() => {
-        setTimer((prev) => prev + 1);
-      }, 1000);
-      return () => clearInterval(interval);
+      interval = setInterval(() => setTimer((p) => p + 1), 1000);
+      return () => {
+        clearTimeout(openTimeout);
+        clearInterval(interval);
+      };
+    } else if (status === 'disconnected') {
+      stopMic();
     }
-    return () => stopMic();
   }, [status, startMic, stopMic]);
 
   const handleEndCall = () => {

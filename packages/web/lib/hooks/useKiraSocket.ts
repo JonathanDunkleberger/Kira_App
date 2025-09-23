@@ -106,29 +106,51 @@ export function useKiraSocket(conversationId: string | null) {
   }, []);
 
   const connect = useCallback(async () => {
-    if (wsRef.current || !conversationId) return;
-    const token = await getToken().catch(() => null);
-    const url = new URL(process.env.NEXT_PUBLIC_WEBSOCKET_URL!);
+    if (!conversationId) {
+      return;
+    }
+    if (wsRef.current) {
+      return;
+    }
+    setStatus('connecting');
+    let token: string | null = null;
+    try {
+      token = await getToken();
+    } catch {
+      // Token fetch failure will attempt unauthenticated; server will reject.
+    }
+    const urlBase = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+    if (!urlBase) {
+      console.error('[WS] Missing NEXT_PUBLIC_WEBSOCKET_URL env');
+      setStatus('disconnected');
+      return;
+    }
+    const url = new URL(urlBase);
     url.searchParams.set('conversationId', conversationId);
     if (token) url.searchParams.set('token', token);
-    setStatus('connecting');
+    console.log('[WS] Connecting to', url.toString().replace(token || '', '***'));
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
+    ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
+      console.log('[WS] ✅ Open');
       setStatus('connected');
       setupAudioPlayback();
     };
-    ws.onerror = (err) => console.error('[WS] Error:', err);
-    ws.onclose = () => {
+    ws.onerror = (err) => {
+      console.error('[WS] Error event', err);
+    };
+    ws.onclose = (evt) => {
+      console.warn('[WS] Closed', {
+        code: (evt as CloseEvent)?.code,
+        reason: (evt as CloseEvent)?.reason,
+      });
       setStatus('disconnected');
       wsRef.current = null;
-      let attempt = 0;
-      const retry = () => {
-        if (wsRef.current) return;
-        const delay = Math.min(8000, 500 * 2 ** attempt++);
-        setTimeout(() => connect(), delay);
-      };
-      retry();
+      // Backoff limited & only if not paywall limited.
+      setTimeout(() => {
+        if (!wsRef.current && !limitReachedReason) connect();
+      }, 1500);
     };
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -225,17 +247,10 @@ export function useKiraSocket(conversationId: string | null) {
         }
       }
     };
-  }, [
-    conversationId,
-    addMessage,
-    setSpeaking,
-    playFromQueue,
-    setupAudioPlayback,
-    stopMic,
-    getToken,
-  ]);
+  }, [conversationId, getToken, limitReachedReason, playFromQueue, setupAudioPlayback, stopMic, addMessage, setSpeaking]);
 
   useEffect(() => {
+    // Only attempt connect when we have a conversationId
     connect();
     return () => {
       wsRef.current?.close();

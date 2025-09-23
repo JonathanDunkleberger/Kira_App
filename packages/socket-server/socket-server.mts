@@ -165,21 +165,41 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
-// Secure origin validation for WebSocket upgrade
+// Secure origin validation for WebSocket upgrade (supports comma-separated ALLOWED_ORIGINS)
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
-  const allowedOrigin = process.env.ALLOWED_ORIGIN;
+  const allowedEnv = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN || "";
+  const allowedOrigins = allowedEnv
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 
-  const isAllowed =
-    process.env.NODE_ENV === "development"
-      ? (!!allowedOrigin && origin === allowedOrigin) ||
-        origin.startsWith("http://localhost")
-      : !!allowedOrigin && origin === allowedOrigin;
-
-  if (!isAllowed) {
+  const isDev = process.env.NODE_ENV === "development";
+  const originAllowed = allowedOrigins.includes(origin) || (isDev && origin.startsWith("http://localhost"));
+  if (!originAllowed) {
     console.warn(
-      `[Security] Denying connection from mismatched origin: "${origin}". Expected: "${allowedOrigin}"`
+      `[Security] Denying connection from mismatched origin: "${origin}". Allowed list: ${allowedOrigins.join(",")}`
     );
+    socket.destroy();
+    return;
+  }
+
+  // Parse URL early to ensure query params present before upgrading (prevents connection storm logging)
+  try {
+    const url = new URL(req.url || "", "http://localhost");
+    const cid = url.searchParams.get("conversationId");
+    const token = url.searchParams.get("token");
+    if (!cid || !token) {
+      console.warn("[Upgrade] Rejecting before WebSocket upgrade due to missing params", {
+        conversationIdPresent: !!cid,
+        tokenPresent: !!token,
+        query: url.searchParams.toString(),
+      });
+      socket.destroy();
+      return;
+    }
+  } catch (e) {
+    console.warn("[Upgrade] Invalid URL during upgrade", (e as any)?.message || e);
     socket.destroy();
     return;
   }

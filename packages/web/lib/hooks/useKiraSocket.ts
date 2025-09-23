@@ -3,10 +3,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useConversationStore } from '@/lib/state/conversation-store';
 
-type SocketStatus = 'connecting' | 'connected' | 'disconnected';
+type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 export function useKiraSocket(conversationId: string | null) {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
@@ -16,6 +16,35 @@ export function useKiraSocket(conversationId: string | null) {
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const { addMessage, setSpeaking } = useConversationStore();
   const [limitReachedReason, setLimitReachedReason] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const suppressReconnectRef = useRef(false);
+  const tokenRef = useRef<string | null>(null);
+
+  // Attempt to fetch token with retries (handles transient Clerk race on first load)
+  const fetchToken = useCallback(async () => {
+    if (tokenRef.current) return tokenRef.current;
+    // Wait for Clerk auth to load (max ~3s) to avoid premature null token
+    let waited = 0;
+    while (!isLoaded && waited < 3000) {
+      await new Promise((r) => setTimeout(r, 100));
+      waited += 100;
+    }
+    let attempts = 0;
+    while (attempts < 5) {
+      try {
+        const t = await getToken();
+        if (t) {
+          tokenRef.current = t;
+          return t;
+        }
+      } catch {
+        // swallow and retry
+      }
+      attempts += 1;
+      await new Promise((r) => setTimeout(r, 300 * attempts));
+    }
+    return null;
+  }, [getToken, isLoaded]);
 
   const playFromQueue = useCallback(() => {
     if (
@@ -106,29 +135,28 @@ export function useKiraSocket(conversationId: string | null) {
   }, []);
 
   const connect = useCallback(async () => {
-    if (!conversationId) {
-      return;
-    }
-    if (wsRef.current) {
-      return;
-    }
+    if (!conversationId || suppressReconnectRef.current) return;
+    if (wsRef.current) return;
     setStatus('connecting');
-    let token: string | null = null;
-    try {
-      token = await getToken();
-    } catch {
-      // Token fetch failure will attempt unauthenticated; server will reject.
+    setAuthError(null);
+    const token = await fetchToken();
+    if (!token) {
+      // Without token we purposefully do not connect to avoid 1008 spam.
+      setStatus('error');
+      setAuthError('Authentication token unavailable. Please sign in.');
+      return;
     }
     const urlBase = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
     if (!urlBase) {
       console.error('[WS] Missing NEXT_PUBLIC_WEBSOCKET_URL env');
-      setStatus('disconnected');
+      setStatus('error');
+      setAuthError('Missing websocket URL configuration.');
       return;
     }
     const url = new URL(urlBase);
     url.searchParams.set('conversationId', conversationId);
-    if (token) url.searchParams.set('token', token);
-    console.log('[WS] Connecting to', url.toString().replace(token || '', '***'));
+    url.searchParams.set('token', token);
+    console.log('[WS] Connecting to', url.toString().replace(token, '***'));
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
     ws.binaryType = 'arraybuffer';
@@ -141,16 +169,23 @@ export function useKiraSocket(conversationId: string | null) {
       console.error('[WS] Error event', err);
     };
     ws.onclose = (evt) => {
-      console.warn('[WS] Closed', {
-        code: (evt as CloseEvent)?.code,
-        reason: (evt as CloseEvent)?.reason,
-      });
-      setStatus('disconnected');
+      const code = (evt as CloseEvent).code;
+      const reason = (evt as CloseEvent).reason;
+      console.warn('[WS] Closed', { code, reason });
       wsRef.current = null;
-      // Backoff limited & only if not paywall limited.
-      setTimeout(() => {
-        if (!wsRef.current && !limitReachedReason) connect();
-      }, 1500);
+      if (code === 1008 || code === 4001) {
+        suppressReconnectRef.current = true;
+        setStatus('error');
+        setAuthError(reason || 'Authentication failed.');
+        stopMic();
+        return;
+      }
+      setStatus('disconnected');
+      if (!limitReachedReason && !suppressReconnectRef.current) {
+        setTimeout(() => {
+          if (!wsRef.current && !limitReachedReason && !suppressReconnectRef.current) connect();
+        }, 1500);
+      }
     };
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -247,7 +282,7 @@ export function useKiraSocket(conversationId: string | null) {
         }
       }
     };
-  }, [conversationId, getToken, limitReachedReason, playFromQueue, setupAudioPlayback, stopMic, addMessage, setSpeaking]);
+  }, [conversationId, fetchToken, limitReachedReason, playFromQueue, setupAudioPlayback, stopMic, addMessage, setSpeaking]);
 
   useEffect(() => {
     // Only attempt connect when we have a conversationId
@@ -258,5 +293,5 @@ export function useKiraSocket(conversationId: string | null) {
     };
   }, [connect, stopMic]);
 
-  return { status, startMic, stopMic, limitReachedReason };
+  return { status, startMic, stopMic, limitReachedReason, authError };
 }

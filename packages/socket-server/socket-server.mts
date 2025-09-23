@@ -3,6 +3,7 @@ import "dotenv/config";
 import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
 import { PrismaClient } from "@prisma/client";
+import { verifyToken } from "@clerk/clerk-sdk-node";
 import { createClient } from "@deepgram/sdk";
 import OpenAI from "openai";
 import * as AzureSpeechSDK from "microsoft-cognitiveservices-speech-sdk";
@@ -11,20 +12,28 @@ import path from "node:path";
 import type { ServerEvent } from "./lib/voice-protocol.js";
 
 // Usage / Paywall limits
-const FREE_DAILY_LIMIT_SECONDS = parseInt(
-  process.env.FREE_DAILY_LIMIT_SECONDS || "300",
+// NOTE: Env uses FREE_TRIAL_SECONDS for free daily allowance
+const FREE_TRIAL_SECONDS = parseInt(
+  process.env.FREE_TRIAL_SECONDS || "900",
   10
-); // 5 minutes default
+); // default 15 minutes if not provided
 const PRO_SESSION_LIMIT_SECONDS = parseInt(
   process.env.PRO_SESSION_LIMIT_SECONDS || "1800",
   10
 ); // 30 minutes default per session (example)
+// Alias to align with planned client/server naming
+const PRO_SESSION_SECONDS = PRO_SESSION_LIMIT_SECONDS;
 
 interface ActiveSessionInfo {
   userId: string | null; // null until resolved (auth TBD)
   conversationId: string;
   startedAt: number; // ms
-  secondsAccumulated: number; // this session
+  // Session (continuous call) seconds for Pro session limit checks
+  sessionSeconds: number;
+  // Daily accumulated seconds (free users only increment)
+  secondsUsedToday: number;
+  // Whether user has a Pro subscription (placeholder false until auth integrated)
+  isPro: boolean;
   interval?: NodeJS.Timer;
   limitReached?: boolean;
 }
@@ -46,6 +55,7 @@ const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
 const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
 const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
 const PORT = parseInt(process.env.PORT || "10000", 10);
+const CLERK_SECRET_KEY = requireEnv("CLERK_SECRET_KEY");
 // FIX: Allow overriding the TTS voice via environment variable (default Ashley)
 const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
 // New: Allow pitch / rate adjustments via SSML (percent or absolute values Azure accepts)
@@ -256,12 +266,34 @@ wss.on("connection", async (ws, req) => {
   let audioChunkCount = 0;
   let totalBytesSent = 0;
   console.log("[Server Log] ✅ New client connected.");
-  const conversationId = new URL(req.url!, "http://localhost").searchParams.get(
-    "conversationId"
-  );
-  if (!conversationId) {
-    console.warn("[Server Log] Connection closed: Missing conversationId");
-    ws.close(1008, "Missing conversationId");
+  const url = new URL(req.url!, "http://localhost");
+  const conversationId = url.searchParams.get("conversationId");
+  const token = url.searchParams.get("token");
+  if (!conversationId || !token) {
+    console.warn("[Auth] Connection closed: Missing conversationId or token");
+    ws.close(1008, "Missing credentials");
+    return;
+  }
+
+  let userId: string | null = null;
+  let isPro = false;
+  try {
+    const session = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+    userId = session?.sub || null;
+    if (!userId) throw new Error("No user id in token");
+    // Check subscription status
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscriptions: { where: { status: "active" } } },
+    });
+    if (userRecord?.subscriptions?.length) isPro = true;
+    console.log(`[Auth] User ${userId} authenticated. Pro=${isPro}`);
+  } catch (err) {
+    console.error(
+      "[Auth] Token verification failed:",
+      (err as any)?.message || err
+    );
+    ws.close(4001, "Authentication failed");
     return;
   }
 
@@ -285,11 +317,48 @@ wss.on("connection", async (ws, req) => {
 
   // Initialize usage tracking for this connection (auth/user resolution TBD => null userId placeholder)
   activeSessions.set(ws, {
-    userId: null,
+    userId,
     conversationId,
     startedAt: Date.now(),
-    secondsAccumulated: 0,
+    sessionSeconds: 0,
+    secondsUsedToday: 0,
+    isPro,
   });
+
+  // Start unified usage interval immediately on connection
+  const usageInterval = setInterval(() => {
+    const info = activeSessions.get(ws);
+    if (!info || info.limitReached) return;
+    info.sessionSeconds++;
+    if (!info.isPro) {
+      info.secondsUsedToday++;
+    }
+    let limitExceeded = false;
+    let reason = "";
+    if (info.isPro) {
+      if (info.sessionSeconds >= PRO_SESSION_SECONDS) {
+        limitExceeded = true;
+        reason = "session_limit_exceeded";
+      }
+    } else {
+      if (info.secondsUsedToday >= FREE_TRIAL_SECONDS) {
+        limitExceeded = true;
+        reason = "daily_limit_exceeded";
+      }
+    }
+    if (limitExceeded) {
+      info.limitReached = true;
+      console.log(
+        `[Usage] User ${info.userId || "anon"} limit reached: ${reason} (session=${info.sessionSeconds}s daily=${info.secondsUsedToday}s)`
+      );
+      safeSend({ t: "limit_reached", reason } as any);
+      try {
+        ws.close();
+      } catch {}
+    }
+  }, 1000);
+  const createdSession = activeSessions.get(ws);
+  if (createdSession) createdSession.interval = usageInterval;
 
   function cleanupSession() {
     const info = activeSessions.get(ws);
@@ -299,17 +368,19 @@ wss.on("connection", async (ws, req) => {
     if (info.userId) {
       const day = new Date();
       day.setHours(0, 0, 0, 0);
-      // @ts-expect-error: dailyUsage model may not exist until migration applied
+      const incrementAmount = info.isPro
+        ? info.sessionSeconds // we can still log session usage for analytics
+        : info.secondsUsedToday; // free user daily usage
       if (prisma.dailyUsage) {
         // @ts-ignore dynamic access
         prisma.dailyUsage
           .upsert({
             where: { userId_day: { userId: info.userId, day } },
-            update: { secondsUsed: { increment: info.secondsAccumulated } },
+            update: { secondsUsed: { increment: incrementAmount } },
             create: {
               userId: info.userId,
               day,
-              secondsUsed: info.secondsAccumulated,
+              secondsUsed: incrementAmount,
             },
           })
           .catch((e: any) =>
@@ -361,13 +432,7 @@ wss.on("connection", async (ws, req) => {
   if (deepgramLive)
     deepgramLive.on("Results", async (data: any) => {
       try {
-        // Start per-connection usage timer if not yet started
         const session = activeSessions.get(ws);
-        if (session && !session.interval) {
-          session.interval = setInterval(() => {
-            session.secondsAccumulated += 1;
-          }, 1000);
-        }
 
         const transcript =
           data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
@@ -380,28 +445,8 @@ wss.on("connection", async (ws, req) => {
           return;
         }
 
-        // Enforce limits before accepting new user input
-        if (session && !session.limitReached) {
-          // TODO: Replace placeholder user logic with real auth user lookup
-          const isPro = false; // placeholder; integrate with subscription check
-          const sessionLimit = isPro
-            ? PRO_SESSION_LIMIT_SECONDS
-            : FREE_DAILY_LIMIT_SECONDS; // reuse daily limit as session limit for free users
-          if (session.secondsAccumulated >= sessionLimit) {
-            session.limitReached = true;
-            console.log(
-              `[Usage] Limit reached for conversation ${session.conversationId}. Seconds=${session.secondsAccumulated} Limit=${sessionLimit}`
-            );
-            safeSend({
-              // @ts-ignore extending protocol for now
-              t: "limit_reached",
-              reason: isPro ? "session_limit" : "daily_limit",
-              seconds: session.secondsAccumulated,
-              limit: sessionLimit,
-            } as any);
-            return; // ignore further transcripts
-          }
-        }
+        // If limit already reached (interval closed connection), ignore transcripts
+        if (session?.limitReached) return;
         console.log(`[Server Log] Received transcript: "${transcript}"`);
         assistantBusy = true;
         safeSend({ t: "transcript", text: transcript });

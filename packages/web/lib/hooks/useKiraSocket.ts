@@ -1,10 +1,12 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import { useConversationStore } from '@/lib/state/conversation-store';
 
 type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
 export function useKiraSocket(conversationId: string | null) {
+  const { getToken } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
@@ -103,10 +105,12 @@ export function useKiraSocket(conversationId: string | null) {
     mediaRecorderRef.current = null;
   }, []);
 
-  const connect = useCallback(() => {
-    if (wsRef.current) return;
+  const connect = useCallback(async () => {
+    if (wsRef.current || !conversationId) return;
+    const token = await getToken().catch(() => null);
     const url = new URL(process.env.NEXT_PUBLIC_WEBSOCKET_URL!);
-    if (conversationId) url.searchParams.set('conversationId', conversationId);
+    url.searchParams.set('conversationId', conversationId);
+    if (token) url.searchParams.set('token', token);
     setStatus('connecting');
     const ws = new WebSocket(url.toString());
     wsRef.current = ws;
@@ -221,7 +225,15 @@ export function useKiraSocket(conversationId: string | null) {
         }
       }
     };
-  }, [conversationId, addMessage, setSpeaking, playFromQueue, setupAudioPlayback, stopMic]);
+  }, [
+    conversationId,
+    addMessage,
+    setSpeaking,
+    playFromQueue,
+    setupAudioPlayback,
+    stopMic,
+    getToken,
+  ]);
 
   useEffect(() => {
     connect();

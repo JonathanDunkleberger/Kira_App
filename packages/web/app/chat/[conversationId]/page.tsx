@@ -1,4 +1,4 @@
-"use client";
+'use client';
 // FILE: packages/web/app/chat/[conversationId]/page.tsx
 import ChatClient from '@/components/chat/ChatClient';
 

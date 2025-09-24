@@ -25,6 +25,7 @@ const PRO_SESSION_SECONDS = parseInt(
 
 interface ActiveSessionInfo {
   userId: string | null; // null until resolved (auth TBD)
+  guestId?: string | null;
   conversationId: string;
   startedAt: number; // ms
   // Session (continuous call) seconds for Pro session limit checks
@@ -275,7 +276,7 @@ async function initDeepgramWithMode() {
     vad_events: true,
     interim_results: false,
     // Increased to allow longer thinking pauses before finalizing
-    utterance_end_ms: 2000,
+    utterance_end_ms: 2500,
   };
   const explicit = {
     ...base,
@@ -357,7 +358,8 @@ wss.on("connection", async (ws, req) => {
 
   // Initialize usage tracking for this connection (auth/user resolution TBD => null userId placeholder)
   activeSessions.set(ws, {
-    userId: effectiveUserId,
+    userId: userId,
+    guestId: guestId || null,
     conversationId,
     startedAt: Date.now(),
     sessionSeconds: 0,
@@ -404,28 +406,24 @@ wss.on("connection", async (ws, req) => {
     const info = activeSessions.get(ws);
     if (!info) return;
     if (info.interval) clearInterval(info.interval as any);
-    // Persist session usage to DailyUsage (best-effort) if we have a userId
-    if (info.userId) {
+    const hasUser = !!info.userId;
+    const hasGuest = !!(info as any).guestId;
+    if (hasUser || hasGuest) {
       const day = new Date();
       day.setHours(0, 0, 0, 0);
       const incrementAmount = info.isPro
-        ? info.sessionSeconds // we can still log session usage for analytics
-        : info.secondsUsedToday; // free user daily usage
+        ? info.sessionSeconds
+        : info.secondsUsedToday;
       if (prisma.dailyUsage) {
-        // @ts-ignore dynamic access
+        const where = (hasUser
+          ? { userId_day: { userId: info.userId as string, day } }
+          : { guestId_day: { guestId: (info as any).guestId as string, day } }) as any;
+        const create = (hasUser
+          ? { userId: info.userId as string, day, secondsUsed: incrementAmount }
+          : { guestId: (info as any).guestId as string, day, secondsUsed: incrementAmount }) as any;
         prisma.dailyUsage
-          .upsert({
-            where: { userId_day: { userId: info.userId, day } },
-            update: { secondsUsed: { increment: incrementAmount } },
-            create: {
-              userId: info.userId,
-              day,
-              secondsUsed: incrementAmount,
-            },
-          })
-          .catch((e: any) =>
-            console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e)
-          );
+          .upsert({ where, update: { secondsUsed: { increment: incrementAmount } }, create })
+          .catch((e: any) => console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e));
       }
     }
     activeSessions.delete(ws);

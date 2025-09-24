@@ -4,12 +4,15 @@ import { useAuth } from '@clerk/nextjs';
 
 import { useConversationStore } from '../state/conversation-store';
 
-type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'unauthenticated';
 
 export function useKiraSocket(conversationId: string | null) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const audioQueue = useRef<ArrayBuffer[]>([]);
   const [status, setStatus] = useState<SocketStatus>('disconnected');
   const { addMessage, setSpeaking } = useConversationStore();
   const [limitReachedReason, setLimitReachedReason] = useState<string | null>(null);
@@ -21,12 +24,43 @@ export function useKiraSocket(conversationId: string | null) {
     }
   }, []);
 
+  const playFromQueue = useCallback(() => {
+    if (sourceBufferRef.current && !sourceBufferRef.current.updating && audioQueue.current.length > 0) {
+      const chunk = audioQueue.current.shift();
+      if (chunk) {
+        try {
+          sourceBufferRef.current.appendBuffer(chunk);
+        } catch (e) {
+          console.error('[Audio] Error appending buffer:', e);
+        }
+      }
+    }
+  }, []);
+
+  const setupAudioPlayback = useCallback(() => {
+    if (mediaSourceRef.current) return;
+    const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
+    if (!audioEl) return;
+    const ms = new MediaSource();
+    mediaSourceRef.current = ms;
+    audioEl.src = URL.createObjectURL(ms);
+    ms.addEventListener('sourceopen', () => {
+      try {
+        const sb = ms.addSourceBuffer('audio/webm; codecs=opus');
+        sb.addEventListener('updateend', playFromQueue);
+        sourceBufferRef.current = sb;
+        console.log('[Audio] ✅ SourceBuffer created.');
+      } catch (e) {
+        console.error('[Audio] ❌ Error creating SourceBuffer:', e);
+      }
+    });
+  }, [playFromQueue]);
+
   const startMic = useCallback(async () => {
     if (mediaRecorderRef.current) {
       console.log('[Audio] Mic already started.');
       return;
     }
-
     try {
       console.log('[Audio] Requesting microphone permission...');
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -37,27 +71,20 @@ export function useKiraSocket(conversationId: string | null) {
           sampleRate: 48000,
         },
       });
-
       console.log('[Audio] ✅ Microphone permission granted.');
       const recorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm; codecs=opus',
         audioBitsPerSecond: 128000,
       });
-
       mediaRecorderRef.current = recorder;
-
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-          console.log(`[Audio] ➡️ Sending audio chunk: ${event.data.size} bytes`);
           wsRef.current.send(event.data);
         }
       };
-
       recorder.onerror = (e: any) => {
         console.error('[Audio] ❌ MediaRecorder error:', e);
       };
-
-      // Start recording with small chunks for low latency
       recorder.start(100);
     } catch (error) {
       console.error('[Audio] ❌ Error starting microphone:', error);
@@ -68,7 +95,7 @@ export function useKiraSocket(conversationId: string | null) {
   const stopMic = useCallback(() => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
       mediaRecorderRef.current = null;
     }
   }, []);
@@ -76,7 +103,12 @@ export function useKiraSocket(conversationId: string | null) {
   const connect = useCallback(async () => {
     if (wsRef.current || !conversationId) return;
 
-    // Get or create a unique ID for guest users
+    // Ensure Clerk state is ready before attempting token
+    if (!isLoaded) {
+      // Wait briefly for Clerk to load if needed
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
     let guestId = localStorage.getItem('kira-guest-id');
     if (!guestId) {
       guestId = crypto.randomUUID();
@@ -88,34 +120,22 @@ export function useKiraSocket(conversationId: string | null) {
 
     try {
       const urlBase = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-      if (!urlBase) {
-        throw new Error('WebSocket URL not configured');
-      }
-
+      if (!urlBase) throw new Error('WebSocket URL not configured');
       const url = new URL(urlBase);
       url.searchParams.set('conversationId', conversationId);
       url.searchParams.set('guestId', guestId);
-      
       if (isSignedIn) {
         const token = await getToken();
         if (token) url.searchParams.set('token', token);
       }
 
-      console.log('[WS] Connecting to WebSocket...');
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
-        console.log('[WS] ✅ Connected successfully');
         setStatus('connected');
-
-        // Send ready signal to server
-        safeSend({
-          t: 'client_ready',
-          session: conversationId,
-          ua: navigator.userAgent,
-        });
+        safeSend({ t: 'client_ready', session: conversationId, ua: navigator.userAgent });
       };
 
       ws.onerror = (error) => {
@@ -134,50 +154,48 @@ export function useKiraSocket(conversationId: string | null) {
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('[WS] 📨 Received:', message.t);
-
           switch (message.t) {
             case 'chat_session':
-              console.log('[WS] Chat session established:', message.chatSessionId);
               break;
-
             case 'transcript':
               addMessage({ role: 'user', content: message.text });
               break;
-
             case 'assistant_text_chunk':
-              addMessage({
-                role: 'assistant',
-                content: message.text || '',
-                isPartial: !message.done,
-              });
+              addMessage({ role: 'assistant', content: message.text || '', isPartial: !message.done });
               break;
-
-            case 'tts_start':
+            case 'tts_start': {
+              audioQueue.current = [];
               setSpeaking(true);
+              const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
+              if (audioEl) {
+                audioEl.muted = false;
+                audioEl.play().catch((e) => console.error('[Audio] Play error', e));
+              }
               break;
-
-            case 'tts_chunk':
-              // Handle audio playback (implementation TBD)
-              console.log('[WS] Audio chunk received');
+            }
+            case 'tts_chunk': {
+              // base64 decode to ArrayBuffer and enqueue
+              const binaryString = atob(message.b64 as string);
+              const len = binaryString.length;
+              const bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
+              audioQueue.current.push(bytes.buffer);
+              playFromQueue();
               break;
-
+            }
             case 'tts_end':
               setSpeaking(false);
               break;
-
             case 'limit_reached':
               setLimitReachedReason(message.reason);
               stopMic();
               break;
-
             case 'error':
-              console.error('[WS] Server error:', message.message);
               setAuthError(message.message);
               break;
           }
-        } catch (error) {
-          console.error('[WS] ❌ Error parsing message:', error);
+        } catch (e) {
+          console.error('[WS] ❌ Error parsing message:', e);
         }
       };
     } catch (error) {
@@ -185,27 +203,17 @@ export function useKiraSocket(conversationId: string | null) {
       setStatus('error');
       setAuthError(error instanceof Error ? error.message : 'Connection failed');
     }
-  }, [conversationId, isSignedIn, getToken, safeSend, addMessage, setSpeaking, stopMic]);
+  }, [conversationId, isLoaded, isSignedIn, getToken, safeSend, addMessage, setSpeaking, stopMic, playFromQueue]);
 
   useEffect(() => {
-    if (conversationId) {
-      connect();
-    }
-
+    // Setup audio pipeline once
+    setupAudioPlayback();
+    if (conversationId) connect();
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      if (wsRef.current) wsRef.current.close();
       stopMic();
     };
-  }, [connect, conversationId, stopMic]);
+  }, [connect, conversationId, setupAudioPlayback, stopMic]);
 
-  return {
-    status,
-    startMic,
-    stopMic,
-    limitReachedReason,
-    setLimitReachedReason,
-    authError,
-  };
+  return { status, startMic, stopMic, limitReachedReason, setLimitReachedReason, authError };
 }

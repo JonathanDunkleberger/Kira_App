@@ -17,12 +17,11 @@ const FREE_TRIAL_SECONDS = parseInt(
   process.env.FREE_TRIAL_SECONDS || "900",
   10
 ); // default 15 minutes if not provided
-const PRO_SESSION_LIMIT_SECONDS = parseInt(
-  process.env.PRO_SESSION_LIMIT_SECONDS || "1800",
-  10
-); // 30 minutes default per session (example)
 // Alias to align with planned client/server naming
-const PRO_SESSION_SECONDS = PRO_SESSION_LIMIT_SECONDS;
+const PRO_SESSION_SECONDS = parseInt(
+  process.env.PRO_SESSION_SECONDS || "7200", // Default to 2 hours
+  10
+);
 
 interface ActiveSessionInfo {
   userId: string | null; // null until resolved (auth TBD)

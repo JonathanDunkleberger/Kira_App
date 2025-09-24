@@ -186,23 +186,9 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Parse URL early to ensure query params present before upgrading (prevents connection storm logging)
+  // Parse URL early; only validate it's a valid URL. Guests may omit token.
   try {
-    const url = new URL(req.url || "", "http://localhost");
-    const cid = url.searchParams.get("conversationId");
-    const token = url.searchParams.get("token");
-    if (!cid || !token) {
-      console.warn(
-        "[Upgrade] Rejecting before WebSocket upgrade due to missing params",
-        {
-          conversationIdPresent: !!cid,
-          tokenPresent: !!token,
-          query: url.searchParams.toString(),
-        }
-      );
-      socket.destroy();
-      return;
-    }
+    new URL(req.url || "", "http://localhost");
   } catch (e) {
     console.warn(
       "[Upgrade] Invalid URL during upgrade",
@@ -316,36 +302,36 @@ wss.on("connection", async (ws, req) => {
   const url = new URL(req.url!, "http://localhost");
   const conversationId = url.searchParams.get("conversationId");
   const token = url.searchParams.get("token");
-  if (!conversationId || !token) {
-    console.warn("[Auth] Connection closed: Missing conversationId or token", {
-      conversationIdPresent: !!conversationId,
-      tokenPresent: !!token,
-      query: url.searchParams.toString(),
-    });
-    ws.close(1008, "Missing credentials");
+  const guestId = url.searchParams.get("guestId");
+
+  if (!conversationId) {
+    ws.close(1008, "Missing conversationId");
     return;
   }
 
   let userId: string | null = null;
   let isPro = false;
-  try {
-    const session = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-    userId = session?.sub || null;
-    if (!userId) throw new Error("No user id in token");
-    // Check subscription status
-    const userRecord = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { subscriptions: { where: { status: "active" } } },
-    });
-    if (userRecord?.subscriptions?.length) isPro = true;
-    console.log(`[Auth] User ${userId} authenticated. Pro=${isPro}`);
-  } catch (err) {
-    console.error(
-      "[Auth] Token verification failed:",
-      (err as any)?.message || err
-    );
-    ws.close(4001, "Authentication failed");
-    return;
+  let effectiveUserId: string | null = guestId || conversationId;
+
+  if (token) {
+    try {
+      const session = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+      userId = session?.sub || null;
+      if (!userId) throw new Error("No user id in token");
+      effectiveUserId = userId;
+      const userRecord = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { subscriptions: { where: { status: "active" } } },
+      });
+      if (userRecord?.subscriptions?.length) isPro = true;
+      console.log(`[Auth] User ${userId} authenticated. Pro=${isPro}`);
+    } catch (err) {
+      console.error("[Auth] Token verification failed:", (err as any)?.message || err);
+      ws.close(4001, "Authentication failed");
+      return;
+    }
+  } else {
+    console.log(`[Auth] Guest user connected with guestId: ${guestId}`);
   }
 
   // Ensure conversation exists (id may come from client for continuity)
@@ -368,7 +354,7 @@ wss.on("connection", async (ws, req) => {
 
   // Initialize usage tracking for this connection (auth/user resolution TBD => null userId placeholder)
   activeSessions.set(ws, {
-    userId,
+    userId: effectiveUserId,
     conversationId,
     startedAt: Date.now(),
     sessionSeconds: 0,

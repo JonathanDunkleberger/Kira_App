@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
-import { useConversationStore } from '@/lib/state/conversation-store';
+
+import { useConversationStore } from '../state/conversation-store';
 
 type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -36,29 +37,28 @@ export function useKiraSocket(conversationId: string | null) {
           sampleRate: 48000,
         },
       });
-      
+
       console.log('[Audio] ✅ Microphone permission granted.');
-      const recorder = new MediaRecorder(stream, { 
+      const recorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm; codecs=opus',
-        audioBitsPerSecond: 128000
+        audioBitsPerSecond: 128000,
       });
-      
+
       mediaRecorderRef.current = recorder;
-      
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
           console.log(`[Audio] ➡️ Sending audio chunk: ${event.data.size} bytes`);
           wsRef.current.send(event.data);
         }
       };
-      
+
       recorder.onerror = (e: any) => {
         console.error('[Audio] ❌ MediaRecorder error:', e);
       };
-      
+
       // Start recording with small chunks for low latency
       recorder.start(100);
-      
     } catch (error) {
       console.error('[Audio] ❌ Error starting microphone:', error);
       setAuthError('Microphone access denied');
@@ -68,28 +68,25 @@ export function useKiraSocket(conversationId: string | null) {
   const stopMic = useCallback(() => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
       mediaRecorderRef.current = null;
     }
   }, []);
 
   const connect = useCallback(async () => {
-    if (!conversationId || !isLoaded) return;
-    if (wsRef.current) return;
+    if (wsRef.current || !conversationId) return;
+
+    // Get or create a unique ID for guest users
+    let guestId = localStorage.getItem('kira-guest-id');
+    if (!guestId) {
+      guestId = crypto.randomUUID();
+      localStorage.setItem('kira-guest-id', guestId);
+    }
 
     setStatus('connecting');
     setAuthError(null);
 
     try {
-      // Wait for auth to be fully loaded
-      let token: string | null = null;
-      if (isSignedIn) {
-        token = await getToken();
-        if (!token) {
-          throw new Error('Failed to get authentication token');
-        }
-      }
-
       const urlBase = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
       if (!urlBase) {
         throw new Error('WebSocket URL not configured');
@@ -97,8 +94,11 @@ export function useKiraSocket(conversationId: string | null) {
 
       const url = new URL(urlBase);
       url.searchParams.set('conversationId', conversationId);
-      if (token) {
-        url.searchParams.set('token', token);
+      url.searchParams.set('guestId', guestId);
+      
+      if (isSignedIn) {
+        const token = await getToken();
+        if (token) url.searchParams.set('token', token);
       }
 
       console.log('[WS] Connecting to WebSocket...');
@@ -109,12 +109,12 @@ export function useKiraSocket(conversationId: string | null) {
       ws.onopen = () => {
         console.log('[WS] ✅ Connected successfully');
         setStatus('connected');
-        
+
         // Send ready signal to server
         safeSend({
           t: 'client_ready',
           session: conversationId,
-          ua: navigator.userAgent
+          ua: navigator.userAgent,
         });
       };
 
@@ -135,42 +135,42 @@ export function useKiraSocket(conversationId: string | null) {
         try {
           const message = JSON.parse(event.data);
           console.log('[WS] 📨 Received:', message.t);
-          
+
           switch (message.t) {
             case 'chat_session':
               console.log('[WS] Chat session established:', message.chatSessionId);
               break;
-              
+
             case 'transcript':
               addMessage({ role: 'user', content: message.text });
               break;
-              
+
             case 'assistant_text_chunk':
-              addMessage({ 
-                role: 'assistant', 
-                content: message.text || '', 
-                isPartial: !message.done 
+              addMessage({
+                role: 'assistant',
+                content: message.text || '',
+                isPartial: !message.done,
               });
               break;
-              
+
             case 'tts_start':
               setSpeaking(true);
               break;
-              
+
             case 'tts_chunk':
               // Handle audio playback (implementation TBD)
               console.log('[WS] Audio chunk received');
               break;
-              
+
             case 'tts_end':
               setSpeaking(false);
               break;
-              
+
             case 'limit_reached':
               setLimitReachedReason(message.reason);
               stopMic();
               break;
-              
+
             case 'error':
               console.error('[WS] Server error:', message.message);
               setAuthError(message.message);
@@ -180,13 +180,12 @@ export function useKiraSocket(conversationId: string | null) {
           console.error('[WS] ❌ Error parsing message:', error);
         }
       };
-
     } catch (error) {
       console.error('[WS] ❌ Connection setup failed:', error);
       setStatus('error');
       setAuthError(error instanceof Error ? error.message : 'Connection failed');
     }
-  }, [conversationId, isLoaded, isSignedIn, getToken, safeSend, addMessage, setSpeaking, stopMic]);
+  }, [conversationId, isSignedIn, getToken, safeSend, addMessage, setSpeaking, stopMic]);
 
   useEffect(() => {
     if (conversationId) {
@@ -201,12 +200,12 @@ export function useKiraSocket(conversationId: string | null) {
     };
   }, [connect, conversationId, stopMic]);
 
-  return { 
-    status, 
-    startMic, 
-    stopMic, 
-    limitReachedReason, 
+  return {
+    status,
+    startMic,
+    stopMic,
+    limitReachedReason,
     setLimitReachedReason,
-    authError 
+    authError,
   };
 }

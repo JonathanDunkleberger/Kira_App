@@ -16,9 +16,15 @@ const formatTime = (seconds: number) => {
   return `${mins}:${secs}`;
 };
 
-const CallControls = ({ onEndCall, isConnected }: { onEndCall: () => void; isConnected: boolean }) => (
+const CallControls = ({
+  onEndCall,
+  isConnected,
+}: {
+  onEndCall: () => void;
+  isConnected: boolean;
+}) => (
   <div className="flex items-center justify-center gap-4">
-    <button 
+    <button
       onClick={isConnected ? undefined : onEndCall}
       className={`flex h-14 w-14 items-center justify-center rounded-full ${
         isConnected ? 'bg-green-500' : 'bg-red-500'
@@ -30,7 +36,8 @@ const CallControls = ({ onEndCall, isConnected }: { onEndCall: () => void; isCon
 );
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
-  const { status, startMic, stopMic, limitReachedReason, setLimitReachedReason, authError } = useKiraSocket(conversationId);
+  const { status, startMic, stopMic, limitReachedReason, setLimitReachedReason, authError } =
+    useKiraSocket(conversationId);
   const router = useRouter();
   const [timer, setTimer] = useState(0);
 
@@ -66,9 +73,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
         <p className="text-lg text-neutral-500">
           {status === 'connected' ? formatTime(timer) : status}
         </p>
-        {authError && (
-          <p className="text-sm text-red-500 mt-2">{authError}</p>
-        )}
+        {authError && <p className="text-sm text-red-500 mt-2">{authError}</p>}
       </div>
 
       <div className={paywalled ? 'pointer-events-none opacity-40 transition' : ''}>

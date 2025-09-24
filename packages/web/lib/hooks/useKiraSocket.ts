@@ -25,7 +25,11 @@ export function useKiraSocket(conversationId: string | null) {
   }, []);
 
   const playFromQueue = useCallback(() => {
-    if (sourceBufferRef.current && !sourceBufferRef.current.updating && audioQueue.current.length > 0) {
+    if (
+      sourceBufferRef.current &&
+      !sourceBufferRef.current.updating &&
+      audioQueue.current.length > 0
+    ) {
       const chunk = audioQueue.current.shift();
       if (chunk) {
         try {
@@ -161,7 +165,11 @@ export function useKiraSocket(conversationId: string | null) {
               addMessage({ role: 'user', content: message.text });
               break;
             case 'assistant_text_chunk':
-              addMessage({ role: 'assistant', content: message.text || '', isPartial: !message.done });
+              addMessage({
+                role: 'assistant',
+                content: message.text || '',
+                isPartial: !message.done,
+              });
               break;
             case 'tts_start': {
               audioQueue.current = [];
@@ -203,7 +211,17 @@ export function useKiraSocket(conversationId: string | null) {
       setStatus('error');
       setAuthError(error instanceof Error ? error.message : 'Connection failed');
     }
-  }, [conversationId, isLoaded, isSignedIn, getToken, safeSend, addMessage, setSpeaking, stopMic, playFromQueue]);
+  }, [
+    conversationId,
+    isLoaded,
+    isSignedIn,
+    getToken,
+    safeSend,
+    addMessage,
+    setSpeaking,
+    stopMic,
+    playFromQueue,
+  ]);
 
   useEffect(() => {
     // Setup audio pipeline once

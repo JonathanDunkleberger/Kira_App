@@ -326,7 +326,10 @@ wss.on("connection", async (ws, req) => {
       if (userRecord?.subscriptions?.length) isPro = true;
       console.log(`[Auth] User ${userId} authenticated. Pro=${isPro}`);
     } catch (err) {
-      console.error("[Auth] Token verification failed:", (err as any)?.message || err);
+      console.error(
+        "[Auth] Token verification failed:",
+        (err as any)?.message || err
+      );
       ws.close(4001, "Authentication failed");
       return;
     }

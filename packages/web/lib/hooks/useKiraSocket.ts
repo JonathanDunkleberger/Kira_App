@@ -282,7 +282,16 @@ export function useKiraSocket(conversationId: string | null) {
         }
       }
     };
-  }, [conversationId, fetchToken, limitReachedReason, playFromQueue, setupAudioPlayback, stopMic, addMessage, setSpeaking]);
+  }, [
+    conversationId,
+    fetchToken,
+    limitReachedReason,
+    playFromQueue,
+    setupAudioPlayback,
+    stopMic,
+    addMessage,
+    setSpeaking,
+  ]);
 
   useEffect(() => {
     // Only attempt connect when we have a conversationId

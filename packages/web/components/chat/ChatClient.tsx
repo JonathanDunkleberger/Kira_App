@@ -16,45 +16,37 @@ const formatTime = (seconds: number) => {
   return `${mins}:${secs}`;
 };
 
-const CallControls = ({ onEndCall }: { onEndCall: () => void }) => (
+const CallControls = ({ onEndCall, isConnected }: { onEndCall: () => void; isConnected: boolean }) => (
   <div className="flex items-center justify-center gap-4">
-    <button className="flex h-14 w-14 cursor-not-allowed items-center justify-center rounded-full bg-neutral-500/20 text-white opacity-50">
-      <Mic size={24} />
-    </button>
-    <button
-      onClick={onEndCall}
-      className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white transition-colors hover:bg-red-600"
+    <button 
+      onClick={isConnected ? undefined : onEndCall}
+      className={`flex h-14 w-14 items-center justify-center rounded-full ${
+        isConnected ? 'bg-green-500' : 'bg-red-500'
+      } text-white transition-colors hover:bg-red-600`}
     >
-      <PhoneOff size={24} />
+      {isConnected ? <Mic size={24} /> : <PhoneOff size={24} />}
     </button>
   </div>
 );
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
-  const { status, startMic, stopMic, limitReachedReason } = useKiraSocket(conversationId);
+  const { status, startMic, stopMic, limitReachedReason, setLimitReachedReason, authError } = useKiraSocket(conversationId);
   const router = useRouter();
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (status === 'connected') {
-      // Defer mic start very slightly to ensure media pipeline prepared
-      const openTimeout = setTimeout(() => {
+      setTimeout(() => {
         startMic();
-      }, 50);
-      const audioEl = document.getElementById('tts-audio') as HTMLAudioElement;
-      if (audioEl) {
-        audioEl.muted = false;
-        audioEl.play?.().catch(() => {});
-      }
-      interval = setInterval(() => setTimer((p) => p + 1), 1000);
-      return () => {
-        clearTimeout(openTimeout);
-        clearInterval(interval);
-      };
+      }, 500);
+      interval = setInterval(() => setTimer((prev) => prev + 1), 1000);
     } else if (status === 'disconnected') {
       stopMic();
     }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [status, startMic, stopMic]);
 
   const handleEndCall = () => {
@@ -66,12 +58,17 @@ export default function ChatClient({ conversationId }: { conversationId: string 
   const paywalled = !!limitReachedReason;
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
-      <audio id="tts-audio" className="hidden" autoPlay muted />
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-4">
+      <audio id="tts-audio" className="hidden" autoPlay />
 
       <div className="absolute top-16 text-center">
         <h2 className="text-2xl font-medium">Kira</h2>
-        <p className="text-lg text-neutral-500">{formatTime(timer)}</p>
+        <p className="text-lg text-neutral-500">
+          {status === 'connected' ? formatTime(timer) : status}
+        </p>
+        {authError && (
+          <p className="text-sm text-red-500 mt-2">{authError}</p>
+        )}
       </div>
 
       <div className={paywalled ? 'pointer-events-none opacity-40 transition' : ''}>
@@ -80,19 +77,14 @@ export default function ChatClient({ conversationId }: { conversationId: string 
 
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2">
         <div className={paywalled ? 'pointer-events-none opacity-40' : ''}>
-          <CallControls onEndCall={handleEndCall} />
+          <CallControls onEndCall={handleEndCall} isConnected={status === 'connected'} />
         </div>
       </div>
 
       <PaywallModal
         reason={limitReachedReason}
-        onUpgrade={() => {
-          // Placeholder: integrate with subscription checkout
-          window.location.href = '/billing';
-        }}
-        onClose={() => {
-          // Allow user to dismiss but keep disabled state; optional: route home
-        }}
+        onUpgrade={() => (window.location.href = '/account/billing')}
+        onClose={() => setLimitReachedReason(null)}
         isPro={false}
       />
     </div>

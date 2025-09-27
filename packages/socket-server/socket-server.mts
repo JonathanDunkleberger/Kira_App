@@ -288,14 +288,14 @@ async function initDeepgramWithMode() {
   };
   const minimal = { ...base };
   const attempts: any[] = [];
-  // Prefer explicit config with relaxed pauses and no endpointing
-  attempts.push(await attemptDeepgramLive("explicit", explicit));
+  // Try auto first — it's the most stable
+  attempts.push(
+    await attemptDeepgramLive("auto", { model: DG_MODEL, language: "en-US" })
+  );
+  if (!attempts[attempts.length - 1].ok)
+    attempts.push(await attemptDeepgramLive("explicit", explicit));
   if (!attempts[attempts.length - 1].ok)
     attempts.push(await attemptDeepgramLive("minimal", minimal));
-  if (!attempts[attempts.length - 1].ok)
-    attempts.push(
-      await attemptDeepgramLive("auto", { model: DG_MODEL, language: "en-US" })
-    );
   return { mode: "fallback", attempts } as const;
 }
 
@@ -518,7 +518,10 @@ wss.on("connection", async (ws, req) => {
         });
         history = recent.reverse();
       } catch (e) {
-        console.warn("[Memory] Failed to load history (continuing without):", e);
+        console.warn(
+          "[Memory] Failed to load history (continuing without):",
+          e
+        );
       }
 
       const messagesForAPI: Array<{
@@ -590,7 +593,10 @@ wss.on("connection", async (ws, req) => {
               }
             },
             (error) => {
-              console.error("[Server Log] speakSsmlAsync error callback:", error);
+              console.error(
+                "[Server Log] speakSsmlAsync error callback:",
+                error
+              );
               reject(error);
             }
           );
@@ -658,24 +664,19 @@ wss.on("connection", async (ws, req) => {
     // Update buffer on partials
     deepgramLive.on("transcriptReceived", (dgMsg: any) => {
       const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      if (typeof text === "string" && text.length) {
-        pendingTranscript = text;
-        // Optionally mirror interim transcript to client UI
-        safeSend({ t: "transcript", text });
-      }
+      if (text) pendingTranscript = text;
     });
-    // Flush on utterance end
+    // Flush on utterance end variants
     const flushHandler = async () => {
       const text = (pendingTranscript || "").trim();
-      if (text.length > 0) {
-        console.log("[Server Log] Finalized transcript:", text);
+      if (text) {
         await sendTranscriptToOpenAI(text);
         pendingTranscript = "";
       }
     };
-    deepgramLive.on("UtteranceEnd", flushHandler);
-    // Some SDK variants emit lowercase event
-    deepgramLive.on("utteranceEnd", flushHandler);
+    ["UtteranceEnd", "utterance_end"].forEach((evt) => {
+      deepgramLive.on(evt, flushHandler);
+    });
   }
 
   ws.on("message", (message: Buffer, isBinary) => {

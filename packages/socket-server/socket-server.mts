@@ -415,33 +415,15 @@ wss.on("connection", async (ws, req) => {
         ? info.sessionSeconds
         : info.secondsUsedToday;
       if (prisma.dailyUsage) {
-        const where = (
-          hasUser
-            ? { userId_day: { userId: info.userId as string, day } }
-            : { guestId_day: { guestId: (info as any).guestId as string, day } }
-        ) as any;
-        const create = (
-          hasUser
-            ? {
-                userId: info.userId as string,
-                day,
-                secondsUsed: incrementAmount,
-              }
-            : {
-                guestId: (info as any).guestId as string,
-                day,
-                secondsUsed: incrementAmount,
-              }
-        ) as any;
+        const where = (hasUser
+          ? { userId_day: { userId: info.userId as string, day } }
+          : { guestId_day: { guestId: (info as any).guestId as string, day } }) as any;
+        const create = (hasUser
+          ? { userId: info.userId as string, day, secondsUsed: incrementAmount }
+          : { guestId: (info as any).guestId as string, day, secondsUsed: incrementAmount }) as any;
         prisma.dailyUsage
-          .upsert({
-            where,
-            update: { secondsUsed: { increment: incrementAmount } },
-            create,
-          })
-          .catch((e: any) =>
-            console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e)
-          );
+          .upsert({ where, update: { secondsUsed: { increment: incrementAmount } }, create })
+          .catch((e: any) => console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e));
       }
     }
     activeSessions.delete(ws);

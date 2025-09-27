@@ -8,13 +8,16 @@ import { useKiraSocket } from '../../lib/hooks/useKiraSocket';
 import { PaywallModal } from './PaywallModal';
 
 const formatTime = (seconds: number) => {
-  const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const mins = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, '0');
   const secs = (seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
 };
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
-  const { status, startMic, stopMic, limitReachedReason, authError } = useKiraSocket(conversationId);
+  const { status, startMic, stopMic, limitReachedReason, authError } =
+    useKiraSocket(conversationId);
   const router = useRouter();
   const [timer, setTimer] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -46,7 +49,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
       return newMutedState;
     });
   }, [startMic, stopMic]);
-  
+
   const paywalled = !!limitReachedReason;
 
   return (
@@ -66,7 +69,9 @@ export default function ChatClient({ conversationId }: { conversationId: string 
       </div>
 
       <div className="fixed bottom-16 left-1/2 -translate-x-1/2">
-        <div className={`flex items-center justify-center gap-4 ${paywalled ? 'pointer-events-none opacity-40' : ''}`}>
+        <div
+          className={`flex items-center justify-center gap-4 ${paywalled ? 'pointer-events-none opacity-40' : ''}`}
+        >
           <button
             onClick={handleToggleMute}
             className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-500/30 text-white transition-colors hover:bg-neutral-500/50"
@@ -82,11 +87,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
         </div>
       </div>
 
-      <PaywallModal
-        reason={limitReachedReason}
-        onClose={handleEndCall}
-        isPro={false}
-      />
+      <PaywallModal reason={limitReachedReason} onClose={handleEndCall} isPro={false} />
     </div>
   );
 }

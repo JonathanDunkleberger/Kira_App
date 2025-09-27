@@ -274,9 +274,9 @@ async function initDeepgramWithMode() {
     language: "en-US",
     smart_format: true,
     vad_events: true,
-    interim_results: false,
-    // Give users more room to ramble (5 seconds pause)
-    utterance_end_ms: 5000,
+    interim_results: true, // stream partial text for buffering
+    // Wait up to 10 seconds of silence before finalizing an utterance
+    utterance_end_ms: 10000,
     // Disable aggressive auto-endpointing; let our logic decide
     endpointing: "none",
   };
@@ -418,15 +418,33 @@ wss.on("connection", async (ws, req) => {
         ? info.sessionSeconds
         : info.secondsUsedToday;
       if (prisma.dailyUsage) {
-        const where = (hasUser
-          ? { userId_day: { userId: info.userId as string, day } }
-          : { guestId_day: { guestId: (info as any).guestId as string, day } }) as any;
-        const create = (hasUser
-          ? { userId: info.userId as string, day, secondsUsed: incrementAmount }
-          : { guestId: (info as any).guestId as string, day, secondsUsed: incrementAmount }) as any;
+        const where = (
+          hasUser
+            ? { userId_day: { userId: info.userId as string, day } }
+            : { guestId_day: { guestId: (info as any).guestId as string, day } }
+        ) as any;
+        const create = (
+          hasUser
+            ? {
+                userId: info.userId as string,
+                day,
+                secondsUsed: incrementAmount,
+              }
+            : {
+                guestId: (info as any).guestId as string,
+                day,
+                secondsUsed: incrementAmount,
+              }
+        ) as any;
         prisma.dailyUsage
-          .upsert({ where, update: { secondsUsed: { increment: incrementAmount } }, create })
-          .catch((e: any) => console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e));
+          .upsert({
+            where,
+            update: { secondsUsed: { increment: incrementAmount } },
+            create,
+          })
+          .catch((e: any) =>
+            console.warn("[Usage] Failed to upsert DailyUsage on cleanup:", e)
+          );
       }
     }
     activeSessions.delete(ws);
@@ -470,187 +488,195 @@ wss.on("connection", async (ws, req) => {
   }
 
   let assistantBusy = false;
-  if (deepgramLive)
-    deepgramLive.on("Results", async (data: any) => {
+  let pendingTranscript = "";
+
+  // Helper to respond using current conversation memory and TTS
+  const sendTranscriptToOpenAI = async (finalText: string) => {
+    try {
+      const session = activeSessions.get(ws);
+      if (!finalText || !finalText.trim()) return;
+      if (assistantBusy) {
+        console.log("[Server Log] Skipping; assistant is busy.");
+        return;
+      }
+      if (session?.limitReached) return;
+
+      assistantBusy = true;
+      safeSend({ t: "transcript", text: finalText });
+
+      await prisma.message
+        .create({ data: { conversationId, role: "user", text: finalText } })
+        .catch((e) => console.error("[DB] Failed to save user message:", e));
+
+      // Load last 10 messages
+      let history: { role: string; text: string }[] = [];
       try {
-        const session = activeSessions.get(ws);
+        const recent = await prisma.message.findMany({
+          where: { conversationId },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        });
+        history = recent.reverse();
+      } catch (e) {
+        console.warn("[Memory] Failed to load history (continuing without):", e);
+      }
 
-        const transcript =
-          data?.channel?.alternatives?.[0]?.transcript?.trim?.() || "";
-        if (!transcript) return;
-        if (assistantBusy) {
-          console.log(
-            "[Server Log] Ignoring transcript while assistant busy:",
-            transcript
-          );
-          return;
-        }
+      const messagesForAPI: Array<{
+        role: "system" | "user" | "assistant";
+        content: string;
+      }> = [
+        { role: "system", content: PERSONALITY_PROMPT },
+        ...history.map((m) => ({
+          role: (m.role === "assistant" ? "assistant" : "user") as
+            | "user"
+            | "assistant",
+          content: m.text,
+        })),
+      ];
+      let fullResponse = "";
 
-        // If limit already reached (interval closed connection), ignore transcripts
-        if (session?.limitReached) return;
-        console.log(`[Server Log] Received transcript: "${transcript}"`);
-        assistantBusy = true;
-        safeSend({ t: "transcript", text: transcript });
+      const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
+        AZURE_SPEECH_KEY,
+        AZURE_SPEECH_REGION
+      );
+      speechConfig.speechSynthesisOutputFormat =
+        AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
+      speechConfig.speechSynthesisVoiceName = AZURE_TTS_VOICE;
+      const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(
+        speechConfig,
+        undefined
+      );
 
-        await prisma.message
-          .create({ data: { conversationId, role: "user", text: transcript } })
-          .catch((e) => console.error("[DB] Failed to save user message:", e));
+      function escapeXml(s: string) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&apos;");
+      }
 
-        // --- Conversation History (Memory) ---
-        // Fetch last 10 messages (including the one we just saved) in chronological order.
-        let history: { role: string; text: string }[] = [];
-        try {
-          const recent = await prisma.message.findMany({
-            where: { conversationId },
-            orderBy: { createdAt: "desc" },
-            take: 10,
-          });
-          history = recent.reverse(); // chronological (oldest -> newest)
-        } catch (e) {
-          console.warn(
-            "[Memory] Failed to load history (continuing without):",
-            e
-          );
-        }
-
-        const messagesForAPI: Array<{
-          role: "system" | "user" | "assistant";
-          content: string;
-        }> = [
-          { role: "system", content: PERSONALITY_PROMPT },
-          ...history.map((m) => ({
-            role: (m.role === "assistant" ? "assistant" : "user") as
-              | "user"
-              | "assistant",
-            content: m.text,
-          })),
-        ];
-        let fullResponse = "";
-
-        const speechConfig = AzureSpeechSDK.SpeechConfig.fromSubscription(
-          AZURE_SPEECH_KEY,
-          AZURE_SPEECH_REGION
-        );
-        speechConfig.speechSynthesisOutputFormat =
-          AzureSpeechSDK.SpeechSynthesisOutputFormat.Webm24Khz16BitMonoOpus;
-        speechConfig.speechSynthesisVoiceName = AZURE_TTS_VOICE;
-        const synthesizer = new AzureSpeechSDK.SpeechSynthesizer(
-          speechConfig,
-          undefined
-        );
-
-        function escapeXml(s: string) {
-          return s
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&apos;");
-        }
-
-        const synthesizeSentence = (sentence: string): Promise<void> => {
-          const cleaned = cleanTextForTTS(sentence);
-          if (!cleaned) return Promise.resolve();
-          const ssml = `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xml:lang="en-US"><voice name="${AZURE_TTS_VOICE}"><prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">${escapeXml(
-            cleaned
-          )}</prosody></voice></speak>`;
-          return new Promise((resolve, reject) => {
-            synthesizer.speakSsmlAsync(
-              ssml,
-              (result) => {
-                if (
-                  result.reason ===
-                  AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
-                ) {
-                  if ((result as any).audioData) {
-                    console.log(
-                      `[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`
-                    );
-                    safeSend({
-                      t: "tts_chunk",
-                      b64: Buffer.from((result as any).audioData).toString(
-                        "base64"
-                      ),
-                    });
-                  }
-                  resolve();
-                } else {
-                  console.error(
-                    `[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`
+      const synthesizeSentence = (sentence: string): Promise<void> => {
+        const cleaned = cleanTextForTTS(sentence);
+        if (!cleaned) return Promise.resolve();
+        const ssml = `<?xml version="1.0" encoding="UTF-8"?>\n<speak version="1.0" xml:lang="en-US"><voice name="${AZURE_TTS_VOICE}"><prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">${escapeXml(
+          cleaned
+        )}</prosody></voice></speak>`;
+        return new Promise((resolve, reject) => {
+          synthesizer.speakSsmlAsync(
+            ssml,
+            (result) => {
+              if (
+                result.reason ===
+                AzureSpeechSDK.ResultReason.SynthesizingAudioCompleted
+              ) {
+                if ((result as any).audioData) {
+                  console.log(
+                    `[Server Log] Received audio chunk. Size: ${result.audioData.byteLength}`
                   );
-                  reject(new Error(result.errorDetails));
+                  safeSend({
+                    t: "tts_chunk",
+                    b64: Buffer.from((result as any).audioData).toString(
+                      "base64"
+                    ),
+                  });
                 }
-              },
-              (error) => {
+                resolve();
+              } else {
                 console.error(
-                  "[Server Log] speakSsmlAsync error callback:",
-                  error
+                  `[Server Log] Azure TTS Error. Reason: ${result.reason}. Details: ${result.errorDetails}`
                 );
-                reject(error);
+                reject(new Error(result.errorDetails));
               }
-            );
-          });
-        };
-
-        try {
-          console.log("[Server Log] Sending transcript to OpenAI...");
-          const stream = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: messagesForAPI,
-            stream: true,
-          });
-
-          for await (const chunk of stream) {
-            const content = (chunk as any).choices[0]?.delta?.content || "";
-            if (content) {
-              fullResponse += content;
-              safeSend({ t: "assistant_text_chunk", text: content });
+            },
+            (error) => {
+              console.error("[Server Log] speakSsmlAsync error callback:", error);
+              reject(error);
             }
-          }
-          console.log(
-            `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
           );
+        });
+      };
 
-          const cleanedFull = cleanTextForTTS(fullResponse);
-          if (cleanedFull) {
-            safeSend({ t: "speak", on: true });
-            safeSend({ t: "tts_start" });
-            console.log(
-              `[Server Log] Synthesizing full response (${cleanedFull.length} chars).`
-            );
-            try {
-              await synthesizeSentence(cleanedFull);
-            } catch (e) {
-              console.error("[TTS] Full response synthesis failed:", e);
-            }
+      try {
+        console.log("[Server Log] Sending transcript to OpenAI...");
+        const stream = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: messagesForAPI,
+          stream: true,
+        });
+
+        for await (const chunk of stream) {
+          const content = (chunk as any).choices[0]?.delta?.content || "";
+          if (content) {
+            fullResponse += content;
+            safeSend({ t: "assistant_text_chunk", text: content });
           }
-        } catch (err) {
-          console.error("[Server Log] OpenAI/TTS Error:", err);
-          safeSend({ t: "error", message: "Sorry, I had trouble responding." });
-        } finally {
-          safeSend({ t: "tts_end" });
-          synthesizer.close();
-          if (fullResponse) {
-            await prisma.message
-              .create({
-                data: { conversationId, role: "assistant", text: fullResponse },
-              })
-              .catch((e) =>
-                console.error("[DB] Failed to save assistant message:", e)
-              );
-          }
-          safeSend({ t: "speak", on: false });
-          assistantBusy = false;
         }
-      } catch (outerErr) {
-        console.error(
-          "[Server Log] FATAL processing transcript event:",
-          outerErr
+        console.log(
+          `[Server Log] OpenAI stream finished. Full response: "${fullResponse}"`
         );
-        safeSend({ t: "error", message: "Internal processing error." });
+
+        const cleanedFull = cleanTextForTTS(fullResponse);
+        if (cleanedFull) {
+          safeSend({ t: "speak", on: true });
+          safeSend({ t: "tts_start" });
+          console.log(
+            `[Server Log] Synthesizing full response (${cleanedFull.length} chars).`
+          );
+          try {
+            await synthesizeSentence(cleanedFull);
+          } catch (e) {
+            console.error("[TTS] Full response synthesis failed:", e);
+          }
+        }
+      } catch (err) {
+        console.error("[Server Log] OpenAI/TTS Error:", err);
+        safeSend({ t: "error", message: "Sorry, I had trouble responding." });
+      } finally {
+        safeSend({ t: "tts_end" });
+        synthesizer.close();
+        if (fullResponse) {
+          await prisma.message
+            .create({
+              data: { conversationId, role: "assistant", text: fullResponse },
+            })
+            .catch((e) =>
+              console.error("[DB] Failed to save assistant message:", e)
+            );
+        }
+        safeSend({ t: "speak", on: false });
         assistantBusy = false;
       }
+    } catch (outerErr) {
+      console.error("[Server Log] FATAL processing utterance:", outerErr);
+      safeSend({ t: "error", message: "Internal processing error." });
+      assistantBusy = false;
+    }
+  };
+
+  if (deepgramLive) {
+    // Update buffer on partials
+    deepgramLive.on("transcriptReceived", (dgMsg: any) => {
+      const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
+      if (typeof text === "string" && text.length) {
+        pendingTranscript = text;
+        // Optionally mirror interim transcript to client UI
+        safeSend({ t: "transcript", text });
+      }
     });
+    // Flush on utterance end
+    const flushHandler = async () => {
+      const text = (pendingTranscript || "").trim();
+      if (text.length > 0) {
+        console.log("[Server Log] Finalized transcript:", text);
+        await sendTranscriptToOpenAI(text);
+        pendingTranscript = "";
+      }
+    };
+    deepgramLive.on("UtteranceEnd", flushHandler);
+    // Some SDK variants emit lowercase event
+    deepgramLive.on("utteranceEnd", flushHandler);
+  }
 
   ws.on("message", (message: Buffer, isBinary) => {
     if (!isBinary || !deepgramLive) return;

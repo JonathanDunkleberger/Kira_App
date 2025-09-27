@@ -275,8 +275,10 @@ async function initDeepgramWithMode() {
     smart_format: true,
     vad_events: true,
     interim_results: false,
-    // Increased to allow longer thinking pauses before finalizing
-    utterance_end_ms: 2500,
+    // Give users more room to ramble (5 seconds pause)
+    utterance_end_ms: 5000,
+    // Disable aggressive auto-endpointing; let our logic decide
+    endpointing: "none",
   };
   const explicit = {
     ...base,
@@ -285,14 +287,15 @@ async function initDeepgramWithMode() {
     channels: 1,
   };
   const minimal = { ...base };
-  const auto = { model: DG_MODEL, language: "en-US" };
-  // Reordered: try auto first since it succeeds.
   const attempts: any[] = [];
-  attempts.push(await attemptDeepgramLive("auto", auto));
-  if (!attempts[attempts.length - 1].ok)
-    attempts.push(await attemptDeepgramLive("explicit", explicit));
+  // Prefer explicit config with relaxed pauses and no endpointing
+  attempts.push(await attemptDeepgramLive("explicit", explicit));
   if (!attempts[attempts.length - 1].ok)
     attempts.push(await attemptDeepgramLive("minimal", minimal));
+  if (!attempts[attempts.length - 1].ok)
+    attempts.push(
+      await attemptDeepgramLive("auto", { model: DG_MODEL, language: "en-US" })
+    );
   return { mode: "fallback", attempts } as const;
 }
 

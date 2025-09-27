@@ -274,11 +274,11 @@ async function initDeepgramWithMode() {
     language: "en-US",
     smart_format: true,
     vad_events: true,
-    interim_results: true, // stream partial text for buffering
-    // Wait up to 10 seconds of silence before finalizing an utterance
-    utterance_end_ms: 10000,
-    // Disable aggressive auto-endpointing; let our logic decide
-    endpointing: "none",
+    interim_results: process.env.DG_INTERIM_RESULTS === "true",
+    // Configurable silence tolerance (default: 10000ms)
+    utterance_end_ms: parseInt(process.env.DG_UTTERANCE_END_MS ?? "10000", 10),
+    // Configurable endpointing mode (default: "none")
+    endpointing: process.env.DG_ENDPOINTING ?? "none",
   };
   const explicit = {
     ...base,

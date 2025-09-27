@@ -2,7 +2,7 @@
 
 Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebSocket server for STT → LLM → TTS. This README documents the *current* monorepo layout and deployment model (Vercel + Render).
 
-> Live demo (frontend): https://kira-ai-2.vercel.app
+> Official site: <https://www.xoxokira.com>
 
 ---
 
@@ -69,7 +69,7 @@ Only the websocket server needs the STT / TTS secrets; keep them out of `NEXT_PU
 
 Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency conversational UX of apps like Sesami AI. The goal: eliminate alt‑tab friction so you can talk to an AI while gaming, reading, or watching media—hands free.
 
-**Live Demo:** <https://kira-ai-2.vercel.app>
+**Live Demo:** <https://www.xoxokira.com>
 
 ---
 
@@ -203,7 +203,7 @@ DIRECT_URL=
 STRIPE_SECRET_KEY=
 STRIPE_PRICE_ID=
 STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_APP_URL=https://kira-ai-2.vercel.app
+NEXT_PUBLIC_APP_URL=https://www.xoxokira.com
 NEXT_PUBLIC_WEBSOCKET_URL=wss://kira-voice-ws.onrender.com
 ```
 

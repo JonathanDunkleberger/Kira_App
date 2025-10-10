@@ -1,6 +1,6 @@
 # ✨ Kira AI — Monorepo (Web + Realtime Voice Server)
 
-Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebSocket server for STT → LLM → TTS. This README documents the *current* monorepo layout and deployment model (Vercel + Render).
+Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebSocket server for STT → LLM → TTS. This README documents the _current_ monorepo layout and deployment model (Vercel + Render).
 
 > Official site: <https://www.xoxokira.com>
 
@@ -8,11 +8,11 @@ Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebS
 
 ## 📦 Packages
 
-| Path | Name | Purpose |
-| ---- | ---- | ------- |
-| `packages/web` | `web` | Next.js App Router frontend (UI, auth, billing UX) |
+| Path                     | Name            | Purpose                                                                         |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------- |
+| `packages/web`           | `web`           | Next.js App Router frontend (UI, auth, billing UX)                              |
 | `packages/socket-server` | `socket-server` | Plain Node WS server: Deepgram STT, OpenAI responses, Azure TTS, usage metering |
-| `prisma/` (root) | — | Shared Prisma schema + migrations used by both packages |
+| `prisma/` (root)         | —               | Shared Prisma schema + migrations used by both packages                         |
 
 Root `package.json` exposes convenience scripts for parallel dev.
 
@@ -46,23 +46,24 @@ Package‑local scripts follow conventional names (`npm run build --workspace=so
 
 Copy `.env.example` → `.env.local`. Frontend only sees `NEXT_PUBLIC_*`.
 
-| Category | Vars |
-| -------- | ---- |
-| Auth (Clerk) | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` |
-| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` (server only) |
-| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL` |
-| Deepgram STT | `DEEPGRAM_API_KEY` |
-| Azure TTS | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` |
-| ElevenLabs (optional) | `TTS_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` |
-| Usage limits | `FREE_DAILY_LIMIT_SECONDS`, `FREE_TRIAL_SECONDS` (names may evolve) |
-| Realtime | `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:10000) |
-| Database | `DATABASE_URL` (Postgres for Prisma) |
+| Category              | Vars                                                                          |
+| --------------------- | ----------------------------------------------------------------------------- |
+| Auth (Clerk)          | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`           |
+| Stripe                | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` (server only) |
+| OpenAI                | `OPENAI_API_KEY`, `OPENAI_MODEL`                                              |
+| Deepgram STT          | `DEEPGRAM_API_KEY`                                                            |
+| Azure TTS             | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`                                     |
+| ElevenLabs (optional) | `TTS_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`        |
+| Usage limits          | `FREE_DAILY_LIMIT_SECONDS`, `FREE_TRIAL_SECONDS` (names may evolve)           |
+| Realtime              | `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:10000)                       |
+| Database              | `DATABASE_URL` (Postgres for Prisma)                                          |
 
 Only the websocket server needs the STT / TTS secrets; keep them out of `NEXT_PUBLIC_*`.
 
 ---
 
 ## 🔁 Realtime Event Protocol (Representative)
+
 ﻿# ✨ Kira AI — Voice‑First Media Companion
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJonathanDunkleberger%2FKira_AI_2)
@@ -85,16 +86,16 @@ Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency
 
 ## Tech Stack
 
-| Area | Technology / Service |
-| :--- | :--- |
-| **Frontend** | Next.js 14 (App Router), React 18, Tailwind CSS, Vercel |
-| **Realtime Backend** | Node.js, `ws` WebSocket server (Render) |
-| **Database** | Supabase (PostgreSQL) + Prisma ORM |
-| **Auth** | Clerk |
-| **Billing** | Stripe (Checkout + Portal + Webhooks) |
-| **Speech-to-Text** | Deepgram Live |
-| **Language Model** | OpenAI (streamed responses) |
-| **Text-to-Speech** | Azure Speech (per-sentence streaming) |
+| Area                 | Technology / Service                                    |
+| :------------------- | :------------------------------------------------------ |
+| **Frontend**         | Next.js 14 (App Router), React 18, Tailwind CSS, Vercel |
+| **Realtime Backend** | Node.js, `ws` WebSocket server (Render)                 |
+| **Database**         | Supabase (PostgreSQL) + Prisma ORM                      |
+| **Auth**             | Clerk                                                   |
+| **Billing**          | Stripe (Checkout + Portal + Webhooks)                   |
+| **Speech-to-Text**   | Deepgram Live                                           |
+| **Language Model**   | OpenAI (streamed responses)                             |
+| **Text-to-Speech**   | Azure Speech (per-sentence streaming)                   |
 
 ---
 
@@ -102,11 +103,11 @@ Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency
 
 Monorepo layout:
 
-| Path | Description |
-| ---- | ----------- |
-| `packages/web` | Next.js frontend (UI, auth, billing routes, static assets) |
+| Path                     | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
+| `packages/web`           | Next.js frontend (UI, auth, billing routes, static assets)           |
 | `packages/socket-server` | Long-running WebSocket server orchestrating STT → LLM → TTS pipeline |
-| `prisma/` | Shared Prisma schema & migrations |
+| `prisma/`                | Shared Prisma schema & migrations                                    |
 
 The WebSocket server manages: audio ingestion, transcription buffering, LLM stream aggregation, sentence boundary detection, Azure TTS synthesis, usage accounting, and event emission back to the client.
 
@@ -176,6 +177,7 @@ Fill in service keys (leave `NEXT_PUBLIC_*` only in the root file). Never commit
 ```bash
 pnpm dev
 ```
+
 Frontend: <http://localhost:3000>  
 WebSocket server: ws://localhost:10000 (health: GET <http://localhost:10000/healthz>)
 
@@ -194,6 +196,7 @@ pnpm run start      # start production web
 ## Environment Reference (Union of Examples)
 
 Frontend `.env.example`:
+
 ```text
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
@@ -208,6 +211,7 @@ NEXT_PUBLIC_WEBSOCKET_URL=wss://kira-voice-ws.onrender.com
 ```
 
 Socket server `.env.example`:
+
 ```text
 DATABASE_URL=
 DIRECT_URL=
@@ -244,22 +248,30 @@ Keep STT / LLM / TTS secrets out of any `NEXT_PUBLIC_*` names.
 
 1. New Web Service → Root Directory: `packages/socket-server`.
 1. Build Command:
+
 ```bash
 pnpm install --filter socket-server... && pnpm --filter socket-server run build
 ```
+
 1. Start Command:
+
 ```bash
 pnpm --filter socket-server start
 ```
+
 1. Set env vars: `DATABASE_URL`, `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, Stripe keys, Clerk secrets.
 1. Copy deployed wss URL into Vercel `NEXT_PUBLIC_WEBSOCKET_URL`.
 
 ### Prisma
+
 Run migrations anywhere both services can reach the DB:
+
 ```bash
 pnpm --filter web prisma:deploy
 ```
+
 or
+
 ```bash
 pnpm --filter socket-server prisma:deploy
 ```
@@ -268,12 +280,12 @@ pnpm --filter socket-server prisma:deploy
 
 ## Testing & Quality
 
-| Command | Purpose |
-| ------- | ------- |
-| `pnpm --filter web lint` | Lint code (web) |
-| `pnpm --filter web test` | Unit tests (Vitest) |
-| `pnpm --filter web typecheck` | TypeScript diagnostics |
-| `pnpm --filter web build` | Build Next.js app |
+| Command                             | Purpose                |
+| ----------------------------------- | ---------------------- |
+| `pnpm --filter web lint`            | Lint code (web)        |
+| `pnpm --filter web test`            | Unit tests (Vitest)    |
+| `pnpm --filter web typecheck`       | TypeScript diagnostics |
+| `pnpm --filter web build`           | Build Next.js app      |
 | `pnpm --filter socket-server build` | Compile server TS → JS |
 
 Add Playwright tests as needed for end-to-end voice flows.
@@ -283,6 +295,7 @@ Add Playwright tests as needed for end-to-end voice flows.
 ## Security & Secrets
 
 History was scrubbed to remove an accidental code dump. If rotating keys:
+
 1. Revoke old Azure / OpenAI / Stripe / Clerk / Supabase keys.
 2. Issue new keys; store only in appropriate `.env.local` / hosting provider dashboard.
 3. Never commit raw dumps containing secrets.
@@ -290,6 +303,7 @@ History was scrubbed to remove an accidental code dump. If rotating keys:
 ---
 
 ## Roadmap (Sample)
+
 1. Conversation persistence + titles.
 2. Rich memory window / context summarization.
 3. Improved adaptive VAD + silence trimming.
@@ -299,21 +313,26 @@ History was scrubbed to remove an accidental code dump. If rotating keys:
 ---
 
 ## Contributing
+
 PRs welcome. Before submitting:
+
 ```bash
 pnpm --filter web lint
 pnpm --filter web typecheck
 pnpm --filter web test
 ```
+
 Document any new env var in BOTH example files.
 
 ---
 
 ## License
+
 MIT — see `LICENSE`.
 
 ---
 
 ## Attribution / Inspiration
+
 Inspired by modern low-latency conversational assistants (e.g., Sesami AI) emphasizing real-time bidirectional streaming UX.
 

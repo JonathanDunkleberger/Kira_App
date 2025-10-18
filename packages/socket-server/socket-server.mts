@@ -309,6 +309,7 @@ wss.on("connection", async (ws, req) => {
   const guestId = url.searchParams.get("guestId");
 
   if (!conversationId) {
+    console.warn("[WS] Closing: missing conversationId in query params");
     ws.close(1008, "Missing conversationId");
     return;
   }
@@ -338,7 +339,11 @@ wss.on("connection", async (ws, req) => {
       return;
     }
   } else {
-    console.log(`[Auth] Guest user connected with guestId: ${guestId}`);
+    console.log(
+      `[Auth] Guest user connected with guestId: ${guestId} (token present: ${Boolean(
+        token
+      )})`
+    );
   }
 
   // Ensure conversation exists (id may come from client for continuity)
@@ -680,18 +685,44 @@ wss.on("connection", async (ws, req) => {
   }
 
   ws.on("message", (message: Buffer, isBinary) => {
-    if (!isBinary || !deepgramLive) return;
-    audioChunkCount++;
-    totalBytesSent += message.length;
+    if (isBinary) {
+      if (!deepgramLive) return;
+      audioChunkCount++;
+      totalBytesSent += message.length;
+      try {
+        if ((deepgramLive as any).getReadyState?.() === 1)
+          (deepgramLive as any).send(message);
+      } catch (err) {
+        console.error("[DG] send error", (err as any)?.message || err);
+      }
+      return;
+    }
+
+    // Text message handling (e.g., EOU)
     try {
-      if ((deepgramLive as any).getReadyState?.() === 1)
-        (deepgramLive as any).send(message);
-    } catch (err) {
-      console.error("[DG] send error", (err as any)?.message || err);
+      const text = message.toString("utf8");
+      const data = JSON.parse(text);
+      if (data?.t === "eou") {
+        console.log("[WS] Received EOU from client; forwarding to Deepgram.");
+        try {
+          if ((deepgramLive as any)?.getReadyState?.() === 1) {
+            (deepgramLive as any).send(
+              JSON.stringify({ type: "EndOfUtterance" })
+            );
+          }
+        } catch (e) {
+          console.warn("[DG] Failed to forward EndOfUtterance:", e);
+        }
+      }
+    } catch (e) {
+      console.warn("[WS] Ignored non-JSON message:", e);
     }
   });
-  ws.on("close", () => {
-    console.log("[Server Log] Client disconnected.");
+  ws.on("close", (code, reason) => {
+    console.log(
+      "[Server Log] Client disconnected.",
+      { code, reason: Buffer.isBuffer(reason) ? reason.toString("utf8") : reason }
+    );
     try {
       (deepgramLive as any)?.finish?.();
     } catch {}

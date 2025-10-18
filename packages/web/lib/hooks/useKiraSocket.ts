@@ -95,9 +95,17 @@ export function useKiraSocket(conversationId: string | null) {
       setAuthError('Microphone access denied');
     }
   }, []);
-
   const stopMic = useCallback(() => {
     if (mediaRecorderRef.current) {
+      // Send explicit End-of-Utterance to server before stopping
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ t: 'eou' }));
+          console.log('[WS] Sent EOU (End of Utterance) signal.');
+        } catch (e) {
+          console.warn('[WS] Failed to send EOU:', e);
+        }
+      }
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
       mediaRecorderRef.current = null;
@@ -133,6 +141,8 @@ export function useKiraSocket(conversationId: string | null) {
         if (token) url.searchParams.set('token', token);
       }
 
+      // Diagnostic: log the URL being used to connect
+      console.log('[WS] Attempting connection to:', url.toString());
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';

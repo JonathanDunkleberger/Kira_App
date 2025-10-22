@@ -624,19 +624,32 @@ wss.on("connection", async (ws, req) => {
   }
 
   const safeReopenDeepgram = (delayMs = 500) => {
-    try {
-      const state = deepgramLive?.getReadyState?.();
-      // If already OPEN (1) or CONNECTING (0), avoid reopening
-      if (state === 1 || state === 0) return;
-    } catch {}
+    // Debounce re-open attempts
     if (deepgramReopenTimer) return;
     deepgramReopenTimer = setTimeout(() => {
-      deepgramReopenTimer && (deepgramReopenTimer = null);
+      deepgramReopenTimer = null;
+      let state: any;
       try {
-        openDeepgramConnection();
-      } catch (e) {
-        console.error('[DG Reopen] Failed to re-open Deepgram:', e);
+        state = deepgramLive?.getReadyState?.();
+      } catch {}
+      // If no connection or CLOSED (3), open a new one
+      if (!deepgramLive || state === 3) {
+        try {
+          openDeepgramConnection();
+        } catch (e) {
+          console.error('[DG Reopen] Failed to re-open Deepgram:', e);
+        }
+        return;
       }
+      // If not OPEN (1) but still present (e.g., CLOSING/CONNECTING), attempt a graceful finish
+      if (state !== 1) {
+        try {
+          (deepgramLive as any)?.finish?.();
+        } catch {}
+        // Schedule another attempt after delay, allowing close to complete
+        safeReopenDeepgram(delayMs);
+      }
+      // If OPEN, do nothing
     }, delayMs);
   };
 

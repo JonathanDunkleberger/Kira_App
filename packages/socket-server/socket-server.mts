@@ -481,7 +481,7 @@ wss.on("connection", async (ws, req) => {
 
   const attachDeepgramHandlers = (conn: any) => {
     // Update buffer on partials with verbose logging
-    conn.on("transcriptReceived", (dgMsg: any) => {
+    conn.on("transcriptReceived", async (dgMsg: any) => {
       const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
       const isFinal = Boolean(dgMsg?.is_final || dgMsg?.speech_final);
       const hasText = Boolean(text);
@@ -496,6 +496,29 @@ wss.on("connection", async (ws, req) => {
         console.log("[STAGE] Speech detected:", text);
         // Always update latest interim/final transcript for flushing on UtteranceEnd
         pendingTranscript = text;
+      }
+      // If manual EOU triggered finish(), wait for the final result here
+      if (isProcessing && isFinal) {
+        const finalText = (pendingTranscript || "").trim();
+        if (!finalText) {
+          console.log(
+            "[STAGE] Final transcript empty after EOU. Skipping LLM/TTS and resetting state."
+          );
+          safeSend({ t: "speak", on: false } as any);
+          pendingTranscript = "";
+          isProcessing = false;
+          safeReopenDeepgram();
+          return;
+        }
+        try {
+          await sendTranscriptToOpenAI(finalText);
+        } catch (error) {
+          console.error("[STAGE] Manual EOU final processing failed:", error);
+        } finally {
+          pendingTranscript = "";
+          isProcessing = false;
+          safeReopenDeepgram();
+        }
       }
     });
     // Try to log additional DG events if exposed by SDK
@@ -562,15 +585,40 @@ wss.on("connection", async (ws, req) => {
         console.log("[DG] WebSocket connection opened");
         console.log("[STAGE] Listening for speech...");
       });
-      deepgramLive.on("close", (code: any, reason: any) => {
+      deepgramLive.on("close", async (code: any, reason: any) => {
         const reasonString = Buffer.isBuffer(reason)
           ? reason.toString("utf8")
           : reason?.toString?.() || "No reason provided";
         console.log(
           `[DG Close Handler] Deepgram stream closed: ${code}. Reason: ${reasonString}`
         );
-        // If not currently in the middle of processing (planned finish), proactively end the turn
-        if (!isProcessing) {
+        // If currently processing due to EOU finish, finalize based on accumulated transcript
+        if (isProcessing) {
+          const finalText = (pendingTranscript || "").trim();
+          if (!finalText) {
+            console.log(
+              "[DG Close Handler] Final transcript empty after finish(). Signaling completion and reopening."
+            );
+            safeSend({ t: "speak", on: false } as any);
+            pendingTranscript = "";
+            isProcessing = false;
+            safeReopenDeepgram();
+          } else {
+            try {
+              await sendTranscriptToOpenAI(finalText);
+            } catch (e) {
+              console.error(
+                "[DG Close Handler] Final processing failed after close:",
+                e
+              );
+            } finally {
+              pendingTranscript = "";
+              isProcessing = false;
+              safeReopenDeepgram();
+            }
+          }
+        } else {
+          // If not currently in the middle of processing (planned finish), proactively end the turn
           console.log(
             "[DG Close Handler] Proactively signaling turn completion to client."
           );
@@ -874,36 +922,11 @@ wss.on("connection", async (ws, req) => {
 
         // Set processing state now to prevent concurrent EOU processing
         isProcessing = true;
-
-        // Check if the received transcript is empty or just whitespace
-        if (!pendingTranscript || pendingTranscript.trim().length === 0) {
-          console.log(
-            "[STAGE] EOU received, but transcript is empty. Skipping LLM/TTS and resetting state."
-          );
-          // Signal completion to prevent client timeout (no audio coming)
-          safeSend({ t: "speak", on: false } as any);
-          // Reset state immediately without calling slow AI logic
-          pendingTranscript = "";
-          isProcessing = false;
-          return;
-        }
-
-        // If transcript is non-empty, proceed to the conversational pipeline
-        // NOW we stop the Deepgram stream for the final result, as we have text to process.
+        // Stop Deepgram stream to flush and emit final transcript asynchronously
         try {
           deepgramLive?.finish();
         } catch {}
-        // Wait for processing to complete
-        sendTranscriptToOpenAI(pendingTranscript).finally(() => {
-          pendingTranscript = "";
-          isProcessing = false;
-          // === Re-open Deepgram stream for the next turn ===
-          try {
-            safeReopenDeepgram();
-          } catch (e) {
-            console.error("[DG Reopen] Failed to re-initialize Deepgram:", e);
-          }
-        });
+        // Do NOT process synchronously here; wait for final transcript via event handlers
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);

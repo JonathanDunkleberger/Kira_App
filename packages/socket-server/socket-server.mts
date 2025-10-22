@@ -42,52 +42,64 @@ const activeSessions = new Map<WebSocket, ActiveSessionInfo>();
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
-    console.error(`FATAL: Missing required environment variable "${name}"`);
-    process.exit(1);
-  }
-  return value;
-}
-
-// --- CONFIGURATION ---
-const DEEPGRAM_API_KEY = requireEnv("DEEPGRAM_API_KEY");
-const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
-const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
-const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
-const PORT = parseInt(process.env.PORT || "10000", 10);
-const CLERK_SECRET_KEY = requireEnv("CLERK_SECRET_KEY");
-// FIX: Allow overriding the TTS voice via environment variable (default Ashley)
-const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
-// New: Allow pitch / rate adjustments via SSML (percent or absolute values Azure accepts)
-const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+0%"; // e.g. "+25%"
-const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+0%"; // e.g. "+25%"
-// Personality / system prompt loading strategy:
-// 1. If PERSONALITY_PROMPT_PATH provided, load that file.
-// 2. Else attempt default prompts/kira-persona.txt
-// 3. Else fallback to short default.
-function loadPersona(): string {
-  const explicitPath = process.env.PERSONALITY_PROMPT_PATH;
-  const tryPaths = [] as string[];
-  if (explicitPath) tryPaths.push(explicitPath);
-  tryPaths.push(
-    path.join(
-      process.cwd(),
-      "packages",
-      "socket-server",
-      "prompts",
-      "kira-persona.txt"
-    )
-  );
-  for (const p of tryPaths) {
-    try {
-      if (fs.existsSync(p)) {
-        const txt = fs.readFileSync(p, "utf8").trim();
-        if (txt) {
-          console.log(`[Persona] Loaded persona prompt from: ${p}`);
-          return txt;
+      if (data?.t === "eou") {
+        console.log("[STAGE] Received manual EOU from client");
+        if (isProcessing) {
+          console.log("[STAGE] Manual EOU ignored - already processing");
+          return;
         }
+
+        // --- FIX: Prevent LLM/TTS call on empty transcript to avoid timeout ---
+        // Set processing state now to prevent concurrent EOU processing
+        isProcessing = true;
+
+        // Proactively request Deepgram to end current utterance and flush
+        try {
+          if ((deepgramLive as any)?.getReadyState?.() === 1) {
+            (deepgramLive as any).send(
+              JSON.stringify({ type: "EndOfUtterance" })
+            );
+            console.log("[DG] Sent EndOfUtterance to Deepgram (manual EOU)");
+          }
+        } catch (e) {
+          console.warn(
+            "[DG] Failed to forward EndOfUtterance on manual EOU:",
+            e
+          );
+        }
+
+        // Gracefully stop Deepgram stream for final result
+        try {
+          (deepgramLive as any)?.finish?.();
+          console.log("[DG] Finished Deepgram stream (manual EOU)");
+        } catch (e) {
+          console.warn("[DG] Failed to finish Deepgram stream:", e);
+        }
+
+        // Check if the received transcript is empty or just whitespace
+        if (!pendingTranscript || pendingTranscript.trim().length === 0) {
+          console.log(
+            "[STAGE] EOU received, but transcript is empty. Skipping LLM/TTS and resetting state."
+          );
+          // Reset state immediately without calling slow AI logic
+          pendingTranscript = "";
+          isProcessing = false;
+          return;
+        }
+
+        // If transcript is non-empty, proceed to the conversational pipeline
+        const toProcess = pendingTranscript;
+        sendTranscriptToOpenAI(toProcess)
+          .then(() => {
+            pendingTranscript = "";
+          })
+          .catch((error) => {
+            console.error("[STAGE] Manual EOU processing failed:", error);
+          })
+          .finally(() => {
+            isProcessing = false;
+          });
       }
-    } catch (e) {
       console.warn(`[Persona] Failed reading ${p}:`, (e as any)?.message || e);
     }
   }
@@ -796,6 +808,15 @@ wss.on("connection", async (ws, req) => {
 
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
+        if (isProcessing) {
+          console.log("[STAGE] Manual EOU ignored - already processing");
+          return;
+        }
+
+        // --- FIX: Prevent LLM/TTS call on empty transcript to avoid timeout ---
+        // Set processing state now to prevent concurrent EOU processing
+        isProcessing = true;
+
         // Proactively request Deepgram to end current utterance and flush
         try {
           if ((deepgramLive as any)?.getReadyState?.() === 1) {
@@ -811,26 +832,36 @@ wss.on("connection", async (ws, req) => {
           );
         }
 
-        const toProcess = (pendingTranscript || "").trim();
-        const lengthInfo = toProcess.length;
-        if (!isProcessing) {
-          console.log(
-            `[STAGE] Processing manual EOU with transcript length: ${lengthInfo}`
-          );
-          isProcessing = true;
-          sendTranscriptToOpenAI(toProcess)
-            .then(() => {
-              pendingTranscript = "";
-            })
-            .catch((error) => {
-              console.error("[STAGE] Manual EOU processing failed:", error);
-            })
-            .finally(() => {
-              isProcessing = false;
-            });
-        } else {
-          console.log("[STAGE] Manual EOU skipped: already processing");
+        // Gracefully stop Deepgram stream for final result
+        try {
+          (deepgramLive as any)?.finish?.();
+          console.log("[DG] Finished Deepgram stream (manual EOU)");
+        } catch (e) {
+          console.warn("[DG] Failed to finish Deepgram stream:", e);
         }
+
+        // Check if the received transcript is empty or just whitespace
+        if (!pendingTranscript || pendingTranscript.trim().length === 0) {
+          console.log(
+            "[STAGE] EOU received, but transcript is empty. Skipping LLM/TTS and resetting state."
+          );
+          // Reset state immediately without calling slow AI logic
+          pendingTranscript = "";
+          isProcessing = false;
+          return;
+        }
+
+        // If transcript is non-empty, proceed to the conversational pipeline
+        sendTranscriptToOpenAI(pendingTranscript)
+          .then(() => {
+            pendingTranscript = "";
+          })
+          .catch((error) => {
+            console.error("[STAGE] Manual EOU processing failed:", error);
+          })
+          .finally(() => {
+            isProcessing = false;
+          });
       }
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);

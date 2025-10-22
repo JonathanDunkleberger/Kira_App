@@ -795,11 +795,6 @@ wss.on("connection", async (ws, req) => {
         // Set processing state now to prevent concurrent EOU processing
         isProcessing = true;
 
-        // Gracefully stop Deepgram stream for final result
-        try {
-          (deepgramLive as any)?.finish?.();
-        } catch {}
-
         // Check if the received transcript is empty or just whitespace
         if (!pendingTranscript || pendingTranscript.trim().length === 0) {
           console.log(
@@ -812,6 +807,10 @@ wss.on("connection", async (ws, req) => {
         }
 
         // If transcript is non-empty, proceed to the conversational pipeline
+        // NOW we stop the Deepgram stream for the final result, as we have text to process.
+        try {
+          deepgramLive?.finish();
+        } catch {}
         // Wait for processing to complete
         sendTranscriptToOpenAI(pendingTranscript)
           .finally(() => {

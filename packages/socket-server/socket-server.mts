@@ -799,11 +799,16 @@ wss.on("connection", async (ws, req) => {
         // Proactively request Deepgram to end current utterance and flush
         try {
           if ((deepgramLive as any)?.getReadyState?.() === 1) {
-            (deepgramLive as any).send(JSON.stringify({ type: "EndOfUtterance" }));
+            (deepgramLive as any).send(
+              JSON.stringify({ type: "EndOfUtterance" })
+            );
             console.log("[DG] Sent EndOfUtterance to Deepgram (manual EOU)");
           }
         } catch (e) {
-          console.warn("[DG] Failed to forward EndOfUtterance on manual EOU:", e);
+          console.warn(
+            "[DG] Failed to forward EndOfUtterance on manual EOU:",
+            e
+          );
         }
 
         const toProcess = (pendingTranscript || "").trim();

@@ -284,9 +284,12 @@ async function initDeepgramWithMode() {
   const explicit = {
     ...base,
     encoding: DEEPGRAM_ENCODING,
-    sample_rate: 48000,
-    channels: 1,
-  };
+    // When streaming containerized audio (webm), Deepgram infers sample rate / channels.
+    // Supplying these for webm can cause failures. Only set for raw encodings.
+    ...(DEEPGRAM_ENCODING !== "webm"
+      ? { sample_rate: 48000 as number, channels: 1 as number }
+      : {}),
+  } as Record<string, any>;
   const minimal = { ...base };
   const attempts: any[] = [];
   // Order attempts based on DEEPGRAM_MODE.

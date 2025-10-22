@@ -119,7 +119,8 @@ const DEEPGRAM_DISABLED = /^true$/i.test(
 );
 const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
-const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
+// Default to webm to match browser MediaRecorder (audio/webm;codecs=opus)
+const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "webm";
 
 // --- SERVICES ---
 const prisma = new PrismaClient({
@@ -288,15 +289,27 @@ async function initDeepgramWithMode() {
   };
   const minimal = { ...base };
   const attempts: any[] = [];
-  // Try auto first — it's the most stable
-  attempts.push(
-    await attemptDeepgramLive("auto", { model: DG_MODEL, language: "en-US" })
-  );
-  if (!attempts[attempts.length - 1].ok)
-    attempts.push(await attemptDeepgramLive("explicit", explicit));
-  if (!attempts[attempts.length - 1].ok)
-    attempts.push(await attemptDeepgramLive("minimal", minimal));
-  return { mode: "fallback", attempts } as const;
+  // Order attempts based on DEEPGRAM_MODE.
+  // explicit: prioritize matching browser (webm/opus) streaming
+  // auto: let DG infer, but fall back to explicit
+  // any other: default to explicit first
+  const order: Array<"explicit" | "auto" | "minimal"> =
+    DEEPGRAM_MODE === "auto"
+      ? ["auto", "explicit", "minimal"]
+      : ["explicit", "auto", "minimal"];
+
+  for (const label of order) {
+    const cfg =
+      label === "auto"
+        ? { model: DG_MODEL, language: "en-US" }
+        : label === "explicit"
+        ? explicit
+        : minimal;
+    const res = await attemptDeepgramLive(label, cfg);
+    attempts.push(res);
+    if (res.ok) break;
+  }
+  return { mode: DEEPGRAM_MODE, attempts } as const;
 }
 
 wss.on("connection", async (ws, req) => {

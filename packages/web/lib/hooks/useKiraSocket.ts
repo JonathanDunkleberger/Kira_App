@@ -98,19 +98,25 @@ export function useKiraSocket(conversationId: string | null) {
     }
   }, []);
   const stopMic = useCallback(() => {
+    console.log('[DEBUG] stopMic called - stopping audio only');
     if (mediaRecorderRef.current) {
-      // Send explicit End-of-Utterance to server before stopping
+      // Send EOU but keep connection open
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         try {
+          console.log('[DEBUG] Sending EOU, keeping WS open');
           wsRef.current.send(JSON.stringify({ t: 'eou' }));
-          console.log('[WS] Sent EOU (End of Utterance) signal.');
         } catch (e) {
           console.warn('[WS] Failed to send EOU:', e);
         }
       }
+
+      // Only stop the microphone, NOT the WebSocket
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
       mediaRecorderRef.current = null;
+      console.log('[DEBUG] Microphone stopped, WS remains open');
+    } else {
+      console.log('[DEBUG] No MediaRecorder to stop');
     }
   }, []);
 

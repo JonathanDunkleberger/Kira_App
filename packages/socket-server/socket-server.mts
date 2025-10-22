@@ -561,12 +561,38 @@ wss.on("connection", async (ws, req) => {
         console.log("[DG] WebSocket connection opened");
         console.log("[STAGE] Listening for speech...");
       });
-      deepgramLive.on("close", (c: any) =>
-        console.log("[DG] Connection closed", c?.code, c?.reason)
-      );
-      deepgramLive.on("error", (e: any) =>
-        console.error("[DG] Error", e?.message || e)
-      );
+      deepgramLive.on("close", (code: any, reason: any) => {
+        const reasonString = Buffer.isBuffer(reason)
+          ? reason.toString("utf8")
+          : reason?.toString?.() || "No reason provided";
+        console.log(
+          `[DG Close Handler] Deepgram stream closed: ${code}. Reason: ${reasonString}`
+        );
+        // If not currently in the middle of processing (planned finish), proactively end the turn
+        if (!isProcessing) {
+          console.log(
+            "[DG Close Handler] Proactively signaling turn completion to client."
+          );
+          // 1) Signal completion so client doesn't timeout
+          safeSend({ t: "speak", on: false } as any);
+          // 2) Reset state
+          pendingTranscript = "";
+          isProcessing = false;
+          // 3) Re-open Deepgram for the next utterance
+          try {
+            openDeepgramConnection();
+          } catch (e) {
+            console.error(
+              "[DG Reopen] Failed to re-initialize Deepgram after unexpected close:",
+              e
+            );
+          }
+        }
+      });
+      deepgramLive.on("error", (e: any) => {
+        console.error("[DG Error] Deepgram stream error:", e?.message || e);
+        // Optionally, could signal speak:false here as well if desired
+      });
       if (deepgramKeepAlive) {
         clearInterval(deepgramKeepAlive as any);
         deepgramKeepAlive = null;
@@ -844,7 +870,7 @@ wss.on("connection", async (ws, req) => {
           try {
             openDeepgramConnection();
           } catch (e) {
-            console.error('[DG Reopen] Failed to re-initialize Deepgram:', e);
+            console.error("[DG Reopen] Failed to re-initialize Deepgram:", e);
           }
         });
       } // <--- 1. CLOSES: if (data?.t === "eou")

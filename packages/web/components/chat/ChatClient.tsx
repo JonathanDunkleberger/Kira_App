@@ -18,6 +18,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
   const router = useRouter();
   const [timer, setTimer] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [endingCall, setEndingCall] = useState(false);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -30,8 +31,17 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     };
   }, [status, startMic]);
 
-  const handleEndCall = useCallback(() => {
-    stopMic();
+  const handleEndCall = useCallback(async () => {
+    console.log('[DEBUG] Ending call - sending EOU and waiting for processing');
+    stopMic(); // This sends the EOU
+
+    // Show "Ending call..." state to user
+    setEndingCall(true);
+
+    // Wait 2 seconds for server to process the EOU
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    console.log('[DEBUG] Navigation after EOU grace period');
     router.push('/');
   }, [stopMic, router]);
 
@@ -87,6 +97,12 @@ export default function ChatClient({ conversationId }: { conversationId: string 
         onClose={handleEndCall}
         isPro={false}
       />
+
+      {endingCall && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="text-white">Ending call...</div>
+        </div>
+      )}
     </div>
   );
 }

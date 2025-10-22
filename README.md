@@ -335,4 +335,3 @@ MIT — see `LICENSE`.
 ## Attribution / Inspiration
 
 Inspired by modern low-latency conversational assistants (e.g., Sesami AI) emphasizing real-time bidirectional streaming UX.
-

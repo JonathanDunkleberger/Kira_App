@@ -303,8 +303,8 @@ async function initDeepgramWithMode() {
       label === "auto"
         ? { model: DG_MODEL, language: "en-US" }
         : label === "explicit"
-        ? explicit
-        : minimal;
+          ? explicit
+          : minimal;
     const res = await attemptDeepgramLive(label, cfg);
     attempts.push(res);
     if (res.ok) break;
@@ -476,15 +476,22 @@ wss.on("connection", async (ws, req) => {
       if (successAttempt) {
         console.log(`[DG] Connected with ${successAttempt.label} config`);
         deepgramLive = successAttempt.conn;
-        console.log('[DG] ✅ Deepgram connection established successfully');
+        console.log("[DG] ✅ Deepgram connection established successfully");
       } else {
         throw new Error(
           "All Deepgram connection attempts failed after reordering."
         );
       }
-      deepgramLive.on("open", () => console.log("[DG] WebSocket connection opened"));
-      deepgramLive.on("close", (c: any) => console.log("[DG] Connection closed", c?.code, c?.reason));
-      deepgramLive.on("error", (e: any) => console.error("[DG] Error", e?.message || e));
+      deepgramLive.on("open", () => {
+        console.log("[DG] WebSocket connection opened");
+        console.log("[STAGE] Listening for speech...");
+      });
+      deepgramLive.on("close", (c: any) =>
+        console.log("[DG] Connection closed", c?.code, c?.reason)
+      );
+      deepgramLive.on("error", (e: any) =>
+        console.error("[DG] Error", e?.message || e)
+      );
       const ka = setInterval(() => {
         try {
           if (deepgramLive?.getReadyState?.() === 1)
@@ -502,8 +509,10 @@ wss.on("connection", async (ws, req) => {
     }
   }
 
-  let assistantBusy = false;
+  // Reset per-connection state
   let pendingTranscript = "";
+  let isProcessing = false;
+  let assistantBusy = false;
 
   // Helper to respond using current conversation memory and TTS
   const sendTranscriptToOpenAI = async (finalText: string) => {
@@ -516,6 +525,7 @@ wss.on("connection", async (ws, req) => {
       }
       if (session?.limitReached) return;
 
+      console.log('[STAGE] Starting OpenAI processing');
       assistantBusy = true;
       safeSend({ t: "transcript", text: finalText });
 
@@ -620,6 +630,7 @@ wss.on("connection", async (ws, req) => {
 
       try {
         console.log("[Server Log] Sending transcript to OpenAI...");
+        console.log('[STAGE] Streaming LLM response');
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: messagesForAPI,
@@ -640,6 +651,7 @@ wss.on("connection", async (ws, req) => {
         const cleanedFull = cleanTextForTTS(fullResponse);
         if (cleanedFull) {
           safeSend({ t: "speak", on: true });
+          console.log('[STAGE] Starting TTS synthesis');
           safeSend({ t: "tts_start" });
           console.log(
             `[Server Log] Synthesizing full response (${cleanedFull.length} chars).`
@@ -667,6 +679,7 @@ wss.on("connection", async (ws, req) => {
         }
         safeSend({ t: "speak", on: false });
         assistantBusy = false;
+        console.log('[STAGE] Pipeline complete');
       }
     } catch (outerErr) {
       console.error("[Server Log] FATAL processing utterance:", outerErr);
@@ -679,30 +692,45 @@ wss.on("connection", async (ws, req) => {
     // Update buffer on partials with verbose logging
     deepgramLive.on("transcriptReceived", (dgMsg: any) => {
       const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      const isFinal = (dgMsg?.is_final ?? dgMsg?.speech_final ?? false) ? true : false;
-      console.log('[DG] Transcript received:', { text, isFinal });
+      const isFinal =
+        (dgMsg?.is_final ?? dgMsg?.speech_final ?? false) ? true : false;
+      console.log("[DG] Transcript received:", { text, isFinal });
       if (text) {
+        console.log("[STAGE] Speech detected:", text);
         // Keep latest interim for UI responsiveness; prefer final when flagged
         pendingTranscript = text;
       }
     });
-    // Flush on utterance end variants
-    const flushHandler = async () => {
+    // Only use Deepgram's automatic UtteranceEnd
+    deepgramLive.on("UtteranceEnd", async () => {
+      if (isProcessing) {
+        console.log('[STAGE] Skipping - already processing');
+        return;
+      }
+
       const text = (pendingTranscript || "").trim();
-      console.log('[DG] UtteranceEnd received, flushing:', text);
-      if (text) {
+      if (!text) {
+        console.log('[STAGE] No transcript to process');
+        return;
+      }
+
+      console.log('[STAGE] Processing utterance:', text);
+      isProcessing = true;
+
+      try {
         await sendTranscriptToOpenAI(text);
         pendingTranscript = "";
+      } catch (error) {
+        console.error('[STAGE] Processing failed:', error);
+      } finally {
+        isProcessing = false;
       }
-    };
-    ["UtteranceEnd", "utterance_end"].forEach((evt) => {
-      deepgramLive.on(evt, flushHandler);
     });
   }
 
   ws.on("message", (message: Buffer, isBinary) => {
     if (isBinary) {
-      console.log('[WS] Received binary audio chunk:', message.length, 'bytes');
+      console.log("[WS] Received binary audio chunk:", message.length, "bytes");
     }
     if (isBinary) {
       if (!deepgramLive) return;
@@ -716,26 +744,7 @@ wss.on("connection", async (ws, req) => {
       }
       return;
     }
-
-    // Text message handling (e.g., EOU)
-    try {
-      const text = message.toString("utf8");
-      const data = JSON.parse(text);
-      if (data?.t === "eou") {
-        console.log("[WS] Received EOU from client; forwarding to Deepgram.");
-        try {
-          if ((deepgramLive as any)?.getReadyState?.() === 1) {
-            (deepgramLive as any).send(
-              JSON.stringify({ type: "EndOfUtterance" })
-            );
-          }
-        } catch (e) {
-          console.warn("[DG] Failed to forward EndOfUtterance:", e);
-        }
-      }
-    } catch (e) {
-      console.warn("[WS] Ignored non-JSON message:", e);
-    }
+    // Ignore text control messages; rely solely on Deepgram's UtteranceEnd
   });
   ws.on("close", (code, reason) => {
     console.log("[Server Log] Client disconnected.", {

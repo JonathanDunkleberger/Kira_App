@@ -42,71 +42,47 @@ const activeSessions = new Map<WebSocket, ActiveSessionInfo>();
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-      if (data?.t === "eou") {
-        console.log("[STAGE] Received manual EOU from client");
-        if (isProcessing) {
-          console.log("[STAGE] Manual EOU ignored - already processing");
-          return;
-        }
-
-        // --- FIX: Prevent LLM/TTS call on empty transcript to avoid timeout ---
-        // Set processing state now to prevent concurrent EOU processing
-        isProcessing = true;
-
-        // Proactively request Deepgram to end current utterance and flush
-        try {
-          if ((deepgramLive as any)?.getReadyState?.() === 1) {
-            (deepgramLive as any).send(
-              JSON.stringify({ type: "EndOfUtterance" })
-            );
-            console.log("[DG] Sent EndOfUtterance to Deepgram (manual EOU)");
-          }
-        } catch (e) {
-          console.warn(
-            "[DG] Failed to forward EndOfUtterance on manual EOU:",
-            e
-          );
-        }
-
-        // Gracefully stop Deepgram stream for final result
-        try {
-          (deepgramLive as any)?.finish?.();
-          console.log("[DG] Finished Deepgram stream (manual EOU)");
-        } catch (e) {
-          console.warn("[DG] Failed to finish Deepgram stream:", e);
-        }
-
-        // Check if the received transcript is empty or just whitespace
-        if (!pendingTranscript || pendingTranscript.trim().length === 0) {
-          console.log(
-            "[STAGE] EOU received, but transcript is empty. Skipping LLM/TTS and resetting state."
-          );
-          // Reset state immediately without calling slow AI logic
-          pendingTranscript = "";
-          isProcessing = false;
-          return;
-        }
-
-        // If transcript is non-empty, proceed to the conversational pipeline
-        const toProcess = pendingTranscript;
-        sendTranscriptToOpenAI(toProcess)
-          .then(() => {
-            pendingTranscript = "";
-          })
-          .catch((error) => {
-            console.error("[STAGE] Manual EOU processing failed:", error);
-          })
-          .finally(() => {
-            isProcessing = false;
-          });
-      }
-      console.warn(`[Persona] Failed reading ${p}:`, (e as any)?.message || e);
-    }
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
   }
+  return value;
+}
+
+function loadPersona(): string {
+  try {
+    const candidates = [
+      process.env.PERSONA_PATH,
+      path.resolve(process.cwd(), "packages", "web", "docs", "messages_rls.md"),
+    ].filter(Boolean) as string[];
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, "utf8").trim();
+          if (content) {
+            console.log("[Persona] Loaded prompt from:", p);
+            return content;
+          }
+        }
+      } catch (e) {
+        console.warn(`[Persona] Failed reading ${p}:`, (e as any)?.message || e);
+      }
+    }
+  } catch {}
   console.warn("[Persona] Falling back to built-in short prompt.");
   return "You are Kira, an encouraging, upbeat AI companion.";
 }
 const PERSONALITY_PROMPT = loadPersona();
+
+// --- Required environment variables and defaults ---
+const PORT = parseInt(process.env.PORT || "3001", 10);
+const CLERK_SECRET_KEY = requireEnv("CLERK_SECRET_KEY");
+const DEEPGRAM_API_KEY = requireEnv("DEEPGRAM_API_KEY");
+const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
+const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
+const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
+const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AriaNeural";
+const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+0%";
+const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+0%";
 
 // Remove emojis / unsupported glyphs for TTS safety
 function cleanTextForTTS(text: string): string {
@@ -844,11 +820,11 @@ wss.on("connection", async (ws, req) => {
             // NOTE: If subsequent turns fail, this is where you'd re-open Deepgram:
             // openDeepgramConnection();
           });
-      } // <--- ENSURE THIS CLOSING BRACE IS PRESENT
+  } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
     }
-  });
+  }); // <--- 2. CLOSES: ws.on('message', (message, isBinary) => { ... })
   ws.on("close", (code, reason) => {
     console.log("[Server Log] Client disconnected.", {
       code,
@@ -866,7 +842,7 @@ wss.on("connection", async (ws, req) => {
     } catch {}
     cleanupSession();
   });
-});
+}); // <--- 3. CLOSES: wss.on('connection', (ws, req) => { ... })
 
 server.listen(PORT, () => {
   console.log(`🚀 Voice pipeline server listening on :${PORT}`);

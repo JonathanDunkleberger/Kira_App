@@ -17,6 +17,8 @@ export function useKiraSocket(conversationId: string | null) {
   const { addMessage, setSpeaking } = useConversationStore();
   const [limitReachedReason, setLimitReachedReason] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Gate upstream audio during TTS to avoid echo / barge into STT
+  const sendAudioEnabledRef = useRef<boolean>(true);
 
   const safeSend = useCallback((payload: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -83,7 +85,11 @@ export function useKiraSocket(conversationId: string | null) {
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         console.log('[Audio] Data available:', event.data?.size ?? 0, 'bytes');
-        if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+        if (
+          event.data.size > 0 &&
+          wsRef.current?.readyState === WebSocket.OPEN &&
+          sendAudioEnabledRef.current
+        ) {
           wsRef.current.send(event.data);
         }
       };
@@ -192,6 +198,8 @@ export function useKiraSocket(conversationId: string | null) {
             case 'tts_start': {
               audioQueue.current = [];
               setSpeaking(true);
+              // Pause sending mic audio upstream while TTS plays
+              sendAudioEnabledRef.current = false;
               const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
               if (audioEl) {
                 audioEl.muted = false;
@@ -211,6 +219,8 @@ export function useKiraSocket(conversationId: string | null) {
             }
             case 'tts_end':
               setSpeaking(false);
+              // Resume sending mic audio upstream after TTS completes
+              sendAudioEnabledRef.current = true;
               break;
             case 'limit_reached':
               setLimitReachedReason(message.reason);

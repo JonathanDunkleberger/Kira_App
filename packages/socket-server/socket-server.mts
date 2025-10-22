@@ -808,37 +808,21 @@ wss.on("connection", async (ws, req) => {
 
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
+
         if (isProcessing) {
-          console.log("[STAGE] Manual EOU ignored - already processing");
+          console.log(
+            "[STAGE] Manual EOU ignored - already processing"
+          );
           return;
         }
 
-        // --- FIX: Prevent LLM/TTS call on empty transcript to avoid timeout ---
         // Set processing state now to prevent concurrent EOU processing
         isProcessing = true;
-
-        // Proactively request Deepgram to end current utterance and flush
-        try {
-          if ((deepgramLive as any)?.getReadyState?.() === 1) {
-            (deepgramLive as any).send(
-              JSON.stringify({ type: "EndOfUtterance" })
-            );
-            console.log("[DG] Sent EndOfUtterance to Deepgram (manual EOU)");
-          }
-        } catch (e) {
-          console.warn(
-            "[DG] Failed to forward EndOfUtterance on manual EOU:",
-            e
-          );
-        }
 
         // Gracefully stop Deepgram stream for final result
         try {
           (deepgramLive as any)?.finish?.();
-          console.log("[DG] Finished Deepgram stream (manual EOU)");
-        } catch (e) {
-          console.warn("[DG] Failed to finish Deepgram stream:", e);
-        }
+        } catch {}
 
         // Check if the received transcript is empty or just whitespace
         if (!pendingTranscript || pendingTranscript.trim().length === 0) {
@@ -852,17 +836,15 @@ wss.on("connection", async (ws, req) => {
         }
 
         // If transcript is non-empty, proceed to the conversational pipeline
+        // Wait for processing to complete
         sendTranscriptToOpenAI(pendingTranscript)
-          .then(() => {
-            pendingTranscript = "";
-          })
-          .catch((error) => {
-            console.error("[STAGE] Manual EOU processing failed:", error);
-          })
           .finally(() => {
+            pendingTranscript = "";
             isProcessing = false;
+            // NOTE: If subsequent turns fail, this is where you'd re-open Deepgram:
+            // openDeepgramConnection();
           });
-      }
+      } // <--- ENSURE THIS CLOSING BRACE IS PRESENT
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
     }

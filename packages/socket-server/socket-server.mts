@@ -64,7 +64,10 @@ function loadPersona(): string {
           }
         }
       } catch (e) {
-        console.warn(`[Persona] Failed reading ${p}:`, (e as any)?.message || e);
+        console.warn(
+          `[Persona] Failed reading ${p}:`,
+          (e as any)?.message || e
+        );
       }
     }
   } catch {}
@@ -786,9 +789,7 @@ wss.on("connection", async (ws, req) => {
         console.log("[STAGE] Received manual EOU from client");
 
         if (isProcessing) {
-          console.log(
-            "[STAGE] Manual EOU ignored - already processing"
-          );
+          console.log("[STAGE] Manual EOU ignored - already processing");
           return;
         }
 
@@ -800,6 +801,8 @@ wss.on("connection", async (ws, req) => {
           console.log(
             "[STAGE] EOU received, but transcript is empty. Skipping LLM/TTS and resetting state."
           );
+          // Signal completion to prevent client timeout (no audio coming)
+          safeSend({ t: "speak", on: false } as any);
           // Reset state immediately without calling slow AI logic
           pendingTranscript = "";
           isProcessing = false;
@@ -812,14 +815,13 @@ wss.on("connection", async (ws, req) => {
           deepgramLive?.finish();
         } catch {}
         // Wait for processing to complete
-        sendTranscriptToOpenAI(pendingTranscript)
-          .finally(() => {
-            pendingTranscript = "";
-            isProcessing = false;
-            // NOTE: If subsequent turns fail, this is where you'd re-open Deepgram:
-            // openDeepgramConnection();
-          });
-  } // <--- 1. CLOSES: if (data?.t === "eou")
+        sendTranscriptToOpenAI(pendingTranscript).finally(() => {
+          pendingTranscript = "";
+          isProcessing = false;
+          // NOTE: If subsequent turns fail, this is where you'd re-open Deepgram:
+          // openDeepgramConnection();
+        });
+      } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
     }

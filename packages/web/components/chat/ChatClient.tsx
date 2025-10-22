@@ -42,7 +42,7 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     setEndingCall(true);
 
   // Increase grace period to allow server speak:false to arrive
-  await new Promise((resolve) => setTimeout(resolve, 4000));
+  await new Promise((resolve) => setTimeout(resolve, 6000));
 
     console.log('[DEBUG] Navigation after EOU grace period');
     router.push('/');

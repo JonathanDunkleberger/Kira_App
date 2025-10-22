@@ -41,8 +41,8 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     // Show "Ending call..." state to user
     setEndingCall(true);
 
-    // Wait 2 seconds for server to process the EOU
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Increase grace period to allow server speak:false to arrive
+  await new Promise((resolve) => setTimeout(resolve, 4000));
 
     console.log('[DEBUG] Navigation after EOU grace period');
     router.push('/');

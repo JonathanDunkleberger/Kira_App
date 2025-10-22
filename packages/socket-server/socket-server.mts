@@ -750,23 +750,28 @@ wss.on("connection", async (ws, req) => {
       const data = JSON.parse(text);
 
       if (data?.t === "eou") {
-        console.log('[STAGE] Received manual EOU from client');
+        console.log("[STAGE] Received manual EOU from client");
         const toProcess = (pendingTranscript || "").trim();
         if (!isProcessing && toProcess) {
-          console.log('[STAGE] Processing manual EOU with transcript:', toProcess);
+          console.log(
+            "[STAGE] Processing manual EOU with transcript:",
+            toProcess
+          );
           isProcessing = true;
           sendTranscriptToOpenAI(toProcess)
             .then(() => {
               pendingTranscript = "";
             })
             .catch((error) => {
-              console.error('[STAGE] Manual EOU processing failed:', error);
+              console.error("[STAGE] Manual EOU processing failed:", error);
             })
             .finally(() => {
               isProcessing = false;
             });
         } else {
-          console.log('[STAGE] Manual EOU ignored - no transcript or already processing');
+          console.log(
+            "[STAGE] Manual EOU ignored - no transcript or already processing"
+          );
         }
       }
     } catch (e) {

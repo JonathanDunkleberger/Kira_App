@@ -19,6 +19,8 @@ export function useKiraSocket(conversationId: string | null) {
   const [authError, setAuthError] = useState<string | null>(null);
   // Gate upstream audio during TTS to avoid echo / barge into STT
   const sendAudioEnabledRef = useRef<boolean>(true);
+  // Resolver for end-of-turn signal (speak:false)
+  const speakFalseResolverRef = useRef<(() => void) | null>(null);
 
   const safeSend = useCallback((payload: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -195,6 +197,21 @@ export function useKiraSocket(conversationId: string | null) {
                 isPartial: !message.done,
               });
               break;
+            case 'speak': {
+              // Server indicates start/stop of assistant speech
+              const on = Boolean(message.on);
+              setSpeaking(on);
+              if (!on) {
+                // Resolve any pending waiter for turn end
+                if (speakFalseResolverRef.current) {
+                  console.log('[WS] ✅ Received speak:false, resolving EOU promise.');
+                  const resolve = speakFalseResolverRef.current;
+                  speakFalseResolverRef.current = null;
+                  resolve();
+                }
+              }
+              break;
+            }
             case 'tts_start': {
               audioQueue.current = [];
               setSpeaking(true);
@@ -261,5 +278,19 @@ export function useKiraSocket(conversationId: string | null) {
     };
   }, [connect, conversationId, setupAudioPlayback, stopMic]);
 
-  return { status, startMic, stopMic, limitReachedReason, setLimitReachedReason, authError };
+  const waitForServerTurnEnd = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      speakFalseResolverRef.current = resolve;
+    });
+  }, []);
+
+  return {
+    status,
+    startMic,
+    stopMic,
+    limitReachedReason,
+    setLimitReachedReason,
+    authError,
+    waitForServerTurnEnd,
+  };
 }

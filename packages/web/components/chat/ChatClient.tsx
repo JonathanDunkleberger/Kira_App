@@ -16,7 +16,7 @@ const formatTime = (seconds: number) => {
 };
 
 export default function ChatClient({ conversationId }: { conversationId: string }) {
-  const { status, startMic, stopMic, limitReachedReason, authError } =
+  const { status, startMic, stopMic, limitReachedReason, authError, waitForServerTurnEnd } =
     useKiraSocket(conversationId);
   const router = useRouter();
   const [timer, setTimer] = useState(0);
@@ -41,12 +41,14 @@ export default function ChatClient({ conversationId }: { conversationId: string 
     // Show "Ending call..." state to user
     setEndingCall(true);
 
-  // Increase grace period to allow server speak:false to arrive
-  await new Promise((resolve) => setTimeout(resolve, 6000));
+    // Race server end-of-turn event vs safety timeout (6s)
+    const eventPromise = waitForServerTurnEnd();
+    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6000));
+    await Promise.race([eventPromise, timeoutPromise]);
 
     console.log('[DEBUG] Navigation after EOU grace period');
     router.push('/');
-  }, [stopMic, router]);
+  }, [stopMic, waitForServerTurnEnd, router]);
 
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => {

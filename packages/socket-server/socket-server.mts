@@ -692,12 +692,18 @@ wss.on("connection", async (ws, req) => {
     // Update buffer on partials with verbose logging
     deepgramLive.on("transcriptReceived", (dgMsg: any) => {
       const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      const isFinal =
-        (dgMsg?.is_final ?? dgMsg?.speech_final ?? false) ? true : false;
-      console.log("[DG] Transcript received:", { text, isFinal });
-      if (text) {
+      const isFinal = Boolean(dgMsg?.is_final || dgMsg?.speech_final);
+      const hasText = Boolean(text);
+      const messageType = dgMsg?.type;
+      console.log("[DG] Transcript received:", {
+        text,
+        isFinal,
+        hasText,
+        messageType,
+      });
+      if (hasText) {
         console.log("[STAGE] Speech detected:", text);
-        // Keep latest interim for UI responsiveness; prefer final when flagged
+        // Always update latest interim/final transcript for flushing on UtteranceEnd
         pendingTranscript = text;
       }
     });

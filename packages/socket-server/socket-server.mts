@@ -119,8 +119,9 @@ const DEEPGRAM_DISABLED = /^true$/i.test(
 );
 const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
-// Default to webm to match browser MediaRecorder (audio/webm;codecs=opus)
-const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "webm";
+// Deepgram expects 'encoding' to describe the codec (e.g., 'opus'), not the container ('webm').
+// For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus' and let Deepgram infer container.
+const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
 
 // --- SERVICES ---
 const prisma = new PrismaClient({
@@ -284,11 +285,7 @@ async function initDeepgramWithMode() {
   const explicit = {
     ...base,
     encoding: DEEPGRAM_ENCODING,
-    // When streaming containerized audio (webm), Deepgram infers sample rate / channels.
-    // Supplying these for webm can cause failures. Only set for raw encodings.
-    ...(DEEPGRAM_ENCODING !== "webm"
-      ? { sample_rate: 48000 as number, channels: 1 as number }
-      : {}),
+    // For 'opus' (webm/ogg containers), do not set sample_rate/channels; Deepgram infers these.
   } as Record<string, any>;
   const minimal = { ...base };
   const attempts: any[] = [];

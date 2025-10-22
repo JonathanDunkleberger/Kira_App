@@ -82,6 +82,7 @@ export function useKiraSocket(conversationId: string | null) {
       });
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
+        console.log('[Audio] Data available:', event.data?.size ?? 0, 'bytes');
         if (event.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(event.data);
         }
@@ -90,6 +91,7 @@ export function useKiraSocket(conversationId: string | null) {
         console.error('[Audio] ❌ MediaRecorder error:', e);
       };
       recorder.start(100);
+      console.log('[Audio] ✅ MediaRecorder started');
     } catch (error) {
       console.error('[Audio] ❌ Error starting microphone:', error);
       setAuthError('Microphone access denied');

@@ -476,18 +476,15 @@ wss.on("connection", async (ws, req) => {
       if (successAttempt) {
         console.log(`[DG] Connected with ${successAttempt.label} config`);
         deepgramLive = successAttempt.conn;
+        console.log('[DG] ✅ Deepgram connection established successfully');
       } else {
         throw new Error(
           "All Deepgram connection attempts failed after reordering."
         );
       }
-      deepgramLive.on("open", () => console.log("[DG] Connection opened"));
-      deepgramLive.on("close", (c: any) =>
-        console.log("[DG] Connection closed", c?.code, c?.reason)
-      );
-      deepgramLive.on("error", (e: any) =>
-        console.error("[DG] Error", e?.message || e, e)
-      );
+      deepgramLive.on("open", () => console.log("[DG] WebSocket connection opened"));
+      deepgramLive.on("close", (c: any) => console.log("[DG] Connection closed", c?.code, c?.reason));
+      deepgramLive.on("error", (e: any) => console.error("[DG] Error", e?.message || e));
       const ka = setInterval(() => {
         try {
           if (deepgramLive?.getReadyState?.() === 1)
@@ -679,14 +676,20 @@ wss.on("connection", async (ws, req) => {
   };
 
   if (deepgramLive) {
-    // Update buffer on partials
+    // Update buffer on partials with verbose logging
     deepgramLive.on("transcriptReceived", (dgMsg: any) => {
       const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      if (text) pendingTranscript = text;
+      const isFinal = (dgMsg?.is_final ?? dgMsg?.speech_final ?? false) ? true : false;
+      console.log('[DG] Transcript received:', { text, isFinal });
+      if (text) {
+        // Keep latest interim for UI responsiveness; prefer final when flagged
+        pendingTranscript = text;
+      }
     });
     // Flush on utterance end variants
     const flushHandler = async () => {
       const text = (pendingTranscript || "").trim();
+      console.log('[DG] UtteranceEnd received, flushing:', text);
       if (text) {
         await sendTranscriptToOpenAI(text);
         pendingTranscript = "";
@@ -698,6 +701,9 @@ wss.on("connection", async (ws, req) => {
   }
 
   ws.on("message", (message: Buffer, isBinary) => {
+    if (isBinary) {
+      console.log('[WS] Received binary audio chunk:', message.length, 'bytes');
+    }
     if (isBinary) {
       if (!deepgramLive) return;
       audioChunkCount++;
@@ -732,10 +738,10 @@ wss.on("connection", async (ws, req) => {
     }
   });
   ws.on("close", (code, reason) => {
-    console.log(
-      "[Server Log] Client disconnected.",
-      { code, reason: Buffer.isBuffer(reason) ? reason.toString("utf8") : reason }
-    );
+    console.log("[Server Log] Client disconnected.", {
+      code,
+      reason: Buffer.isBuffer(reason) ? reason.toString("utf8") : reason,
+    });
     try {
       (deepgramLive as any)?.finish?.();
     } catch {}

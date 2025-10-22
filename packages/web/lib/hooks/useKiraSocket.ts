@@ -178,6 +178,15 @@ export function useKiraSocket(conversationId: string | null) {
         console.log('[WS] 🔌 Connection closed:', event.code, event.reason);
         wsRef.current = null;
         setStatus('disconnected');
+        // CRITICAL CLEANUP: Clear any pending EOU waiter to avoid dangling promises
+        if (speakFalseResolverRef.current) {
+          try {
+            speakFalseResolverRef.current();
+          } finally {
+            speakFalseResolverRef.current = null;
+          }
+          console.log('[WS Cleanup] Cleared pending EOU promise on socket close.');
+        }
         stopMic();
       };
 

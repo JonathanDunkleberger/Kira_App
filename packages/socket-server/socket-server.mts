@@ -525,7 +525,7 @@ wss.on("connection", async (ws, req) => {
       }
       if (session?.limitReached) return;
 
-      console.log('[STAGE] Starting OpenAI processing');
+      console.log("[STAGE] Starting OpenAI processing");
       assistantBusy = true;
       safeSend({ t: "transcript", text: finalText });
 
@@ -630,7 +630,7 @@ wss.on("connection", async (ws, req) => {
 
       try {
         console.log("[Server Log] Sending transcript to OpenAI...");
-        console.log('[STAGE] Streaming LLM response');
+        console.log("[STAGE] Streaming LLM response");
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: messagesForAPI,
@@ -651,7 +651,7 @@ wss.on("connection", async (ws, req) => {
         const cleanedFull = cleanTextForTTS(fullResponse);
         if (cleanedFull) {
           safeSend({ t: "speak", on: true });
-          console.log('[STAGE] Starting TTS synthesis');
+          console.log("[STAGE] Starting TTS synthesis");
           safeSend({ t: "tts_start" });
           console.log(
             `[Server Log] Synthesizing full response (${cleanedFull.length} chars).`
@@ -679,7 +679,7 @@ wss.on("connection", async (ws, req) => {
         }
         safeSend({ t: "speak", on: false });
         assistantBusy = false;
-        console.log('[STAGE] Pipeline complete');
+        console.log("[STAGE] Pipeline complete");
       }
     } catch (outerErr) {
       console.error("[Server Log] FATAL processing utterance:", outerErr);
@@ -704,24 +704,24 @@ wss.on("connection", async (ws, req) => {
     // Only use Deepgram's automatic UtteranceEnd
     deepgramLive.on("UtteranceEnd", async () => {
       if (isProcessing) {
-        console.log('[STAGE] Skipping - already processing');
+        console.log("[STAGE] Skipping - already processing");
         return;
       }
 
       const text = (pendingTranscript || "").trim();
       if (!text) {
-        console.log('[STAGE] No transcript to process');
+        console.log("[STAGE] No transcript to process");
         return;
       }
 
-      console.log('[STAGE] Processing utterance:', text);
+      console.log("[STAGE] Processing utterance:", text);
       isProcessing = true;
 
       try {
         await sendTranscriptToOpenAI(text);
         pendingTranscript = "";
       } catch (error) {
-        console.error('[STAGE] Processing failed:', error);
+        console.error("[STAGE] Processing failed:", error);
       } finally {
         isProcessing = false;
       }
@@ -744,7 +744,34 @@ wss.on("connection", async (ws, req) => {
       }
       return;
     }
-    // Ignore text control messages; rely solely on Deepgram's UtteranceEnd
+    // TEXT MESSAGES - handle manual End Of Utterance from client
+    try {
+      const text = message.toString("utf8");
+      const data = JSON.parse(text);
+
+      if (data?.t === "eou") {
+        console.log('[STAGE] Received manual EOU from client');
+        const toProcess = (pendingTranscript || "").trim();
+        if (!isProcessing && toProcess) {
+          console.log('[STAGE] Processing manual EOU with transcript:', toProcess);
+          isProcessing = true;
+          sendTranscriptToOpenAI(toProcess)
+            .then(() => {
+              pendingTranscript = "";
+            })
+            .catch((error) => {
+              console.error('[STAGE] Manual EOU processing failed:', error);
+            })
+            .finally(() => {
+              isProcessing = false;
+            });
+        } else {
+          console.log('[STAGE] Manual EOU ignored - no transcript or already processing');
+        }
+      }
+    } catch (e) {
+      console.warn("[WS] Ignored non-JSON message:", e);
+    }
   });
   ws.on("close", (code, reason) => {
     console.log("[Server Log] Client disconnected.", {

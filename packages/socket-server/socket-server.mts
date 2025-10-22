@@ -534,7 +534,11 @@ wss.on("connection", async (ws, req) => {
   const sendTranscriptToOpenAI = async (finalText: string) => {
     try {
       const session = activeSessions.get(ws);
-      if (!finalText || !finalText.trim()) return;
+      // Allow empty transcripts; provide a graceful fallback prompt
+      let effectiveText = (finalText ?? "").trim();
+      if (!effectiveText) {
+        effectiveText = "Sorry, I didn't catch that. Could you please repeat?";
+      }
       if (assistantBusy) {
         console.log("[Server Log] Skipping; assistant is busy.");
         return;
@@ -543,10 +547,10 @@ wss.on("connection", async (ws, req) => {
 
       console.log("[STAGE] Starting OpenAI processing");
       assistantBusy = true;
-      safeSend({ t: "transcript", text: finalText });
+      safeSend({ t: "transcript", text: effectiveText });
 
       await prisma.message
-        .create({ data: { conversationId, role: "user", text: finalText } })
+        .create({ data: { conversationId, role: "user", text: effectiveText } })
         .catch((e) => console.error("[DB] Failed to save user message:", e));
 
       // Load last 10 messages
@@ -576,6 +580,8 @@ wss.on("connection", async (ws, req) => {
             | "assistant",
           content: m.text,
         })),
+        // Current user input (possibly a graceful fallback text)
+        { role: "user", content: effectiveText },
       ];
       let fullResponse = "";
 
@@ -790,11 +796,21 @@ wss.on("connection", async (ws, req) => {
 
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
+        // Proactively request Deepgram to end current utterance and flush
+        try {
+          if ((deepgramLive as any)?.getReadyState?.() === 1) {
+            (deepgramLive as any).send(JSON.stringify({ type: "EndOfUtterance" }));
+            console.log("[DG] Sent EndOfUtterance to Deepgram (manual EOU)");
+          }
+        } catch (e) {
+          console.warn("[DG] Failed to forward EndOfUtterance on manual EOU:", e);
+        }
+
         const toProcess = (pendingTranscript || "").trim();
-        if (!isProcessing && toProcess) {
+        const lengthInfo = toProcess.length;
+        if (!isProcessing) {
           console.log(
-            "[STAGE] Processing manual EOU with transcript:",
-            toProcess
+            `[STAGE] Processing manual EOU with transcript length: ${lengthInfo}`
           );
           isProcessing = true;
           sendTranscriptToOpenAI(toProcess)
@@ -808,9 +824,7 @@ wss.on("connection", async (ws, req) => {
               isProcessing = false;
             });
         } else {
-          console.log(
-            "[STAGE] Manual EOU ignored - no transcript or already processing"
-          );
+          console.log("[STAGE] Manual EOU skipped: already processing");
         }
       }
     } catch (e) {

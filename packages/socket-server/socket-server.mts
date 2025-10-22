@@ -476,7 +476,75 @@ wss.on("connection", async (ws, req) => {
   }
 
   let deepgramLive: any = null;
-  if (!DEEPGRAM_DISABLED) {
+  let deepgramKeepAlive: NodeJS.Timer | null = null;
+
+  const attachDeepgramHandlers = (conn: any) => {
+    // Update buffer on partials with verbose logging
+    conn.on("transcriptReceived", (dgMsg: any) => {
+      const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
+      const isFinal = Boolean(dgMsg?.is_final || dgMsg?.speech_final);
+      const hasText = Boolean(text);
+      const messageType = dgMsg?.type;
+      console.log("[DG] Transcript received:", {
+        text,
+        isFinal,
+        hasText,
+        messageType,
+      });
+      if (hasText) {
+        console.log("[STAGE] Speech detected:", text);
+        // Always update latest interim/final transcript for flushing on UtteranceEnd
+        pendingTranscript = text;
+      }
+    });
+    // Try to log additional DG events if exposed by SDK
+    try {
+      conn.on("Metadata", () => {
+        console.log("[DG Event] Received Metadata");
+      });
+    } catch {}
+    try {
+      conn.on("message", (data: any) => {
+        try {
+          const parsed = JSON.parse(data?.toString?.() || "");
+          console.log("[DG Receive] Received message type:", parsed?.type);
+        } catch {
+          console.log("[DG Receive] Non-JSON message received");
+        }
+      });
+    } catch {}
+    // Use Deepgram's automatic UtteranceEnd
+    conn.on("UtteranceEnd", async () => {
+      if (isProcessing) {
+        console.log("[STAGE] Skipping - already processing");
+        return;
+      }
+
+      const text = (pendingTranscript || "").trim();
+      if (!text) {
+        console.log("[STAGE] No transcript to process");
+        return;
+      }
+
+      console.log("[STAGE] Processing utterance:", text);
+      isProcessing = true;
+
+      try {
+        await sendTranscriptToOpenAI(text);
+        pendingTranscript = "";
+      } catch (error) {
+        console.error("[STAGE] Processing failed:", error);
+      } finally {
+        isProcessing = false;
+      }
+    });
+  };
+
+  async function openDeepgramConnection() {
+    if (DEEPGRAM_DISABLED) {
+      console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
+      return;
+    }
     try {
       const primary = await initDeepgramWithMode();
       const successAttempt = (primary as any).attempts?.find((a: any) => a.ok);
@@ -499,14 +567,26 @@ wss.on("connection", async (ws, req) => {
       deepgramLive.on("error", (e: any) =>
         console.error("[DG] Error", e?.message || e)
       );
-      const ka = setInterval(() => {
+      if (deepgramKeepAlive) {
+        clearInterval(deepgramKeepAlive as any);
+        deepgramKeepAlive = null;
+      }
+      deepgramKeepAlive = setInterval(() => {
         try {
           if (deepgramLive?.getReadyState?.() === 1)
             deepgramLive.send(JSON.stringify({ type: "KeepAlive" }));
         } catch {}
       }, 8000);
-      ws.on("close", () => clearInterval(ka));
-      ws.on("error", () => clearInterval(ka));
+      const clearKA = () => {
+        if (deepgramKeepAlive) {
+          clearInterval(deepgramKeepAlive as any);
+          deepgramKeepAlive = null;
+        }
+      };
+      ws.on("close", clearKA);
+      ws.on("error", clearKA);
+
+      attachDeepgramHandlers(deepgramLive);
     } catch (err) {
       console.error(
         "[DG] Failed to connect after retries:",
@@ -515,6 +595,8 @@ wss.on("connection", async (ws, req) => {
       safeSend({ t: "error", message: "Speech recognition unavailable." });
     }
   }
+
+  await openDeepgramConnection();
 
   // Reset per-connection state
   let pendingTranscript = "";
@@ -702,67 +784,7 @@ wss.on("connection", async (ws, req) => {
     }
   };
 
-  if (deepgramLive) {
-    // Update buffer on partials with verbose logging
-    deepgramLive.on("transcriptReceived", (dgMsg: any) => {
-      const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      const isFinal = Boolean(dgMsg?.is_final || dgMsg?.speech_final);
-      const hasText = Boolean(text);
-      const messageType = dgMsg?.type;
-      console.log("[DG] Transcript received:", {
-        text,
-        isFinal,
-        hasText,
-        messageType,
-      });
-      if (hasText) {
-        console.log("[STAGE] Speech detected:", text);
-        // Always update latest interim/final transcript for flushing on UtteranceEnd
-        pendingTranscript = text;
-      }
-    });
-    // Try to log additional DG events if exposed by SDK
-    try {
-      deepgramLive.on("Metadata", () => {
-        console.log("[DG Event] Received Metadata");
-      });
-    } catch {}
-    try {
-      deepgramLive.on("message", (data: any) => {
-        try {
-          const parsed = JSON.parse(data?.toString?.() || "");
-          console.log("[DG Receive] Received message type:", parsed?.type);
-        } catch {
-          console.log("[DG Receive] Non-JSON message received");
-        }
-      });
-    } catch {}
-    // Only use Deepgram's automatic UtteranceEnd
-    deepgramLive.on("UtteranceEnd", async () => {
-      if (isProcessing) {
-        console.log("[STAGE] Skipping - already processing");
-        return;
-      }
-
-      const text = (pendingTranscript || "").trim();
-      if (!text) {
-        console.log("[STAGE] No transcript to process");
-        return;
-      }
-
-      console.log("[STAGE] Processing utterance:", text);
-      isProcessing = true;
-
-      try {
-        await sendTranscriptToOpenAI(text);
-        pendingTranscript = "";
-      } catch (error) {
-        console.error("[STAGE] Processing failed:", error);
-      } finally {
-        isProcessing = false;
-      }
-    });
-  }
+  // Deepgram event handlers are attached within openDeepgramConnection()
 
   ws.on("message", (message: Buffer, isBinary) => {
     if (isBinary) {
@@ -818,8 +840,12 @@ wss.on("connection", async (ws, req) => {
         sendTranscriptToOpenAI(pendingTranscript).finally(() => {
           pendingTranscript = "";
           isProcessing = false;
-          // NOTE: If subsequent turns fail, this is where you'd re-open Deepgram:
-          // openDeepgramConnection();
+          // === Re-open Deepgram stream for the next turn ===
+          try {
+            openDeepgramConnection();
+          } catch (e) {
+            console.error('[DG Reopen] Failed to re-initialize Deepgram:', e);
+          }
         });
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {

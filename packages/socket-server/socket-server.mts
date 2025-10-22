@@ -216,6 +216,14 @@ async function attemptDeepgramLive(
     (resolve) => {
       let settled = false;
       try {
+        if (label === "explicit") {
+          try {
+            console.log(
+              "[DG Config - Explicit] Attempting connection with config:",
+              JSON.stringify(cfg, null, 2)
+            );
+          } catch {}
+        }
         const conn = deepgram.listen.live(cfg);
         const timer = setTimeout(() => {
           if (settled) return;
@@ -255,10 +263,18 @@ async function attemptDeepgramLive(
           });
         });
       } catch (err) {
-        console.error(
-          `[DG Fallback] 🚫 Exception creating config ${label}:`,
-          (err as any)?.message || err
-        );
+        if (label === "explicit") {
+          console.error(
+            `[DG Config - Explicit] SDK listen.live threw error:`,
+            (err as any)?.message || err,
+            err
+          );
+        } else {
+          console.error(
+            `[DG Fallback] 🚫 Exception creating config ${label}:`,
+            (err as any)?.message || err
+          );
+        }
         resolve({ ok: false, conn: null, label, error: err });
       }
     }
@@ -630,6 +646,7 @@ wss.on("connection", async (ws, req) => {
 
       try {
         console.log("[Server Log] Sending transcript to OpenAI...");
+        console.log(`[AI Request] Sending transcript to AI: "${finalText}"`);
         console.log("[STAGE] Streaming LLM response");
         const stream = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -707,6 +724,22 @@ wss.on("connection", async (ws, req) => {
         pendingTranscript = text;
       }
     });
+    // Try to log additional DG events if exposed by SDK
+    try {
+      deepgramLive.on("Metadata", () => {
+        console.log("[DG Event] Received Metadata");
+      });
+    } catch {}
+    try {
+      deepgramLive.on("message", (data: any) => {
+        try {
+          const parsed = JSON.parse(data?.toString?.() || "");
+          console.log("[DG Receive] Received message type:", parsed?.type);
+        } catch {
+          console.log("[DG Receive] Non-JSON message received");
+        }
+      });
+    } catch {}
     // Only use Deepgram's automatic UtteranceEnd
     deepgramLive.on("UtteranceEnd", async () => {
       if (isProcessing) {

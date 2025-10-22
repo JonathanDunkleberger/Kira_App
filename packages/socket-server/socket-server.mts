@@ -477,6 +477,7 @@ wss.on("connection", async (ws, req) => {
 
   let deepgramLive: any = null;
   let deepgramKeepAlive: NodeJS.Timer | null = null;
+  let deepgramReopenTimer: NodeJS.Timer | null = null;
 
   const attachDeepgramHandlers = (conn: any) => {
     // Update buffer on partials with verbose logging
@@ -580,7 +581,7 @@ wss.on("connection", async (ws, req) => {
           isProcessing = false;
           // 3) Re-open Deepgram for the next utterance
           try {
-            openDeepgramConnection();
+            safeReopenDeepgram();
           } catch (e) {
             console.error(
               "[DG Reopen] Failed to re-initialize Deepgram after unexpected close:",
@@ -621,6 +622,23 @@ wss.on("connection", async (ws, req) => {
       safeSend({ t: "error", message: "Speech recognition unavailable." });
     }
   }
+
+  const safeReopenDeepgram = (delayMs = 500) => {
+    try {
+      const state = deepgramLive?.getReadyState?.();
+      // If already OPEN (1) or CONNECTING (0), avoid reopening
+      if (state === 1 || state === 0) return;
+    } catch {}
+    if (deepgramReopenTimer) return;
+    deepgramReopenTimer = setTimeout(() => {
+      deepgramReopenTimer && (deepgramReopenTimer = null);
+      try {
+        openDeepgramConnection();
+      } catch (e) {
+        console.error('[DG Reopen] Failed to re-open Deepgram:', e);
+      }
+    }, delayMs);
+  };
 
   await openDeepgramConnection();
 
@@ -868,7 +886,7 @@ wss.on("connection", async (ws, req) => {
           isProcessing = false;
           // === Re-open Deepgram stream for the next turn ===
           try {
-            openDeepgramConnection();
+            safeReopenDeepgram();
           } catch (e) {
             console.error("[DG Reopen] Failed to re-initialize Deepgram:", e);
           }

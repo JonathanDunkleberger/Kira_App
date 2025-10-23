@@ -111,8 +111,11 @@ const DEEPGRAM_DISABLED = /^true$/i.test(
 const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
 // Deepgram expects 'encoding' to describe the codec (e.g., 'opus'), not the container ('webm').
-// For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus' and let Deepgram infer container.
+// For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus'.
+// Note: Deepgram can infer sample rate and channels from the container, but we include
+// an explicit sample_rate for robustness with some browsers and environments.
 const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
+const DEEPGRAM_SAMPLE_RATE = parseInt(process.env.DEEPGRAM_SAMPLE_RATE || "16000", 10);
 
 // --- SERVICES ---
 const prisma = new PrismaClient({
@@ -292,7 +295,9 @@ async function initDeepgramWithMode() {
   const explicit = {
     ...base,
     encoding: DEEPGRAM_ENCODING,
-    // For 'opus' (webm/ogg containers), do not set sample_rate/channels; Deepgram infers these.
+    // Explicitly include sample rate for Opus streams for robustness.
+    // Deepgram typically infers this from the container, but setting it can prevent mis-detection.
+    sample_rate: DEEPGRAM_SAMPLE_RATE,
   } as Record<string, any>;
   const minimal = { ...base };
   const attempts: any[] = [];
@@ -685,7 +690,7 @@ wss.on("connection", async (ws, req) => {
         try {
           openDeepgramConnection();
         } catch (e) {
-          console.error('[DG Reopen] Failed to re-open Deepgram:', e);
+          console.error("[DG Reopen] Failed to re-open Deepgram:", e);
         }
         return;
       }

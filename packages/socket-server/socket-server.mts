@@ -112,15 +112,8 @@ const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
 const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
 // Deepgram expects 'encoding' to describe the codec (e.g., 'opus'), not the container ('webm').
 // For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus'.
-// Note: Deepgram can infer sample rate and channels from the container, but we include
-// an explicit sample_rate for robustness with some browsers and environments.
+// Let Deepgram infer sample rate and channels from the container to avoid conflicts.
 const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
-// Default to 48000 Hz which is typical for MediaRecorder Opus (audio/webm;codecs=opus).
-// Override via DEEPGRAM_SAMPLE_RATE if your capture pipeline uses a different rate.
-const DEEPGRAM_SAMPLE_RATE = parseInt(
-  process.env.DEEPGRAM_SAMPLE_RATE || "48000",
-  10
-);
 
 // --- SERVICES ---
 const prisma = new PrismaClient({
@@ -300,9 +293,7 @@ async function initDeepgramWithMode() {
   const explicit = {
     ...base,
     encoding: DEEPGRAM_ENCODING,
-    // Explicitly include sample rate for Opus streams for robustness.
-    // Deepgram typically infers this from the container, but setting it can prevent mis-detection.
-    sample_rate: DEEPGRAM_SAMPLE_RATE,
+    // Do not specify sample_rate for containerized Opus; DG infers it from WebM/Opus stream.
   } as Record<string, any>;
   const minimal = { ...base };
   const attempts: any[] = [];

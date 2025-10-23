@@ -115,7 +115,12 @@ const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
 // Note: Deepgram can infer sample rate and channels from the container, but we include
 // an explicit sample_rate for robustness with some browsers and environments.
 const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
-const DEEPGRAM_SAMPLE_RATE = parseInt(process.env.DEEPGRAM_SAMPLE_RATE || "16000", 10);
+// Default to 48000 Hz which is typical for MediaRecorder Opus (audio/webm;codecs=opus).
+// Override via DEEPGRAM_SAMPLE_RATE if your capture pipeline uses a different rate.
+const DEEPGRAM_SAMPLE_RATE = parseInt(
+  process.env.DEEPGRAM_SAMPLE_RATE || "48000",
+  10
+);
 
 // --- SERVICES ---
 const prisma = new PrismaClient({

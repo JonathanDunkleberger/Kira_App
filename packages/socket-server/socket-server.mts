@@ -279,17 +279,15 @@ async function initDeepgramWithMode() {
     return { mode: "disabled" } as const;
   }
   const DG_MODEL = DEEPGRAM_MODEL;
+  // Minimal base configuration to avoid SDK rejections; let DG infer VAD/endpointing from stream.
   const base = {
     model: DG_MODEL,
-    language: "en-US",
+    language: process.env.DEEPGRAM_LANGUAGE || "en-US",
     smart_format: true,
-    vad_events: true,
-    interim_results: process.env.DG_INTERIM_RESULTS === "true",
-    // Configurable silence tolerance (default: 10000ms)
-    utterance_end_ms: parseInt(process.env.DG_UTTERANCE_END_MS ?? "10000", 10),
-    // Configurable endpointing mode (default: "none")
-    endpointing: process.env.DG_ENDPOINTING ?? "none",
-  };
+    punctuate: true,
+    // Removed optional params for stability:
+    // vad_events, interim_results, utterance_end_ms, endpointing
+  } as Record<string, any>;
   const explicit = {
     ...base,
     encoding: DEEPGRAM_ENCODING,

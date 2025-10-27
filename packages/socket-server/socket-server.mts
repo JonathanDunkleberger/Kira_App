@@ -308,12 +308,20 @@ async function initDeepgramWithMode() {
     const cfg =
       label === "auto"
         ? {
+            ...base,
+            // Ensure robust conversational ASR defaults
             model: DG_MODEL,
             language: "en-US",
-            // Robustness: let Deepgram handle endpointing with a slightly more lenient VAD
-            endpointing: "auto",
+            punctuate: true,
+            smart_format: true,
+            // 1) Emit interim results so we have text early
+            interim_results: true,
+            // 2) Force VAD/endpointing actively
+            endpointing: true,
+            // 3) Aggressive utterance end timeout to finalize quickly on short pauses
+            utterance_end_ms: 500,
+            // 4) Slightly higher silence threshold for stability
             endpointing_config: {
-              // Increase silence threshold from default (~150ms) to 250ms
               silence_threshold: 250,
             },
           }
@@ -504,16 +512,24 @@ wss.on("connection", async (ws, req) => {
         console.log("[STAGE] Speech detected:", text);
         // Always update latest interim/final transcript for flushing on UtteranceEnd
         pendingTranscript = text;
+        // Aggregate finalized segments; log interim for debug visibility
+        if (isFinal) {
+          finalTranscriptText += text + " ";
+          console.log(`[* DG Transcript] Segment Finalized: "${text}"`);
+        } else {
+          console.log(`[* DG Interim] ${text}`);
+        }
       }
       // If manual EOU triggered finish(), wait for the final result here
       if (isProcessing && isFinal) {
-        const finalText = (pendingTranscript || "").trim();
+        const finalText = (finalTranscriptText || pendingTranscript || "").trim();
         if (!finalText) {
           console.log(
             "[STAGE] Final transcript empty after EOU. Skipping LLM/TTS and resetting state."
           );
           safeSend({ t: "speak", on: false } as any);
           pendingTranscript = "";
+          finalTranscriptText = "";
           isProcessing = false;
           safeReopenDeepgram();
           return;
@@ -524,6 +540,7 @@ wss.on("connection", async (ws, req) => {
           console.error("[STAGE] Manual EOU final processing failed:", error);
         } finally {
           pendingTranscript = "";
+          finalTranscriptText = "";
           isProcessing = false;
           safeReopenDeepgram();
         }
@@ -552,7 +569,7 @@ wss.on("connection", async (ws, req) => {
         return;
       }
 
-      const text = (pendingTranscript || "").trim();
+      const text = (finalTranscriptText.trim() || pendingTranscript || "").trim();
       if (!text) {
         console.log("[STAGE] No transcript to process");
         return;
@@ -564,6 +581,7 @@ wss.on("connection", async (ws, req) => {
       try {
         await sendTranscriptToOpenAI(text);
         pendingTranscript = "";
+        finalTranscriptText = "";
       } catch (error) {
         console.error("[STAGE] Processing failed:", error);
       } finally {
@@ -600,42 +618,60 @@ wss.on("connection", async (ws, req) => {
         console.log(
           `[DG Close Handler] Deepgram stream closed: ${code}. Reason: ${reasonString}`
         );
+        // Attempt to recover any final text we captured
+        const aggregated = (finalTranscriptText || "").trim();
+        const pending = (pendingTranscript || "").trim();
         // If currently processing due to EOU finish, finalize based on accumulated transcript
         if (isProcessing) {
-          const finalText = (pendingTranscript || "").trim();
+          const finalText = aggregated || pending;
           if (!finalText) {
             console.log(
               "[DG Close Handler] Final transcript empty after finish(). Signaling completion and reopening."
             );
             safeSend({ t: "speak", on: false } as any);
-            pendingTranscript = "";
-            isProcessing = false;
-            safeReopenDeepgram();
           } else {
             try {
+              console.log(
+                `[DG Close Handler] ✅ Final transcript detected (isProcessing): "${finalText}"`
+              );
               await sendTranscriptToOpenAI(finalText);
             } catch (e) {
               console.error(
                 "[DG Close Handler] Final processing failed after close:",
                 e
               );
-            } finally {
-              pendingTranscript = "";
-              isProcessing = false;
-              safeReopenDeepgram();
             }
           }
-        } else {
-          // If not currently in the middle of processing (planned finish), proactively end the turn
-          console.log(
-            "[DG Close Handler] Proactively signaling turn completion to client."
-          );
-          // 1) Signal completion so client doesn't timeout
-          safeSend({ t: "speak", on: false } as any);
-          // 2) Reset state
+          // Reset state and reopen
           pendingTranscript = "";
+          finalTranscriptText = "";
           isProcessing = false;
-          // 3) Re-open Deepgram for the next utterance
+          safeReopenDeepgram();
+        } else {
+          // If not currently in the middle of processing, attempt to salvage any aggregated text
+          if (aggregated) {
+            try {
+              console.log(
+                `[DG Close Handler] ✅ Salvaging final transcript: "${aggregated}"`
+              );
+              await sendTranscriptToOpenAI(aggregated);
+            } catch (e) {
+              console.error(
+                "[DG Close Handler] Salvage processing failed:",
+                e
+              );
+            }
+          } else {
+            console.log(
+              "[DG Close Handler] Proactively signaling turn completion to client."
+            );
+            // Signal completion so client doesn't timeout
+            safeSend({ t: "speak", on: false } as any);
+          }
+          // Reset and reopen
+          pendingTranscript = "";
+          finalTranscriptText = "";
+          isProcessing = false;
           try {
             safeReopenDeepgram();
           } catch (e) {
@@ -713,6 +749,8 @@ wss.on("connection", async (ws, req) => {
 
   // Reset per-connection state
   let pendingTranscript = "";
+  // Aggregates finalized DG segments; used to recover if stream closes early
+  let finalTranscriptText = "";
   let isProcessing = false;
   let assistantBusy = false;
 

@@ -21,21 +21,18 @@ const STT_CONFIG = {
 export class GoogleSTTStreamer extends EventEmitter {
   private recognizeStream: ReturnType<SpeechClient['streamingRecognize']> | null = null;
   private fullTranscript: string = '';
+  private configSent = false;
 
   constructor() {
     super();
     this.fullTranscript = '';
 
-    const request = {
-      config: STT_CONFIG,
-      interimResults: true,
-    } as const;
-
-    // Create a new bi-directional stream
+    // Create a new bi-directional stream (we'll send config as the FIRST message explicitly)
     this.recognizeStream = speechClient
-      .streamingRecognize(request)
+      .streamingRecognize()
       .on('error', (error: any) => {
         console.error('[G-STT] Stream Error:', error);
+        this.configSent = false; // Reset state on error
         this.emit('error', error);
       })
       .on('data', (data: any) => {
@@ -63,13 +60,31 @@ export class GoogleSTTStreamer extends EventEmitter {
       });
 
     console.log('[G-STT] New Google STT Stream initialized.');
+
+    // Immediately send the streaming configuration as the first message
+    try {
+      (this.recognizeStream as any).write({
+        streamingConfig: {
+          config: STT_CONFIG,
+          interimResults: true,
+        },
+      });
+      this.configSent = true;
+      console.log('[G-STT] ✅ Configuration sent to stream.');
+    } catch (e) {
+      console.error('[G-STT] Failed to send initial streaming config:', e);
+    }
   }
 
   // Pipe client audio chunks into the Google STT stream
   public write(audioChunk: Buffer) {
-    if (this.recognizeStream && (this.recognizeStream as any).writable) {
-      (this.recognizeStream as any).write({ audio_content: audioChunk });
+    if (!this.recognizeStream) return;
+    if (!(this.recognizeStream as any).writable) return;
+    if (!this.configSent) {
+      console.warn('[G-STT] ⚠️ Attempted to write audio before config was sent. Skipping chunk.');
+      return;
     }
+    (this.recognizeStream as any).write({ audioContent: audioChunk });
   }
 
   // Signal the end of user's audio (from client EOU)

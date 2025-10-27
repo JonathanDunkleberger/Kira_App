@@ -37,6 +37,8 @@ interface ActiveSessionInfo {
   isPro: boolean;
   interval?: NodeJS.Timer;
   limitReached?: boolean;
+  // Google STT streamer for this connection (initialized by start_stream)
+  sttStreamer?: GoogleSTTStreamer;
 }
 
 const activeSessions = new Map<WebSocket, ActiveSessionInfo>();
@@ -337,8 +339,7 @@ wss.on("connection", async (ws, req) => {
     activeSessions.delete(ws);
   }
 
-  let googleSttStreamer: GoogleSTTStreamer | null = null;
-  let googleSttReady = false; // Set true after receiving explicit START_AUDIO from client
+  // STT stream is tracked per-connection in activeSessions
 
   function setupSttListeners(stt: GoogleSTTStreamer) {
     stt.on('interim_transcript', (text: string) => {
@@ -370,8 +371,9 @@ wss.on("connection", async (ws, req) => {
       }
     });
     stt.on('close', () => {
-      console.log('[STT] Stream closed. Clearing object.');
-      googleSttStreamer = null;
+      console.log('[STT] Stream closed. Clearing session reference.');
+      const s = activeSessions.get(ws);
+      if (s) s.sttStreamer = undefined;
     });
     stt.on('error', (err: any) => {
       console.error('[STT ERROR] Fatal STT error occurred:', err);
@@ -576,19 +578,18 @@ wss.on("connection", async (ws, req) => {
   // Deepgram event handlers are attached within openDeepgramConnection()
 
   ws.on("message", (message: Buffer, isBinary) => {
+    const session = activeSessions.get(ws)!;
     if (isBinary) {
       console.log("[WS] Received binary audio chunk:", message.length, "bytes");
-    }
-    if (isBinary) {
-      // Only accept audio if START_AUDIO has been sent and stream is ready
-      if (!googleSttStreamer || !googleSttReady || !googleSttStreamer.isReady()) {
+      // Only accept audio if 'start_stream' initialized the STT and it's ready
+      if (!session?.sttStreamer || !session.sttStreamer.isReady()) {
         console.warn('[WS] Dropped audio chunk: STT stream not configured yet.');
         return;
       }
       audioChunkCount++;
       totalBytesSent += message.length;
       try {
-        googleSttStreamer.write(message);
+        session.sttStreamer.writeAudio(message);
       } catch (err) {
         console.error("[G-STT] write error", (err as any)?.message || err);
       }
@@ -599,15 +600,28 @@ wss.on("connection", async (ws, req) => {
       const text = message.toString("utf8");
       const data = JSON.parse(text);
 
-      if (data?.t === "start_audio" || data?.t === "START_AUDIO") {
-        // Initialize Google STT only on explicit start signal from client
-        if (!googleSttStreamer) {
-          console.log('[WS] START_AUDIO received - initializing Google STT stream');
-          googleSttStreamer = new GoogleSTTStreamer();
-          setupSttListeners(googleSttStreamer);
+      // New protocol: start_stream initializes STT with config
+      if (data?.t === "start_stream" && data?.config) {
+        if (session.sttStreamer) {
+          console.log('[G-STT] Received start_stream, cleaning previous stream');
+          try { session.sttStreamer.closeStream(); } catch {}
+          session.sttStreamer = undefined;
         }
-        // Mark ready for subsequent audio chunks
-        googleSttReady = true;
+        console.log('[G-STT] Initializing new stream from start_stream event');
+        const streamer = new GoogleSTTStreamer(data.config as any);
+        setupSttListeners(streamer);
+        session.sttStreamer = streamer;
+        return;
+      }
+      // Backward-compat legacy control
+      if (data?.t === "start_audio" || data?.t === "START_AUDIO") {
+        if (session.sttStreamer) {
+          try { session.sttStreamer.closeStream(); } catch {}
+          session.sttStreamer = undefined;
+        }
+        const streamer = new GoogleSTTStreamer();
+        setupSttListeners(streamer);
+        session.sttStreamer = streamer;
         return;
       }
 
@@ -621,10 +635,8 @@ wss.on("connection", async (ws, req) => {
 
         // Signal Google STT to finalize current stream
         try {
-          googleSttStreamer?.end();
+          session.sttStreamer?.endAudioStream();
         } catch {}
-        // After EOU, mark not ready until a new START_AUDIO
-        googleSttReady = false;
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
@@ -636,14 +648,16 @@ wss.on("connection", async (ws, req) => {
       reason: Buffer.isBuffer(reason) ? reason.toString("utf8") : reason,
     });
     try {
-      googleSttStreamer?.end();
+      const s = activeSessions.get(ws);
+      s?.sttStreamer?.endAudioStream();
     } catch {}
     cleanupSession();
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);
     try {
-      googleSttStreamer?.end();
+      const s = activeSessions.get(ws);
+      s?.sttStreamer?.endAudioStream();
     } catch {}
     cleanupSession();
   });

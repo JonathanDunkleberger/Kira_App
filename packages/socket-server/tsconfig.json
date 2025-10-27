@@ -12,6 +12,10 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["socket-server.mts"],
+  "include": [
+    "socket-server.mts",
+    "google-stt-streamer.ts",
+    "lib/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

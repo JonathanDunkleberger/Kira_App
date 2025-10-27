@@ -9,7 +9,7 @@ const speechClient = new SpeechClient();
 
 // Configuration matching browser MediaRecorder (audio/webm;codecs=opus)
 // Google supports WEBM_OPUS for streamingRecognize.
-const STT_CONFIG = {
+const DEFAULT_STT_CONFIG = {
   encoding: 'WEBM_OPUS' as const,
   // Opus uses a 48kHz sampling rate internally
   sampleRateHertz: 48000,
@@ -22,10 +22,12 @@ export class GoogleSTTStreamer extends EventEmitter {
   private recognizeStream: ReturnType<SpeechClient['streamingRecognize']> | null = null;
   private fullTranscript: string = '';
   private configSent = false;
+  private effectiveConfig: Record<string, any>;
 
-  constructor() {
+  constructor(configOverride?: Record<string, any>) {
     super();
     this.fullTranscript = '';
+    this.effectiveConfig = { ...DEFAULT_STT_CONFIG, ...(configOverride || {}) };
 
     // Create a new bi-directional stream (we'll send config as the FIRST message explicitly)
     this.recognizeStream = speechClient
@@ -65,7 +67,7 @@ export class GoogleSTTStreamer extends EventEmitter {
     try {
       (this.recognizeStream as any).write({
         streamingConfig: {
-          config: STT_CONFIG,
+          config: this.effectiveConfig,
           interimResults: true,
         },
       });
@@ -95,6 +97,17 @@ export class GoogleSTTStreamer extends EventEmitter {
     }
   }
 
+  // Cleanly close and reset stream state
+  public closeStream() {
+    try {
+      if (this.recognizeStream && (this.recognizeStream as any).writable) {
+        (this.recognizeStream as any).end();
+      }
+    } catch {}
+    this.recognizeStream = null;
+    this.configSent = false;
+  }
+
   // Retrieve the full transcript collected so far
   public getFullTranscript(): string {
     return this.fullTranscript.trim();
@@ -103,5 +116,13 @@ export class GoogleSTTStreamer extends EventEmitter {
   // Expose readiness for audio writes
   public isReady(): boolean {
     return this.configSent && !!this.recognizeStream;
+  }
+
+  // Aliases for semantic clarity with server usage
+  public writeAudio(buf: Buffer) {
+    this.write(buf);
+  }
+  public endAudioStream() {
+    this.end();
   }
 }

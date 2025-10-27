@@ -3,6 +3,7 @@
 
 export type ClientEvent =
   | { t: "client_ready"; persona?: string; session?: string; ua?: string }
+  | { t: "start_stream"; config: Record<string, any> }
   | { t: "eou" }
   | { t: "end_chat" }
   | { t: "mute"; on: boolean };
@@ -39,6 +40,7 @@ export function isClientEvent(e: any): e is ClientEvent {
   if (!e || typeof e !== "object") return false;
   return (
     e.t === "client_ready" ||
+    e.t === "start_stream" ||
     e.t === "eou" ||
     e.t === "end_chat" ||
     e.t === "mute"

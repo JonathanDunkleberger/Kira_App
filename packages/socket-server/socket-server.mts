@@ -4,7 +4,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
 import { PrismaClient } from "@prisma/client";
 import { verifyToken } from "@clerk/clerk-sdk-node";
-import { createClient } from "@deepgram/sdk";
+// import { createClient } from "@deepgram/sdk";
+import { GoogleSTTStreamer } from "./google-stt-streamer.js";
 import OpenAI from "openai";
 import * as AzureSpeechSDK from "microsoft-cognitiveservices-speech-sdk";
 import fs from "node:fs";
@@ -121,31 +122,11 @@ const prisma = new PrismaClient({
     db: { url: process.env.DATABASE_URL },
   },
 });
-const deepgram = createClient(DEEPGRAM_API_KEY);
+// const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-(async () => {
-  try {
-    // FIX: Use the correct v3 SDK syntax for project listing
-    const { result, error } = await (deepgram as any).manage.getProjects();
-    if (error) throw error;
-    if (result?.projects) {
-      console.log(
-        "[DG Test] ✅ Deepgram connection test successful. Projects found:",
-        result.projects.length
-      );
-    } else {
-      console.warn(
-        "[DG Test] 🟡 Deepgram connection test passed, but no projects found."
-      );
-    }
-  } catch (e: any) {
-    console.error(
-      "[DG Test] ❌ Deepgram connection test FAILED.",
-      e?.message || e
-    );
-  }
-})();
+// Deepgram project listing test disabled while migrating to Google STT
+// (async () => { /* no-op */ })();
 
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/healthz") {
@@ -198,142 +179,7 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-// Deepgram helper
-async function attemptDeepgramLive(
-  label: string,
-  cfg: Record<string, any>,
-  timeoutMs = 4000
-) {
-  return new Promise<{ ok: boolean; conn: any; label: string; error?: any }>(
-    (resolve) => {
-      let settled = false;
-      try {
-        if (label === "explicit") {
-          try {
-            console.log(
-              "[DG Config - Explicit] Attempting connection with config:",
-              JSON.stringify(cfg, null, 2)
-            );
-          } catch {}
-        }
-        const conn = deepgram.listen.live(cfg);
-        const timer = setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          try {
-            (conn as any).finish?.();
-          } catch {}
-          resolve({ ok: false, conn, label, error: new Error("timeout") });
-        }, timeoutMs);
-        conn.on("open", () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          console.log(`[DG Fallback] ✅ Open using config: ${label}`);
-          resolve({ ok: true, conn, label });
-        });
-        conn.on("error", (e: any) => {
-          console.error(
-            `[DG Fallback] ❌ Error on config ${label}:`,
-            e?.message || e,
-            e
-          );
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve({ ok: false, conn, label, error: e });
-        });
-        conn.on("close", (c: any) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve({
-            ok: false,
-            conn,
-            label,
-            error: { code: c?.code, reason: c?.reason },
-          });
-        });
-      } catch (err) {
-        if (label === "explicit") {
-          console.error(
-            `[DG Config - Explicit] SDK listen.live threw error:`,
-            (err as any)?.message || err,
-            err
-          );
-        } else {
-          console.error(
-            `[DG Fallback] 🚫 Exception creating config ${label}:`,
-            (err as any)?.message || err
-          );
-        }
-        resolve({ ok: false, conn: null, label, error: err });
-      }
-    }
-  );
-}
-
-async function initDeepgramWithMode() {
-  if (DEEPGRAM_DISABLED) {
-    console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
-    return { mode: "disabled" } as const;
-  }
-  const DG_MODEL = DEEPGRAM_MODEL;
-  // Minimal base configuration to avoid SDK rejections; let DG infer VAD/endpointing from stream.
-  const base = {
-    model: DG_MODEL,
-    language: process.env.DEEPGRAM_LANGUAGE || "en-US",
-    smart_format: true,
-    punctuate: true,
-    // Removed optional params for stability:
-    // vad_events, interim_results, utterance_end_ms, endpointing
-  } as Record<string, any>;
-  const explicit = {
-    ...base,
-    encoding: DEEPGRAM_ENCODING,
-    // Do not specify sample_rate for containerized Opus; DG infers it from WebM/Opus stream.
-  } as Record<string, any>;
-  const minimal = { ...base };
-  const attempts: any[] = [];
-  // Order attempts based on DEEPGRAM_MODE.
-  // explicit: prioritize matching browser (webm/opus) streaming
-  // auto: let DG infer, but fall back to explicit
-  // any other: default to explicit first
-  const order: Array<"explicit" | "auto" | "minimal"> =
-    DEEPGRAM_MODE === "auto"
-      ? ["auto", "explicit", "minimal"]
-      : ["explicit", "auto", "minimal"];
-
-  for (const label of order) {
-    const cfg =
-      label === "auto"
-        ? {
-            ...base,
-            // Ensure robust conversational ASR defaults
-            model: DG_MODEL,
-            language: "en-US",
-            punctuate: true,
-            smart_format: true,
-            // 1) Emit interim results so we have text early
-            interim_results: true,
-            // 2) Force VAD/endpointing actively
-            endpointing: true,
-            // 3) Aggressive utterance end timeout to finalize quickly on short pauses
-            utterance_end_ms: 500,
-            // 4) Slightly higher silence threshold for stability
-            endpointing_config: {
-              silence_threshold: 250,
-            },
-          }
-        : label === "explicit"
-          ? explicit
-          : minimal;
-    const res = await attemptDeepgramLive(label, cfg);
-    attempts.push(res);
-    if (res.ok) break;
-  }
-  return { mode: DEEPGRAM_MODE, attempts } as const;
-}
+// Deepgram helper functions removed during Google STT migration
 
 wss.on("connection", async (ws, req) => {
   let audioChunkCount = 0;
@@ -491,261 +337,52 @@ wss.on("connection", async (ws, req) => {
     activeSessions.delete(ws);
   }
 
-  let deepgramLive: any = null;
-  let deepgramKeepAlive: NodeJS.Timer | null = null;
-  let deepgramReopenTimer: NodeJS.Timer | null = null;
+  let googleSttStreamer: GoogleSTTStreamer | null = null;
 
-  const attachDeepgramHandlers = (conn: any) => {
-    // Update buffer on partials with verbose logging
-    conn.on("transcriptReceived", async (dgMsg: any) => {
-      const text = dgMsg?.channel?.alternatives?.[0]?.transcript || "";
-      const isFinal = Boolean(dgMsg?.is_final || dgMsg?.speech_final);
-      const hasText = Boolean(text);
-      const messageType = dgMsg?.type;
-      console.log("[DG] Transcript received:", {
-        text,
-        isFinal,
-        hasText,
-        messageType,
-      });
-      if (hasText) {
-        console.log("[STAGE] Speech detected:", text);
-        // Always update latest interim/final transcript for flushing on UtteranceEnd
-        pendingTranscript = text;
-        // Aggregate finalized segments; log interim for debug visibility
-        if (isFinal) {
-          finalTranscriptText += text + " ";
-          console.log(`[* DG Transcript] Segment Finalized: "${text}"`);
-        } else {
-          console.log(`[* DG Interim] ${text}`);
-        }
-      }
-      // If manual EOU triggered finish(), wait for the final result here
-      if (isProcessing && isFinal) {
-        const finalText = (finalTranscriptText || pendingTranscript || "").trim();
-        if (!finalText) {
-          console.log(
-            "[STAGE] Final transcript empty after EOU. Skipping LLM/TTS and resetting state."
-          );
-          safeSend({ t: "speak", on: false } as any);
-          pendingTranscript = "";
-          finalTranscriptText = "";
-          isProcessing = false;
-          safeReopenDeepgram();
-          return;
-        }
-        try {
-          await sendTranscriptToOpenAI(finalText);
-        } catch (error) {
-          console.error("[STAGE] Manual EOU final processing failed:", error);
-        } finally {
-          pendingTranscript = "";
-          finalTranscriptText = "";
-          isProcessing = false;
-          safeReopenDeepgram();
-        }
-      }
+  function setupSttListeners(stt: GoogleSTTStreamer) {
+    stt.on('interim_transcript', (text: string) => {
+      pendingTranscript = text;
     });
-    // Try to log additional DG events if exposed by SDK
-    try {
-      conn.on("Metadata", () => {
-        console.log("[DG Event] Received Metadata");
-      });
-    } catch {}
-    try {
-      conn.on("message", (data: any) => {
-        try {
-          const parsed = JSON.parse(data?.toString?.() || "");
-          console.log("[DG Receive] Received message type:", parsed?.type);
-        } catch {
-          console.log("[DG Receive] Non-JSON message received");
-        }
-      });
-    } catch {}
-    // Use Deepgram's automatic UtteranceEnd
-    conn.on("UtteranceEnd", async () => {
+    stt.on('final_transcript_segment', (text: string) => {
+      // Keep last segment around for visibility if needed
+      pendingTranscript = text;
+    });
+    stt.on('utterance_end', async (full: string) => {
       if (isProcessing) {
-        console.log("[STAGE] Skipping - already processing");
+        console.log('[STAGE] Skipping - already processing');
         return;
       }
-
-      const text = (finalTranscriptText.trim() || pendingTranscript || "").trim();
+      const text = (full || pendingTranscript || '').trim();
       if (!text) {
-        console.log("[STAGE] No transcript to process");
+        console.log('[STAGE] No transcript to process');
         return;
       }
-
-      console.log("[STAGE] Processing utterance:", text);
+      console.log('[STAGE] Processing utterance (G-STT):', text);
       isProcessing = true;
-
       try {
         await sendTranscriptToOpenAI(text);
-        pendingTranscript = "";
-        finalTranscriptText = "";
+        pendingTranscript = '';
       } catch (error) {
-        console.error("[STAGE] Processing failed:", error);
+        console.error('[STAGE] Processing failed:', error);
       } finally {
         isProcessing = false;
       }
     });
-  };
-
-  async function openDeepgramConnection() {
-    if (DEEPGRAM_DISABLED) {
-      console.warn("[DG] Deepgram disabled via DEEPGRAM_DISABLED env var");
-      return;
-    }
-    try {
-      const primary = await initDeepgramWithMode();
-      const successAttempt = (primary as any).attempts?.find((a: any) => a.ok);
-      if (successAttempt) {
-        console.log(`[DG] Connected with ${successAttempt.label} config`);
-        deepgramLive = successAttempt.conn;
-        console.log("[DG] ✅ Deepgram connection established successfully");
-      } else {
-        throw new Error(
-          "All Deepgram connection attempts failed after reordering."
-        );
-      }
-      deepgramLive.on("open", () => {
-        console.log("[DG] WebSocket connection opened");
-        console.log("[STAGE] Listening for speech...");
-      });
-      deepgramLive.on("close", async (code: any, reason: any) => {
-        const reasonString = Buffer.isBuffer(reason)
-          ? reason.toString("utf8")
-          : reason?.toString?.() || "No reason provided";
-        console.log(
-          `[DG Close Handler] Deepgram stream closed: ${code}. Reason: ${reasonString}`
-        );
-        // Attempt to recover any final text we captured
-        const aggregated = (finalTranscriptText || "").trim();
-        const pending = (pendingTranscript || "").trim();
-        // If currently processing due to EOU finish, finalize based on accumulated transcript
-        if (isProcessing) {
-          const finalText = aggregated || pending;
-          if (!finalText) {
-            console.log(
-              "[DG Close Handler] Final transcript empty after finish(). Signaling completion and reopening."
-            );
-            safeSend({ t: "speak", on: false } as any);
-          } else {
-            try {
-              console.log(
-                `[DG Close Handler] ✅ Final transcript detected (isProcessing): "${finalText}"`
-              );
-              await sendTranscriptToOpenAI(finalText);
-            } catch (e) {
-              console.error(
-                "[DG Close Handler] Final processing failed after close:",
-                e
-              );
-            }
-          }
-          // Reset state and reopen
-          pendingTranscript = "";
-          finalTranscriptText = "";
-          isProcessing = false;
-          safeReopenDeepgram();
-        } else {
-          // If not currently in the middle of processing, attempt to salvage any aggregated text
-          if (aggregated) {
-            try {
-              console.log(
-                `[DG Close Handler] ✅ Salvaging final transcript: "${aggregated}"`
-              );
-              await sendTranscriptToOpenAI(aggregated);
-            } catch (e) {
-              console.error(
-                "[DG Close Handler] Salvage processing failed:",
-                e
-              );
-            }
-          } else {
-            console.log(
-              "[DG Close Handler] Proactively signaling turn completion to client."
-            );
-            // Signal completion so client doesn't timeout
-            safeSend({ t: "speak", on: false } as any);
-          }
-          // Reset and reopen
-          pendingTranscript = "";
-          finalTranscriptText = "";
-          isProcessing = false;
-          try {
-            safeReopenDeepgram();
-          } catch (e) {
-            console.error(
-              "[DG Reopen] Failed to re-initialize Deepgram after unexpected close:",
-              e
-            );
-          }
-        }
-      });
-      deepgramLive.on("error", (e: any) => {
-        console.error("[DG Error] Deepgram stream error:", e?.message || e);
-        // Optionally, could signal speak:false here as well if desired
-      });
-      if (deepgramKeepAlive) {
-        clearInterval(deepgramKeepAlive as any);
-        deepgramKeepAlive = null;
-      }
-      deepgramKeepAlive = setInterval(() => {
-        try {
-          if (deepgramLive?.getReadyState?.() === 1)
-            deepgramLive.send(JSON.stringify({ type: "KeepAlive" }));
-        } catch {}
-      }, 8000);
-      const clearKA = () => {
-        if (deepgramKeepAlive) {
-          clearInterval(deepgramKeepAlive as any);
-          deepgramKeepAlive = null;
-        }
-      };
-      ws.on("close", clearKA);
-      ws.on("error", clearKA);
-
-      attachDeepgramHandlers(deepgramLive);
-    } catch (err) {
-      console.error(
-        "[DG] Failed to connect after retries:",
-        (err as any)?.message || err
-      );
-      safeSend({ t: "error", message: "Speech recognition unavailable." });
-    }
+    stt.on('close', () => {
+      console.log('[STT] Stream closed. Clearing object.');
+      googleSttStreamer = null;
+    });
+    stt.on('error', (err: any) => {
+      console.error('[STT ERROR] Fatal STT error occurred:', err);
+      try { stt.end(); } catch {}
+    });
   }
 
-  const safeReopenDeepgram = (delayMs = 500) => {
-    // Debounce re-open attempts
-    if (deepgramReopenTimer) return;
-    deepgramReopenTimer = setTimeout(() => {
-      deepgramReopenTimer = null;
-      let state: any;
-      try {
-        state = deepgramLive?.getReadyState?.();
-      } catch {}
-      // If no connection or CLOSED (3), open a new one
-      if (!deepgramLive || state === 3) {
-        try {
-          openDeepgramConnection();
-        } catch (e) {
-          console.error("[DG Reopen] Failed to re-open Deepgram:", e);
-        }
-        return;
-      }
-      // If not OPEN (1) but still present (e.g., CLOSING/CONNECTING), attempt a graceful finish
-      if (state !== 1) {
-        try {
-          (deepgramLive as any)?.finish?.();
-        } catch {}
-        // Schedule another attempt after delay, allowing close to complete
-        safeReopenDeepgram(delayMs);
-      }
-      // If OPEN, do nothing
-    }, delayMs);
-  };
+  // Deepgram open/keepalive removed in Google STT migration
 
-  await openDeepgramConnection();
+  // Reopen logic not required for Google STT; a new stream is created per utterance as needed
+
+  // Google STT stream will be lazily created on first audio chunk
 
   // Reset per-connection state
   let pendingTranscript = "";
@@ -942,14 +579,17 @@ wss.on("connection", async (ws, req) => {
       console.log("[WS] Received binary audio chunk:", message.length, "bytes");
     }
     if (isBinary) {
-      if (!deepgramLive) return;
+      // Initialize Google STT on first audio chunk
+      if (!googleSttStreamer) {
+        googleSttStreamer = new GoogleSTTStreamer();
+        setupSttListeners(googleSttStreamer);
+      }
       audioChunkCount++;
       totalBytesSent += message.length;
       try {
-        if ((deepgramLive as any).getReadyState?.() === 1)
-          (deepgramLive as any).send(message);
+        googleSttStreamer.write(message);
       } catch (err) {
-        console.error("[DG] send error", (err as any)?.message || err);
+        console.error("[G-STT] write error", (err as any)?.message || err);
       }
       return;
     }
@@ -966,13 +606,10 @@ wss.on("connection", async (ws, req) => {
           return;
         }
 
-        // Set processing state now to prevent concurrent EOU processing
-        isProcessing = true;
-        // Stop Deepgram stream to flush and emit final transcript asynchronously
+        // Signal Google STT to finalize current stream
         try {
-          deepgramLive?.finish();
+          googleSttStreamer?.end();
         } catch {}
-        // Do NOT process synchronously here; wait for final transcript via event handlers
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
@@ -984,14 +621,14 @@ wss.on("connection", async (ws, req) => {
       reason: Buffer.isBuffer(reason) ? reason.toString("utf8") : reason,
     });
     try {
-      (deepgramLive as any)?.finish?.();
+      googleSttStreamer?.end();
     } catch {}
     cleanupSession();
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);
     try {
-      (deepgramLive as any)?.finish?.();
+      googleSttStreamer?.end();
     } catch {}
     cleanupSession();
   });

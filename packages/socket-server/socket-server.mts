@@ -307,7 +307,16 @@ async function initDeepgramWithMode() {
   for (const label of order) {
     const cfg =
       label === "auto"
-        ? { model: DG_MODEL, language: "en-US" }
+        ? {
+            model: DG_MODEL,
+            language: "en-US",
+            // Robustness: let Deepgram handle endpointing with a slightly more lenient VAD
+            endpointing: "auto",
+            endpointing_config: {
+              // Increase silence threshold from default (~150ms) to 250ms
+              silence_threshold: 250,
+            },
+          }
         : label === "explicit"
           ? explicit
           : minimal;

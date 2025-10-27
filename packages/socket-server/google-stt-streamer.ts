@@ -99,4 +99,9 @@ export class GoogleSTTStreamer extends EventEmitter {
   public getFullTranscript(): string {
     return this.fullTranscript.trim();
   }
+
+  // Expose readiness for audio writes
+  public isReady(): boolean {
+    return this.configSent && !!this.recognizeStream;
+  }
 }

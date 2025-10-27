@@ -80,6 +80,16 @@ export function useKiraSocket(conversationId: string | null) {
         },
       });
       console.log('[Audio] ✅ Microphone permission granted.');
+      // Inform the server to initialize STT stream BEFORE sending audio
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ t: 'start_audio' }));
+          // Small delay to allow server to set up stream config
+          await new Promise((r) => setTimeout(r, 30));
+        } catch (e) {
+          console.warn('[WS] Failed to send start_audio:', e);
+        }
+      }
       const recorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm; codecs=opus',
         audioBitsPerSecond: 128000,

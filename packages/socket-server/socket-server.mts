@@ -338,6 +338,7 @@ wss.on("connection", async (ws, req) => {
   }
 
   let googleSttStreamer: GoogleSTTStreamer | null = null;
+  let googleSttReady = false; // Set true after receiving explicit START_AUDIO from client
 
   function setupSttListeners(stt: GoogleSTTStreamer) {
     stt.on('interim_transcript', (text: string) => {
@@ -579,10 +580,10 @@ wss.on("connection", async (ws, req) => {
       console.log("[WS] Received binary audio chunk:", message.length, "bytes");
     }
     if (isBinary) {
-      // Initialize Google STT on first audio chunk
-      if (!googleSttStreamer) {
-        googleSttStreamer = new GoogleSTTStreamer();
-        setupSttListeners(googleSttStreamer);
+      // Only accept audio if START_AUDIO has been sent and stream is ready
+      if (!googleSttStreamer || !googleSttReady || !googleSttStreamer.isReady()) {
+        console.warn('[WS] Dropped audio chunk: STT stream not configured yet.');
+        return;
       }
       audioChunkCount++;
       totalBytesSent += message.length;
@@ -598,6 +599,18 @@ wss.on("connection", async (ws, req) => {
       const text = message.toString("utf8");
       const data = JSON.parse(text);
 
+      if (data?.t === "start_audio" || data?.t === "START_AUDIO") {
+        // Initialize Google STT only on explicit start signal from client
+        if (!googleSttStreamer) {
+          console.log('[WS] START_AUDIO received - initializing Google STT stream');
+          googleSttStreamer = new GoogleSTTStreamer();
+          setupSttListeners(googleSttStreamer);
+        }
+        // Mark ready for subsequent audio chunks
+        googleSttReady = true;
+        return;
+      }
+
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
 
@@ -610,6 +623,8 @@ wss.on("connection", async (ws, req) => {
         try {
           googleSttStreamer?.end();
         } catch {}
+        // After EOU, mark not ready until a new START_AUDIO
+        googleSttReady = false;
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);

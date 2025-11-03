@@ -69,12 +69,19 @@ export class GoogleSTTStreamer extends EventEmitter {
     // Immediately send the streaming configuration as the first message
     try {
       if (!this.configSent) {
-        (this.recognizeStream as any).write({
+        const request = {
           streamingConfig: {
-            config: this.effectiveConfig,
+            config: {
+              encoding: 'LINEAR16',
+              sampleRateHertz: 16000,
+              languageCode: 'en-US',
+              enableAutomaticPunctuation: true,
+            },
             interimResults: true,
           },
-        });
+        } as const;
+        console.log('[DEBUG] USING STT CONFIG:', JSON.stringify(request.streamingConfig.config));
+        (this.recognizeStream as any).write(request);
         this.configSent = true;
       }
       console.log("[G-STT] ✅ Configuration sent to stream.");

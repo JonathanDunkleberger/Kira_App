@@ -142,6 +142,41 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
+// --- Emergency: Global connection limiter ---
+let activeConnections = 0;
+const MAX_CONCURRENT_CONNECTIONS = parseInt(
+  process.env.MAX_CONCURRENT_CONNECTIONS || "5",
+  10
+);
+
+// --- Emergency: Simple per-process rate limiter for STT stream creations ---
+class RateLimiter {
+  private requests = 0;
+  private lastReset = Date.now();
+  private readonly MAX_REQUESTS = parseInt(
+    process.env.RATE_LIMIT_MAX_REQUESTS || "800",
+    10
+  );
+  private readonly RESET_INTERVAL = parseInt(
+    process.env.RATE_LIMIT_WINDOW_MS || "60000",
+    10
+  );
+  canMakeRequest(): boolean {
+    const now = Date.now();
+    if (now - this.lastReset > this.RESET_INTERVAL) {
+      this.requests = 0;
+      this.lastReset = now;
+    }
+    if (this.requests >= this.MAX_REQUESTS) {
+      console.log("[RATE LIMIT] Blocked - quota exceeded");
+      return false;
+    }
+    this.requests++;
+    return true;
+  }
+}
+const rateLimiter = new RateLimiter();
+
 // Secure origin validation for WebSocket upgrade (supports comma-separated ALLOWED_ORIGINS)
 server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin || "";
@@ -184,6 +219,16 @@ server.on("upgrade", (req, socket, head) => {
 // Deepgram helper functions removed during Google STT migration
 
 wss.on("connection", async (ws, req) => {
+  activeConnections++;
+  console.log(`[WS] Active connections: ${activeConnections}`);
+  if (activeConnections > MAX_CONCURRENT_CONNECTIONS) {
+    console.log("[WS] Too many connections, rejecting");
+    try {
+      ws.close(1013, "Server busy");
+    } catch {}
+    activeConnections--; // revert increment
+    return;
+  }
   let audioChunkCount = 0;
   let totalBytesSent = 0;
   console.log("[Server Log] ✅ New client connected.");
@@ -341,6 +386,10 @@ wss.on("connection", async (ws, req) => {
 
   // STT stream is tracked per-connection in activeSessions
 
+  // Retry controls for STT recovery
+  let sttRetryCount = 0;
+  const MAX_STT_RETRIES = parseInt(process.env.MAX_STT_RETRIES || "3", 10);
+
   function setupSttListeners(stt: GoogleSTTStreamer) {
     stt.on("interim_transcript", (text: string) => {
       pendingTranscript = text;
@@ -380,23 +429,47 @@ wss.on("connection", async (ws, req) => {
       try {
         stt.end();
       } catch {}
-      // Attempt basic recovery with same configuration
-      const cfg = (stt as any).getConfig?.() || undefined;
-      try {
-        const replacement = new GoogleSTTStreamer(cfg);
-        setupSttListeners(replacement);
-        const s = activeSessions.get(ws);
-        if (s) s.sttStreamer = replacement;
-        if (replacement.isReady()) {
-          safeSend({ t: "stream_ready" } as any);
-        } else {
-          (replacement as any).once?.("ready", () => {
-            safeSend({ t: "stream_ready" } as any);
-          });
-        }
-      } catch (reinitErr) {
-        console.error("[STT ERROR] Recovery failed:", reinitErr);
+      if (sttRetryCount >= MAX_STT_RETRIES) {
+        console.error("[STT ERROR] Max retries exceeded, giving up");
+        safeSend({
+          t: "stream_error",
+          message: "Speech service unavailable",
+        } as any);
+        return;
       }
+      sttRetryCount++;
+      const backoffMs = Math.pow(2, sttRetryCount) * 1000;
+      console.log(
+        `[STT ERROR] Retrying... (${sttRetryCount}/${MAX_STT_RETRIES}) in ${backoffMs}ms`
+      );
+      setTimeout(() => {
+        const cfg = (stt as any).getConfig?.() || undefined;
+        try {
+          if (!rateLimiter.canMakeRequest()) {
+            console.warn(
+              "[RateLimit] Recovery STT init denied due to rate limits"
+            );
+            safeSend({
+              t: "stream_error",
+              message: "Rate limit exceeded. Please try again shortly.",
+            } as any);
+            return;
+          }
+          const replacement = new GoogleSTTStreamer(cfg);
+          setupSttListeners(replacement);
+          const s = activeSessions.get(ws);
+          if (s) s.sttStreamer = replacement;
+          if (replacement.isReady()) {
+            safeSend({ t: "stream_ready" } as any);
+          } else {
+            (replacement as any).once?.("ready", () => {
+              safeSend({ t: "stream_ready" } as any);
+            });
+          }
+        } catch (reinitErr) {
+          console.error("[STT ERROR] Recovery failed:", reinitErr);
+        }
+      }, backoffMs);
     });
   }
 
@@ -633,6 +706,14 @@ wss.on("connection", async (ws, req) => {
           } catch {}
           session.sttStreamer = undefined;
         }
+        if (!rateLimiter.canMakeRequest()) {
+          console.warn("[RateLimit] STT init denied due to rate limits");
+          safeSend({
+            t: "stream_error",
+            message: "Rate limit exceeded. Please try again shortly.",
+          } as any);
+          return;
+        }
         console.log("[G-STT] Initializing new stream from start_stream event");
         const streamer = new GoogleSTTStreamer(data.config as any);
         setupSttListeners(streamer);
@@ -654,6 +735,14 @@ wss.on("connection", async (ws, req) => {
             session.sttStreamer.closeStream();
           } catch {}
           session.sttStreamer = undefined;
+        }
+        if (!rateLimiter.canMakeRequest()) {
+          console.warn("[RateLimit] Legacy STT init denied due to rate limits");
+          safeSend({
+            t: "stream_error",
+            message: "Rate limit exceeded. Please try again shortly.",
+          } as any);
+          return;
         }
         const streamer = new GoogleSTTStreamer();
         setupSttListeners(streamer);
@@ -688,6 +777,8 @@ wss.on("connection", async (ws, req) => {
       s?.sttStreamer?.endAudioStream();
     } catch {}
     cleanupSession();
+    activeConnections--;
+    console.log(`[WS] Connection closed, active: ${activeConnections}`);
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);

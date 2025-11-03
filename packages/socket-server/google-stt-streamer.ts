@@ -88,11 +88,16 @@ export class GoogleSTTStreamer extends EventEmitter {
         while (this.audioQueue.length > 0) {
           const chunk = this.audioQueue.shift()!;
           if (Buffer.isBuffer(chunk)) {
+            if (chunk.length === 0) continue;
             const head = chunk.subarray(0, 4).toString("hex");
-            console.log(`[DEBUG] Flushing chunk len=${chunk.length}, head=${head}`);
+            console.log(
+              `[DEBUG] Flushing chunk len=${chunk.length}, head=${head}`
+            );
             (this.recognizeStream as any).write({ audioContent: chunk });
           } else {
-            console.warn("[G-STT] Skipped non-buffer item in audioQueue during flush.");
+            console.warn(
+              "[G-STT] Skipped non-buffer item in audioQueue during flush."
+            );
           }
         }
       } catch (flushErr) {
@@ -105,15 +110,22 @@ export class GoogleSTTStreamer extends EventEmitter {
 
   // Pipe client audio chunks into the Google STT stream
   public write(audioChunk: Buffer) {
-    if (!this.recognizeStream || !(this.recognizeStream as any).writable) return;
+    if (!this.recognizeStream || !(this.recognizeStream as any).writable)
+      return;
     if (!Buffer.isBuffer(audioChunk)) {
       console.warn("[G-STT] Ignored non-buffer audio write.");
+      return;
+    }
+    if (audioChunk.length === 0) {
+      // Avoid sending empty messages to GCP stream, which can trigger malordered errors
       return;
     }
     if (!this.configSent) {
       // Buffer the audio until the stream is ready
       this.audioQueue.push(audioChunk);
-      console.log(`[G-STT] Buffered chunk, queue size: ${this.audioQueue.length}`);
+      console.log(
+        `[G-STT] Buffered chunk, queue size: ${this.audioQueue.length}`
+      );
       return;
     }
     const head = audioChunk.subarray(0, 4).toString("hex");

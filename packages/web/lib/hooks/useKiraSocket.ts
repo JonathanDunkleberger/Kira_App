@@ -21,6 +21,8 @@ export function useKiraSocket(conversationId: string | null) {
   const sendAudioEnabledRef = useRef<boolean>(true);
   // Resolver for end-of-turn signal (speak:false)
   const speakFalseResolverRef = useRef<(() => void) | null>(null);
+  // Resolver for server stream readiness (Google STT)
+  const streamReadyResolverRef = useRef<(() => void) | null>(null);
 
   const safeSend = useCallback((payload: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -93,8 +95,12 @@ export function useKiraSocket(conversationId: string | null) {
               interimResults: true,
             },
           }));
-          // Small delay to allow server to set up stream config
-          await new Promise((r) => setTimeout(r, 30));
+          // Wait for server readiness to avoid dropped audio chunks
+          const waitReady = new Promise<void>((resolve) => {
+            streamReadyResolverRef.current = resolve;
+          });
+          const timeout = new Promise<void>((resolve) => setTimeout(resolve, 1500));
+          await Promise.race([waitReady, timeout]);
         } catch (e) {
           console.warn('[WS] Failed to send start_audio:', e);
         }
@@ -206,6 +212,14 @@ export function useKiraSocket(conversationId: string | null) {
           }
           console.log('[WS Cleanup] Cleared pending EOU promise on socket close.');
         }
+        // Cleanup any pending stream readiness waiter
+        if (streamReadyResolverRef.current) {
+          try {
+            streamReadyResolverRef.current();
+          } finally {
+            streamReadyResolverRef.current = null;
+          }
+        }
         stopMic();
       };
 
@@ -213,6 +227,15 @@ export function useKiraSocket(conversationId: string | null) {
         try {
           const message = JSON.parse(event.data);
           switch (message.t) {
+            case 'stream_ready': {
+              if (streamReadyResolverRef.current) {
+                const resolve = streamReadyResolverRef.current;
+                streamReadyResolverRef.current = null;
+                resolve();
+                console.log('[WS] ✅ Received stream_ready, safe to send audio.');
+              }
+              break;
+            }
             case 'chat_session':
               break;
             case 'transcript':

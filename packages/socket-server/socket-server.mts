@@ -342,42 +342,44 @@ wss.on("connection", async (ws, req) => {
   // STT stream is tracked per-connection in activeSessions
 
   function setupSttListeners(stt: GoogleSTTStreamer) {
-    stt.on('interim_transcript', (text: string) => {
+    stt.on("interim_transcript", (text: string) => {
       pendingTranscript = text;
     });
-    stt.on('final_transcript_segment', (text: string) => {
+    stt.on("final_transcript_segment", (text: string) => {
       // Keep last segment around for visibility if needed
       pendingTranscript = text;
     });
-    stt.on('utterance_end', async (full: string) => {
+    stt.on("utterance_end", async (full: string) => {
       if (isProcessing) {
-        console.log('[STAGE] Skipping - already processing');
+        console.log("[STAGE] Skipping - already processing");
         return;
       }
-      const text = (full || pendingTranscript || '').trim();
+      const text = (full || pendingTranscript || "").trim();
       if (!text) {
-        console.log('[STAGE] No transcript to process');
+        console.log("[STAGE] No transcript to process");
         return;
       }
-      console.log('[STAGE] Processing utterance (G-STT):', text);
+      console.log("[STAGE] Processing utterance (G-STT):", text);
       isProcessing = true;
       try {
         await sendTranscriptToOpenAI(text);
-        pendingTranscript = '';
+        pendingTranscript = "";
       } catch (error) {
-        console.error('[STAGE] Processing failed:', error);
+        console.error("[STAGE] Processing failed:", error);
       } finally {
         isProcessing = false;
       }
     });
-    stt.on('close', () => {
-      console.log('[STT] Stream closed. Clearing session reference.');
+    stt.on("close", () => {
+      console.log("[STT] Stream closed. Clearing session reference.");
       const s = activeSessions.get(ws);
       if (s) s.sttStreamer = undefined;
     });
-    stt.on('error', (err: any) => {
-      console.error('[STT ERROR] Fatal STT error occurred:', err);
-      try { stt.end(); } catch {}
+    stt.on("error", (err: any) => {
+      console.error("[STT ERROR] Fatal STT error occurred:", err);
+      try {
+        stt.end();
+      } catch {}
     });
   }
 
@@ -583,7 +585,9 @@ wss.on("connection", async (ws, req) => {
       console.log("[WS] Received binary audio chunk:", message.length, "bytes");
       // Only accept audio if 'start_stream' initialized the STT and it's ready
       if (!session?.sttStreamer || !session.sttStreamer.isReady()) {
-        console.warn('[WS] Dropped audio chunk: STT stream not configured yet.');
+        console.warn(
+          "[WS] Dropped audio chunk: STT stream not configured yet."
+        );
         return;
       }
       audioChunkCount++;
@@ -603,20 +607,34 @@ wss.on("connection", async (ws, req) => {
       // New protocol: start_stream initializes STT with config
       if (data?.t === "start_stream" && data?.config) {
         if (session.sttStreamer) {
-          console.log('[G-STT] Received start_stream, cleaning previous stream');
-          try { session.sttStreamer.closeStream(); } catch {}
+          console.log(
+            "[G-STT] Received start_stream, cleaning previous stream"
+          );
+          try {
+            session.sttStreamer.closeStream();
+          } catch {}
           session.sttStreamer = undefined;
         }
-        console.log('[G-STT] Initializing new stream from start_stream event');
+        console.log("[G-STT] Initializing new stream from start_stream event");
         const streamer = new GoogleSTTStreamer(data.config as any);
         setupSttListeners(streamer);
         session.sttStreamer = streamer;
+        // Notify client once the stream is ready to accept audio
+        if (streamer.isReady()) {
+          safeSend({ t: "stream_ready" } as any);
+        } else {
+          (streamer as any).once?.("ready", () => {
+            safeSend({ t: "stream_ready" } as any);
+          });
+        }
         return;
       }
       // Backward-compat legacy control
       if (data?.t === "start_audio" || data?.t === "START_AUDIO") {
         if (session.sttStreamer) {
-          try { session.sttStreamer.closeStream(); } catch {}
+          try {
+            session.sttStreamer.closeStream();
+          } catch {}
           session.sttStreamer = undefined;
         }
         const streamer = new GoogleSTTStreamer();

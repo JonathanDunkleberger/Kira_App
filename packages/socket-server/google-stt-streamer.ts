@@ -1,7 +1,7 @@
 // packages/socket-server/google-stt-streamer.ts
 
-import { SpeechClient } from '@google-cloud/speech';
-import { EventEmitter } from 'events';
+import { SpeechClient } from "@google-cloud/speech";
+import { EventEmitter } from "events";
 
 // Initialize the Google Speech Client
 // Requires GOOGLE_APPLICATION_CREDENTIALS env var (JSON service account) or ADC in environment.
@@ -10,61 +10,63 @@ const speechClient = new SpeechClient();
 // Configuration matching browser MediaRecorder (audio/webm;codecs=opus)
 // Google supports WEBM_OPUS for streamingRecognize.
 const DEFAULT_STT_CONFIG = {
-  encoding: 'WEBM_OPUS' as const,
+  encoding: "WEBM_OPUS" as const,
   // Opus uses a 48kHz sampling rate internally
   sampleRateHertz: 48000,
-  languageCode: 'en-US',
+  languageCode: "en-US",
   // Improve punctuation for better downstream LLM quality
   enableAutomaticPunctuation: true,
 };
 
 export class GoogleSTTStreamer extends EventEmitter {
-  private recognizeStream: ReturnType<SpeechClient['streamingRecognize']> | null = null;
-  private fullTranscript: string = '';
+  private recognizeStream: ReturnType<
+    SpeechClient["streamingRecognize"]
+  > | null = null;
+  private fullTranscript: string = "";
   private configSent = false;
   private effectiveConfig: Record<string, any>;
 
   constructor(configOverride?: Record<string, any>) {
     super();
-    this.fullTranscript = '';
+    this.fullTranscript = "";
     this.effectiveConfig = { ...DEFAULT_STT_CONFIG, ...(configOverride || {}) };
 
     // Create a new bi-directional stream (we'll send config as the FIRST message explicitly)
     this.recognizeStream = speechClient
       .streamingRecognize()
-      .on('error', (error: any) => {
-        console.error('[G-STT] Stream Error:', error);
+      .on("error", (error: any) => {
+        console.error("[G-STT] Stream Error:", error);
         this.configSent = false; // Reset state on error
-        this.emit('error', error);
+        this.emit("error", error);
       })
-      .on('data', (data: any) => {
+      .on("data", (data: any) => {
         const result = data?.results?.[0];
-        const transcript = result?.alternatives?.[0]?.transcript || '';
+        const transcript = result?.alternatives?.[0]?.transcript || "";
 
         if (result?.isFinal) {
           if (transcript) {
             console.log(`[G-STT] ✅ Final Transcript Segment: "${transcript}"`);
-            this.fullTranscript += transcript + ' ';
-            this.emit('final_transcript_segment', transcript);
+            this.fullTranscript += transcript + " ";
+            this.emit("final_transcript_segment", transcript);
           }
           // If Google's VAD believes the utterance ended, emit utterance_end with the aggregated transcript
           const aggregated = this.fullTranscript.trim();
           if (aggregated.length > 0) {
-            this.emit('utterance_end', aggregated);
+            this.emit("utterance_end", aggregated);
             // Reset buffer for the next utterance to avoid re-sending previous text
-            this.fullTranscript = '';
+            this.fullTranscript = "";
           }
         } else if (transcript) {
           console.log(`[G-STT] Interim: ${transcript}`);
-          this.emit('interim_transcript', transcript);
+          this.emit("interim_transcript", transcript);
         }
       })
-      .on('end', () => {
-        console.log('[G-STT] Stream ended gracefully.');
-        this.emit('close');
+      .on("end", () => {
+        console.log("[G-STT] Stream ended gracefully.");
+        this.emit("close");
       });
 
-    console.log('[G-STT] New Google STT Stream initialized.');
+    console.log("[G-STT] New Google STT Stream initialized.");
 
     // Immediately send the streaming configuration as the first message
     try {
@@ -75,9 +77,11 @@ export class GoogleSTTStreamer extends EventEmitter {
         },
       });
       this.configSent = true;
-      console.log('[G-STT] ✅ Configuration sent to stream.');
+      console.log("[G-STT] ✅ Configuration sent to stream.");
+        // Notify listeners that the stream is ready to receive audio
+        this.emit('ready');
     } catch (e) {
-      console.error('[G-STT] Failed to send initial streaming config:', e);
+      console.error("[G-STT] Failed to send initial streaming config:", e);
     }
   }
 
@@ -86,7 +90,9 @@ export class GoogleSTTStreamer extends EventEmitter {
     if (!this.recognizeStream) return;
     if (!(this.recognizeStream as any).writable) return;
     if (!this.configSent) {
-      console.warn('[G-STT] ⚠️ Attempted to write audio before config was sent. Skipping chunk.');
+      console.warn(
+        "[G-STT] ⚠️ Attempted to write audio before config was sent. Skipping chunk."
+      );
       return;
     }
     (this.recognizeStream as any).write({ audioContent: audioChunk });
@@ -95,7 +101,9 @@ export class GoogleSTTStreamer extends EventEmitter {
   // Signal the end of user's audio (from client EOU)
   public end() {
     if (this.recognizeStream && (this.recognizeStream as any).writable) {
-      console.log('[G-STT] Received client EOU. Ending stream to force final result.');
+      console.log(
+        "[G-STT] Received client EOU. Ending stream to force final result."
+      );
       (this.recognizeStream as any).end();
     }
   }

@@ -48,8 +48,11 @@ export class GoogleSTTStreamer extends EventEmitter {
             this.emit('final_transcript_segment', transcript);
           }
           // If Google's VAD believes the utterance ended, emit utterance_end with the aggregated transcript
-          if (this.fullTranscript.trim().length > 0) {
-            this.emit('utterance_end', this.fullTranscript.trim());
+          const aggregated = this.fullTranscript.trim();
+          if (aggregated.length > 0) {
+            this.emit('utterance_end', aggregated);
+            // Reset buffer for the next utterance to avoid re-sending previous text
+            this.fullTranscript = '';
           }
         } else if (transcript) {
           console.log(`[G-STT] Interim: ${transcript}`);

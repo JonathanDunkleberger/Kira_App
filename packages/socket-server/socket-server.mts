@@ -4,7 +4,6 @@ import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
 import { PrismaClient } from "@prisma/client";
 import { verifyToken } from "@clerk/clerk-sdk-node";
-// import { createClient } from "@deepgram/sdk";
 import { GoogleSTTStreamer } from "./google-stt-streamer.js";
 import OpenAI from "openai";
 import * as AzureSpeechSDK from "microsoft-cognitiveservices-speech-sdk";
@@ -82,7 +81,7 @@ const PERSONALITY_PROMPT = loadPersona();
 // --- Required environment variables and defaults ---
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const CLERK_SECRET_KEY = requireEnv("CLERK_SECRET_KEY");
-const DEEPGRAM_API_KEY = requireEnv("DEEPGRAM_API_KEY");
+// DEEPGRAM_API_KEY no longer required - migrated to Google STT
 const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
 const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
 const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
@@ -108,23 +107,12 @@ function cleanTextForTTS(text: string): string {
   return cleaned;
 }
 
-const DEEPGRAM_DISABLED = /^true$/i.test(
-  process.env.DEEPGRAM_DISABLED || "false"
-);
-const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
-const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
-// Deepgram expects 'encoding' to describe the codec (e.g., 'opus'), not the container ('webm').
-// For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus'.
-// Let Deepgram infer sample rate and channels from the container to avoid conflicts.
-const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
-
 // --- SERVICES ---
 const prisma = new PrismaClient({
   datasources: {
     db: { url: process.env.DATABASE_URL },
   },
 });
-// const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // Verify Google Cloud credentials are configured
@@ -400,12 +388,6 @@ wss.on("connection", async (ws, req) => {
     });
   }
 
-  // Deepgram open/keepalive removed in Google STT migration
-
-  // Reopen logic not required for Google STT; a new stream is created per utterance as needed
-
-  // Google STT stream will be lazily created on first audio chunk
-
   // Reset per-connection state
   let pendingTranscript = "";
   // Aggregates finalized DG segments; used to recover if stream closes early
@@ -618,8 +600,6 @@ wss.on("connection", async (ws, req) => {
       assistantBusy = false;
     }
   };
-
-  // Deepgram event handlers are attached within openDeepgramConnection()
 
   ws.on("message", (message: Buffer, isBinary) => {
     const session = activeSessions.get(ws)!;

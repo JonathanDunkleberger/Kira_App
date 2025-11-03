@@ -5,13 +5,8 @@ services:
     rootDir: packages/socket-server
     plan: starter
     region: oregon
-    buildCommand: |
-      corepack enable
-      pnpm install --frozen-lockfile
-      pnpm run build
-    startCommand: |
-      # Force Prisma to use the DIRECT_URL for migrations, then start the app
-      DATABASE_URL="$DIRECT_URL" pnpm run prisma:deploy && pnpm run start
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: node --enable-source-maps dist/socket-server.mjs
     envVars:
       - key: NODE_VERSION
         value: "20.x"

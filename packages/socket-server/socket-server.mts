@@ -417,11 +417,14 @@ wss.on("connection", async (ws, req) => {
   const sendTranscriptToOpenAI = async (finalText: string) => {
     try {
       const session = activeSessions.get(ws);
-      // Allow empty transcripts; provide a graceful fallback prompt
-      let effectiveText = (finalText ?? "").trim();
+      const effectiveText = (finalText ?? "").trim();
+      
+      // Skip empty transcripts entirely - don't process
       if (!effectiveText) {
-        effectiveText = "Sorry, I didn't catch that. Could you please repeat?";
+        console.log("[Server Log] Skipping empty transcript.");
+        return;
       }
+      
       if (assistantBusy) {
         console.log("[Server Log] Skipping; assistant is busy.");
         return;
@@ -586,6 +589,28 @@ wss.on("connection", async (ws, req) => {
         safeSend({ t: "speak", on: false });
         assistantBusy = false;
         console.log("[STAGE] Pipeline complete");
+        
+        // Reinitialize STT stream for next turn to avoid stale state
+        const session = activeSessions.get(ws);
+        if (session?.sttStreamer) {
+          try {
+            session.sttStreamer.closeStream();
+            console.log("[STT] Recreating stream for next turn");
+            const newStreamer = new GoogleSTTStreamer();
+            setupSttListeners(newStreamer);
+            session.sttStreamer = newStreamer;
+            // Notify client stream is ready
+            if (newStreamer.isReady()) {
+              safeSend({ t: "stream_ready" } as any);
+            } else {
+              newStreamer.once('ready', () => {
+                safeSend({ t: "stream_ready" } as any);
+              });
+            }
+          } catch (err) {
+            console.error("[STT] Failed to recreate stream:", err);
+          }
+        }
       }
     } catch (outerErr) {
       console.error("[Server Log] FATAL processing utterance:", outerErr);

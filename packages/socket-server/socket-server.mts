@@ -116,10 +116,10 @@ const prisma = new PrismaClient({
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // Verify Google Cloud credentials are configured
-if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GCLOUD_PROJECT) {
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   console.warn(
     "[WARN] GOOGLE_APPLICATION_CREDENTIALS not set. Google STT may fail. " +
-    "Set this to the path of your service account JSON file, or ensure ADC is configured."
+    "Set this to the path of your service account JSON file, or ensure Application Default Credentials (ADC) is configured."
   );
 }
 
@@ -350,8 +350,8 @@ wss.on("connection", async (ws, req) => {
       // Use accumulated finalTranscriptText if available, otherwise use full
       const text = (finalTranscriptText || full || pendingTranscript || "").trim();
       
-      if (isProcessing || assistantBusy) {
-        console.log("[STAGE] Skipping utterance_end - already processing or assistant busy");
+      if (isBusy()) {
+        console.log("[STAGE] Skipping utterance_end - system busy");
         return;
       }
       if (!text) {
@@ -390,10 +390,30 @@ wss.on("connection", async (ws, req) => {
 
   // Reset per-connection state
   let pendingTranscript = "";
-  // Aggregates finalized DG segments; used to recover if stream closes early
+  // Aggregates finalized segments
   let finalTranscriptText = "";
   let isProcessing = false;
   let assistantBusy = false;
+
+  // Helper to check if system is busy processing
+  const isBusy = () => isProcessing || assistantBusy;
+
+  // Helper to create and setup a new STT stream
+  const createNewSTTStreamer = () => {
+    const streamer = new GoogleSTTStreamer();
+    setupSttListeners(streamer);
+    const session = activeSessions.get(ws);
+    if (session) session.sttStreamer = streamer;
+    // Notify client once ready
+    if (streamer.isReady()) {
+      safeSend({ t: "stream_ready" } as any);
+    } else {
+      streamer.once('ready', () => {
+        safeSend({ t: "stream_ready" } as any);
+      });
+    }
+    return streamer;
+  };
 
   // Helper to respond using current conversation memory and TTS
   const sendTranscriptToOpenAI = async (finalText: string) => {
@@ -578,17 +598,7 @@ wss.on("connection", async (ws, req) => {
           try {
             session.sttStreamer.closeStream();
             console.log("[STT] Recreating stream for next turn");
-            const newStreamer = new GoogleSTTStreamer();
-            setupSttListeners(newStreamer);
-            session.sttStreamer = newStreamer;
-            // Notify client stream is ready
-            if (newStreamer.isReady()) {
-              safeSend({ t: "stream_ready" } as any);
-            } else {
-              newStreamer.once('ready', () => {
-                safeSend({ t: "stream_ready" } as any);
-              });
-            }
+            createNewSTTStreamer();
           } catch (err) {
             console.error("[STT] Failed to recreate stream:", err);
           }
@@ -657,19 +667,16 @@ wss.on("connection", async (ws, req) => {
           try {
             session.sttStreamer.closeStream();
           } catch {}
-          session.sttStreamer = undefined;
         }
-        const streamer = new GoogleSTTStreamer();
-        setupSttListeners(streamer);
-        session.sttStreamer = streamer;
+        createNewSTTStreamer();
         return;
       }
 
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
 
-        if (isProcessing || assistantBusy) {
-          console.log("[STAGE] Manual EOU ignored - already processing or assistant busy");
+        if (isBusy()) {
+          console.log("[STAGE] Manual EOU ignored - system busy");
           return;
         }
 

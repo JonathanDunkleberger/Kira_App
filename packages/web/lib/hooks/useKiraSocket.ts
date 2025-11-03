@@ -9,7 +9,13 @@ type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'una
 export function useKiraSocket(conversationId: string | null) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // Audio streaming state
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const floatCarryRef = useRef<Float32Array>(new Float32Array(0));
+  const inputSampleRateRef = useRef<number>(48000);
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const audioQueue = useRef<ArrayBuffer[]>([]);
@@ -67,21 +73,15 @@ export function useKiraSocket(conversationId: string | null) {
   }, [playFromQueue]);
 
   const startMic = useCallback(async () => {
-    if (mediaRecorderRef.current) {
+    if (audioCtxRef.current) {
       console.log('[Audio] Mic already started.');
       return;
     }
     try {
       console.log('[Audio] Requesting microphone permission...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-          sampleRate: 48000,
-        },
-      });
-      console.log('[Audio] ✅ Microphone permission granted.');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+      micStreamRef.current = stream;
+
       // Inform the server to initialize STT stream BEFORE sending audio
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         try {
@@ -89,8 +89,8 @@ export function useKiraSocket(conversationId: string | null) {
             JSON.stringify({
               t: 'start_stream',
               config: {
-                encoding: 'WEBM_OPUS',
-                sampleRateHertz: 48000,
+                encoding: 'LINEAR16',
+                sampleRateHertz: 16000,
                 languageCode: 'en-US',
                 enableAutomaticPunctuation: true,
                 interimResults: true,
@@ -104,29 +104,73 @@ export function useKiraSocket(conversationId: string | null) {
           const timeout = new Promise<void>((resolve) => setTimeout(resolve, 1500));
           await Promise.race([waitReady, timeout]);
         } catch (e) {
-          console.warn('[WS] Failed to send start_audio:', e);
+          console.warn('[WS] Failed to send start_stream:', e);
         }
       }
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm; codecs=opus',
-        audioBitsPerSecond: 128000,
-      });
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        console.log('[Audio] Data available:', event.data?.size ?? 0, 'bytes');
-        if (
-          event.data.size > 0 &&
-          wsRef.current?.readyState === WebSocket.OPEN &&
-          sendAudioEnabledRef.current
-        ) {
-          wsRef.current.send(event.data);
+
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = ctx;
+      inputSampleRateRef.current = ctx.sampleRate || 48000;
+      const source = ctx.createMediaStreamSource(stream);
+
+      const handleFloatChunk = (float32: Float32Array) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+        if (!sendAudioEnabledRef.current) return;
+        // Concatenate carry + new chunk
+        const prev = floatCarryRef.current;
+        const combined = new Float32Array(prev.length + float32.length);
+        combined.set(prev, 0);
+        combined.set(float32, prev.length);
+        // Downsample to 16k
+        const ratio = inputSampleRateRef.current / 16000;
+        const outLength = Math.max(0, Math.floor(combined.length / ratio));
+        const down = new Float32Array(outLength);
+        let i = 0;
+        for (let j = 0; j < outLength; j++) {
+          const idx = Math.min(combined.length - 1, Math.floor(i));
+          down[j] = combined[idx] as number;
+          i += ratio;
         }
+        // Save carry remainder
+        const used = Math.floor(outLength * ratio);
+        floatCarryRef.current = combined.slice(used);
+        // Convert to Int16 PCM
+        const pcm = new Int16Array(down.length);
+        for (let k = 0; k < down.length; k++) {
+          const v = down[k] ?? 0;
+          let s = Math.max(-1, Math.min(1, v));
+          pcm[k] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        wsRef.current.send(pcm.buffer);
       };
-      recorder.onerror = (e: any) => {
-        console.error('[Audio] ❌ MediaRecorder error:', e);
-      };
-      recorder.start(100);
-      console.log('[Audio] ✅ MediaRecorder started');
+
+      // Prefer AudioWorklet
+      try {
+        await ctx.audioWorklet.addModule('/worklets/pcm-processor.js');
+        const node = new AudioWorkletNode(ctx, 'pcm-processor');
+        workletNodeRef.current = node;
+        node.port.onmessage = (e) => {
+          const chunk = e.data as Float32Array;
+          if (chunk && chunk.length) handleFloatChunk(chunk);
+        };
+        source.connect(node);
+        // Ensure processor runs on some output path; connect to destination at zero gain
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        node.connect(gain).connect(ctx.destination);
+        console.log('[Audio] ✅ AudioWorkletNode started');
+      } catch (err) {
+        console.warn('[Audio] AudioWorklet unavailable, falling back to ScriptProcessor', err);
+        const script = ctx.createScriptProcessor(2048, 1, 1);
+        scriptNodeRef.current = script as any;
+        script.onaudioprocess = (e: AudioProcessingEvent) => {
+          const buf = e.inputBuffer.getChannelData(0);
+          handleFloatChunk(new Float32Array(buf));
+        };
+        source.connect(script);
+        script.connect(ctx.destination);
+        console.log('[Audio] ✅ ScriptProcessor started');
+      }
     } catch (error) {
       console.error('[Audio] ❌ Error starting microphone:', error);
       setAuthError('Microphone access denied');
@@ -134,25 +178,30 @@ export function useKiraSocket(conversationId: string | null) {
   }, []);
   const stopMic = useCallback(() => {
     console.log('[DEBUG] stopMic called - stopping audio only');
-    if (mediaRecorderRef.current) {
-      // Send EOU but keep connection open
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          console.log('[DEBUG] Sending EOU, keeping WS open');
-          wsRef.current.send(JSON.stringify({ t: 'eou' }));
-        } catch (e) {
-          console.warn('[WS] Failed to send EOU:', e);
-        }
+    // Send EOU but keep connection open
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      try {
+        console.log('[DEBUG] Sending EOU, keeping WS open');
+        wsRef.current.send(JSON.stringify({ t: 'eou' }));
+      } catch (e) {
+        console.warn('[WS] Failed to send EOU:', e);
       }
-
-      // Only stop the microphone, NOT the WebSocket
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
-      mediaRecorderRef.current = null;
-      console.log('[DEBUG] Microphone stopped, WS remains open');
-    } else {
-      console.log('[DEBUG] No MediaRecorder to stop');
     }
+    try {
+      workletNodeRef.current?.disconnect();
+      scriptNodeRef.current?.disconnect();
+      workletNodeRef.current = null;
+      scriptNodeRef.current = null;
+    } catch {}
+    try {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    } catch {}
+    try {
+      audioCtxRef.current?.close();
+    } catch {}
+    audioCtxRef.current = null;
+    floatCarryRef.current = new Float32Array(0);
   }, []);
 
   const connect = useCallback(async () => {

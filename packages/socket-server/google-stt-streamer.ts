@@ -7,14 +7,11 @@ import { EventEmitter } from "events";
 // Requires GOOGLE_APPLICATION_CREDENTIALS env var (JSON service account) or ADC in environment.
 const speechClient = new SpeechClient();
 
-// Configuration matching browser MediaRecorder (audio/webm;codecs=opus)
-// Google supports WEBM_OPUS for streamingRecognize.
+// Configuration for raw PCM LINEAR16 streaming at 16kHz
 const DEFAULT_STT_CONFIG = {
-  encoding: "WEBM_OPUS" as const,
-  // Opus uses a 48kHz sampling rate internally
-  sampleRateHertz: 48000,
+  encoding: "LINEAR16" as const,
+  sampleRateHertz: 16000,
   languageCode: "en-US",
-  // Improve punctuation for better downstream LLM quality
   enableAutomaticPunctuation: true,
 };
 

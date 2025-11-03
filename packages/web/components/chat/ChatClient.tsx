@@ -63,7 +63,9 @@ export default function ChatClient({ conversationId }: { conversationId: string 
 
       <div className="absolute top-16 text-center">
         <h2 className="text-2xl font-medium">Kira</h2>
-        <p className="text-lg text-neutral-500">{status === 'connected' ? formatTime(timer) : status}</p>
+        <p className="text-lg text-neutral-500">
+          {status === 'connected' ? formatTime(timer) : status}
+        </p>
         {authError && <p className="text-sm text-red-500 mt-2">{authError}</p>}
       </div>
 

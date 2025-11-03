@@ -17,8 +17,6 @@ export function useKiraSocket(conversationId: string | null) {
   const { addMessage, setSpeaking } = useConversationStore();
   const [limitReachedReason, setLimitReachedReason] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  // Gate upstream audio during TTS to avoid echo / barge into STT
-  const sendAudioEnabledRef = useRef<boolean>(true);
   // Resolver for end-of-turn signal (speak:false)
   const speakFalseResolverRef = useRef<(() => void) | null>(null);
   // Resolver for server stream readiness (Google STT)
@@ -114,9 +112,10 @@ export function useKiraSocket(conversationId: string | null) {
         console.log('[Audio] Data available:', event.data?.size ?? 0, 'bytes');
         if (
           event.data.size > 0 &&
-          wsRef.current?.readyState === WebSocket.OPEN &&
-          sendAudioEnabledRef.current
+          wsRef.current?.readyState === WebSocket.OPEN
         ) {
+          // Always send audio - let server handle processing logic
+          // Don't gate on sendAudioEnabledRef to avoid dropping critical chunks
           wsRef.current.send(event.data);
         }
       };
@@ -238,6 +237,10 @@ export function useKiraSocket(conversationId: string | null) {
             }
             case 'chat_session':
               break;
+            case 'interim_transcript':
+              // Could show interim results in UI if desired
+              console.log('[STT] Interim:', message.text);
+              break;
             case 'transcript':
               addMessage({ role: 'user', content: message.text });
               break;
@@ -266,8 +269,6 @@ export function useKiraSocket(conversationId: string | null) {
             case 'tts_start': {
               audioQueue.current = [];
               setSpeaking(true);
-              // Pause sending mic audio upstream while TTS plays
-              sendAudioEnabledRef.current = false;
               const audioEl = document.getElementById('tts-audio') as HTMLAudioElement | null;
               if (audioEl) {
                 audioEl.muted = false;
@@ -287,8 +288,6 @@ export function useKiraSocket(conversationId: string | null) {
             }
             case 'tts_end':
               setSpeaking(false);
-              // Resume sending mic audio upstream after TTS completes
-              sendAudioEnabledRef.current = true;
               break;
             case 'limit_reached':
               setLimitReachedReason(message.reason);

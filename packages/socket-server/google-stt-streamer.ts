@@ -49,13 +49,8 @@ export class GoogleSTTStreamer extends EventEmitter {
             this.fullTranscript += transcript + " ";
             this.emit("final_transcript_segment", transcript);
           }
-          // If Google's VAD believes the utterance ended, emit utterance_end with the aggregated transcript
-          const aggregated = this.fullTranscript.trim();
-          if (aggregated.length > 0) {
-            this.emit("utterance_end", aggregated);
-            // Reset buffer for the next utterance to avoid re-sending previous text
-            this.fullTranscript = "";
-          }
+          // Don't automatically emit utterance_end on every isFinal
+          // Let the client or server explicitly call end() to trigger utterance_end
         } else if (transcript) {
           console.log(`[G-STT] Interim: ${transcript}`);
           this.emit("interim_transcript", transcript);
@@ -105,6 +100,15 @@ export class GoogleSTTStreamer extends EventEmitter {
         "[G-STT] Received client EOU. Ending stream to force final result."
       );
       (this.recognizeStream as any).end();
+      
+      // Emit utterance_end with accumulated transcript
+      const aggregated = this.fullTranscript.trim();
+      if (aggregated.length > 0) {
+        console.log(`[G-STT] Emitting utterance_end: "${aggregated}"`);
+        this.emit("utterance_end", aggregated);
+        // Reset buffer for the next utterance
+        this.fullTranscript = "";
+      }
     }
   }
 

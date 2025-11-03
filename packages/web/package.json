@@ -28,7 +28,10 @@
     "stripe": "^16.2.0",
     "svix": "^1.25.0",
     "zod": "^3.23.8",
-    "zustand": "^4.5.4"
+    "zustand": "^4.5.4",
+    "@google-cloud/speech": "^7.2.1",
+    "@google-cloud/text-to-speech": "^5.4.0",
+    "openai": "^4.52.7"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.13",

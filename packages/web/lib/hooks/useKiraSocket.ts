@@ -85,16 +85,18 @@ export function useKiraSocket(conversationId: string | null) {
       // Inform the server to initialize STT stream BEFORE sending audio
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         try {
-          wsRef.current.send(JSON.stringify({
-            t: 'start_stream',
-            config: {
-              encoding: 'WEBM_OPUS',
-              sampleRateHertz: 48000,
-              languageCode: 'en-US',
-              enableAutomaticPunctuation: true,
-              interimResults: true,
-            },
-          }));
+          wsRef.current.send(
+            JSON.stringify({
+              t: 'start_stream',
+              config: {
+                encoding: 'WEBM_OPUS',
+                sampleRateHertz: 48000,
+                languageCode: 'en-US',
+                enableAutomaticPunctuation: true,
+                interimResults: true,
+              },
+            }),
+          );
           // Wait for server readiness to avoid dropped audio chunks
           const waitReady = new Promise<void>((resolve) => {
             streamReadyResolverRef.current = resolve;

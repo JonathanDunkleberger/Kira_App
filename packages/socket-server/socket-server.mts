@@ -380,6 +380,23 @@ wss.on("connection", async (ws, req) => {
       try {
         stt.end();
       } catch {}
+      // Attempt basic recovery with same configuration
+      const cfg = (stt as any).getConfig?.() || undefined;
+      try {
+        const replacement = new GoogleSTTStreamer(cfg);
+        setupSttListeners(replacement);
+        const s = activeSessions.get(ws);
+        if (s) s.sttStreamer = replacement;
+        if (replacement.isReady()) {
+          safeSend({ t: "stream_ready" } as any);
+        } else {
+          (replacement as any).once?.("ready", () => {
+            safeSend({ t: "stream_ready" } as any);
+          });
+        }
+      } catch (reinitErr) {
+        console.error("[STT ERROR] Recovery failed:", reinitErr);
+      }
     });
   }
 
@@ -583,8 +600,8 @@ wss.on("connection", async (ws, req) => {
     const session = activeSessions.get(ws)!;
     if (isBinary) {
       console.log("[WS] Received binary audio chunk:", message.length, "bytes");
-      // Only accept audio if 'start_stream' initialized the STT and it's ready
-      if (!session?.sttStreamer || !session.sttStreamer.isReady()) {
+      // Only accept audio if 'start_stream' initialized the STT
+      if (!session?.sttStreamer) {
         console.warn(
           "[WS] Dropped audio chunk: STT stream not configured yet."
         );
@@ -593,6 +610,7 @@ wss.on("connection", async (ws, req) => {
       audioChunkCount++;
       totalBytesSent += message.length;
       try {
+        // GoogleSTTStreamer will buffer audio until the stream is marked ready
         session.sttStreamer.writeAudio(message);
       } catch (err) {
         console.error("[G-STT] write error", (err as any)?.message || err);

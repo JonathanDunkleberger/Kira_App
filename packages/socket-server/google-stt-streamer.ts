@@ -25,6 +25,7 @@ export class GoogleSTTStreamer extends EventEmitter {
   private fullTranscript: string = "";
   private configSent = false;
   private effectiveConfig: Record<string, any>;
+  private audioQueue: Buffer[] = [];
 
   constructor(configOverride?: Record<string, any>) {
     super();
@@ -78,8 +79,17 @@ export class GoogleSTTStreamer extends EventEmitter {
       });
       this.configSent = true;
       console.log("[G-STT] ✅ Configuration sent to stream.");
-        // Notify listeners that the stream is ready to receive audio
-        this.emit('ready');
+      // Notify listeners that the stream is ready to receive audio
+      this.emit("ready");
+      // Flush any buffered audio into the stream now that it's ready
+      try {
+        while (this.audioQueue.length > 0) {
+          const chunk = this.audioQueue.shift()!;
+          (this.recognizeStream as any).write({ audioContent: chunk });
+        }
+      } catch (flushErr) {
+        console.error('[G-STT] Error while flushing buffered audio:', flushErr);
+      }
     } catch (e) {
       console.error("[G-STT] Failed to send initial streaming config:", e);
     }
@@ -87,15 +97,17 @@ export class GoogleSTTStreamer extends EventEmitter {
 
   // Pipe client audio chunks into the Google STT stream
   public write(audioChunk: Buffer) {
-    if (!this.recognizeStream) return;
-    if (!(this.recognizeStream as any).writable) return;
+    if (!this.recognizeStream || !(this.recognizeStream as any).writable) return;
     if (!this.configSent) {
-      console.warn(
-        "[G-STT] ⚠️ Attempted to write audio before config was sent. Skipping chunk."
-      );
+      // Buffer the audio until the stream is ready
+      this.audioQueue.push(audioChunk);
+      console.log(`[G-STT] Buffered chunk, queue size: ${this.audioQueue.length}`);
       return;
     }
     (this.recognizeStream as any).write({ audioContent: audioChunk });
+  }
+  public getConfig(): Record<string, any> {
+    return { ...this.effectiveConfig };
   }
 
   // Signal the end of user's audio (from client EOU)

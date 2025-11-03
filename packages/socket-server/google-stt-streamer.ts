@@ -63,21 +63,27 @@ export class GoogleSTTStreamer extends EventEmitter {
 
     console.log("[G-STT] New Google STT Stream initialized.");
 
-    // Immediately send the streaming configuration as the first message
-    try {
-      (this.recognizeStream as any).write({
-        streamingConfig: {
-          config: this.effectiveConfig,
-          interimResults: true,
-        },
-      });
-      this.configSent = true;
-      console.log("[G-STT] ✅ Configuration sent to stream.");
-        // Notify listeners that the stream is ready to receive audio
-        this.emit('ready');
-    } catch (e) {
-      console.error("[G-STT] Failed to send initial streaming config:", e);
-    }
+    // Send the streaming configuration as the first message on next tick
+    // This ensures the stream is fully set up before we write
+    setImmediate(() => {
+      if (this.recognizeStream && (this.recognizeStream as any).writable) {
+        try {
+          (this.recognizeStream as any).write({
+            streamingConfig: {
+              config: this.effectiveConfig,
+              interimResults: true,
+            },
+          });
+          this.configSent = true;
+          console.log("[G-STT] ✅ Configuration sent to stream.");
+          // Notify listeners that the stream is ready to receive audio
+          this.emit('ready');
+        } catch (e) {
+          console.error("[G-STT] Failed to send initial streaming config:", e);
+          this.emit("error", e);
+        }
+      }
+    });
   }
 
   // Pipe client audio chunks into the Google STT stream

@@ -4,7 +4,6 @@ import { WebSocketServer, WebSocket } from "ws";
 import http from "node:http";
 import { PrismaClient } from "@prisma/client";
 import { verifyToken } from "@clerk/clerk-sdk-node";
-// import { createClient } from "@deepgram/sdk";
 import { GoogleSTTStreamer } from "./google-stt-streamer.js";
 import OpenAI from "openai";
 import * as AzureSpeechSDK from "microsoft-cognitiveservices-speech-sdk";
@@ -82,7 +81,7 @@ const PERSONALITY_PROMPT = loadPersona();
 // --- Required environment variables and defaults ---
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const CLERK_SECRET_KEY = requireEnv("CLERK_SECRET_KEY");
-const DEEPGRAM_API_KEY = requireEnv("DEEPGRAM_API_KEY");
+// DEEPGRAM_API_KEY no longer required - migrated to Google STT
 const OPENAI_API_KEY = requireEnv("OPENAI_API_KEY");
 const AZURE_SPEECH_KEY = requireEnv("AZURE_SPEECH_KEY");
 const AZURE_SPEECH_REGION = requireEnv("AZURE_SPEECH_REGION");
@@ -108,27 +107,21 @@ function cleanTextForTTS(text: string): string {
   return cleaned;
 }
 
-const DEEPGRAM_DISABLED = /^true$/i.test(
-  process.env.DEEPGRAM_DISABLED || "false"
-);
-const DEEPGRAM_MODE = (process.env.DEEPGRAM_MODE || "explicit").toLowerCase();
-const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2";
-// Deepgram expects 'encoding' to describe the codec (e.g., 'opus'), not the container ('webm').
-// For browser MediaRecorder (audio/webm;codecs=opus), use encoding='opus'.
-// Let Deepgram infer sample rate and channels from the container to avoid conflicts.
-const DEEPGRAM_ENCODING = process.env.DEEPGRAM_ENCODING || "opus";
-
 // --- SERVICES ---
 const prisma = new PrismaClient({
   datasources: {
     db: { url: process.env.DATABASE_URL },
   },
 });
-// const deepgram = createClient(DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// Deepgram project listing test disabled while migrating to Google STT
-// (async () => { /* no-op */ })();
+// Verify Google Cloud credentials are configured
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  console.warn(
+    "[WARN] GOOGLE_APPLICATION_CREDENTIALS not set. Google STT may fail. " +
+    "Set this to the path of your service account JSON file, or ensure Application Default Credentials (ADC) is configured."
+  );
+}
 
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/healthz") {
@@ -344,26 +337,36 @@ wss.on("connection", async (ws, req) => {
   function setupSttListeners(stt: GoogleSTTStreamer) {
     stt.on("interim_transcript", (text: string) => {
       pendingTranscript = text;
+      // Send interim results to client for better UX
+      safeSend({ t: "interim_transcript", text } as any);
     });
     stt.on("final_transcript_segment", (text: string) => {
-      // Keep last segment around for visibility if needed
+      // Accumulate finalized segments
+      finalTranscriptText += (finalTranscriptText ? " " : "") + text;
       pendingTranscript = text;
+      console.log("[STT] Final segment accumulated:", text);
     });
     stt.on("utterance_end", async (full: string) => {
-      if (isProcessing) {
-        console.log("[STAGE] Skipping - already processing");
+      // Use accumulated finalTranscriptText if available, otherwise use full
+      const text = (finalTranscriptText || full || pendingTranscript || "").trim();
+      
+      if (isBusy()) {
+        console.log("[STAGE] Skipping utterance_end - system busy");
         return;
       }
-      const text = (full || pendingTranscript || "").trim();
       if (!text) {
         console.log("[STAGE] No transcript to process");
         return;
       }
+      
       console.log("[STAGE] Processing utterance (G-STT):", text);
       isProcessing = true;
+      
       try {
         await sendTranscriptToOpenAI(text);
+        // Reset all transcript buffers after successful processing
         pendingTranscript = "";
+        finalTranscriptText = "";
       } catch (error) {
         console.error("[STAGE] Processing failed:", error);
       } finally {
@@ -377,34 +380,53 @@ wss.on("connection", async (ws, req) => {
     });
     stt.on("error", (err: any) => {
       console.error("[STT ERROR] Fatal STT error occurred:", err);
-      try {
-        stt.end();
-      } catch {}
+      // Clear the broken stream
+      const s = activeSessions.get(ws);
+      if (s) s.sttStreamer = undefined;
+      // Notify client
+      safeSend({ t: "error", message: "Speech recognition error. Please try again." });
     });
   }
 
-  // Deepgram open/keepalive removed in Google STT migration
-
-  // Reopen logic not required for Google STT; a new stream is created per utterance as needed
-
-  // Google STT stream will be lazily created on first audio chunk
-
   // Reset per-connection state
   let pendingTranscript = "";
-  // Aggregates finalized DG segments; used to recover if stream closes early
+  // Aggregates finalized segments
   let finalTranscriptText = "";
   let isProcessing = false;
   let assistantBusy = false;
+
+  // Helper to check if system is busy processing
+  const isBusy = () => isProcessing || assistantBusy;
+
+  // Helper to create and setup a new STT stream
+  const createNewSTTStreamer = () => {
+    const streamer = new GoogleSTTStreamer();
+    setupSttListeners(streamer);
+    const session = activeSessions.get(ws);
+    if (session) session.sttStreamer = streamer;
+    // Notify client once ready
+    if (streamer.isReady()) {
+      safeSend({ t: "stream_ready" } as any);
+    } else {
+      streamer.once('ready', () => {
+        safeSend({ t: "stream_ready" } as any);
+      });
+    }
+    return streamer;
+  };
 
   // Helper to respond using current conversation memory and TTS
   const sendTranscriptToOpenAI = async (finalText: string) => {
     try {
       const session = activeSessions.get(ws);
-      // Allow empty transcripts; provide a graceful fallback prompt
-      let effectiveText = (finalText ?? "").trim();
+      const effectiveText = (finalText ?? "").trim();
+      
+      // Skip empty transcripts entirely - don't process
       if (!effectiveText) {
-        effectiveText = "Sorry, I didn't catch that. Could you please repeat?";
+        console.log("[Server Log] Skipping empty transcript.");
+        return;
       }
+      
       if (assistantBusy) {
         console.log("[Server Log] Skipping; assistant is busy.");
         return;
@@ -569,6 +591,18 @@ wss.on("connection", async (ws, req) => {
         safeSend({ t: "speak", on: false });
         assistantBusy = false;
         console.log("[STAGE] Pipeline complete");
+        
+        // Reinitialize STT stream for next turn to avoid stale state
+        const session = activeSessions.get(ws);
+        if (session?.sttStreamer) {
+          try {
+            session.sttStreamer.closeStream();
+            console.log("[STT] Recreating stream for next turn");
+            createNewSTTStreamer();
+          } catch (err) {
+            console.error("[STT] Failed to recreate stream:", err);
+          }
+        }
       }
     } catch (outerErr) {
       console.error("[Server Log] FATAL processing utterance:", outerErr);
@@ -576,8 +610,6 @@ wss.on("connection", async (ws, req) => {
       assistantBusy = false;
     }
   };
-
-  // Deepgram event handlers are attached within openDeepgramConnection()
 
   ws.on("message", (message: Buffer, isBinary) => {
     const session = activeSessions.get(ws)!;
@@ -635,26 +667,29 @@ wss.on("connection", async (ws, req) => {
           try {
             session.sttStreamer.closeStream();
           } catch {}
-          session.sttStreamer = undefined;
         }
-        const streamer = new GoogleSTTStreamer();
-        setupSttListeners(streamer);
-        session.sttStreamer = streamer;
+        createNewSTTStreamer();
         return;
       }
 
       if (data?.t === "eou") {
         console.log("[STAGE] Received manual EOU from client");
 
-        if (isProcessing) {
-          console.log("[STAGE] Manual EOU ignored - already processing");
+        if (isBusy()) {
+          console.log("[STAGE] Manual EOU ignored - system busy");
           return;
         }
 
-        // Signal Google STT to finalize current stream
-        try {
-          session.sttStreamer?.endAudioStream();
-        } catch {}
+        // Signal Google STT to finalize current stream and trigger utterance_end
+        if (session.sttStreamer && session.sttStreamer.isReady()) {
+          try {
+            session.sttStreamer.endAudioStream();
+          } catch (err) {
+            console.error("[EOU] Failed to end audio stream:", err);
+          }
+        } else {
+          console.warn("[EOU] No active STT stream to finalize");
+        }
       } // <--- 1. CLOSES: if (data?.t === "eou")
     } catch (e) {
       console.warn("[WS] Ignored non-JSON message:", e);
@@ -667,16 +702,26 @@ wss.on("connection", async (ws, req) => {
     });
     try {
       const s = activeSessions.get(ws);
-      s?.sttStreamer?.endAudioStream();
-    } catch {}
+      if (s?.sttStreamer) {
+        s.sttStreamer.closeStream();
+        s.sttStreamer = undefined;
+      }
+    } catch (err) {
+      console.error("[Cleanup] Error closing STT stream:", err);
+    }
     cleanupSession();
   });
   ws.on("error", (error) => {
     console.error("[Server Log] WebSocket Error:", error);
     try {
       const s = activeSessions.get(ws);
-      s?.sttStreamer?.endAudioStream();
-    } catch {}
+      if (s?.sttStreamer) {
+        s.sttStreamer.closeStream();
+        s.sttStreamer = undefined;
+      }
+    } catch (err) {
+      console.error("[Cleanup] Error closing STT stream on error:", err);
+    }
     cleanupSession();
   });
 }); // <--- 3. CLOSES: wss.on('connection', (ws, req) => { ... })

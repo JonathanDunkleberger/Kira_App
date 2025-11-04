@@ -1,104 +1,33 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id             String          @id @unique
-  email          String          @unique
-  name           String?         // Preferred display name
-  tier           String          @default("free")
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  dailyUsage     DailyUsage[]
-  conversations  Conversation[]
-  subscriptions  Subscription[]
-  paymentEvents  PaymentEvent[]
-
-  @@map("User")
+generator client {
+  provider = "prisma-client-js"
 }
 
-model DailyUsage {
-  id          String   @id @default(cuid())
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guestId     String?
-  day         DateTime @db.Date
-  secondsUsed Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([userId, day])
-  @@unique([guestId, day])
+model User {
+  id                     String         @id @default(cuid())
+  clerkId                String         @unique
+  email                  String         @unique
+  name                   String?
+  imageUrl               String?
+  stripeCustomerId       String?        @unique @map("stripe_customer_id")
+  stripeSubscriptionId   String?        @unique @map("stripe_subscription_id")
+  stripePriceId          String?        @map("stripe_price_id")
+  stripeCurrentPeriodEnd DateTime?      @map("stripe_current_period_end")
+  conversations          Conversation[]
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 }
 
 model Conversation {
-  id        String    @id @default(cuid())
-  userId    String?   // optional for guests
-  user      User?     @relation(fields: [userId], references: [id])
-  guestId   String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  isGuest   Boolean   @default(true)
-  title     String    @default("New Conversation")
-  messages  Message[]
-  feedbacks Feedback[]
-}
-
-model Message {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  role           String
-  text           String
-  createdAt      DateTime     @default(now())
-}
-
-model Feedback {
-  id             String        @id @default(cuid())
-  stars          Int
-  note           String?
-  conversationId String?
-  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  userId         String?
-  createdAt      DateTime      @default(now())
-}
-
-model Subscription {
-  id               String     @id @default(cuid())
-  userId           String
-  user             User       @relation(fields: [userId], references: [id])
-  stripeCustomer   String?    @unique
-  stripeSubId      String?    @unique
-  status           String     @default("inactive")
-  plan             String     @default("pro")
-  currentPeriodEnd DateTime?
-  cancelAt         DateTime?
-  canceledAt       DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-
-  @@index([userId])
-  @@map("app_subscriptions")
-}
-
-model PaymentEvent {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  stripeId    String   @unique
-  type        String
-  status      String?
-  amountCents Int?
-  currency    String?  @default("usd")
-  raw         Json
-  createdAt   DateTime @default(now())
-
-  @@index([userId, createdAt])
-  @@map("app_payment_events")
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
+  persona   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

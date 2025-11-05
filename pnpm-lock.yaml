@@ -36,9 +36,6 @@ importers:
       openai:
         specifier: ^4.52.7
         version: 4.104.0(ws@8.18.3)(zod@3.25.76)
-      prisma:
-        specifier: 5.22.0
-        version: 5.22.0
       ws:
         specifier: ^8.18.0
         version: 8.18.3
@@ -49,6 +46,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.10
         version: 8.18.1
+      prisma:
+        specifier: 5.22.0
+        version: 5.22.0
       tsx:
         specifier: ^4.19.1
         version: 4.20.6

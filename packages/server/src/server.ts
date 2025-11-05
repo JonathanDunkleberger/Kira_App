@@ -1,10 +1,11 @@
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
+import type { IncomingMessage } from "http";
 import { createServer } from "http";
 import { URL } from "url";
 import { PrismaClient } from "@prisma/client";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
-import { GoogleSTTStreamer } from "./GoogleSTTStreamer.js";
+import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 
 // --- CONFIGURATION ---
@@ -21,7 +22,7 @@ const wss = new WebSocketServer({ server });
 
 console.log("[Server] Starting...");
 
-wss.on("connection", async (ws: WebSocket, req) => {
+wss.on("connection", async (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
@@ -54,7 +55,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
-  let sttStreamer: GoogleSTTStreamer | null = null;
+  let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
@@ -71,8 +72,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
       if (controlMessage.type === "start_stream") {
         console.log("[WS] Received start_stream. Initializing pipeline...");
-        sttStreamer = new GoogleSTTStreamer();
-        sttStreamer.start();
+  sttStreamer = new DeepgramSTTStreamer();
+  await sttStreamer.start();
 
         sttStreamer.on("transcript", (transcript: string, isFinal: boolean) => {
           if (isFinal) currentTurnTranscript += transcript + " ";
@@ -145,11 +146,11 @@ wss.on("connection", async (ws: WebSocket, req) => {
     }
   });
 
-  ws.on("close", (code) => {
+  ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
     if (sttStreamer) sttStreamer.destroy();
   });
-  ws.on("error", (err) => {
+  ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
     if (sttStreamer) sttStreamer.destroy();
   });

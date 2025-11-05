@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
-    "@types/ws": "^8.5.10",
+    "@deepgram/sdk": "^3.5.0",
     "prisma": "5.22.0",
     "tsx": "^4.19.1",
     "typescript": "^5.5.3"

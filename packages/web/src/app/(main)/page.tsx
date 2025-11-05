@@ -1,4 +1,5 @@
 "use client"; // This page is interactive, so it's a client component
+export const dynamic = "force-dynamic"; // prevent prerender/SSG to avoid SSR-only runtime on client hooks
 
 import { useUser, UserButton } from "@clerk/nextjs";
 import Link from "next/link";

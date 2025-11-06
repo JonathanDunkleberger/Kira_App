@@ -179,7 +179,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
     ws.current.onopen = () => {
       setSocketState("connected");
       console.log("[WS] ✅ WebSocket connected.");
-      ws.current?.send(JSON.stringify({ type: "start_stream" }));
     };
 
     ws.current.onmessage = (event) => {
@@ -240,6 +239,28 @@ export const useKiraSocket = (token: string, guestId: string) => {
   };
 
   /**
+   * Explicitly start the conversation: send start_stream and start mic pipeline.
+   * Adds detailed logs to trace user action and pipeline startup.
+   */
+  const startConversation = () => {
+    console.log("[UI] Start button clicked.");
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("[WS] Sending 'start_stream' message...");
+      try {
+        ws.current.send(JSON.stringify({ type: "start_stream" }));
+      } catch (err) {
+        console.error("[WS] Failed to send start_stream:", err);
+      }
+      console.log("[Audio] Starting local audio pipeline...");
+      startAudioPipeline();
+    } else {
+      console.error(
+        "[WS] Cannot start stream: WebSocket is not open or not connected."
+      );
+    }
+  };
+
+  /**
    * Helper function to create a WAV header for raw PCM data
    */
   const createWavHeader = (
@@ -283,5 +304,5 @@ export const useKiraSocket = (token: string, guestId: string) => {
     return buffer;
   };
 
-  return { connect, disconnect, socketState, kiraState };
+  return { connect, disconnect, startConversation, socketState, kiraState };
 };

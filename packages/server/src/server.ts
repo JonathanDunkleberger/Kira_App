@@ -72,8 +72,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
       if (controlMessage.type === "start_stream") {
         console.log("[WS] Received start_stream. Initializing pipeline...");
-  sttStreamer = new DeepgramSTTStreamer();
-  await sttStreamer.start();
+        sttStreamer = new DeepgramSTTStreamer();
+        await sttStreamer.start();
 
         sttStreamer.on("transcript", (transcript: string, isFinal: boolean) => {
           if (isFinal) currentTurnTranscript += transcript + " ";
@@ -99,6 +99,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         const userMessage = currentTurnTranscript.trim();
         currentTurnTranscript = ""; // Reset for next turn
 
+        console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
         console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
         ws.send(JSON.stringify({ type: "state_thinking" }));
         chatHistory.push({ role: "user", content: userMessage });
@@ -116,7 +117,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
         }
 
-        console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
+  console.log(`[AI RESPONSE]: "${llmResponse}"`);
+  console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
         state = "speaking";
         ws.send(JSON.stringify({ type: "state_speaking" }));
 

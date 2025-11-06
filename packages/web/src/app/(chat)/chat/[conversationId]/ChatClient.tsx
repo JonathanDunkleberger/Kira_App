@@ -25,7 +25,7 @@ export default function ChatClient() {
     return "";
   });
 
-  const { connect, disconnect, socketState, kiraState } = useKiraSocket(
+  const { connect, disconnect, startConversation, socketState, kiraState } = useKiraSocket(
     token || "",
     guestId
   );
@@ -54,6 +54,10 @@ export default function ChatClient() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleStart = () => {
+    startConversation();
+  };
 
   // --- UI Logic ---
   const getOrbStyle = (state: KiraState) => {
@@ -139,11 +143,13 @@ export default function ChatClient() {
       {/* Footer Controls */}
       <div className="flex items-center gap-6 p-8">
         <button
-          disabled // TODO: GOAL 3 - Add Mute logic
-          className="flex flex-col items-center justify-center w-20 h-20 bg-gray-200/50 rounded-full text-gray-700 opacity-50 cursor-not-allowed"
+          onClick={handleStart}
+          disabled={socketState !== "connected"}
+          className="flex flex-col items-center justify-center w-20 h-20 bg-kira-green rounded-full text-gray-900 disabled:opacity-50"
+          title={socketState !== "connected" ? "Waiting for connection" : "Start"}
         >
           <Mic size={28} />
-          <span className="text-sm mt-1">Mute</span>
+          <span className="text-sm mt-1">Start</span>
         </button>
         <button
           onClick={handleEndCall}

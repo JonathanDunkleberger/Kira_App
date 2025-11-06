@@ -18,6 +18,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const audioSource = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioStream = useRef<MediaStream | null>(null);
 
+  // Coalesce tiny PCM frames into ~20ms packets for Deepgram
+  const pcmSendBuffer = useRef<Uint8Array | null>(null);
+  const PCM_TARGET_BYTES = 1920; // 20ms @ 48kHz mono 16-bit (960 samples * 2 bytes)
+
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
   const isPlaying = useRef(false);
@@ -26,6 +30,53 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
   // --- "Ramble Bot" EOU Timer ---
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Pause mic capture without tearing down the graph
+  const pauseMicCapture = () => {
+    if (audioWorkletNode.current) {
+      // Stop receiving frames immediately
+      audioWorkletNode.current.port.onmessage = null;
+    }
+    // Clear any partial batch
+    pcmSendBuffer.current = null;
+  };
+
+  // Shared batched handler for incoming PCM from the Worklet
+  const handleWorkletMessage = (event: any) => {
+    const pcmBuffer = event.data as ArrayBuffer;
+
+    if (ws.current?.readyState === WebSocket.OPEN && kiraState === "listening") {
+      // Append to batching buffer
+      const chunk = new Uint8Array(pcmBuffer);
+      if (!pcmSendBuffer.current || pcmSendBuffer.current.length === 0) {
+        pcmSendBuffer.current = chunk;
+      } else {
+        const merged = new Uint8Array(pcmSendBuffer.current.length + chunk.length);
+        merged.set(pcmSendBuffer.current, 0);
+        merged.set(chunk, pcmSendBuffer.current.length);
+        pcmSendBuffer.current = merged;
+      }
+
+      // Flush in ~20ms slices
+      while (pcmSendBuffer.current && pcmSendBuffer.current.length >= PCM_TARGET_BYTES) {
+        const toSend = pcmSendBuffer.current.slice(0, PCM_TARGET_BYTES);
+        const remaining = pcmSendBuffer.current.slice(PCM_TARGET_BYTES);
+        pcmSendBuffer.current = remaining.length ? remaining : null;
+        ws.current.send(toSend.buffer);
+      }
+
+      // "Ramble Bot" EOU logic — reset timer on audio
+      if (eouTimer.current) clearTimeout(eouTimer.current);
+      eouTimer.current = setTimeout(() => {
+        console.log("[EOU] Silence detected, sending End of Utterance.");
+        // IMPORTANT: pause mic before EOU so no frames are sent while STT finalizes
+        pauseMicCapture();
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({ type: "eou" }));
+        }
+      }, EOU_TIMEOUT);
+    }
+  };
 
   /**
    * Plays the next audio chunk from the queue.
@@ -115,28 +166,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
       );
       audioSource.current.connect(audioWorkletNode.current);
 
-      // 5. Connect the Worklet to the main app (this hook)
-      audioWorkletNode.current.port.onmessage = (event) => {
-        // We received a 16-bit PCM buffer from the worklet
-        const pcmBuffer = event.data as ArrayBuffer;
-
-        if (
-          ws.current?.readyState === WebSocket.OPEN &&
-          kiraState === "listening"
-        ) {
-          ws.current.send(pcmBuffer);
-
-          // This is the "Ramble Bot" EOU logic
-          // If we get audio, reset the silence timer
-          if (eouTimer.current) clearTimeout(eouTimer.current);
-          eouTimer.current = setTimeout(() => {
-            console.log("[EOU] Silence detected, sending End of Utterance.");
-            if (ws.current?.readyState === WebSocket.OPEN) {
-              ws.current.send(JSON.stringify({ type: "eou" }));
-            }
-          }, EOU_TIMEOUT);
-        }
-      };
+      // 5. Connect the Worklet to the main app (this hook) with batching
+      audioWorkletNode.current.port.onmessage = handleWorkletMessage;
 
       console.log("[Audio] ✅ Audio pipeline started.");
     } catch (err) {
@@ -192,13 +223,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "stream_ready":
             console.log("[WS] Received stream_ready.");
             setKiraState("listening");
-            // DEBUG: force an EOU after 2s so we can see the rest of the pipeline
-            setTimeout(() => {
-              if (ws.current?.readyState === WebSocket.OPEN) {
-                console.log("[DEBUG] Forcing EOU after stream_ready");
-                ws.current.send(JSON.stringify({ type: "eou" }));
-              }
-            }, 2000);
             break;
           case "state_thinking":
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
@@ -210,6 +234,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
             break;
           case "state_listening":
             setKiraState("listening");
+            // Resume sending from worklet
+            if (audioWorkletNode.current) {
+              audioWorkletNode.current.port.onmessage = handleWorkletMessage;
+            }
             break;
           case "tts_chunk_starts":
             break;

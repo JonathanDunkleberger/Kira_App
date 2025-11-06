@@ -65,6 +65,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   ws.on("message", async (data: Buffer, isBinary: boolean) => {
     try {
       if (isBinary) {
+        const len = (data as Buffer).byteLength;
+        console.log("[WS] Audio chunk received, bytes:", len, "state:", state);
         if (state === "listening" && sttStreamer) {
           try {
             sttStreamer.write(data);
@@ -72,7 +74,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             console.error("[WS] Audio write failed:", err);
           }
         } else {
-          console.log("[WS] Dropping audio chunk (state:", state, ")");
+          console.log("[WS] Dropping audio chunk (no STT or wrong state)");
         }
         return;
       }

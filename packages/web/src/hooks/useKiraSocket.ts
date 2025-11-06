@@ -192,6 +192,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "stream_ready":
             console.log("[WS] Received stream_ready.");
             setKiraState("listening");
+            // DEBUG: force an EOU after 2s so we can see the rest of the pipeline
+            setTimeout(() => {
+              if (ws.current?.readyState === WebSocket.OPEN) {
+                console.log("[DEBUG] Forcing EOU after stream_ready");
+                ws.current.send(JSON.stringify({ type: "eou" }));
+              }
+            }, 2000);
             break;
           case "state_thinking":
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer

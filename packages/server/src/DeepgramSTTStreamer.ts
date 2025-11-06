@@ -48,6 +48,7 @@ export class DeepgramSTTStreamer extends EventEmitter {
           data.is_final ?? data.speech_final ?? alt?.is_final
         );
         if (transcript && transcript.trim().length > 0) {
+          console.log(`[STT] ${isFinal ? "FINAL" : "interim"}:`, transcript);
           this.emit("transcript", transcript, isFinal);
         }
       } catch (err) {

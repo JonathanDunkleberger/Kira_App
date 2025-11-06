@@ -23,7 +23,7 @@ export class DeepgramSTTStreamer extends EventEmitter {
       interim_results: true,
       punctuate: true,
       encoding: "linear16",
-      sample_rate: 16000,
+      sample_rate: 48000,
     });
 
     const opened = new Promise<void>((resolve, reject) => {

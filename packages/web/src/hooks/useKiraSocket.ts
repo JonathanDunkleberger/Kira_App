@@ -104,7 +104,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
         "audio-worklet-processor",
         {
           processorOptions: {
-            targetSampleRate: 16000,
+            targetSampleRate: 48000,
           },
         }
       );

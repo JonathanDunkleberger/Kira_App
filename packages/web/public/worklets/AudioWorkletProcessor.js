@@ -5,7 +5,7 @@
 class Linear16Processor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.targetSampleRate = options.processorOptions.targetSampleRate || 16000;
+  this.targetSampleRate = options.processorOptions.targetSampleRate || 48000;
   }
 
   /**
@@ -61,7 +61,7 @@ class Linear16Processor extends AudioWorkletProcessor {
     // inputs[0][0] is the Float32Array of raw audio data
     const audioData = input[0];
 
-    // 1. Downsample from browser's native rate (sampleRate) to 16000
+  // 1. Downsample from browser's native rate (sampleRate) to 48000 (or pass-through if equal)
     const downsampled = this.downsample(
       audioData,
       sampleRate, // This is a global var in the AudioWorklet scope

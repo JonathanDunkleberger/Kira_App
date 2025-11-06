@@ -26,22 +26,25 @@ export class DeepgramSTTStreamer extends EventEmitter {
         // Ready to receive audio
       });
 
-      this.connection.on(
-        LiveTranscriptionEvents.Transcript,
-        (data: any) => {
-          try {
-            const channel = data.channel || data.channel_index || data.data?.channel;
-            const alt = (data.channel?.alternatives?.[0]) || (data.alternatives?.[0]) || channel?.alternatives?.[0];
-            const transcript: string | undefined = alt?.transcript;
-            const isFinal: boolean = Boolean(data.is_final ?? data.speech_final ?? alt?.is_final);
-            if (transcript && transcript.trim().length > 0) {
-              this.emit("transcript", transcript, isFinal);
-            }
-          } catch (err) {
-            this.emit("error", err);
+      this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+        try {
+          const channel =
+            data.channel || data.channel_index || data.data?.channel;
+          const alt =
+            data.channel?.alternatives?.[0] ||
+            data.alternatives?.[0] ||
+            channel?.alternatives?.[0];
+          const transcript: string | undefined = alt?.transcript;
+          const isFinal: boolean = Boolean(
+            data.is_final ?? data.speech_final ?? alt?.is_final
+          );
+          if (transcript && transcript.trim().length > 0) {
+            this.emit("transcript", transcript, isFinal);
           }
+        } catch (err) {
+          this.emit("error", err);
         }
-      );
+      });
 
       this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
         this.emit("error", e);

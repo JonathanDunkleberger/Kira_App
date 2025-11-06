@@ -117,8 +117,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
         }
 
-  console.log(`[AI RESPONSE]: "${llmResponse}"`);
-  console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
+        console.log(`[AI RESPONSE]: "${llmResponse}"`);
+        console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
         state = "speaking";
         ws.send(JSON.stringify({ type: "state_speaking" }));
 

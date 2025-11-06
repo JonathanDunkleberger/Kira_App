@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mic, PhoneOff } from "lucide-react";
+import { PhoneOff } from "lucide-react";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function ChatClient() {
     return "";
   });
 
-  const { connect, disconnect, startConversation, socketState, kiraState } = useKiraSocket(
+  const { connect, disconnect, socketState, kiraState } = useKiraSocket(
     token || "",
     guestId
   );
@@ -54,10 +54,6 @@ export default function ChatClient() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleStart = () => {
-    startConversation();
-  };
 
   // --- UI Logic ---
   const getOrbStyle = (state: KiraState) => {
@@ -142,15 +138,6 @@ export default function ChatClient() {
 
       {/* Footer Controls */}
       <div className="flex items-center gap-6 p-8">
-        <button
-          onClick={handleStart}
-          disabled={socketState !== "connected"}
-          className="flex flex-col items-center justify-center w-20 h-20 bg-kira-green rounded-full text-gray-900 disabled:opacity-50"
-          title={socketState !== "connected" ? "Waiting for connection" : "Start"}
-        >
-          <Mic size={28} />
-          <span className="text-sm mt-1">Start</span>
-        </button>
         <button
           onClick={handleEndCall}
           className="flex flex-col items-center justify-center w-20 h-20 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"

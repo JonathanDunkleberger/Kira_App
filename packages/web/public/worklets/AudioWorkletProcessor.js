@@ -61,10 +61,10 @@ class Linear16Processor extends AudioWorkletProcessor {
     // inputs[0][0] is the Float32Array of raw audio data
     const audioData = input[0];
 
-    // 1. Downsample from browser's native rate (currentSampleRate) to 16000
+    // 1. Downsample from browser's native rate (sampleRate) to 16000
     const downsampled = this.downsample(
       audioData,
-      currentSampleRate, // This is a global var in the AudioWorklet scope
+      sampleRate, // This is a global var in the AudioWorklet scope
       this.targetSampleRate
     );
 

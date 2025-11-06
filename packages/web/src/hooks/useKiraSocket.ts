@@ -179,6 +179,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
     ws.current.onopen = () => {
       setSocketState("connected");
       console.log("[WS] ✅ WebSocket connected.");
+      // Auto-start the conversation and mic pipeline as soon as socket is open
+      startConversation();
     };
 
     ws.current.onmessage = (event) => {
@@ -188,10 +190,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
         switch (msg.type) {
           case "stream_ready":
-            console.log(
-              "[WS] Received stream_ready. Starting audio pipeline..."
-            );
-            startAudioPipeline();
+            console.log("[WS] Received stream_ready.");
             setKiraState("listening");
             break;
           case "state_thinking":

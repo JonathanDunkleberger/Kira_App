@@ -24,6 +24,9 @@ export class DeepgramSTTStreamer extends EventEmitter {
       punctuate: true,
       encoding: "linear16",
       sample_rate: 48000,
+      channels: 1, // mono input
+      vad_events: true,
+      utterance_end_ms: 700,
     });
 
     const opened = new Promise<void>((resolve, reject) => {

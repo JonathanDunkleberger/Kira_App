@@ -22,7 +22,25 @@ const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const server = createServer();
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  perMessageDeflate: false,
+  maxPayload: 8 * 1024 * 1024,
+});
+
+// keepalive (avoid intermediaries closing the socket)
+wss.on("connection", (ws: any) => {
+  ws.isAlive = true;
+  ws.on("pong", () => (ws.isAlive = true));
+});
+const interval = setInterval(() => {
+  wss.clients.forEach((ws: any) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30_000);
+process.on("exit", () => clearInterval(interval));
 
 console.log("[Server] Starting...");
 
@@ -111,14 +129,21 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }
 
       if (controlMessage.type === "eou") {
-        if (state !== "listening" || !sttStreamer || currentTurnTranscript.trim().length === 0) {
-          return;
-        }
+        if (state !== "listening" || !sttStreamer) return;
 
+        // Stop accepting audio while we finalize
         state = "thinking";
+        // ws.send(JSON.stringify({ type: "pause_mic" })); // optional symmetry with client
+
         sttStreamer.finalize();
         const userMessage = currentTurnTranscript.trim();
         currentTurnTranscript = "";
+        if (!userMessage) {
+          console.log("[EOG] No speech captured; returning to listening.");
+          state = "listening";
+          ws.send(JSON.stringify({ type: "state_listening" }));
+          return;
+        }
         console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
         ws.send(JSON.stringify({ type: "state_thinking" }));
         chatHistory.push({ role: "user", content: userMessage });

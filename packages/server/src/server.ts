@@ -8,6 +8,10 @@ import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 
+// Global fatal handlers MUST be defined before server creation
+process.on("unhandledRejection", (r) => console.error("[FATAL] UnhandledRejection:", r));
+process.on("uncaughtException", (e) => console.error("[FATAL] UncaughtException:", e));
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -20,33 +24,19 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const server = createServer();
 const wss = new WebSocketServer({ server });
 
-// Global crash guards so the process doesn't die silently
-process.on("unhandledRejection", (reason) => {
-  console.error("[FATAL] UnhandledRejection:", reason);
-});
-process.on("uncaughtException", (err) => {
-  console.error("[FATAL] UncaughtException:", err);
-});
-
 console.log("[Server] Starting...");
 
 wss.on("connection", async (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
-  const url = new URL(req.url!, `wss://${req.headers.host}`);
+  const url = new URL(req.url!, `http://${req.headers.host}`); // scheme doesn't matter for parsing
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
 
   let userId: string | null = null;
-  // TODO: Add your free trial timer logic here
-  // let timer = FREE_TRIAL_SECONDS;
-
-  // --- 1. AUTH & USER SETUP ---
   try {
     if (token) {
       const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-      if (!payload?.sub) {
-        throw new Error("Unable to resolve user id from token");
-      }
+      if (!payload?.sub) throw new Error("Unable to resolve user id from token");
       userId = payload.sub;
       console.log(`[Auth] ✅ Authenticated user: ${userId}`);
     } else if (guestId) {
@@ -57,12 +47,11 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     }
   } catch (err) {
     console.error("[Auth] ❌ Failed:", (err as Error).message);
-    ws.close(1008, "Authentication failed");
+    try { ws.close(1008, "Authentication failed"); } catch {}
     return;
   }
 
-  // --- 2. PIPELINE SETUP ---
-  let state = "listening";
+  let state: "listening" | "thinking" | "speaking" = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -73,108 +62,112 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     },
   ];
 
-  ws.on("message", async (message: Buffer | string) => {
+  ws.on("message", async (data: Buffer, isBinary: boolean) => {
     try {
-      // --- 3. MESSAGE HANDLING ---
-      if (typeof message === "string") {
-        const controlMessage = JSON.parse(message);
-
-        if (controlMessage.type === "start_stream") {
-          console.log("[WS] Received start_stream. Initializing pipeline...");
-          sttStreamer = new DeepgramSTTStreamer();
-          // Attach listeners BEFORE starting, to catch any early runtime errors
-          sttStreamer.on(
-            "transcript",
-            (transcript: string, isFinal: boolean) => {
-              if (isFinal) currentTurnTranscript += transcript + " ";
-            }
-          );
-          sttStreamer.on("error", (err: Error) => {
-            console.error("[Pipeline] ❌ STT Error:", err.message);
-            state = "listening"; // Reset
-          });
-          await sttStreamer.start();
-
-          ws.send(JSON.stringify({ type: "stream_ready" }));
-        } else if (controlMessage.type === "eou") {
-          if (
-            state !== "listening" ||
-            !sttStreamer ||
-            currentTurnTranscript.trim().length === 0
-          ) {
-            return; // Already thinking or nothing was said
-          }
-
-          state = "thinking";
-          sttStreamer.finalize();
-          const userMessage = currentTurnTranscript.trim();
-          currentTurnTranscript = ""; // Reset for next turn
-
-          console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
-          console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
-          ws.send(JSON.stringify({ type: "state_thinking" }));
-          chatHistory.push({ role: "user", content: userMessage });
-
-          let llmResponse = "I'm not sure what to say.";
-          try {
-            const chatCompletion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: chatHistory,
-            });
-            llmResponse =
-              chatCompletion.choices[0]?.message?.content || llmResponse;
-            chatHistory.push({ role: "assistant", content: llmResponse });
-          } catch (err) {
-            console.error(
-              "[Pipeline] ❌ OpenAI Error:",
-              (err as Error).message
-            );
-          }
-
-          console.log(`[AI RESPONSE]: "${llmResponse}"`);
-          console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
-          state = "speaking";
-          ws.send(JSON.stringify({ type: "state_speaking" }));
-
-          // --- Real Azure TTS Integration ---
-          console.log("[TTS] Sending to Azure...");
-          const ttsStreamer = new AzureTTSStreamer();
-          ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-          ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
-          ttsStreamer.on("tts_complete", () => {
-            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-          });
-          ttsStreamer.on("error", (err: Error) => {
-            console.error("[Pipeline] ❌ TTS Error:", err);
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-          });
-
-          ttsStreamer.synthesize(llmResponse);
-        }
-      } else if (message instanceof Buffer) {
+      if (isBinary) {
+        // Raw PCM audio
         if (state === "listening" && sttStreamer) {
-          sttStreamer.write(message); // Forward raw audio to Deepgram
+          sttStreamer.write(data);
+        } else {
+          // Ignore stray audio
         }
+        return;
       }
+
+      // Text control message
+      const text = typeof data === "string" ? (data as unknown as string) : data.toString("utf8");
+      console.log("[WS] Control frame:", text);
+      let controlMessage: any;
+      try {
+        controlMessage = JSON.parse(text);
+      } catch (e) {
+        console.error("[CTRL] Non-JSON control message:", e);
+        return;
+      }
+
+      if (controlMessage.type === "start_stream") {
+        console.log("[WS] Received start_stream. Initializing pipeline...");
+        sttStreamer = new DeepgramSTTStreamer();
+
+        // LISTENERS MUST BE ATTACHED BEFORE AWAIT start()
+        sttStreamer.on("transcript", (transcript: string, isFinal: boolean) => {
+          if (isFinal) currentTurnTranscript += transcript + " ";
+        });
+        sttStreamer.on("error", (err: Error) => {
+          console.error("[Pipeline] ❌ STT Error:", err?.message || err);
+          state = "listening";
+        });
+
+        // If DEEPGRAM_API_KEY is missing/invalid, this await will REJECT and fall into catch
+        await sttStreamer.start();
+        console.log("[STT] Deepgram connection OPEN");
+        ws.send(JSON.stringify({ type: "stream_ready" }));
+        return;
+      }
+
+      if (controlMessage.type === "eou") {
+        if (state !== "listening" || !sttStreamer || currentTurnTranscript.trim().length === 0) {
+          return;
+        }
+
+        state = "thinking";
+        sttStreamer.finalize();
+        const userMessage = currentTurnTranscript.trim();
+        currentTurnTranscript = "";
+        console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
+        ws.send(JSON.stringify({ type: "state_thinking" }));
+        chatHistory.push({ role: "user", content: userMessage });
+
+        let llmResponse = "I'm not sure what to say.";
+        try {
+          const chatCompletion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: chatHistory,
+          });
+          llmResponse = chatCompletion.choices[0]?.message?.content || llmResponse;
+          chatHistory.push({ role: "assistant", content: llmResponse });
+        } catch (err) {
+          console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
+        }
+
+        console.log(`[AI RESPONSE]: "${llmResponse}"`);
+        state = "speaking";
+        ws.send(JSON.stringify({ type: "state_speaking" }));
+
+        console.log("[TTS] Sending to Azure...");
+        const ttsStreamer = new AzureTTSStreamer();
+        ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+        ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+        ttsStreamer.on("tts_complete", () => {
+          ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+          state = "listening";
+          ws.send(JSON.stringify({ type: "state_listening" }));
+        });
+        ttsStreamer.on("error", (err: Error) => {
+          console.error("[Pipeline] ❌ TTS Error:", err);
+          state = "listening";
+          ws.send(JSON.stringify({ type: "state_listening" }));
+        });
+
+        ttsStreamer.synthesize(llmResponse);
+        return;
+      }
+
+      // Unknown control type -> ignore
     } catch (err) {
       console.error("[FATAL] MESSAGE HANDLER CRASHED:", err);
-      try {
-        ws.close(1011, "Internal error");
-      } catch {}
+      try { ws.close(1011, "Internal error"); } catch {}
     }
   });
 
   ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
-    if (sttStreamer) sttStreamer.destroy();
+    try { sttStreamer?.destroy(); } catch {}
   });
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
-    if (sttStreamer) sttStreamer.destroy();
+    try { sttStreamer?.destroy(); } catch {}
   });
 });
 

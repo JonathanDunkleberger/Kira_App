@@ -55,26 +55,27 @@ export class DeepgramSTTStreamer extends EventEmitter {
       }
     });
 
-    this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
-      this.emit("error", e);
-    });
-
     this.connection.on(LiveTranscriptionEvents.Close, () => {
-      // closed
+      console.warn("[STT] Deepgram socket closed");
+    });
+    this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
+      console.error("[STT] Deepgram socket error:", e);
+      this.emit("error", e);
     });
   }
 
-  public write(audioChunk: Buffer) {
-    if (!this.connection) return;
+  public write(chunk: Buffer | ArrayBuffer) {
     try {
-      // Deepgram expects raw PCM LINEAR16 at 16kHz as ArrayBuffer/Blob
-      const ab = audioChunk.buffer.slice(
-        audioChunk.byteOffset,
-        audioChunk.byteOffset + audioChunk.byteLength
-      );
-      this.connection.send(ab);
+      if (!this.connection) {
+        console.warn("[STT] write() called before Deepgram connection open");
+        return;
+      }
+      const buf = chunk instanceof Buffer ? chunk : Buffer.from(chunk as ArrayBuffer);
+      // Deepgram Node SDK accepts Node Buffers at runtime; cast to appease TS types
+      (this.connection as any).send(buf);
     } catch (err) {
-      this.emit("error", err);
+      console.error("[STT] write() failed:", err);
+      this.emit("error", err as Error);
     }
   }
 

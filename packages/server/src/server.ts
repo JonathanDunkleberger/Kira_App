@@ -65,11 +65,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   ws.on("message", async (data: Buffer, isBinary: boolean) => {
     try {
       if (isBinary) {
-        // Raw PCM audio
         if (state === "listening" && sttStreamer) {
-          sttStreamer.write(data);
+          try {
+            sttStreamer.write(data);
+          } catch (err) {
+            console.error("[WS] Audio write failed:", err);
+          }
         } else {
-          // Ignore stray audio
+          console.log("[WS] Dropping audio chunk (state:", state, ")");
         }
         return;
       }

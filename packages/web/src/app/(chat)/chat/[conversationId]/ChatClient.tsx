@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,6 +29,7 @@ export default function ChatClient() {
     token || "",
     guestId
   );
+  const connectedOnceRef = useRef(false);
 
   // 1. Get Clerk auth token
   useEffect(() => {
@@ -37,19 +38,22 @@ export default function ChatClient() {
     }
   }, [getToken, userId]);
 
-  // 2. Connect to WebSocket
+  // 2. Connect to WebSocket once when ready; keep alive across re-renders.
   useEffect(() => {
-    // Connect if we are a guest OR if we are a logged-in user with a token
-    if (guestId || (userId && token)) {
+    if (!connectedOnceRef.current && (guestId || (userId && token))) {
       connect();
+      connectedOnceRef.current = true;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestId, userId, token]);
 
-    // Disconnect when the page is closed
+  // Disconnect only on unmount
+  useEffect(() => {
     return () => {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, userId, guestId]);
+  }, []);
 
   // --- UI Logic ---
   const getOrbStyle = (state: KiraState) => {

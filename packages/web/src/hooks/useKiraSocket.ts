@@ -45,6 +45,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
     ) {
       playbackContext.current = new AudioContext({ sampleRate: 16000 });
     }
+    if (playbackContext.current.state === "suspended") {
+      await playbackContext.current.resume();
+    }
 
     const buffer = audioQueue.current.shift();
     if (!buffer) {
@@ -93,7 +96,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
       });
 
       // 2. Create AudioContext and load our custom processor
-      audioContext.current = new AudioContext(); // Use browser's native sample rate
+      if (!audioContext.current || audioContext.current.state === "closed") {
+        audioContext.current = new AudioContext();
+      }
+      if (audioContext.current.state === "suspended") {
+        await audioContext.current.resume();
+      }
+
       await audioContext.current.audioWorklet.addModule(
         "/worklets/AudioWorkletProcessor.js"
       );
@@ -166,8 +175,31 @@ export const useKiraSocket = (token: string, guestId: string) => {
   /**
    * Main connection logic
    */
-  const connect = () => {
+  const connect = async () => {
     if (ws.current) return;
+
+    // Mobile Safari Audio Unlock:
+    // Create and resume contexts inside this user-gesture (click) event.
+    try {
+      if (!audioContext.current || audioContext.current.state === "closed") {
+        audioContext.current = new AudioContext();
+      }
+      if (audioContext.current.state === "suspended") {
+        await audioContext.current.resume();
+      }
+
+      if (
+        !playbackContext.current ||
+        playbackContext.current.state === "closed"
+      ) {
+        playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      }
+      if (playbackContext.current.state === "suspended") {
+        await playbackContext.current.resume();
+      }
+    } catch (err) {
+      console.error("[Audio] Failed to unlock audio contexts:", err);
+    }
 
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = token ? `token=${token}` : `guestId=${guestId}`;

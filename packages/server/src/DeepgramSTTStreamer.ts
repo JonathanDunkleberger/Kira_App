@@ -6,6 +6,7 @@ const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY!;
 
 export class DeepgramSTTStreamer extends EventEmitter {
   private connection: LiveClient | null = null;
+  private keepAliveInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
@@ -21,6 +22,14 @@ export class DeepgramSTTStreamer extends EventEmitter {
         encoding: "linear16",
         sample_rate: 16000,
       });
+
+      if (this.connection) {
+        this.keepAliveInterval = setInterval(() => {
+          if (this.connection && this.connection.getReadyState() === 1) {
+            this.connection.keepAlive();
+          }
+        }, 3000);
+      }
 
       this.connection.on(LiveTranscriptionEvents.Open, () => {
         // Ready to receive audio
@@ -83,6 +92,10 @@ export class DeepgramSTTStreamer extends EventEmitter {
 
   public destroy() {
     try {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = null;
+      }
       this.connection?.finalize?.();
       this.connection?.finish?.();
     } catch (err) {

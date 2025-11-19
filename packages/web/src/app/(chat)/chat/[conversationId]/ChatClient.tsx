@@ -62,19 +62,8 @@ export default function ChatClient() {
   };
 
   // --- UI Logic ---
-  const getOrbStyle = (state: KiraState) => {
-    switch (state) {
-      case "speaking":
-        return "bg-kira-orb shadow-orb"; // Speaking - volume controlled
-      case "thinking":
-        // Thinking - Swirling smoke effect
-        // We use a conic gradient that spins
-        return "bg-[conic-gradient(from_0deg,var(--kira-orb),#ffffff,var(--kira-orb))] shadow-orb animate-spin-slow"; 
-      case "listening":
-      default:
-        return "bg-kira-orb shadow-orb"; // Listening - volume controlled
-    }
-  };
+  // The orb is now a fluid, living object that always moves slightly.
+  // It pulses based on volume (handled by getDynamicStyle).
 
   const getDynamicStyle = () => {
     const baseScale = 1;
@@ -195,11 +184,12 @@ export default function ChatClient() {
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
         <div
-          className={`w-48 h-48 rounded-full transition-transform duration-75 ease-out ${getOrbStyle(
-            kiraState
-          )}`}
+          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-white"
           style={getDynamicStyle()}
-        />
+        >
+          {/* Fluid Gradient Layer - Simulates the GPT voice mode orb */}
+          <div className="absolute inset-[-50%] w-[200%] h-[200%] bg-[conic-gradient(from_0deg,#0284C7,#FFFFFF,#E0F2FE,#0284C7)] animate-spin-slow blur-2xl opacity-90" />
+        </div>
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl px-6 text-center pointer-events-none flex items-center justify-center h-full">

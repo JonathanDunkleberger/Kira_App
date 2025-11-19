@@ -24,10 +24,12 @@ const config = {
         "kira-green-dark": "#C2C6A3",
         "kira-orb": "#D4D7C2",
         "kira-orb-shadow": "rgba(212, 215, 194, 0.5)",
+        "kira-blue-light": "#E0F2FE", // sky-100
+        "kira-blue-dark": "#0284C7",  // sky-600
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "spin-slow": "spin 8s linear infinite",
+        "spin-slow": "spin 12s linear infinite",
       },
       boxShadow: {
         orb: "0 0 25px 10px rgba(212, 215, 194, 0.5)",

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 3000; // Increased to 3 seconds to allow for longer pauses (Ramble Mode)
+const EOU_TIMEOUT = 2000; // Reverted to 2 seconds for snappier responses while keeping long max utterance
 
 export const useKiraSocket = (token: string, guestId: string) => {
   const [socketState, setSocketState] = useState<SocketState>("idle");

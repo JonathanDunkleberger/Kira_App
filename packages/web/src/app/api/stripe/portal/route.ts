@@ -27,6 +27,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("[STRIPE_PORTAL]", error);
+    if (error instanceof Error) {
+        return new NextResponse(`Internal Error: ${error.message}`, { status: 500 });
+    }
     return new NextResponse("Internal Error", { status: 500 });
   }
 }

@@ -50,6 +50,7 @@ export async function POST(req: Request) {
     // 3. Create Checkout Session
     const priceId = process.env.STRIPE_PRICE_ID;
     if (!priceId) {
+        console.error("Stripe Price ID missing");
         return new NextResponse("Stripe Price ID missing", { status: 500 });
     }
 
@@ -72,6 +73,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("[STRIPE_CHECKOUT]", error);
+    if (error instanceof Error) {
+        return new NextResponse(`Internal Error: ${error.message}`, { status: 500 });
+    }
     return new NextResponse("Internal Error", { status: 500 });
   }
 }

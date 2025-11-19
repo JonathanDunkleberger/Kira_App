@@ -17,10 +17,12 @@ export async function POST(req: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch (error: any) {
+    console.error(`[STRIPE_WEBHOOK_ERROR] Signature verification failed: ${error.message}`);
     return new NextResponse(`Webhook Error: ${error.message}`, { status: 400 });
   }
 
   const session = event.data.object as Stripe.Checkout.Session;
+  console.log(`[STRIPE_WEBHOOK] Received event: ${event.type}`, { id: event.id });
 
   if (event.type === "checkout.session.completed") {
     const subscription = await stripe.subscriptions.retrieve(

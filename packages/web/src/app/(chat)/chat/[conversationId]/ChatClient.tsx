@@ -108,33 +108,49 @@ export default function ChatClient() {
 
   if (!hasStarted) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900">
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
         <div className="flex flex-col items-center gap-8 max-w-sm text-center">
-          <div className="w-48 h-48 rounded-full bg-kira-orb shadow-orb opacity-50" />
+          <div className="w-48 h-48 rounded-full bg-kira-orb shadow-orb opacity-50 dark:bg-tokyo-accent/20 dark:shadow-none dark:border dark:border-tokyo-accent/30" />
           <h1 className="text-2xl font-medium">Ready to talk?</h1>
-          <div className="text-sm text-gray-500">
-            Status: <span className={`font-medium ${socketState === 'connected' ? 'text-green-600' : 'text-orange-600'}`}>{socketState}</span>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Status: <span className={`font-medium ${socketState === 'connected' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>{socketState}</span>
           </div>
           <button
             onClick={handleStart}
-            className="flex items-center justify-center gap-3 px-8 py-4 bg-kira-green rounded-full text-xl font-medium text-gray-800 hover:bg-kira-green-dark transition-all hover:scale-105 shadow-lg"
+            className="flex items-center justify-center gap-3 px-8 py-4 bg-kira-green rounded-full text-xl font-medium text-gray-800 hover:bg-kira-green-dark transition-all hover:scale-105 shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg dark:hover:bg-tokyo-accent/90"
           >
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-800 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-800"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-800 opacity-75 dark:bg-tokyo-bg"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-800 dark:bg-tokyo-bg"></span>
             </span>
             Start Conversation
           </button>
           {error && <p className="text-red-500 text-sm">{error}</p>}
         </div>
+        
+        {/* Profile Button for Ready Screen */}
+        <div className="absolute top-0 right-0 p-6">
+          <button 
+            onClick={() => setShowProfileModal(true)}
+            className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+          >
+              <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+          </button>
+        </div>
+        
+        {/* Profile Modal */}
+        <ProfileModal 
+          isOpen={showProfileModal} 
+          onClose={() => setShowProfileModal(false)} 
+        />
       </div>
     );
   }
 
   if (socketState === "connecting") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900">
-        <div className="p-12 bg-kira-green rounded-lg text-xl font-medium text-gray-800 animate-pulse">
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
+        <div className="p-12 bg-kira-green rounded-lg text-xl font-medium text-gray-800 animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
           Connecting to Kira...
         </div>
       </div>

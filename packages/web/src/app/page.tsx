@@ -85,14 +85,12 @@ export default function HomePage() {
             </Link>
           )}
           {/* Profile Button */}
-          {isSignedIn && (
-            <button 
-              onClick={() => setShowProfileModal(true)}
-              className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
-            >
-              <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
-            </button>
-          )}
+          <button 
+            onClick={() => setShowProfileModal(true)}
+            className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+          >
+            <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+          </button>
         </div>
       </header>
 

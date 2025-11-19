@@ -62,8 +62,8 @@ export async function POST(req: Request) {
         },
       ],
       mode: "subscription",
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile?canceled=true`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/?success=true`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/?canceled=true`,
       metadata: {
         userId: userId,
       },

@@ -14,7 +14,9 @@
   "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
   "devDependencies": {
     "autoprefixer": "^10.4.21",
-    "prisma": "5.22.0"
+    "dotenv": "^17.2.3",
+    "prisma": "5.22.0",
+    "tsx": "^4.20.6"
   },
   "dependencies": {
     "@prisma/client": "5.22.0"

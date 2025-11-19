@@ -37,6 +37,20 @@ export default function HomePage() {
     ? `${getGreeting()}, ${user.firstName}`
     : getGreeting();
 
+  const handleUpgrade = async () => {
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = data.url;
+      } else {
+        console.error("Failed to start checkout");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
       {/* Header: Logo and Clerk Profile Icon */}
@@ -49,6 +63,7 @@ export default function HomePage() {
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
+            className="text-black dark:text-tokyo-fg"
           >
             <path
               d="M12 2L2 7L12 12L22 7L12 2Z"
@@ -76,13 +91,13 @@ export default function HomePage() {
         </span>
         <div className="flex items-center gap-4">
           {!isLoading && !isPro && isSignedIn && (
-            <Link
-              href="/subscribe" // We will build this page in Goal 3 (Paywall)
-              className="flex items-center gap-1.5 text-sm font-medium text-yellow-600 bg-yellow-100/50 px-3 py-1.5 rounded-full hover:bg-yellow-100"
+            <button
+              onClick={handleUpgrade}
+              className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-500 px-3 py-1.5 rounded-full hover:bg-blue-600 dark:bg-tokyo-accent dark:text-tokyo-bg dark:hover:bg-tokyo-accent/90 transition-colors"
             >
               <Zap size={14} />
               Upgrade
-            </Link>
+            </button>
           )}
           {/* Profile Button */}
           <button 
@@ -102,11 +117,11 @@ export default function HomePage() {
 
       {/* Persona Button */}
       <main className="flex flex-col gap-6 w-full max-w-sm text-center">
-        <h1 className="text-3xl font-medium text-gray-800">{greeting}</h1>
+        <h1 className="text-3xl font-medium text-gray-800 dark:text-tokyo-fg">{greeting}</h1>
 
         <Link
           href="/chat/kira" // This is the link to start the call
-          className="flex items-center justify-center gap-3 p-8 bg-kira-green rounded-lg text-2xl font-medium text-gray-800 hover:bg-kira-green-dark transition-colors"
+          className="flex items-center justify-center gap-3 p-8 bg-kira-green rounded-lg text-2xl font-medium text-gray-800 hover:bg-kira-green-dark transition-colors dark:bg-tokyo-card dark:text-tokyo-fg dark:hover:bg-tokyo-card/80 dark:border dark:border-tokyo-fg/10"
         >
           <Phone size={24} />
           <span>Talk to Kira</span>

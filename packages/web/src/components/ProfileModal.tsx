@@ -88,12 +88,19 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           const data = await checkoutRes.json();
           window.location.href = data.url;
           return;
+        } else {
+            console.error("Checkout failed with status:", checkoutRes.status);
+            alert("Failed to start checkout. Please try again later.");
         }
+      } else {
+        console.error("Portal failed with status:", portalRes.status);
+        alert("Failed to open subscription portal. Please try again later.");
       }
 
       console.error("Failed to handle subscription");
     } catch (error) {
       console.error("Subscription error:", error);
+      alert("An error occurred. Please try again.");
     }
   };
 

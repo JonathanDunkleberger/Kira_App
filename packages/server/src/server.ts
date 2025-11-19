@@ -93,7 +93,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   
   const processMessage = async (message: Buffer | string, isBinary: boolean) => {
     try {
-      console.log('[WS] Raw message received type:', typeof message, 'isBuffer:', Buffer.isBuffer(message), 'isBinary:', isBinary);
+      // console.log('[WS] Raw message received type:', typeof message, 'isBuffer:', Buffer.isBuffer(message), 'isBinary:', isBinary);
 
       // --- 3. MESSAGE HANDLING ---
       // Normalize message to string if it's a buffer but meant to be text (control message)
@@ -158,8 +158,19 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             currentTurnTranscript.trim().length > 0 ||
             latestInterimTranscript.trim().length > 0;
 
-          if (state !== "listening" || !sttStreamer || !hasTranscript) {
-            return; // Already thinking or nothing was said
+          if (state !== "listening") {
+             console.log(`[WS] EOU ignored: State is '${state}' (not 'listening')`);
+             return;
+          }
+          if (!sttStreamer) {
+             console.log(`[WS] EOU ignored: No STT streamer active.`);
+             return;
+          }
+          if (!hasTranscript) {
+             console.log(`[WS] EOU ignored: No transcript available yet.`);
+             // Optional: Force finalize here to see if we can squeeze out a result?
+             // sttStreamer.finalize(); 
+             return;
           }
 
           state = "thinking";

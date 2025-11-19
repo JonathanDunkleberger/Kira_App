@@ -45,6 +45,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   // --- "Ramble Bot" EOU Timer ---
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
   const maxUtteranceTimer = useRef<NodeJS.Timeout | null>(null);
+  const speechFrameCount = useRef(0); // Track consecutive speech frames for VAD stability
 
   /**
    * Visualizer loop
@@ -307,7 +308,17 @@ export const useKiraSocket = (token: string, guestId: string) => {
           // We only reset the EOU timer if the user is actually speaking (RMS > threshold).
           // Otherwise, we let the timer run (or start it if not running).
           const VAD_THRESHOLD = 1500; // Lowered from 2000 to be more responsive to interruptions
-          const isSpeaking = rms > VAD_THRESHOLD;
+          const isSpeakingFrame = rms > VAD_THRESHOLD;
+
+          if (isSpeakingFrame) {
+            speechFrameCount.current++;
+          } else {
+            speechFrameCount.current = 0;
+          }
+
+          // Only consider it "speaking" if we have 3 consecutive frames above threshold
+          // This prevents short clicks/pops from triggering interruption
+          const isSpeaking = speechFrameCount.current > 3;
 
           if (isSpeaking) {
             // User is speaking: Cancel any pending EOU
@@ -320,6 +331,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
             const currentState = kiraStateRef.current as KiraState;
             if (currentState === "speaking" || currentState === "thinking") {
                stopAudioPlayback();
+               // Force local state to listening immediately to prevent processing "zombie" audio packets
+               setKiraState("listening");
                // Send interrupt signal. The server will reset state to 'listening'.
                // We check state to avoid spamming this message every frame.
                ws.current.send(JSON.stringify({ type: "interrupt" }));
@@ -465,8 +478,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
         }
       } else if (event.data instanceof ArrayBuffer) {
         // This is a raw PCM audio chunk from Azure
-        audioQueue.current.push(event.data);
-        processAudioQueue();
+        // Only process audio if we are in 'speaking' state.
+        // If we are 'listening' (e.g. due to interruption), we drop these packets.
+        if (kiraStateRef.current === "speaking") {
+            audioQueue.current.push(event.data);
+            processAudioQueue();
+        }
       }
     };
 

@@ -191,7 +191,7 @@ export default function ChatClient() {
       </div>
 
       {/* Main Orb */}
-      <div className="flex-grow flex flex-col items-center justify-center gap-12">
+      <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
         <div
           className={`w-48 h-48 rounded-full transition-transform duration-75 ease-out ${getOrbStyle(
             kiraState
@@ -199,11 +199,21 @@ export default function ChatClient() {
           style={getDynamicStyle()}
         />
 
-        {/* Live Transcript */}
-        <div className="h-24 w-full max-w-2xl px-6 text-center flex items-center justify-center">
+        {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl px-6 text-center pointer-events-none flex items-center justify-center h-full">
+           {/* We use a container that pushes content away from the center orb */}
+           {/* Actually, the user wants it NOT to cover the bubble. 
+               The screenshot shows text ON TOP of the bubble.
+               Let's move it BELOW the bubble.
+           */}
+        </div>
+      </div>
+      
+      {/* Transcript Container - Moved below the orb area */}
+      <div className="w-full max-w-3xl px-6 pb-8 text-center min-h-[100px] flex items-center justify-center z-10">
           {transcript && (
             <div
-              className={`text-xl font-medium transition-opacity duration-300 ${
+              className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
                 transcript.role === "user" ? "text-gray-600" : "text-kira-green-dark"
               }`}
             >
@@ -213,7 +223,6 @@ export default function ChatClient() {
               )}
             </div>
           )}
-        </div>
       </div>
 
       {/* Debug Overlay */}

@@ -35,6 +35,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const isPlaying = useRef(false);
   const nextStartTime = useRef(0); // Track where the next chunk should start
   const isProcessingQueue = useRef(false); // Lock for the processing loop
+  const scheduledSources = useRef<AudioBufferSourceNode[]>([]); // Track all scheduled sources
 
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
@@ -92,15 +93,16 @@ export const useKiraSocket = (token: string, guestId: string) => {
     // 1. Clear the queue so no new chunks are scheduled
     audioQueue.current = [];
     
-    // 2. Stop the currently playing source
-    if (playbackSource.current) {
+    // 2. Stop ALL scheduled sources
+    scheduledSources.current.forEach((source) => {
       try {
-        playbackSource.current.stop();
+        source.stop();
       } catch (e) {
         // Ignore errors if already stopped
       }
-      playbackSource.current = null;
-    }
+    });
+    scheduledSources.current = []; // Clear the list
+    playbackSource.current = null;
 
     // 3. Reset scheduling time
     if (playbackContext.current) {
@@ -170,6 +172,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
         source.start(nextStartTime.current);
         nextStartTime.current += audioBuffer.duration;
+
+        // Keep track of the source so we can stop it later
+        scheduledSources.current.push(source);
+        source.onended = () => {
+          // Remove from list when done to keep memory clean
+          scheduledSources.current = scheduledSources.current.filter(s => s !== source);
+        };
 
         // Keep track of the last source if we need to stop it manually later
         playbackSource.current = source;
@@ -297,7 +306,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
           // VAD & EOU Logic
           // We only reset the EOU timer if the user is actually speaking (RMS > threshold).
           // Otherwise, we let the timer run (or start it if not running).
-          const VAD_THRESHOLD = 2000; // Increased from 400 to reduce sensitivity
+          const VAD_THRESHOLD = 1500; // Lowered from 2000 to be more responsive to interruptions
           const isSpeaking = rms > VAD_THRESHOLD;
 
           if (isSpeaking) {

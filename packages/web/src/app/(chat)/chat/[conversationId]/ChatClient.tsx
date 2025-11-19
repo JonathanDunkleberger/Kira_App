@@ -184,11 +184,17 @@ export default function ChatClient() {
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
         <div
-          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-white"
+          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8]"
           style={getDynamicStyle()}
         >
-          {/* Fluid Gradient Layer - Simulates the GPT voice mode orb */}
-          <div className="absolute inset-[-50%] w-[200%] h-[200%] bg-[conic-gradient(from_0deg,#C2C6A3,#FBFBF8,#D4D7C2,#C2C6A3)] animate-spin-slow blur-2xl opacity-90" />
+           {/* Dark Green Blob - Anchored Left */}
+           <div className="absolute top-0 -left-4 w-32 h-48 bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-2xl opacity-80 animate-blob" />
+           
+           {/* Light Green Blob - Anchored Right */}
+           <div className="absolute top-0 -right-4 w-32 h-48 bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-80 animate-blob [animation-delay:2000ms]" />
+           
+           {/* White Blob - Floating in middle to create separation/mixing */}
+           <div className="absolute top-12 left-12 w-24 h-24 bg-[#FBFBF8] rounded-full filter blur-xl opacity-90 animate-blob [animation-delay:4000ms]" />
         </div>
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}

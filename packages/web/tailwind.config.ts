@@ -27,9 +27,18 @@ const config = {
         "kira-blue-light": "#E0F2FE", // sky-100
         "kira-blue-dark": "#0284C7",  // sky-600
       },
+      keyframes: {
+        blob: {
+          "0%": { transform: "translate(0px, 0px) scale(1)" },
+          "33%": { transform: "translate(30px, -30px) scale(1.1)" },
+          "66%": { transform: "translate(-20px, 20px) scale(0.9)" },
+          "100%": { transform: "translate(0px, 0px) scale(1)" },
+        },
+      },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "spin-slow": "spin 12s linear infinite",
+        blob: "blob 7s infinite",
       },
       boxShadow: {
         orb: "0 0 25px 10px rgba(212, 215, 194, 0.5)",

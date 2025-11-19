@@ -35,6 +35,17 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
   let userId: string | null = null;
   let isAuthenticated = false;
+  let userDbId: string | null = null; // The internal DB ID (cuid)
+  let userName: string | null = null;
+  let userMemory: string | null = null;
+  let isPro = false;
+  let dailyUsageSeconds = 0;
+  const FREE_LIMIT_SECONDS = 15 * 60; // 15 minutes
+  const PRO_LIMIT_SECONDS = 4 * 60 * 60; // 4 hours
+
+  // Usage Tracking Timer
+  let usageInterval: NodeJS.Timeout | null = null;
+  const messageQueue: { message: Buffer | string, isBinary: boolean }[] = [];
 
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
@@ -50,47 +61,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     },
   ];
 
-  // --- 3. MESSAGE HANDLING (Attached immediately to avoid race conditions) ---
-  ws.on("message", (message: Buffer | string, isBinary: boolean) => {
-      if (!isAuthenticated) {
-          console.log("[WS] Queuing message until auth completes...");
-          messageQueue.push({ message, isBinary });
-      } else {
-          processMessage(message, isBinary);
-      }
-  });
-
-  // --- 1. AUTH & USER SETUP ---
-  try {
-    if (token) {
-      const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-      if (!payload?.sub) {
-        throw new Error("Unable to resolve user id from token");
-      }
-      userId = payload.sub;
-      console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-    } else if (guestId) {
-      userId = `guest_${guestId}`;
-      console.log(`[Auth] - Guest user: ${userId}`);
-    } else {
-      throw new Error("No auth provided.");
-    }
-    isAuthenticated = true;
-  } catch (err) {
-    console.error("[Auth] ❌ Failed:", (err as Error).message);
-    ws.close(1008, "Authentication failed");
-    return;
-  }
-
-  // Re-attach message handler with full logic now that we are auth'd?
-  // No, that's messy.
-  // Better approach:
-  // 1. Define the handler function.
-  // 2. Attach it immediately.
-  // 3. Inside the handler, if !isAuthenticated, push to a queue.
-  // 4. After auth success, process the queue.
-  
-  const messageQueue: { message: Buffer | string, isBinary: boolean }[] = [];
+  // --- HELPER FUNCTIONS ---
 
   const startSTT = async () => {
     if (sttStreamer) {
@@ -131,19 +102,13 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       console.error("[Pipeline] ❌ Failed to start STT:", err);
     }
   };
-  
+
   const processMessage = async (message: Buffer | string, isBinary: boolean) => {
     try {
-      // console.log('[WS] Raw message received type:', typeof message, 'isBuffer:', Buffer.isBuffer(message), 'isBinary:', isBinary);
-
-      // --- 3. MESSAGE HANDLING ---
-      // Normalize message to string if it's a buffer but meant to be text (control message)
-      // or keep as buffer if it's audio.
-      
       let controlMessage: any = null;
       
       // Try to parse as JSON first if it's not explicitly binary audio
-      if (!isBinary || (Buffer.isBuffer(message) && message.length < 1000)) { // Simple heuristic: short messages might be JSON
+      if (!isBinary || (Buffer.isBuffer(message) && message.length < 1000)) { 
           try {
               const text = message.toString();
               if (text.trim().startsWith('{')) {
@@ -190,8 +155,6 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           }
           if (!hasTranscript) {
              console.log(`[WS] EOU ignored: No transcript available yet.`);
-             // Optional: Force finalize here to see if we can squeeze out a result?
-             // sttStreamer.finalize(); 
              return;
           }
 
@@ -275,7 +238,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         if (state === "listening" && sttStreamer) {
           // Log occasional audio packet to prove we are receiving data
           if (Math.random() < 0.01) {
-             console.log(`[WS] 🎤 Received audio chunk (${message.byteLength} bytes)`);
+             // console.log(`[WS] 🎤 Received audio chunk (${message.byteLength} bytes)`);
           }
           sttStreamer.write(message); // Forward raw audio to Deepgram
         }
@@ -293,42 +256,171 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     }
   };
 
-  // --- 1. AUTH & USER SETUP ---
-  try {
-    if (token) {
-      const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-      if (!payload?.sub) {
-        throw new Error("Unable to resolve user id from token");
+  const saveMemory = async () => {
+      if (!userDbId || chatHistory.length < 4) return;
+      
+      console.log("[Memory] Generating summary...");
+      try {
+          // Create a summary of the current conversation
+          const summaryPrompt: OpenAI.Chat.ChatCompletionMessageParam[] = [
+              { role: "system", content: "Summarize the key facts, preferences, and topics discussed in this conversation. Be concise. Focus on what you learned about the user." },
+              ...chatHistory.filter(m => m.role !== "system")
+          ];
+          
+          const completion = await openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: summaryPrompt
+          });
+          
+          const newMemory = completion.choices[0]?.message?.content;
+          if (newMemory) {
+              console.log(`[Memory] New summary: ${newMemory}`);
+              // Append to existing memory
+              const updatedMemory = userMemory ? `${userMemory}\n\n[${new Date().toLocaleDateString()}] ${newMemory}` : `[${new Date().toLocaleDateString()}] ${newMemory}`;
+              
+              await prisma.user.update({
+                  where: { id: userDbId },
+                  data: { memory: updatedMemory }
+              });
+              console.log("[Memory] Saved to DB.");
+          }
+      } catch (e) {
+          console.error("[Memory] Failed to save memory:", e);
       }
-      userId = payload.sub;
-      console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-    } else if (guestId) {
-      userId = `guest_${guestId}`;
-      console.log(`[Auth] - Guest user: ${userId}`);
-    } else {
-      throw new Error("No auth provided.");
-    }
-    
-    isAuthenticated = true;
-    console.log(`[Auth] Processing ${messageQueue.length} queued messages...`);
-    for (const item of messageQueue) {
-        await processMessage(item.message, item.isBinary);
-    }
+  };
 
-  } catch (err) {
-    console.error("[Auth] ❌ Failed:", (err as Error).message);
-    ws.close(1008, "Authentication failed");
-    return;
-  }
+  const initializeSession = async () => {
+    try {
+      if (token) {
+        const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+        if (!payload?.sub) {
+          throw new Error("Unable to resolve user id from token");
+        }
+        userId = payload.sub;
+        console.log(`[Auth] ✅ Authenticated user: ${userId}`);
 
-  ws.on("close", (code: number) => {
-    console.log(`[WS] Client disconnected. Code: ${code}`);
-    if (sttStreamer) sttStreamer.destroy();
+        // --- DB SYNC & FETCH ---
+        let user = await prisma.user.findUnique({ where: { clerkId: userId } });
+        
+        if (!user) {
+            const clerkUser = await clerkClient.users.getUser(userId);
+            const email = clerkUser.emailAddresses[0]?.emailAddress;
+            const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim();
+            
+            user = await prisma.user.create({
+                data: {
+                    clerkId: userId,
+                    email: email || `no-email-${userId}@example.com`,
+                    name: name || "User",
+                }
+            });
+        }
+
+        userDbId = user.id;
+        userName = user.name;
+        userMemory = user.memory;
+        dailyUsageSeconds = user.dailyUsageSeconds;
+        
+        // Check if usage needs reset (new day)
+        const lastUsage = new Date(user.lastUsageDate);
+        const now = new Date();
+        if (lastUsage.getDate() !== now.getDate() || lastUsage.getMonth() !== now.getMonth() || lastUsage.getFullYear() !== now.getFullYear()) {
+            console.log("[Usage] New day detected. Resetting usage.");
+            dailyUsageSeconds = 0;
+            await prisma.user.update({
+                where: { id: user.id },
+                data: { dailyUsageSeconds: 0, lastUsageDate: now }
+            });
+        }
+
+        // Check Pro Status
+        if (user.stripeSubscriptionId && user.stripeCurrentPeriodEnd && user.stripeCurrentPeriodEnd > new Date()) {
+            isPro = true;
+        }
+
+        // Check Limits
+        const limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
+        if (dailyUsageSeconds >= limit) {
+            console.log(`[Usage] Limit reached: ${dailyUsageSeconds}/${limit}`);
+            ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+            ws.close(1008, "Daily limit reached");
+            return;
+        }
+
+        // Start Usage Tracking
+        usageInterval = setInterval(async () => {
+            dailyUsageSeconds += 10;
+            try {
+               await prisma.user.update({
+                   where: { id: user!.id },
+                   data: { dailyUsageSeconds: dailyUsageSeconds, lastUsageDate: new Date() }
+               });
+               
+               if (dailyUsageSeconds >= limit) {
+                   ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+                   ws.close(1008, "Daily limit reached");
+               }
+            } catch (e) {
+                console.error("[Usage] Failed to update usage:", e);
+            }
+        }, 10000);
+
+      } else if (guestId) {
+        userId = `guest_${guestId}`;
+        console.log(`[Auth] - Guest user: ${userId}`);
+      } else {
+        throw new Error("No auth provided.");
+      }
+      
+      // --- MEMORY INJECTION ---
+      if (userName) {
+          chatHistory[0].content += ` The user's name is ${userName}.`;
+      }
+      if (userMemory) {
+          chatHistory[0].content += `\n\nHere is a summary of past conversations:\n${userMemory}`;
+      }
+
+      isAuthenticated = true;
+      console.log(`[Auth] Session initialized. Processing ${messageQueue.length} queued messages...`);
+      
+      for (const item of messageQueue) {
+          await processMessage(item.message, item.isBinary);
+      }
+      messageQueue.length = 0;
+
+    } catch (err) {
+      console.error("[Auth] ❌ Failed:", (err as Error).message);
+      ws.close(1008, "Authentication failed");
+    }
+  };
+
+  // --- EVENT LISTENERS ---
+  ws.on("message", (message: Buffer | string, isBinary: boolean) => {
+      if (!isAuthenticated) {
+          console.log("[WS] Queuing message until auth completes...");
+          messageQueue.push({ message, isBinary });
+      } else {
+          processMessage(message, isBinary);
+      }
   });
+
+  ws.on("close", async (code: number) => {
+    console.log(`[WS] Client disconnected. Code: ${code}`);
+    if (usageInterval) clearInterval(usageInterval);
+    if (sttStreamer) sttStreamer.destroy();
+    
+    // Save memory
+    await saveMemory();
+  });
+
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
+    if (usageInterval) clearInterval(usageInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
+
+  // --- START ---
+  initializeSession();
 });
 
 // --- START THE SERVER ---

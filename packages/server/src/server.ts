@@ -50,20 +50,13 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   ];
 
   // --- 3. MESSAGE HANDLING (Attached immediately to avoid race conditions) ---
-  ws.on("message", async (message: Buffer | string, isBinary: boolean) => {
-    // Wait for auth to complete if it hasn't yet
-    if (!isAuthenticated) {
-        // Simple retry mechanism for the very first message if it arrives too fast
-        // In a real app, we might queue messages. Here, we'll just wait a bit.
-        // But since we are inside the async callback, we can't easily "wait" for the outer scope.
-        // However, since we moved this handler UP, it will capture the message.
-        // We just need to make sure we don't process it until we know who the user is.
-        // Actually, the best way is to just check the flag. If false, we can't process.
-        // BUT, if we return here, the start_stream message is LOST.
-        // So we must queue it.
-    }
-    
-    // ... implementation below ...
+  ws.on("message", (message: Buffer | string, isBinary: boolean) => {
+      if (!isAuthenticated) {
+          console.log("[WS] Queuing message until auth completes...");
+          messageQueue.push({ message, isBinary });
+      } else {
+          processMessage(message, isBinary);
+      }
   });
 
   // --- 1. AUTH & USER SETUP ---
@@ -262,15 +255,6 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }
     }
   };
-
-  ws.on("message", (message: Buffer | string, isBinary: boolean) => {
-      if (!isAuthenticated) {
-          console.log("[WS] Queuing message until auth completes...");
-          messageQueue.push({ message, isBinary });
-      } else {
-          processMessage(message, isBinary);
-      }
-  });
 
   // --- 1. AUTH & USER SETUP ---
   try {

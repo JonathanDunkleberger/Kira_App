@@ -17,7 +17,9 @@ export class DeepgramSTTStreamer extends EventEmitter {
       const deepgram = createClient(DEEPGRAM_API_KEY);
       this.connection = await deepgram.listen.live({
         model: "nova-2",
-        smart_format: true,
+        encoding: "linear16",
+        sample_rate: 16000,
+        channels: 1,
         interim_results: true,
       });
 
@@ -30,7 +32,7 @@ export class DeepgramSTTStreamer extends EventEmitter {
       }
 
       this.connection.on(LiveTranscriptionEvents.Open, () => {
-        // Ready to receive audio
+        console.log("[Deepgram] Connection opened.");
       });
 
       this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
@@ -45,20 +47,24 @@ export class DeepgramSTTStreamer extends EventEmitter {
           const isFinal: boolean = Boolean(
             data.is_final ?? data.speech_final ?? alt?.is_final
           );
+          
           if (transcript && transcript.trim().length > 0) {
+            // console.log(`[Deepgram] Transcript: "${transcript}" (Final: ${isFinal})`);
             this.emit("transcript", transcript, isFinal);
           }
         } catch (err) {
+          console.error("[Deepgram] Error processing transcript:", err);
           this.emit("error", err);
         }
       });
 
       this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
+        console.error("[Deepgram] Error:", e);
         this.emit("error", e);
       });
 
       this.connection.on(LiveTranscriptionEvents.Close, () => {
-        // closed
+        console.log("[Deepgram] Connection closed.");
       });
     } catch (err) {
       this.emit("error", err);

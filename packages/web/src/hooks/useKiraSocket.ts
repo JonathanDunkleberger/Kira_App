@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 1000; // 1 second of silence = end of utterance
+const EOU_TIMEOUT = 2000; // Increased to 2 seconds to prevent premature cutoff
 
 export const useKiraSocket = (token: string, guestId: string) => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
@@ -329,10 +329,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
             // Interruption: If AI is speaking or thinking, stop it and notify server.
             const currentState = kiraStateRef.current as KiraState;
-            if (currentState === "speaking" || currentState === "thinking") {
+            // Also check if we are currently playing audio (even if state says listening)
+            const isAudioPlaying = scheduledSources.current.length > 0 || audioQueue.current.length > 0;
+
+            if (currentState === "speaking" || currentState === "thinking" || isAudioPlaying) {
                stopAudioPlayback();
                // Force local state to listening immediately to prevent processing "zombie" audio packets
                setKiraState("listening");
+               kiraStateRef.current = "listening"; // Update ref immediately to avoid race conditions
+               
                // Send interrupt signal. The server will reset state to 'listening'.
                // We check state to avoid spamming this message every frame.
                ws.current.send(JSON.stringify({ type: "interrupt" }));

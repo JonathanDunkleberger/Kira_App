@@ -3,13 +3,16 @@ export const dynamic = "force-dynamic"; // prevent prerender/SSG to avoid SSR-on
 
 import { useUser, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
-import { Phone, Star, Zap } from "lucide-react";
+import { Phone, Star, Zap, User } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription"; // Our new hook
+import { useState } from "react";
+import ProfileModal from "@/components/ProfileModal";
 
 // This is the clean "Sesame" clone homepage
 export default function HomePage() {
   const { user, isSignedIn, isLoaded } = useUser();
   const { isPro, isLoading } = useSubscription();
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   console.log("HomePage Render:", { isLoaded, isSignedIn, isPro, isLoading });
   // console.log("Clerk Key:", process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -81,9 +84,23 @@ export default function HomePage() {
               Upgrade
             </Link>
           )}
-          <UserButton afterSignOutUrl="/" />
+          {/* Profile Button */}
+          {isSignedIn && (
+            <button 
+              onClick={() => setShowProfileModal(true)}
+              className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+            >
+              <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+            </button>
+          )}
         </div>
       </header>
+
+      {/* Profile Modal */}
+      <ProfileModal 
+        isOpen={showProfileModal} 
+        onClose={() => setShowProfileModal(false)} 
+      />
 
       {/* Persona Button */}
       <main className="flex flex-col gap-6 w-full max-w-sm text-center">

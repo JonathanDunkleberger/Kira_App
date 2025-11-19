@@ -6,12 +6,14 @@ import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PhoneOff, Star, User } from "lucide-react";
+import ProfileModal from "@/components/ProfileModal";
 
 export default function ChatClient() {
   const router = useRouter();
   const { getToken, userId } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
 
@@ -181,10 +183,19 @@ export default function ChatClient() {
         </Link>
         
         {/* Profile Link */}
-        <Link href="/profile" className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+        <button 
+          onClick={() => setShowProfileModal(true)}
+          className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+        >
             <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
-        </Link>
+        </button>
       </div>
+
+      {/* Profile Modal */}
+      <ProfileModal 
+        isOpen={showProfileModal} 
+        onClose={() => setShowProfileModal(false)} 
+      />
 
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">

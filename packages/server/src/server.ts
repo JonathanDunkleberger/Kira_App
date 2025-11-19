@@ -90,6 +90,46 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   // 4. After auth success, process the queue.
   
   const messageQueue: { message: Buffer | string, isBinary: boolean }[] = [];
+
+  const startSTT = async () => {
+    if (sttStreamer) {
+      console.log("[STT] Restarting STT stream...");
+      sttStreamer.destroy();
+      sttStreamer = null;
+    } else {
+      console.log("[STT] Starting STT stream...");
+    }
+
+    try {
+      sttStreamer = new DeepgramSTTStreamer();
+      await sttStreamer.start();
+
+      sttStreamer.on("transcript", (transcript: string, isFinal: boolean) => {
+        if (isFinal) {
+          currentTurnTranscript += transcript + " ";
+          latestInterimTranscript = "";
+        } else {
+          latestInterimTranscript = transcript;
+        }
+        ws.send(
+          JSON.stringify({
+            type: "transcript",
+            role: "user",
+            text: isFinal
+              ? currentTurnTranscript
+              : currentTurnTranscript + transcript,
+            isFinal,
+          })
+        );
+      });
+
+      sttStreamer.on("error", (err: Error) => {
+        console.error("[Pipeline] ❌ STT Error:", err.message);
+      });
+    } catch (err) {
+      console.error("[Pipeline] ❌ Failed to start STT:", err);
+    }
+  };
   
   const processMessage = async (message: Buffer | string, isBinary: boolean) => {
     try {
@@ -118,40 +158,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
-          try {
-            sttStreamer = new DeepgramSTTStreamer();
-            await sttStreamer.start();
-
-            sttStreamer.on(
-              "transcript",
-              (transcript: string, isFinal: boolean) => {
-                if (isFinal) {
-                  currentTurnTranscript += transcript + " ";
-                  latestInterimTranscript = "";
-                } else {
-                  latestInterimTranscript = transcript;
-                }
-                // Send transcript to client for UI
-                ws.send(
-                  JSON.stringify({
-                    type: "transcript",
-                    role: "user",
-                    text: isFinal ? currentTurnTranscript : currentTurnTranscript + transcript,
-                    isFinal,
-                  })
-                );
-              }
-            );
-
-            sttStreamer.on("error", (err: Error) => {
-              console.error("[Pipeline] ❌ STT Error:", err.message);
-              state = "listening"; // Reset
-            });
-
-            ws.send(JSON.stringify({ type: "stream_ready" }));
-          } catch (err) {
-            console.error("[Pipeline] ❌ Failed to start STT:", err);
-          }
+          await startSTT();
+          ws.send(JSON.stringify({ type: "stream_ready" }));
         } else if (controlMessage.type === "eou") {
           // Check if we have a final transcript OR an interim one
           const hasTranscript =
@@ -229,15 +237,17 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
 
           ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
-          ttsStreamer.on("tts_complete", () => {
+          ttsStreamer.on("tts_complete", async () => {
             ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            await startSTT();
           });
-          ttsStreamer.on("error", (err: Error) => {
+          ttsStreamer.on("error", async (err: Error) => {
             console.error("[Pipeline] ❌ TTS Error:", err);
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            await startSTT();
           });
 
           ttsStreamer.synthesize(llmResponse);

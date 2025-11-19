@@ -37,6 +37,45 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   // TODO: Add your free trial timer logic here
   // let timer = FREE_TRIAL_SECONDS;
 
+wss.on("connection", async (ws: any, req: IncomingMessage) => {
+  console.log("[WS] New client connecting...");
+  const url = new URL(req.url!, `wss://${req.headers.host}`);
+  const token = url.searchParams.get("token");
+  const guestId = url.searchParams.get("guestId");
+
+  let userId: string | null = null;
+  let isAuthenticated = false;
+
+  // --- 2. PIPELINE SETUP ---
+  let state = "listening";
+  let sttStreamer: DeepgramSTTStreamer | null = null;
+  let currentTurnTranscript = "";
+  let latestInterimTranscript = "";
+  const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content:
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt.",
+    },
+  ];
+
+  // --- 3. MESSAGE HANDLING (Attached immediately to avoid race conditions) ---
+  ws.on("message", async (message: Buffer | string, isBinary: boolean) => {
+    // Wait for auth to complete if it hasn't yet
+    if (!isAuthenticated) {
+        // Simple retry mechanism for the very first message if it arrives too fast
+        // In a real app, we might queue messages. Here, we'll just wait a bit.
+        // But since we are inside the async callback, we can't easily "wait" for the outer scope.
+        // However, since we moved this handler UP, it will capture the message.
+        // We just need to make sure we don't process it until we know who the user is.
+        // Actually, the best way is to just check the flag. If false, we can't process.
+        // BUT, if we return here, the start_stream message is LOST.
+        // So we must queue it.
+    }
+    
+    // ... implementation below ...
+  });
+
   // --- 1. AUTH & USER SETUP ---
   try {
     if (token) {
@@ -52,31 +91,47 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     } else {
       throw new Error("No auth provided.");
     }
+    isAuthenticated = true;
   } catch (err) {
     console.error("[Auth] ❌ Failed:", (err as Error).message);
     ws.close(1008, "Authentication failed");
     return;
   }
 
-  // --- 2. PIPELINE SETUP ---
-  let state = "listening";
-  let sttStreamer: DeepgramSTTStreamer | null = null;
-  let currentTurnTranscript = "";
-  let latestInterimTranscript = "";
-  const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    {
-      role: "system",
-      content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt.",
-    },
-  ];
-
-  ws.on("message", async (message: Buffer | string) => {
+  // Re-attach message handler with full logic now that we are auth'd?
+  // No, that's messy.
+  // Better approach:
+  // 1. Define the handler function.
+  // 2. Attach it immediately.
+  // 3. Inside the handler, if !isAuthenticated, push to a queue.
+  // 4. After auth success, process the queue.
+  
+  const messageQueue: { message: Buffer | string, isBinary: boolean }[] = [];
+  
+  const processMessage = async (message: Buffer | string, isBinary: boolean) => {
     try {
+      console.log('[WS] Raw message received type:', typeof message, 'isBuffer:', Buffer.isBuffer(message), 'isBinary:', isBinary);
+
       // --- 3. MESSAGE HANDLING ---
-      if (typeof message === "string") {
-        console.log(`[WS] Received string message: ${message.slice(0, 50)}...`);
-        const controlMessage = JSON.parse(message);
+      // Normalize message to string if it's a buffer but meant to be text (control message)
+      // or keep as buffer if it's audio.
+      
+      let controlMessage: any = null;
+      
+      // Try to parse as JSON first if it's not explicitly binary audio
+      if (!isBinary || (Buffer.isBuffer(message) && message.length < 1000)) { // Simple heuristic: short messages might be JSON
+          try {
+              const text = message.toString();
+              if (text.trim().startsWith('{')) {
+                  controlMessage = JSON.parse(text);
+              }
+          } catch (e) {
+              // Not JSON, ignore
+          }
+      }
+
+      if (controlMessage) {
+        console.log(`[WS] Received control message: ${JSON.stringify(controlMessage)}`);
 
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
@@ -193,7 +248,10 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
           ttsStreamer.synthesize(llmResponse);
         }
-      } else if (message instanceof Buffer) {
+      } 
+      
+      // Handle Binary Audio Data
+      if (Buffer.isBuffer(message) && !controlMessage) {
         if (state === "listening" && sttStreamer) {
           // Log occasional audio packet to prove we are receiving data
           if (Math.random() < 0.01) {
@@ -213,7 +271,44 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         ws.close(1011, "Internal server error");
       }
     }
+  };
+
+  ws.on("message", (message: Buffer | string, isBinary: boolean) => {
+      if (!isAuthenticated) {
+          console.log("[WS] Queuing message until auth completes...");
+          messageQueue.push({ message, isBinary });
+      } else {
+          processMessage(message, isBinary);
+      }
   });
+
+  // --- 1. AUTH & USER SETUP ---
+  try {
+    if (token) {
+      const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+      if (!payload?.sub) {
+        throw new Error("Unable to resolve user id from token");
+      }
+      userId = payload.sub;
+      console.log(`[Auth] ✅ Authenticated user: ${userId}`);
+    } else if (guestId) {
+      userId = `guest_${guestId}`;
+      console.log(`[Auth] - Guest user: ${userId}`);
+    } else {
+      throw new Error("No auth provided.");
+    }
+    
+    isAuthenticated = true;
+    console.log(`[Auth] Processing ${messageQueue.length} queued messages...`);
+    for (const item of messageQueue) {
+        await processMessage(item.message, item.isBinary);
+    }
+
+  } catch (err) {
+    console.error("[Auth] ❌ Failed:", (err as Error).message);
+    ws.close(1008, "Authentication failed");
+    return;
+  }
 
   ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);

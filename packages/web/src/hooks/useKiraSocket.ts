@@ -332,6 +332,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "stream_ready":
             console.log("[WS] Received stream_ready.");
             setKiraState("listening");
+            // Only start the microphone AFTER the server is ready to receive
+            console.log("[Audio] Server is ready. Starting local audio pipeline...");
+            startAudioPipeline();
             break;
           case "state_thinking":
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
@@ -397,8 +400,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
       } catch (err) {
         console.error("[WS] Failed to send start_stream:", err);
       }
-      console.log("[Audio] Starting local audio pipeline...");
-      startAudioPipeline();
+      // REMOVED: startAudioPipeline(); 
+      // We now wait for "stream_ready" from the server before starting the mic.
     } else {
       console.error(
         "[WS] Cannot start stream: WebSocket is not open or not connected."

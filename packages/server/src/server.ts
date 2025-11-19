@@ -34,16 +34,6 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   const guestId = url.searchParams.get("guestId");
 
   let userId: string | null = null;
-  // TODO: Add your free trial timer logic here
-  // let timer = FREE_TRIAL_SECONDS;
-
-wss.on("connection", async (ws: any, req: IncomingMessage) => {
-  console.log("[WS] New client connecting...");
-  const url = new URL(req.url!, `wss://${req.headers.host}`);
-  const token = url.searchParams.get("token");
-  const guestId = url.searchParams.get("guestId");
-
-  let userId: string | null = null;
   let isAuthenticated = false;
 
   // --- 2. PIPELINE SETUP ---

@@ -15,6 +15,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
+  const isServerReady = useRef(false); // Gate for sending audio
 
   // --- Audio Pipeline Refs ---
   const audioContext = useRef<AudioContext | null>(null);
@@ -153,9 +154,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
       console.log("[Audio] Loading AudioWorklet module...");
       try {
-        await audioContext.current.audioWorklet.addModule(
-          "/worklets/AudioWorkletProcessor.js"
-        );
+        // Use a robust path for the worklet
+        const workletUrl = "/worklets/AudioWorkletProcessor.js";
+        await audioContext.current.audioWorklet.addModule(workletUrl);
         console.log("[Audio] AudioWorklet module loaded.");
       } catch (e) {
         console.error("[Audio] Failed to load AudioWorklet:", e);
@@ -221,7 +222,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
         if (
           ws.current?.readyState === WebSocket.OPEN &&
-          kiraState === "listening"
+          kiraState === "listening" &&
+          isServerReady.current
         ) {
           ws.current.send(pcmBuffer);
 
@@ -313,6 +315,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     const authParam = token ? `token=${token}` : `guestId=${guestId}`;
 
     setSocketState("connecting");
+    isServerReady.current = false;
     ws.current = new WebSocket(`${wsUrl}?${authParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
@@ -332,9 +335,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "stream_ready":
             console.log("[WS] Received stream_ready.");
             setKiraState("listening");
-            // Only start the microphone AFTER the server is ready to receive
-            console.log("[Audio] Server is ready. Starting local audio pipeline...");
-            startAudioPipeline();
+            isServerReady.current = true;
             break;
           case "state_thinking":
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
@@ -400,8 +401,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
       } catch (err) {
         console.error("[WS] Failed to send start_stream:", err);
       }
-      // REMOVED: startAudioPipeline(); 
-      // We now wait for "stream_ready" from the server before starting the mic.
+      
+      // Start mic immediately to satisfy browser user-gesture requirements
+      console.log("[Audio] Starting local audio pipeline...");
+      startAudioPipeline();
     } else {
       console.error(
         "[WS] Cannot start stream: WebSocket is not open or not connected."

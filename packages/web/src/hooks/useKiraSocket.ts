@@ -33,6 +33,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
   const isPlaying = useRef(false);
+  const nextStartTime = useRef(0); // Track where the next chunk should start
+  const isProcessingQueue = useRef(false); // Lock for the processing loop
+
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
   const playbackAnalyser = useRef<AnalyserNode | null>(null);
@@ -43,15 +46,52 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const maxUtteranceTimer = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Plays the next audio chunk from the queue.
-   * This logic is more robust and handles raw PCM.
+   * Visualizer loop
    */
-  const playNextInQueue = async () => {
-    if (isPlaying.current || audioQueue.current.length === 0) {
-      return;
-    }
+  const startVisualizer = () => {
+    if (playbackAnimationFrame.current) return; // Already running
 
-    isPlaying.current = true;
+    const updateVolume = () => {
+      if (!playbackAnalyser.current || !playbackContext.current) {
+        playbackAnimationFrame.current = null;
+        return;
+      }
+
+      // Stop visualizing if we are past the scheduled audio end time (plus a small buffer)
+      // and the queue is empty.
+      if (
+        playbackContext.current.currentTime > nextStartTime.current + 0.1 &&
+        audioQueue.current.length === 0
+      ) {
+        setPlayerVolume(0);
+        playbackAnimationFrame.current = null;
+        return; // Stop the loop
+      }
+
+      const dataArray = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
+      playbackAnalyser.current.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      // Normalize to 0-1 range (approximate)
+      setPlayerVolume(Math.min(1, average / 128));
+      
+      playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
+    };
+    updateVolume();
+  };
+
+  /**
+   * Processes the audio queue and schedules chunks to play back-to-back.
+   * This eliminates gaps/pops caused by waiting for onended events.
+   */
+  const processAudioQueue = async () => {
+    if (isProcessingQueue.current) return;
+    isProcessingQueue.current = true;
 
     // Ensure the playback audio context is running (and is 16kHz for Azure's output)
     if (
@@ -64,66 +104,53 @@ export const useKiraSocket = (token: string, guestId: string) => {
       await playbackContext.current.resume();
     }
 
-    const buffer = audioQueue.current.shift();
-    if (!buffer) {
-      isPlaying.current = false;
-      return;
-    }
+    while (audioQueue.current.length > 0) {
+      const buffer = audioQueue.current.shift();
+      if (!buffer) continue;
 
-    try {
-      // 1. Decode the raw PCM buffer
-      // We must construct a valid WAV header in memory for decodeAudioData to work
-      const wavBuffer = createWavHeader(buffer, 16000, 16);
-      const audioBuffer = await playbackContext.current.decodeAudioData(
-        wavBuffer
-      );
+      try {
+        // 1. Decode the raw PCM buffer
+        const wavBuffer = createWavHeader(buffer, 16000, 16);
+        const audioBuffer = await playbackContext.current.decodeAudioData(
+          wavBuffer
+        );
 
-      // 2. Create a source node and play it
-      playbackSource.current = playbackContext.current.createBufferSource();
-      playbackSource.current.buffer = audioBuffer;
+        // 2. Create a source node
+        const source = playbackContext.current.createBufferSource();
+        source.buffer = audioBuffer;
 
-      // Create Analyser for visualization
-      if (!playbackAnalyser.current) {
-        playbackAnalyser.current = playbackContext.current.createAnalyser();
-        playbackAnalyser.current.fftSize = 256;
+        // Create Analyser for visualization if needed
+        if (!playbackAnalyser.current) {
+          playbackAnalyser.current = playbackContext.current.createAnalyser();
+          playbackAnalyser.current.fftSize = 256;
+          playbackAnalyser.current.connect(playbackContext.current.destination);
+        }
+        // Connect source -> analyser -> destination
+        // Note: We already connected analyser -> destination above, so just source -> analyser
+        source.connect(playbackAnalyser.current);
+
+        // 3. Schedule playback
+        const currentTime = playbackContext.current.currentTime;
+        // If nextStartTime is in the past (gap in stream), reset to now + small buffer
+        if (nextStartTime.current < currentTime) {
+          nextStartTime.current = currentTime + 0.05;
+        }
+
+        source.start(nextStartTime.current);
+        nextStartTime.current += audioBuffer.duration;
+
+        // Keep track of the last source if we need to stop it manually later
+        playbackSource.current = source;
+
+        // Start visualizer if not running
+        startVisualizer();
+
+      } catch (e) {
+        console.error("[AudioPlayer] Error decoding or playing audio:", e);
       }
-
-      playbackSource.current.connect(playbackAnalyser.current);
-      playbackAnalyser.current.connect(playbackContext.current.destination);
-
-      // Start visualizer loop
-      const updateVolume = () => {
-        if (!playbackAnalyser.current || !isPlaying.current) return;
-        const dataArray = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
-        playbackAnalyser.current.getByteFrequencyData(dataArray);
-        
-        // Calculate average volume
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / dataArray.length;
-        // Normalize to 0-1 range (approximate)
-        setPlayerVolume(Math.min(1, average / 128));
-        
-        playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
-      };
-      updateVolume();
-
-      playbackSource.current.onended = () => {
-        isPlaying.current = false;
-        if (playbackAnimationFrame.current) {
-          cancelAnimationFrame(playbackAnimationFrame.current);
-        }
-        setPlayerVolume(0);
-        playNextInQueue(); // Play next chunk when this one finishes
-      };
-
-      playbackSource.current.start();
-    } catch (e) {
-      console.error("[AudioPlayer] Error decoding or playing audio:", e);
-      isPlaying.current = false;
     }
+
+    isProcessingQueue.current = false;
   };
 
   /**
@@ -372,6 +399,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "state_speaking":
             setKiraState("speaking");
             audioQueue.current = []; // Clear old queue
+            nextStartTime.current = 0; // Reset scheduling time
             break;
           case "state_listening":
             setKiraState("listening");
@@ -388,7 +416,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
       } else if (event.data instanceof ArrayBuffer) {
         // This is a raw PCM audio chunk from Azure
         audioQueue.current.push(event.data);
-        playNextInQueue();
+        processAudioQueue();
       }
     };
 

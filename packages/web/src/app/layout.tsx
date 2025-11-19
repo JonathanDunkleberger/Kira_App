@@ -18,7 +18,22 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={`${inter.className} bg-kira-bg text-gray-900`}>
+        <head>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                try {
+                  if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark')
+                  } else {
+                    document.documentElement.classList.remove('dark')
+                  }
+                } catch (_) {}
+              `,
+            }}
+          />
+        </head>
+        <body className={`${inter.className} bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg`}>
           {children}
         </body>
       </html>

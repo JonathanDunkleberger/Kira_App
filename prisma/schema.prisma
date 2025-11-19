@@ -18,16 +18,34 @@ model User {
   stripeSubscriptionId   String?        @unique @map("stripe_subscription_id")
   stripePriceId          String?        @map("stripe_price_id")
   stripeCurrentPeriodEnd DateTime?      @map("stripe_current_period_end")
+  
+  // Usage Tracking
+  dailyUsageSeconds      Int            @default(0)
+  lastUsageDate          DateTime       @default(now())
+
+  // Persistent Memory
+  memory                 String?        @db.Text
+
   conversations          Conversation[]
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 }
 
 model Conversation {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
-  persona   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  user      User      @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
+  persona   String?
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String       // "user" or "assistant"
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
 }

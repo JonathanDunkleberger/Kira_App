@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star } from "lucide-react";
+import { PhoneOff, Star, User } from "lucide-react";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -140,11 +140,11 @@ export default function ChatClient() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-screen bg-kira-bg">
+    <div className="flex flex-col items-center justify-center w-full h-screen bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center">
+      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
         <Link href="/">
-          <span className="font-semibold text-lg flex items-center gap-2">
+          <span className="font-semibold text-lg flex items-center gap-2 dark:text-tokyo-fg">
             {/* Your Logo */}
             <svg
               width="24"
@@ -152,6 +152,7 @@ export default function ChatClient() {
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
+              className="text-black dark:text-tokyo-fg"
             >
               <path
                 d="M12 2L2 7L12 12L22 7L12 2Z"
@@ -178,29 +179,33 @@ export default function ChatClient() {
             Kira
           </span>
         </Link>
-        <span className="text-sm text-gray-500"></span>
+        
+        {/* Profile Link */}
+        <Link href="/profile" className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+            <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+        </Link>
       </div>
 
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
         <div
-          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8]"
+          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8] dark:bg-[#1a1b26] dark:shadow-none dark:border dark:border-tokyo-fg/10 isolate transform-gpu [mask-image:radial-gradient(white,black)] [-webkit-mask-image:radial-gradient(white,black)]"
           style={getDynamicStyle()}
         >
            {/* Base Gradient - More Green Presence */}
-           <div className="absolute inset-0 bg-gradient-to-br from-[#D4D7C2] via-[#FBFBF8] to-[#C2C6A3] opacity-50" />
+           <div className="absolute inset-0 bg-gradient-to-br from-[#D4D7C2] via-[#FBFBF8] to-[#C2C6A3] opacity-50 dark:from-[#24283b] dark:via-[#1a1b26] dark:to-[#414868]" />
 
            {/* Dark Green Cloud - Stronger opacity */}
-           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow" />
+           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow dark:bg-[#7aa2f7] dark:mix-blend-screen dark:opacity-30" />
            
            {/* Light Green Cloud - Stronger opacity */}
-           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow [animation-delay:3000ms]" />
+           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow [animation-delay:3000ms] dark:bg-[#bb9af7] dark:mix-blend-screen dark:opacity-30" />
            
            {/* White Mist - Reduced opacity to let greens show through */}
-           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-40 animate-flow [animation-delay:5000ms]" />
+           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-40 animate-flow [animation-delay:5000ms] dark:bg-[#c0caf5] dark:mix-blend-screen dark:opacity-20" />
            
            {/* Floating Highlight - Adds the "cloud" texture */}
-           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-flow [animation-delay:7000ms]" />
+           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-flow [animation-delay:7000ms] dark:bg-[#7dcfff] dark:mix-blend-screen dark:opacity-20" />
         </div>
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
@@ -218,7 +223,7 @@ export default function ChatClient() {
           {transcript && (
             <div
               className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
-                transcript.role === "user" ? "text-gray-600" : "text-kira-green-dark"
+                transcript.role === "user" ? "text-gray-600 dark:text-tokyo-fg/70" : "text-kira-green-dark dark:text-tokyo-accent"
               }`}
             >
               {transcript.text}
@@ -227,14 +232,6 @@ export default function ChatClient() {
               )}
             </div>
           )}
-      </div>
-
-      {/* Debug Overlay */}
-      <div className="absolute bottom-4 left-4 p-4 bg-black/10 rounded-lg text-xs font-mono text-gray-500 pointer-events-none">
-        <div>State: {kiraState}</div>
-        <div>Socket: {socketState}</div>
-        <div>Mic Vol: {micVolume.toFixed(3)}</div>
-        <div>Player Vol: {playerVolume.toFixed(3)}</div>
       </div>
 
       {/* Footer Controls */}

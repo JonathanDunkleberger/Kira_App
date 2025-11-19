@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config = {
-  darkMode: ["class"],
+  darkMode: "class",
   content: [
     "./pages/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -26,6 +26,12 @@ const config = {
         "kira-orb-shadow": "rgba(212, 215, 194, 0.5)",
         "kira-blue-light": "#E0F2FE", // sky-100
         "kira-blue-dark": "#0284C7",  // sky-600
+        
+        // Tokyo Night Theme
+        "tokyo-bg": "#1a1b26",
+        "tokyo-fg": "#a9b1d6",
+        "tokyo-accent": "#7aa2f7",
+        "tokyo-card": "#24283b",
       },
       keyframes: {
         blob: {

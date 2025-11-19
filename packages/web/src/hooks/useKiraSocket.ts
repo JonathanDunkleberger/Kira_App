@@ -86,6 +86,38 @@ export const useKiraSocket = (token: string, guestId: string) => {
   };
 
   /**
+   * Stops current audio playback and clears the queue.
+   */
+  const stopAudioPlayback = () => {
+    // 1. Clear the queue so no new chunks are scheduled
+    audioQueue.current = [];
+    
+    // 2. Stop the currently playing source
+    if (playbackSource.current) {
+      try {
+        playbackSource.current.stop();
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
+      playbackSource.current = null;
+    }
+
+    // 3. Reset scheduling time
+    if (playbackContext.current) {
+        nextStartTime.current = playbackContext.current.currentTime;
+    } else {
+        nextStartTime.current = 0;
+    }
+
+    // 4. Stop visualizer
+    if (playbackAnimationFrame.current) {
+        cancelAnimationFrame(playbackAnimationFrame.current);
+        playbackAnimationFrame.current = null;
+        setPlayerVolume(0);
+    }
+  };
+
+  /**
    * Processes the audio queue and schedules chunks to play back-to-back.
    * This eliminates gaps/pops caused by waiting for onended events.
    */
@@ -273,6 +305,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
             if (eouTimer.current) {
               clearTimeout(eouTimer.current);
               eouTimer.current = null;
+            }
+
+            // Interruption: If AI is speaking or thinking, stop it and notify server.
+            const currentState = kiraStateRef.current as KiraState;
+            if (currentState === "speaking" || currentState === "thinking") {
+               stopAudioPlayback();
+               // Send interrupt signal. The server will reset state to 'listening'.
+               // We check state to avoid spamming this message every frame.
+               ws.current.send(JSON.stringify({ type: "interrupt" }));
             }
 
             // Start Max Utterance Timer if not running

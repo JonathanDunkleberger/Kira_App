@@ -39,6 +39,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
+  let ttsStreamer: AzureTTSStreamer | null = null;
   let currentTurnTranscript = "";
   let latestInterimTranscript = "";
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -156,7 +157,20 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       if (controlMessage) {
         console.log(`[WS] Received control message: ${JSON.stringify(controlMessage)}`);
 
-        if (controlMessage.type === "start_stream") {
+        if (controlMessage.type === "interrupt") {
+          console.log("[WS] 🛑 Interruption signal received.");
+          if (ttsStreamer) {
+            console.log("[WS] Stopping active TTS streamer...");
+            ttsStreamer.stop();
+            ttsStreamer = null;
+          }
+          // If we were speaking or thinking, reset to listening
+          if (state === "speaking" || state === "thinking") {
+             state = "listening";
+             ws.send(JSON.stringify({ type: "state_listening" }));
+             await startSTT();
+          }
+        } else if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
           await startSTT();
           ws.send(JSON.stringify({ type: "stream_ready" }));
@@ -233,7 +247,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
           // --- Real Azure TTS Integration ---
           console.log("[TTS] Sending to Azure...");
-          const ttsStreamer = new AzureTTSStreamer();
+          ttsStreamer = new AzureTTSStreamer();
           ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
 
           ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
@@ -241,12 +255,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            ttsStreamer = null;
             await startSTT();
           });
           ttsStreamer.on("error", async (err: Error) => {
             console.error("[Pipeline] ❌ TTS Error:", err);
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            ttsStreamer = null;
             await startSTT();
           });
 

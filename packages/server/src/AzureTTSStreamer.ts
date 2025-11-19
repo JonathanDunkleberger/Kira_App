@@ -58,6 +58,18 @@ export class AzureTTSStreamer extends EventEmitter {
     this.audioStream.on("end", () => this.emit("tts_complete"));
   }
 
+  public stop() {
+    try {
+      // Close the synthesizer to stop generation
+      this.synthesizer.close();
+      // Destroy the stream to stop emitting data events
+      this.audioStream.destroy();
+      console.log("[AzureTTS] Stopped synthesis.");
+    } catch (e) {
+      console.error("[AzureTTS] Error stopping synthesizer:", e);
+    }
+  }
+
   private buildSsml(text: string): string {
     return `
       <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">

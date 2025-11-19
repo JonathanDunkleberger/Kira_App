@@ -10,6 +10,13 @@ const EOU_TIMEOUT = 1000; // 1 second of silence = end of utterance
 export const useKiraSocket = (token: string, guestId: string) => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
   const [kiraState, setKiraState] = useState<KiraState>("listening");
+  const kiraStateRef = useRef<KiraState>("listening"); // Ref to track state in callbacks
+
+  // Sync ref with state
+  useEffect(() => {
+    kiraStateRef.current = kiraState;
+  }, [kiraState]);
+
   const [micVolume, setMicVolume] = useState(0);
   const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
@@ -33,6 +40,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
   // --- "Ramble Bot" EOU Timer ---
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
+  const maxUtteranceTimer = useRef<NodeJS.Timeout | null>(null);
 
   /**
    * Plays the next audio chunk from the queue.
@@ -222,7 +230,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
         if (
           ws.current?.readyState === WebSocket.OPEN &&
-          kiraState === "listening" &&
+          kiraStateRef.current === "listening" &&
           isServerReady.current
         ) {
           ws.current.send(pcmBuffer);
@@ -230,7 +238,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
           // VAD & EOU Logic
           // We only reset the EOU timer if the user is actually speaking (RMS > threshold).
           // Otherwise, we let the timer run (or start it if not running).
-          const VAD_THRESHOLD = 400; // Adjust based on mic noise floor
+          const VAD_THRESHOLD = 2000; // Increased from 400 to reduce sensitivity
           const isSpeaking = rms > VAD_THRESHOLD;
 
           if (isSpeaking) {
@@ -238,6 +246,20 @@ export const useKiraSocket = (token: string, guestId: string) => {
             if (eouTimer.current) {
               clearTimeout(eouTimer.current);
               eouTimer.current = null;
+            }
+
+            // Start Max Utterance Timer if not running
+            if (!maxUtteranceTimer.current) {
+              maxUtteranceTimer.current = setTimeout(() => {
+                console.log("[EOU] Max utterance length reached. Forcing EOU.");
+                if (ws.current?.readyState === WebSocket.OPEN) {
+                  ws.current.send(JSON.stringify({ type: "eou" }));
+                }
+                // Reset timers
+                if (eouTimer.current) clearTimeout(eouTimer.current);
+                eouTimer.current = null;
+                maxUtteranceTimer.current = null;
+              }, 10000); // 10 seconds limit
             }
           } else {
             // User is silent: Start EOU timer if not already running
@@ -251,6 +273,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
                 // But actually, we want to allow re-firing if they speak again.
                 // For now, let's just clear it so it can restart if silence continues (server handles spam)
                 eouTimer.current = null;
+
+                // Also clear max utterance timer since we finished naturally
+                if (maxUtteranceTimer.current) {
+                  clearTimeout(maxUtteranceTimer.current);
+                  maxUtteranceTimer.current = null;
+                }
               }, EOU_TIMEOUT);
             }
           }

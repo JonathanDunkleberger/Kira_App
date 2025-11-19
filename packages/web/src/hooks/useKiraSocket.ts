@@ -80,7 +80,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
       }
       const average = sum / dataArray.length;
       // Normalize to 0-1 range (approximate)
-      setPlayerVolume(Math.min(1, average / 128));
+      const rawVolume = Math.min(1, average / 128);
+      
+      // Smooth the player volume
+      setPlayerVolume((prev) => {
+          const smoothingFactor = 0.3;
+          return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+      });
       
       playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
     };
@@ -289,12 +295,22 @@ export const useKiraSocket = (token: string, guestId: string) => {
         const rms = Math.sqrt(sum / pcmData.length);
         // Normalize (16-bit max is 32768)
         // Multiply by a factor to make it more sensitive visually
-        const normalizedVolume = Math.min(1, (rms / 32768) * 5);
-        setMicVolume(normalizedVolume);
+        const rawVolume = Math.min(1, (rms / 32768) * 5);
+        
+        // Smooth the volume (Linear Interpolation)
+        // We use a ref to track the previous smoothed volume since state updates are async
+        // But here we are inside an event handler, so we can just use the state setter with a callback
+        // actually, using a ref for the "current displayed volume" is better for the loop, 
+        // but here we are setting state for the UI.
+        // Let's just smooth it against the previous state.
+        setMicVolume((prev) => {
+            const smoothingFactor = 0.3; // 0.0 = no change, 1.0 = instant
+            return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+        });
 
         // Debug log to verify mic input
         if (Math.random() < 0.05) { // Log ~5% of frames to avoid spam
-           console.log(`[Audio] Mic RMS: ${rms.toFixed(2)}, Vol: ${normalizedVolume.toFixed(2)}`);
+           console.log(`[Audio] Mic RMS: ${rms.toFixed(2)}, Vol: ${rawVolume.toFixed(2)}`);
         }
 
         if (

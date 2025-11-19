@@ -67,7 +67,9 @@ export default function ChatClient() {
       case "speaking":
         return "bg-kira-orb shadow-orb"; // Speaking - volume controlled
       case "thinking":
-        return "bg-kira-orb shadow-orb animate-pulse-slow"; // Thinking - CSS animation
+        // Thinking - Swirling smoke effect
+        // We use a conic gradient that spins
+        return "bg-[conic-gradient(from_0deg,var(--kira-orb),#ffffff,var(--kira-orb))] shadow-orb animate-spin-slow"; 
       case "listening":
       default:
         return "bg-kira-orb shadow-orb"; // Listening - volume controlled
@@ -81,8 +83,8 @@ export default function ChatClient() {
 
     if (kiraState === "speaking") {
       // AI Speaking: Pulse with playerVolume (0-1)
-      // Scale up to 1.4x
-      scale = 1 + playerVolume * 0.4;
+      // Scale up to 1.5x (Matched to user speaking)
+      scale = 1 + playerVolume * 0.5;
       // Opacity fluctuates slightly
       opacity = 0.8 + playerVolume * 0.2;
     } else if (kiraState === "listening") {

@@ -27,6 +27,7 @@ const config = {
       },
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "spin-slow": "spin 8s linear infinite",
       },
       boxShadow: {
         orb: "0 0 25px 10px rgba(212, 215, 194, 0.5)",

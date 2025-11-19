@@ -59,10 +59,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
         return;
       }
 
-      // Stop visualizing if we are past the scheduled audio end time (plus a small buffer)
-      // and the queue is empty.
+      // Stop visualizing if there are no scheduled sources and the queue is empty.
+      // This is more robust than checking time, as it tracks actual active nodes.
       if (
-        playbackContext.current.currentTime > nextStartTime.current + 0.1 &&
+        scheduledSources.current.length === 0 &&
         audioQueue.current.length === 0
       ) {
         setPlayerVolume(0);
@@ -199,6 +199,25 @@ export const useKiraSocket = (token: string, guestId: string) => {
     }
 
     isProcessingQueue.current = false;
+  };
+
+  const stopAudioPipeline = () => {
+    if (eouTimer.current) clearTimeout(eouTimer.current);
+
+    audioWorkletNode.current?.port.close();
+    audioSource.current?.disconnect();
+    audioStream.current?.getTracks().forEach((track) => track.stop());
+    audioContext.current?.close().catch(console.error);
+    playbackContext.current?.close().catch(console.error);
+
+    audioWorkletNode.current = null;
+    audioSource.current = null;
+    audioStream.current = null;
+    audioContext.current = null;
+    playbackContext.current = null;
+    playbackAnalyser.current = null; // Ensure analyser is cleared so it's recreated with new context
+
+    console.log("[Audio] 🛑 Audio pipeline stopped.");
   };
 
   /**
@@ -403,23 +422,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     }
   };
 
-  const stopAudioPipeline = () => {
-    if (eouTimer.current) clearTimeout(eouTimer.current);
 
-    audioWorkletNode.current?.port.close();
-    audioSource.current?.disconnect();
-    audioStream.current?.getTracks().forEach((track) => track.stop());
-    audioContext.current?.close().catch(console.error);
-    playbackContext.current?.close().catch(console.error);
-
-    audioWorkletNode.current = null;
-    audioSource.current = null;
-    audioStream.current = null;
-    audioContext.current = null;
-    playbackContext.current = null;
-
-    console.log("[Audio] 🛑 Audio pipeline stopped.");
-  };
 
   /**
    * Main connection logic

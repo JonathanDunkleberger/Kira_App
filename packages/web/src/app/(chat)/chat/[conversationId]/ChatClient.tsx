@@ -188,7 +188,7 @@ export default function ChatClient() {
           style={getDynamicStyle()}
         >
           {/* Fluid Gradient Layer - Simulates the GPT voice mode orb */}
-          <div className="absolute inset-[-50%] w-[200%] h-[200%] bg-[conic-gradient(from_0deg,#0284C7,#FFFFFF,#E0F2FE,#0284C7)] animate-spin-slow blur-2xl opacity-90" />
+          <div className="absolute inset-[-50%] w-[200%] h-[200%] bg-[conic-gradient(from_0deg,#C2C6A3,#FBFBF8,#D4D7C2,#C2C6A3)] animate-spin-slow blur-2xl opacity-90" />
         </div>
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}

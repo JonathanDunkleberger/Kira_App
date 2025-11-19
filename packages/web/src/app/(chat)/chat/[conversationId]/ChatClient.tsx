@@ -187,20 +187,20 @@ export default function ChatClient() {
           className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8]"
           style={getDynamicStyle()}
         >
-           {/* Base Gradient - Subtle backing */}
-           <div className="absolute inset-0 bg-gradient-to-br from-[#FBFBF8] via-[#FBFBF8] to-[#D4D7C2] opacity-30" />
+           {/* Base Gradient - More Green Presence */}
+           <div className="absolute inset-0 bg-gradient-to-br from-[#D4D7C2] via-[#FBFBF8] to-[#C2C6A3] opacity-50" />
 
-           {/* Dark Green Cloud - Large, anchored left */}
-           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-flow" />
+           {/* Dark Green Cloud - Stronger opacity */}
+           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow" />
            
-           {/* Light Green Cloud - Large, anchored right */}
-           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-flow [animation-delay:3000ms]" />
+           {/* Light Green Cloud - Stronger opacity */}
+           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow [animation-delay:3000ms]" />
            
-           {/* White Mist - Center/Overlay for depth */}
-           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-60 animate-flow [animation-delay:5000ms]" />
+           {/* White Mist - Reduced opacity to let greens show through */}
+           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-40 animate-flow [animation-delay:5000ms]" />
            
            {/* Floating Highlight - Adds the "cloud" texture */}
-           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-30 animate-flow [animation-delay:7000ms]" />
+           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-flow [animation-delay:7000ms]" />
         </div>
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}

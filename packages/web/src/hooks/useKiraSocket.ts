@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 2000; // Increased to 2 seconds to prevent premature cutoff
+const EOU_TIMEOUT = 3000; // Increased to 3 seconds to allow for longer pauses (Ramble Mode)
 
 export const useKiraSocket = (token: string, guestId: string) => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
@@ -391,7 +391,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
                 if (eouTimer.current) clearTimeout(eouTimer.current);
                 eouTimer.current = null;
                 maxUtteranceTimer.current = null;
-              }, 10000); // 10 seconds limit
+              }, 60000); // 60 seconds limit (Ramble Mode)
             }
           } else {
             // User is silent: Start EOU timer if not already running

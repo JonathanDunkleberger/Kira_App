@@ -26,6 +26,22 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     } else {
       document.documentElement.classList.remove("dark");
     }
+
+    // Listen for storage changes to sync across tabs
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "theme") {
+        const newIsDark = e.newValue === "dark";
+        setIsDarkMode(newIsDark);
+        if (newIsDark) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const toggleTheme = () => {
@@ -47,7 +63,10 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   };
 
   const handleSignIn = () => {
-    openSignIn();
+    openSignIn({
+      afterSignInUrl: "/",
+      afterSignUpUrl: "/",
+    });
     onClose();
   };
 

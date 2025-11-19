@@ -38,7 +38,7 @@ export default function HomePage() {
     : getGreeting();
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
       {/* Header: Logo and Clerk Profile Icon */}
       <header className="absolute top-0 left-0 right-0 p-4 sm:p-6 flex justify-between items-center">
         <span className="font-semibold text-lg flex items-center gap-2">

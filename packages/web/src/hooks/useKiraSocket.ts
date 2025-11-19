@@ -59,10 +59,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
         return;
       }
 
-      // Stop visualizing if there are no scheduled sources and the queue is empty.
-      // This is more robust than checking time, as it tracks actual active nodes.
+      // Stop visualizing if we are past the scheduled audio end time (plus a small buffer)
+      // and the queue is empty.
+      // We use time-based checking as it's more reliable for continuous streams than tracking source nodes.
       if (
-        scheduledSources.current.length === 0 &&
+        playbackContext.current.currentTime > nextStartTime.current + 0.5 &&
         audioQueue.current.length === 0
       ) {
         setPlayerVolume(0);
@@ -140,6 +141,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
       playbackContext.current.state === "closed"
     ) {
       playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      playbackAnalyser.current = null; // Reset analyser if context is recreated
     }
     if (playbackContext.current.state === "suspended") {
       await playbackContext.current.resume();

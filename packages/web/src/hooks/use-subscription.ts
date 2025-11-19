@@ -20,10 +20,16 @@ export const useSubscription = () => {
     }
 
     const checkSubscription = async () => {
-      setIsLoading(true);
-      const isProMember = await getUserSubscription();
-      setIsPro(isProMember);
-      setIsLoading(false);
+      try {
+        setIsLoading(true);
+        const isProMember = await getUserSubscription();
+        setIsPro(isProMember);
+      } catch (error) {
+        console.error("Failed to check subscription:", error);
+        setIsPro(false); // Default to free tier on error
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     checkSubscription();

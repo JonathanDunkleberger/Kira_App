@@ -8,14 +8,25 @@ import { useSubscription } from "@/hooks/use-subscription"; // Our new hook
 
 // This is the clean "Sesame" clone homepage
 export default function HomePage() {
-  const { user, isSignedIn } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
   const { isPro, isLoading } = useSubscription();
+
+  console.log("HomePage Render:", { isLoaded, isSignedIn, isPro, isLoading });
+  // console.log("Clerk Key:", process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+  // if (!isLoaded) {
+  //   return (
+  //     <div className="flex items-center justify-center min-h-screen bg-kira-bg">
+  //       <div className="animate-pulse text-gray-500">Loading Kira...</div>
+  //     </div>
+  //   );
+  // }
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return "Morning";
-    if (hour < 18) return "Afternoon";
-    return "Evening";
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
   };
 
   // This is the "Afternoon, Jonny" feature
@@ -88,14 +99,6 @@ export default function HomePage() {
 
         {/* We can add other personas here later */}
       </main>
-
-      {/* Footer (for the 5-star rating link) */}
-      <footer className="absolute bottom-6 text-sm">
-        <button className="flex items-center gap-1.5 text-gray-500 hover:text-gray-900 transition-colors">
-          <Star size={14} />
-          Rate your conversations
-        </button>
-      </footer>
     </div>
   );
 }

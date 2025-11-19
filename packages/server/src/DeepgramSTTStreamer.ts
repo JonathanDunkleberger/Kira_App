@@ -17,10 +17,8 @@ export class DeepgramSTTStreamer extends EventEmitter {
       const deepgram = createClient(DEEPGRAM_API_KEY);
       this.connection = await deepgram.listen.live({
         model: "nova-2",
+        smart_format: true,
         interim_results: true,
-        punctuate: true,
-        encoding: "linear16",
-        sample_rate: 16000,
       });
 
       if (this.connection) {

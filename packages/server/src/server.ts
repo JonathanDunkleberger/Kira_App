@@ -21,6 +21,11 @@ const server = createServer();
 const wss = new WebSocketServer({ server });
 
 console.log("[Server] Starting...");
+console.log("[Config] PORT:", PORT);
+console.log("[Config] CLERK_SECRET_KEY:", CLERK_SECRET_KEY ? "Set" : "Missing");
+console.log("[Config] OPENAI_API_KEY:", OPENAI_API_KEY ? "Set" : "Missing");
+console.log("[Config] DEEPGRAM_API_KEY:", process.env.DEEPGRAM_API_KEY ? "Set" : "Missing");
+console.log("[Config] AZURE_SPEECH_KEY:", process.env.AZURE_SPEECH_KEY ? "Set" : "Missing");
 
 wss.on("connection", async (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
@@ -57,6 +62,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   let state = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
+  let latestInterimTranscript = "";
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -69,39 +75,67 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     try {
       // --- 3. MESSAGE HANDLING ---
       if (typeof message === "string") {
+        console.log(`[WS] Received string message: ${message.slice(0, 50)}...`);
         const controlMessage = JSON.parse(message);
 
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
-          sttStreamer = new DeepgramSTTStreamer();
-          await sttStreamer.start();
+          try {
+            sttStreamer = new DeepgramSTTStreamer();
+            await sttStreamer.start();
 
-          sttStreamer.on(
-            "transcript",
-            (transcript: string, isFinal: boolean) => {
-              if (isFinal) currentTurnTranscript += transcript + " ";
-            }
-          );
+            sttStreamer.on(
+              "transcript",
+              (transcript: string, isFinal: boolean) => {
+                if (isFinal) {
+                  currentTurnTranscript += transcript + " ";
+                  latestInterimTranscript = "";
+                } else {
+                  latestInterimTranscript = transcript;
+                }
+                // Send transcript to client for UI
+                ws.send(
+                  JSON.stringify({
+                    type: "transcript",
+                    role: "user",
+                    text: isFinal ? currentTurnTranscript : currentTurnTranscript + transcript,
+                    isFinal,
+                  })
+                );
+              }
+            );
 
-          sttStreamer.on("error", (err: Error) => {
-            console.error("[Pipeline] ❌ STT Error:", err.message);
-            state = "listening"; // Reset
-          });
+            sttStreamer.on("error", (err: Error) => {
+              console.error("[Pipeline] ❌ STT Error:", err.message);
+              state = "listening"; // Reset
+            });
 
-          ws.send(JSON.stringify({ type: "stream_ready" }));
+            ws.send(JSON.stringify({ type: "stream_ready" }));
+          } catch (err) {
+            console.error("[Pipeline] ❌ Failed to start STT:", err);
+          }
         } else if (controlMessage.type === "eou") {
-          if (
-            state !== "listening" ||
-            !sttStreamer ||
-            currentTurnTranscript.trim().length === 0
-          ) {
+          // Check if we have a final transcript OR an interim one
+          const hasTranscript =
+            currentTurnTranscript.trim().length > 0 ||
+            latestInterimTranscript.trim().length > 0;
+
+          if (state !== "listening" || !sttStreamer || !hasTranscript) {
             return; // Already thinking or nothing was said
           }
 
           state = "thinking";
           sttStreamer.finalize();
-          const userMessage = currentTurnTranscript.trim();
+
+          // Construct the full user message
+          let userMessage = currentTurnTranscript.trim();
+          if (latestInterimTranscript.trim().length > 0) {
+            userMessage += " " + latestInterimTranscript.trim();
+          }
+          userMessage = userMessage.trim();
+
           currentTurnTranscript = ""; // Reset for next turn
+          latestInterimTranscript = ""; // Reset for next turn
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
@@ -126,6 +160,17 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
           console.log(`[AI RESPONSE]: "${llmResponse}"`);
           console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
+          
+          // Send AI transcript to client
+          ws.send(
+            JSON.stringify({
+              type: "transcript",
+              role: "ai",
+              text: llmResponse,
+              isFinal: true,
+            })
+          );
+
           state = "speaking";
           ws.send(JSON.stringify({ type: "state_speaking" }));
 
@@ -150,7 +195,11 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         }
       } else if (message instanceof Buffer) {
         if (state === "listening" && sttStreamer) {
-          sttStreamer.write(message); // Forward raw audio to Google
+          // Log occasional audio packet to prove we are receiving data
+          if (Math.random() < 0.01) {
+             console.log(`[WS] 🎤 Received audio chunk (${message.byteLength} bytes)`);
+          }
+          sttStreamer.write(message); // Forward raw audio to Deepgram
         }
       }
     } catch (err) {

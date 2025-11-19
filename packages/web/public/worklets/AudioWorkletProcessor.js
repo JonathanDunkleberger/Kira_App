@@ -74,6 +74,11 @@ class Linear16Processor extends AudioWorkletProcessor {
     // 3. Send the raw PCM ArrayBuffer back to the main thread
     this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
 
+    // Debug: Log every ~100 frames (approx 1 sec)
+    if (Math.random() < 0.01) {
+      this.port.postMessage({ type: "debug", message: "Worklet processing..." });
+    }
+
     return true; // Tell the browser we're still processing
   }
 }

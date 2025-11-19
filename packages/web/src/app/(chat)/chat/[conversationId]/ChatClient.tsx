@@ -5,12 +5,15 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff } from "lucide-react";
+import { PhoneOff, Star } from "lucide-react";
 
 export default function ChatClient() {
   const router = useRouter();
   const { getToken, userId } = useAuth();
   const [token, setToken] = useState<string | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
 
   // Create a stable guest ID if the user is not logged in
   const [guestId] = useState(() => {
@@ -25,11 +28,11 @@ export default function ChatClient() {
     return "";
   });
 
-  const { connect, disconnect, socketState, kiraState } = useKiraSocket(
+  const { connect, disconnect, socketState, kiraState, micVolume, playerVolume, transcript, error } = useKiraSocket(
     token || "",
     guestId
   );
-  const connectedOnceRef = useRef(false);
+  const [hasStarted, setHasStarted] = useState(false);
 
   // 1. Get Clerk auth token
   useEffect(() => {
@@ -38,41 +41,102 @@ export default function ChatClient() {
     }
   }, [getToken, userId]);
 
-  // 2. Connect to WebSocket once when ready; keep alive across re-renders.
-  useEffect(() => {
-    if (!connectedOnceRef.current && (guestId || (userId && token))) {
-      connect();
-      connectedOnceRef.current = true;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [guestId, userId, token]);
+  // REMOVED: Automatic connection
+  // We now wait for user interaction to start the session
 
   // Disconnect only on unmount
   useEffect(() => {
     return () => {
-      disconnect();
+      if (hasStarted) {
+        disconnect();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasStarted]);
+
+  const handleStart = () => {
+    if (guestId || (userId && token)) {
+      connect();
+      setHasStarted(true);
+    }
+  };
 
   // --- UI Logic ---
   const getOrbStyle = (state: KiraState) => {
     switch (state) {
       case "speaking":
-        return "bg-kira-orb shadow-orb animate-pulse"; // Speaking
+        return "bg-kira-orb shadow-orb"; // Speaking - volume controlled
       case "thinking":
-        return "bg-kira-orb shadow-orb animate-pulse-slow"; // Thinking
+        return "bg-kira-orb shadow-orb animate-pulse-slow"; // Thinking - CSS animation
       case "listening":
       default:
-        return "bg-kira-orb shadow-orb"; // Listening
+        return "bg-kira-orb shadow-orb"; // Listening - volume controlled
     }
+  };
+
+  const getDynamicStyle = () => {
+    const baseScale = 1;
+    let scale = baseScale;
+    let opacity = 1;
+
+    if (kiraState === "speaking") {
+      // AI Speaking: Pulse with playerVolume (0-1)
+      // Scale up to 1.4x
+      scale = 1 + playerVolume * 0.4;
+      // Opacity fluctuates slightly
+      opacity = 0.8 + playerVolume * 0.2;
+    } else if (kiraState === "listening") {
+      // User Speaking: Pulse with micVolume (0-1)
+      // Scale up to 1.5x
+      scale = 1 + micVolume * 0.5;
+      opacity = 0.8 + micVolume * 0.2;
+    }
+
+    return {
+      transform: `scale(${scale})`,
+      opacity: opacity,
+    };
   };
 
   const handleEndCall = () => {
     disconnect();
-    // This is where we will show the 5-star rating modal (Goal 3)
-    router.push("/"); // For now, just go home
+    setShowRatingModal(true);
   };
+
+  const handleRate = () => {
+    // TODO: Save rating to backend
+    console.log("User rated conversation:", rating);
+    router.push("/");
+  };
+
+  const handleContinue = () => {
+    router.push("/");
+  };
+
+  if (!hasStarted) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900">
+        <div className="flex flex-col items-center gap-8 max-w-sm text-center">
+          <div className="w-48 h-48 rounded-full bg-kira-orb shadow-orb opacity-50" />
+          <h1 className="text-2xl font-medium">Ready to talk?</h1>
+          <div className="text-sm text-gray-500">
+            Status: <span className={`font-medium ${socketState === 'connected' ? 'text-green-600' : 'text-orange-600'}`}>{socketState}</span>
+          </div>
+          <button
+            onClick={handleStart}
+            className="flex items-center justify-center gap-3 px-8 py-4 bg-kira-green rounded-full text-xl font-medium text-gray-800 hover:bg-kira-green-dark transition-all hover:scale-105 shadow-lg"
+          >
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-800 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-800"></span>
+            </span>
+            Start Conversation
+          </button>
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+        </div>
+      </div>
+    );
+  }
 
   if (socketState === "connecting") {
     return (
@@ -123,17 +187,41 @@ export default function ChatClient() {
             Kira
           </span>
         </Link>
-        {/* TODO: GOAL 3 - Add real free trial timer */}
-        <span className="text-sm text-gray-500">00:19</span>
+        <span className="text-sm text-gray-500"></span>
       </div>
 
       {/* Main Orb */}
-      <div className="flex-grow flex items-center justify-center">
+      <div className="flex-grow flex flex-col items-center justify-center gap-12">
         <div
-          className={`w-48 h-48 rounded-full transition-all duration-300 ${getOrbStyle(
+          className={`w-48 h-48 rounded-full transition-transform duration-75 ease-out ${getOrbStyle(
             kiraState
           )}`}
+          style={getDynamicStyle()}
         />
+
+        {/* Live Transcript */}
+        <div className="h-24 w-full max-w-2xl px-6 text-center flex items-center justify-center">
+          {transcript && (
+            <div
+              className={`text-xl font-medium transition-opacity duration-300 ${
+                transcript.role === "user" ? "text-gray-600" : "text-kira-green-dark"
+              }`}
+            >
+              {transcript.text}
+              {transcript.role === "user" && kiraState === "listening" && (
+                <span className="animate-pulse">|</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Debug Overlay */}
+      <div className="absolute bottom-4 left-4 p-4 bg-black/10 rounded-lg text-xs font-mono text-gray-500 pointer-events-none">
+        <div>State: {kiraState}</div>
+        <div>Socket: {socketState}</div>
+        <div>Mic Vol: {micVolume.toFixed(3)}</div>
+        <div>Player Vol: {playerVolume.toFixed(3)}</div>
       </div>
 
       {/* Footer Controls */}
@@ -146,6 +234,54 @@ export default function ChatClient() {
           <span className="text-sm mt-1">End call</span>
         </button>
       </div>
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center gap-6 max-w-sm w-full mx-4 animate-in fade-in zoom-in duration-200">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Rate your conversation
+            </h2>
+
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  onClick={() => setRating(star)}
+                  className="transition-transform hover:scale-110 focus:outline-none p-1"
+                >
+                  <Star
+                    size={32}
+                    className={`${
+                      star <= (hoverRating || rating)
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-gray-300"
+                    } transition-colors duration-150`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col w-full gap-3">
+              <button
+                onClick={handleRate}
+                disabled={rating === 0}
+                className="w-full py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Rate it
+              </button>
+              <button
+                onClick={handleContinue}
+                className="w-full py-3 text-gray-500 hover:text-gray-900 font-medium transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

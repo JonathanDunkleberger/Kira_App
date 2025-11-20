@@ -31,19 +31,42 @@ console.log("[Config] AZURE_SPEECH_KEY:", process.env.AZURE_SPEECH_KEY ? "Set" :
 
 // --- HELPER: Check Stripe Subscription Directly ---
 const checkStripeSubscription = async (customerId: string): Promise<boolean> => {
-  if (!STRIPE_SECRET_KEY) return false;
+  if (!STRIPE_SECRET_KEY) {
+      console.error("[Stripe] Missing STRIPE_SECRET_KEY");
+      return false;
+  }
   try {
+    // Fetch all subscriptions for the customer (limit 10 is enough)
+    // We don't filter by status in the query to ensure we see everything
     const response = await fetch(
-      `https://api.stripe.com/v1/subscriptions?customer=${customerId}&status=active&limit=1`,
+      `https://api.stripe.com/v1/subscriptions?customer=${customerId}&limit=10`,
       {
         headers: {
           Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
         },
       }
     );
-    if (!response.ok) return false;
+    
+    if (!response.ok) {
+        const err = await response.text();
+        console.error(`[Stripe] API Error: ${response.status} - ${err}`);
+        return false;
+    }
+
     const data = await response.json();
-    return data.data && data.data.length > 0;
+    
+    // Check for any active or trialing subscription
+    const activeSub = data.data && data.data.find((sub: any) => 
+      sub.status === 'active' || sub.status === 'trialing'
+    );
+
+    if (activeSub) {
+        console.log(`[Stripe] Found active subscription: ${activeSub.id} (Status: ${activeSub.status})`);
+        return true;
+    }
+    
+    console.log(`[Stripe] No active subscriptions found for customer ${customerId}`);
+    return false;
   } catch (e) {
     console.error("[Stripe] Failed to check subscription:", e);
     return false;
@@ -403,7 +426,11 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
                       stripeCurrentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000) // Set to 24h from now as a temporary fix
                   }
               });
+          } else {
+              console.log("[Auth] Stripe API check returned false.");
           }
+      } else {
+          console.log(`[Auth] User ${userId} has no Stripe Customer ID. Cannot check fallback.`);
       }
 
       // 5. Check Limits

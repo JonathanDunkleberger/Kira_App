@@ -501,6 +501,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "tts_chunk_ends":
             // The server is done sending audio for this turn
             break;
+          case "error":
+            if (msg.code === "limit_reached") {
+              console.warn("[WS] Daily limit reached.");
+              setError("limit_reached"); // Special error code for UI
+            } else {
+              console.error("[WS] Server error:", msg.message);
+              setError(msg.message);
+            }
+            break;
         }
       } else if (event.data instanceof ArrayBuffer) {
         // This is a raw PCM audio chunk from Azure

@@ -203,7 +203,7 @@ export default function ChatClient() {
       
       {/* Transcript Container - Scrollable Box */}
       <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center flex-col items-center">
-          {error && (
+          {error && error !== "limit_reached" && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded relative dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
               <span className="block sm:inline">{error}</span>
             </div>
@@ -282,6 +282,41 @@ export default function ChatClient() {
               >
                 Continue
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Limit Reached Modal */}
+      {error === "limit_reached" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-tokyo-card p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-6 max-w-md w-full mx-4 animate-in fade-in zoom-in duration-300 border border-gray-200 dark:border-tokyo-fg/10">
+            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500 dark:text-red-400 mb-2">
+              <PhoneOff size={32} />
+            </div>
+            
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg">
+                Daily Limit Reached
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                You've used all your free conversation time for today.
+              </p>
+            </div>
+
+            <div className="flex flex-col w-full gap-3 mt-4">
+              <Link
+                href="/account"
+                className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
+              >
+                Upgrade to Pro
+              </Link>
+              <Link
+                href="/"
+                className="w-full py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-tokyo-fg font-medium transition-colors text-center"
+              >
+                Come back tomorrow
+              </Link>
             </div>
           </div>
         </div>

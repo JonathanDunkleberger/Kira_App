@@ -150,7 +150,7 @@ export default function ChatClient() {
                 strokeLinejoin="round"
               />
             </svg>
-            Kira <span className="text-xs opacity-50">v2.1</span>
+            Kira
           </span>
         </Link>
         

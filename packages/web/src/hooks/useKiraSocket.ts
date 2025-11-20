@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // Define the states
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
@@ -50,7 +50,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   /**
    * Visualizer loop
    */
-  const startVisualizer = () => {
+  const startVisualizer = useCallback(() => {
     if (playbackAnimationFrame.current) return; // Already running
 
     const updateVolume = () => {
@@ -92,12 +92,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
       playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
     };
     updateVolume();
-  };
+  }, []);
 
   /**
    * Stops current audio playback and clears the queue.
    */
-  const stopAudioPlayback = () => {
+  const stopAudioPlayback = useCallback(() => {
     // 1. Clear the queue so no new chunks are scheduled
     audioQueue.current = [];
     
@@ -125,13 +125,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
         playbackAnimationFrame.current = null;
         setPlayerVolume(0);
     }
-  };
+  }, []);
 
   /**
    * Processes the audio queue and schedules chunks to play back-to-back.
    * This eliminates gaps/pops caused by waiting for onended events.
    */
-  const processAudioQueue = async () => {
+  const processAudioQueue = useCallback(async () => {
     if (isProcessingQueue.current) return;
     isProcessingQueue.current = true;
 
@@ -201,9 +201,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
     }
 
     isProcessingQueue.current = false;
-  };
+  }, [startVisualizer]);
 
-  const stopAudioPipeline = () => {
+  const stopAudioPipeline = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);
 
     audioWorkletNode.current?.port.close();
@@ -220,12 +220,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
     playbackAnalyser.current = null; // Ensure analyser is cleared so it's recreated with new context
 
     console.log("[Audio] 🛑 Audio pipeline stopped.");
-  };
+  }, []);
 
   /**
    * Initializes and starts the audio capture pipeline (Mic -> Worklet -> WebSocket)
    */
-  const startAudioPipeline = async () => {
+  const startAudioPipeline = useCallback(async () => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
       console.error("[Audio] WebSocket not open, cannot start pipeline.");
       return;
@@ -422,14 +422,36 @@ export const useKiraSocket = (token: string, guestId: string) => {
       console.error("[Audio] ❌ Failed to start audio pipeline:", err);
       setError("Microphone access denied or failed. Please check permissions.");
     }
-  };
+  }, [stopAudioPlayback]);
 
-
+  /**
+   * Explicitly start the conversation: send start_stream and start mic pipeline.
+   * Adds detailed logs to trace user action and pipeline startup.
+   */
+  const startConversation = useCallback(() => {
+    console.log("[UI] Start button clicked.");
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("[WS] Sending 'start_stream' message...");
+      try {
+        ws.current.send(JSON.stringify({ type: "start_stream" }));
+      } catch (err) {
+        console.error("[WS] Failed to send start_stream:", err);
+      }
+      
+      // Start mic immediately to satisfy browser user-gesture requirements
+      console.log("[Audio] Starting local audio pipeline...");
+      startAudioPipeline();
+    } else {
+      console.error(
+        "[WS] Cannot start stream: WebSocket is not open or not connected."
+      );
+    }
+  }, [startAudioPipeline]);
 
   /**
    * Main connection logic
    */
-  const connect = async () => {
+  const connect = useCallback(async () => {
     if (ws.current) return;
 
     // Mobile Safari Audio Unlock:
@@ -536,39 +558,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
       setError("WebSocket connection error");
       stopAudioPipeline();
     };
-  };
+  }, [token, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);
     if (ws.current) {
       setSocketState("closing");
       ws.current.close();
     }
-  };
-
-  /**
-   * Explicitly start the conversation: send start_stream and start mic pipeline.
-   * Adds detailed logs to trace user action and pipeline startup.
-   */
-  const startConversation = () => {
-    console.log("[UI] Start button clicked.");
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      console.log("[WS] Sending 'start_stream' message...");
-      try {
-        ws.current.send(JSON.stringify({ type: "start_stream" }));
-      } catch (err) {
-        console.error("[WS] Failed to send start_stream:", err);
-      }
-      
-      // Start mic immediately to satisfy browser user-gesture requirements
-      console.log("[Audio] Starting local audio pipeline...");
-      startAudioPipeline();
-    } else {
-      console.error(
-        "[WS] Cannot start stream: WebSocket is not open or not connected."
-      );
-    }
-  };
+  }, []);
 
   /**
    * Helper function to create a WAV header for raw PCM data

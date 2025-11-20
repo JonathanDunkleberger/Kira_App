@@ -46,8 +46,8 @@ export default function ChatClient() {
   // 2. Auto-connect when ready
   useEffect(() => {
     // Only connect if we have a valid identity (guestId or user token)
-    // and we are not already connected/connecting (handled by hook check, but good to be explicit if possible)
     if (guestId || (userId && token)) {
+      console.log("[ChatClient] Auto-connecting to Kira...");
       connect();
     }
   }, [guestId, userId, token, connect]);

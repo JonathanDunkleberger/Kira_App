@@ -49,10 +49,19 @@ export async function POST(req: Request) {
 
     // 3. Create Checkout Session
     const priceId = process.env.STRIPE_PRICE_ID;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+
     if (!priceId) {
         console.error("Stripe Price ID missing");
         return new NextResponse("Stripe Price ID missing", { status: 500 });
     }
+
+    if (!appUrl) {
+        console.error("NEXT_PUBLIC_APP_URL missing");
+        return new NextResponse("App URL configuration missing", { status: 500 });
+    }
+
+    console.log(`[STRIPE_CHECKOUT] Creating session for ${userEmail} with price ${priceId} return to ${appUrl}`);
 
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
@@ -63,8 +72,8 @@ export async function POST(req: Request) {
         },
       ],
       mode: "subscription",
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/?canceled=true`,
+      success_url: `${appUrl}/?success=true`,
+      cancel_url: `${appUrl}/?canceled=true`,
       metadata: {
         userId: userId,
       },

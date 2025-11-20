@@ -19,9 +19,15 @@ export async function POST(req: Request) {
       return new NextResponse("User not found or no stripe customer", { status: 404 });
     }
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    if (!appUrl) {
+        console.error("NEXT_PUBLIC_APP_URL missing");
+        return new NextResponse("App URL configuration missing", { status: 500 });
+    }
+
     const session = await stripe.billingPortal.sessions.create({
       customer: dbUser.stripeCustomerId,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/`,
+      return_url: `${appUrl}/`,
     });
 
     return NextResponse.json({ url: session.url });

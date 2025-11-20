@@ -245,20 +245,26 @@ export default function ChatClient() {
         </div>
       </div>
       
-      {/* Transcript Container - Moved below the orb area */}
-      <div className="w-full max-w-3xl px-6 pb-8 text-center min-h-[100px] flex items-center justify-center z-10">
-          {transcript && (
-            <div
-              className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
-                transcript.role === "user" ? "text-gray-600 dark:text-tokyo-fg/70" : "text-kira-green-dark dark:text-tokyo-accent"
-              }`}
-            >
-              {transcript.text}
-              {transcript.role === "user" && kiraState === "listening" && (
-                <span className="animate-pulse">|</span>
-              )}
-            </div>
-          )}
+      {/* Transcript Container - Scrollable Box */}
+      <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center">
+          <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent text-center flex flex-col items-center justify-center">
+            {transcript ? (
+              <div
+                className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
+                  transcript.role === "user" ? "text-gray-600 dark:text-tokyo-fg/70" : "text-kira-green-dark dark:text-tokyo-accent"
+                }`}
+              >
+                {transcript.text}
+                {transcript.role === "user" && kiraState === "listening" && (
+                  <span className="animate-pulse">|</span>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-400 dark:text-gray-600 text-sm italic">
+                Listening...
+              </div>
+            )}
+          </div>
       </div>
 
       {/* Footer Controls */}

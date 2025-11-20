@@ -16,7 +16,6 @@ export default function ChatClient() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
-  const [isMobile, setIsMobile] = useState(false);
 
   // Create a stable guest ID if the user is not logged in
   const [guestId] = useState(() => {
@@ -43,33 +42,6 @@ export default function ChatClient() {
       getToken().then(setToken);
     }
   }, [getToken, userId]);
-
-  // 2. Detect Mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      const userAgent = typeof window.navigator === "undefined" ? "" : navigator.userAgent;
-      const mobile = Boolean(
-        userAgent.match(
-          /Android|BlackBerry|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i
-        )
-      );
-      setIsMobile(mobile);
-    };
-    checkMobile();
-  }, []);
-
-  // 3. Auto-connect when ready (Desktop Only)
-  useEffect(() => {
-    // Only connect if we have a valid identity (guestId or user token)
-    if (guestId || (userId && token)) {
-      if (!isMobile) {
-        console.log("[ChatClient] Auto-connecting to Kira (Desktop)...");
-        connect();
-      } else {
-        console.log("[ChatClient] Mobile detected. Waiting for user gesture.");
-      }
-    }
-  }, [guestId, userId, token, connect, isMobile]);
 
   // Disconnect only on unmount
   useEffect(() => {
@@ -132,8 +104,8 @@ export default function ChatClient() {
     );
   }
 
-  // Mobile Start Screen (Initial State)
-  if (isMobile && socketState === "idle") {
+  // Start Screen (Initial State for ALL users)
+  if (socketState === "idle") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
         <button

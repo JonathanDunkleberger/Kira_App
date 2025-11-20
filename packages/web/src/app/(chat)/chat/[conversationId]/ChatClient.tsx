@@ -94,6 +94,20 @@ export default function ChatClient() {
     router.push("/");
   };
 
+  const handleUpgrade = async () => {
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = data.url;
+      } else {
+        console.error("Failed to start checkout");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+    }
+  };
+
   if (socketState === "connecting") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
@@ -328,12 +342,12 @@ export default function ChatClient() {
             </div>
 
             <div className="flex flex-col w-full gap-3 mt-4">
-              <Link
-                href="/account"
+              <button
+                onClick={handleUpgrade}
                 className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
               >
                 Upgrade to Pro
-              </Link>
+              </button>
               <Link
                 href="/"
                 className="w-full py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-tokyo-fg font-medium transition-colors text-center"

@@ -224,6 +224,53 @@ export const useKiraSocket = (token: string, guestId: string) => {
   }, []);
 
   /**
+   * Initializes audio contexts and requests mic permission.
+   * Must be called from a user gesture.
+   */
+  const initializeAudio = useCallback(async () => {
+    try {
+      console.log("[Audio] Initializing audio contexts...");
+      
+      // 1. Create/Resume AudioContext
+      if (!audioContext.current || audioContext.current.state === "closed") {
+        audioContext.current = new AudioContext();
+      }
+      if (audioContext.current.state === "suspended") {
+        await audioContext.current.resume();
+      }
+
+      // 2. Create/Resume PlaybackContext
+      if (!playbackContext.current || playbackContext.current.state === "closed") {
+        playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      }
+      if (playbackContext.current.state === "suspended") {
+        await playbackContext.current.resume();
+      }
+
+      // 3. Request Mic Permission (if not already)
+      if (!audioStream.current) {
+        console.log("[Audio] Requesting mic permission...");
+        audioStream.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            autoGainControl: true,
+            noiseSuppression: true,
+          },
+        });
+        console.log("[Audio] Mic permission granted.");
+      }
+
+      setIsAudioBlocked(false);
+      return true;
+    } catch (err) {
+      console.error("[Audio] Failed to initialize audio:", err);
+      setIsAudioBlocked(true);
+      return false;
+    }
+  }, []);
+
+  /**
    * Initializes and starts the audio capture pipeline (Mic -> Worklet -> WebSocket)
    */
   const startAudioPipeline = useCallback(async () => {
@@ -233,197 +280,162 @@ export const useKiraSocket = (token: string, guestId: string) => {
     }
 
     try {
-      // 1. Get Mic permission
-      console.log("[Audio] Requesting mic permission...");
-      audioStream.current = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true,
-        },
-      });
-      console.log("[Audio] Mic permission granted.");
-
-      // 2. Create AudioContext and load our custom processor
-      if (!audioContext.current || audioContext.current.state === "closed") {
-        console.log("[Audio] Creating new AudioContext...");
-        audioContext.current = new AudioContext();
+      // Ensure audio is initialized (should be done by connect/initializeAudio already)
+      if (!audioStream.current) {
+         const success = await initializeAudio();
+         if (!success) throw new Error("Audio initialization failed");
       }
-      console.log(`[Audio] AudioContext state: ${audioContext.current.state}`);
+
+      // 2. Load AudioWorklet module
+      if (!audioContext.current) throw new Error("AudioContext is null");
       
-      if (audioContext.current.state === "suspended") {
-        console.log("[Audio] Resuming AudioContext...");
-        await audioContext.current.resume();
-      }
-
       console.log("[Audio] Loading AudioWorklet module...");
       try {
         // Use a robust path for the worklet
         const workletUrl = "/worklets/AudioWorkletProcessor.js";
+        // Check if module is already added (not directly possible, but addModule is idempotent-ish or throws)
+        // We'll just try adding it.
         await audioContext.current.audioWorklet.addModule(workletUrl);
         console.log("[Audio] AudioWorklet module loaded.");
       } catch (e) {
-        console.error("[Audio] Failed to load AudioWorklet:", e);
-        throw e;
+        // Ignore error if module already added (DOMException)
+        console.log("[Audio] Worklet might already be loaded:", e);
       }
 
       // 3. Create the Worklet Node
-      audioWorkletNode.current = new AudioWorkletNode(
-        audioContext.current,
-        "audio-worklet-processor",
-        {
-          processorOptions: {
-            targetSampleRate: 16000,
-          },
-        }
-      );
+      if (!audioWorkletNode.current) {
+          audioWorkletNode.current = new AudioWorkletNode(
+            audioContext.current,
+            "audio-worklet-processor",
+            {
+              processorOptions: {
+                targetSampleRate: 16000,
+              },
+            }
+          );
+          
+          audioWorkletNode.current.onprocessorerror = (err) => {
+            console.error("[Audio] Worklet processor error:", err);
+          };
+
+          // 5. Connect the Worklet to the main app (this hook)
+          audioWorkletNode.current.port.onmessage = (event) => {
+            // ... (Existing message handler logic) ...
+            // Handle Debug Messages from Worklet
+            if (event.data && event.data.type === "debug") {
+               console.log("[AudioWorklet]", event.data.message);
+               return;
+            }
+    
+            // We received a 16-bit PCM buffer from the worklet
+            const pcmBuffer = event.data as ArrayBuffer;
+    
+            // Calculate Mic Volume (RMS)
+            const pcmData = new Int16Array(pcmBuffer);
+            let sum = 0;
+            for (let i = 0; i < pcmData.length; i++) {
+              sum += pcmData[i] * pcmData[i];
+            }
+            const rms = Math.sqrt(sum / pcmData.length);
+            // Normalize (16-bit max is 32768)
+            // Multiply by a factor to make it more sensitive visually
+            const rawVolume = Math.min(1, (rms / 32768) * 5);
+            
+            setMicVolume((prev) => {
+                const smoothingFactor = 0.3; 
+                return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+            });
+    
+            if (
+              ws.current?.readyState === WebSocket.OPEN &&
+              kiraStateRef.current === "listening" &&
+              isServerReady.current
+            ) {
+              ws.current.send(pcmBuffer);
+    
+              // VAD & EOU Logic
+              const VAD_THRESHOLD = 1500; 
+              const isSpeakingFrame = rms > VAD_THRESHOLD;
+    
+              if (isSpeakingFrame) {
+                speechFrameCount.current++;
+              } else {
+                speechFrameCount.current = 0;
+              }
+    
+              const isSpeaking = speechFrameCount.current > 3;
+    
+              if (isSpeaking) {
+                if (eouTimer.current) {
+                  clearTimeout(eouTimer.current);
+                  eouTimer.current = null;
+                }
+    
+                const currentState = kiraStateRef.current as KiraState;
+                const isAudioPlaying = scheduledSources.current.length > 0 || audioQueue.current.length > 0;
+    
+                if (currentState === "speaking" || currentState === "thinking" || isAudioPlaying) {
+                   stopAudioPlayback();
+                   setKiraState("listening");
+                   kiraStateRef.current = "listening"; 
+                   ws.current.send(JSON.stringify({ type: "interrupt" }));
+                }
+    
+                if (!maxUtteranceTimer.current) {
+                  maxUtteranceTimer.current = setTimeout(() => {
+                    console.log("[EOU] Max utterance length reached. Forcing EOU.");
+                    if (ws.current?.readyState === WebSocket.OPEN) {
+                      ws.current.send(JSON.stringify({ type: "eou" }));
+                    }
+                    if (eouTimer.current) clearTimeout(eouTimer.current);
+                    eouTimer.current = null;
+                    maxUtteranceTimer.current = null;
+                  }, 60000); 
+                }
+              } else {
+                if (!eouTimer.current) {
+                  eouTimer.current = setTimeout(() => {
+                    console.log("[EOU] Silence detected, sending End of Utterance.");
+                    if (ws.current?.readyState === WebSocket.OPEN) {
+                      ws.current.send(JSON.stringify({ type: "eou" }));
+                    }
+                    eouTimer.current = null;
+                    if (maxUtteranceTimer.current) {
+                      clearTimeout(maxUtteranceTimer.current);
+                      maxUtteranceTimer.current = null;
+                    }
+                  }, EOU_TIMEOUT);
+                }
+              }
+            }
+          };
+      }
+
+      // 4. Connect the Mic to the Worklet (if not already)
+      if (audioSource.current) audioSource.current.disconnect();
       
-      audioWorkletNode.current.onprocessorerror = (err) => {
-        console.error("[Audio] Worklet processor error:", err);
-      };
-
-      // 4. Connect the Mic to the Worklet
       console.log("[Audio] Connecting mic to worklet...");
-      audioSource.current = audioContext.current.createMediaStreamSource(
-        audioStream.current
-      );
-      audioSource.current.connect(audioWorkletNode.current);
+      if (audioStream.current) {
+        audioSource.current = audioContext.current.createMediaStreamSource(
+          audioStream.current
+        );
+        audioSource.current.connect(audioWorkletNode.current);
+      } else {
+        console.error("[Audio] No audio stream available to connect.");
+      }
 
-      // WORKAROUND: Connect worklet to a silent destination to force the graph to run
-      // (Chrome sometimes suspends nodes that aren't connected to destination)
+      // WORKAROUND: Connect worklet to a silent destination
       const silentGain = audioContext.current.createGain();
       silentGain.gain.value = 0;
       audioWorkletNode.current.connect(silentGain);
       silentGain.connect(audioContext.current.destination);
-
-      // 5. Connect the Worklet to the main app (this hook)
-      audioWorkletNode.current.port.onmessage = (event) => {
-        // Handle Debug Messages from Worklet
-        if (event.data && event.data.type === "debug") {
-           console.log("[AudioWorklet]", event.data.message);
-           return;
-        }
-
-        // We received a 16-bit PCM buffer from the worklet
-        const pcmBuffer = event.data as ArrayBuffer;
-
-        // Calculate Mic Volume (RMS)
-        const pcmData = new Int16Array(pcmBuffer);
-        let sum = 0;
-        for (let i = 0; i < pcmData.length; i++) {
-          sum += pcmData[i] * pcmData[i];
-        }
-        const rms = Math.sqrt(sum / pcmData.length);
-        // Normalize (16-bit max is 32768)
-        // Multiply by a factor to make it more sensitive visually
-        const rawVolume = Math.min(1, (rms / 32768) * 5);
-        
-        // Smooth the volume (Linear Interpolation)
-        // We use a ref to track the previous smoothed volume since state updates are async
-        // But here we are inside an event handler, so we can just use the state setter with a callback
-        // actually, using a ref for the "current displayed volume" is better for the loop, 
-        // but here we are setting state for the UI.
-        // Let's just smooth it against the previous state.
-        setMicVolume((prev) => {
-            const smoothingFactor = 0.3; // 0.0 = no change, 1.0 = instant
-            return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
-        });
-
-        // Debug log to verify mic input
-        if (Math.random() < 0.05) { // Log ~5% of frames to avoid spam
-           console.log(`[Audio] Mic RMS: ${rms.toFixed(2)}, Vol: ${rawVolume.toFixed(2)}`);
-        }
-
-        if (
-          ws.current?.readyState === WebSocket.OPEN &&
-          kiraStateRef.current === "listening" &&
-          isServerReady.current
-        ) {
-          ws.current.send(pcmBuffer);
-
-          // VAD & EOU Logic
-          // We only reset the EOU timer if the user is actually speaking (RMS > threshold).
-          // Otherwise, we let the timer run (or start it if not running).
-          const VAD_THRESHOLD = 1500; // Lowered from 2000 to be more responsive to interruptions
-          const isSpeakingFrame = rms > VAD_THRESHOLD;
-
-          if (isSpeakingFrame) {
-            speechFrameCount.current++;
-          } else {
-            speechFrameCount.current = 0;
-          }
-
-          // Only consider it "speaking" if we have 3 consecutive frames above threshold
-          // This prevents short clicks/pops from triggering interruption
-          const isSpeaking = speechFrameCount.current > 3;
-
-          if (isSpeaking) {
-            // User is speaking: Cancel any pending EOU
-            if (eouTimer.current) {
-              clearTimeout(eouTimer.current);
-              eouTimer.current = null;
-            }
-
-            // Interruption: If AI is speaking or thinking, stop it and notify server.
-            const currentState = kiraStateRef.current as KiraState;
-            // Also check if we are currently playing audio (even if state says listening)
-            const isAudioPlaying = scheduledSources.current.length > 0 || audioQueue.current.length > 0;
-
-            if (currentState === "speaking" || currentState === "thinking" || isAudioPlaying) {
-               stopAudioPlayback();
-               // Force local state to listening immediately to prevent processing "zombie" audio packets
-               setKiraState("listening");
-               kiraStateRef.current = "listening"; // Update ref immediately to avoid race conditions
-               
-               // Send interrupt signal. The server will reset state to 'listening'.
-               // We check state to avoid spamming this message every frame.
-               ws.current.send(JSON.stringify({ type: "interrupt" }));
-            }
-
-            // Start Max Utterance Timer if not running
-            if (!maxUtteranceTimer.current) {
-              maxUtteranceTimer.current = setTimeout(() => {
-                console.log("[EOU] Max utterance length reached. Forcing EOU.");
-                if (ws.current?.readyState === WebSocket.OPEN) {
-                  ws.current.send(JSON.stringify({ type: "eou" }));
-                }
-                // Reset timers
-                if (eouTimer.current) clearTimeout(eouTimer.current);
-                eouTimer.current = null;
-                maxUtteranceTimer.current = null;
-              }, 60000); // 60 seconds limit (Ramble Mode)
-            }
-          } else {
-            // User is silent: Start EOU timer if not already running
-            if (!eouTimer.current) {
-              eouTimer.current = setTimeout(() => {
-                console.log("[EOU] Silence detected, sending End of Utterance.");
-                if (ws.current?.readyState === WebSocket.OPEN) {
-                  ws.current.send(JSON.stringify({ type: "eou" }));
-                }
-                // We don't clear eouTimer.current here immediately to prevent rapid re-firing
-                // But actually, we want to allow re-firing if they speak again.
-                // For now, let's just clear it so it can restart if silence continues (server handles spam)
-                eouTimer.current = null;
-
-                // Also clear max utterance timer since we finished naturally
-                if (maxUtteranceTimer.current) {
-                  clearTimeout(maxUtteranceTimer.current);
-                  maxUtteranceTimer.current = null;
-                }
-              }, EOU_TIMEOUT);
-            }
-          }
-        }
-      };
 
       console.log("[Audio] ✅ Audio pipeline started.");
     } catch (err) {
       console.error("[Audio] ❌ Failed to start audio pipeline:", err);
       setError("Microphone access denied or failed. Please check permissions.");
     }
-  }, [stopAudioPlayback]);
+  }, [stopAudioPlayback, initializeAudio]);
 
   /**
    * Explicitly start the conversation: send start_stream and start mic pipeline.
@@ -454,19 +466,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
    * Call this from a user gesture (click/tap) if audio is blocked.
    */
   const resumeAudio = useCallback(async () => {
-    try {
-      if (audioContext.current && audioContext.current.state === "suspended") {
-        await audioContext.current.resume();
-      }
-      if (playbackContext.current && playbackContext.current.state === "suspended") {
-        await playbackContext.current.resume();
-      }
-      setIsAudioBlocked(false);
-      console.log("[Audio] Audio contexts resumed by user.");
-    } catch (e) {
-      console.error("[Audio] Failed to resume audio:", e);
-    }
-  }, []);
+    await initializeAudio();
+  }, [initializeAudio]);
 
   /**
    * Main connection logic
@@ -474,36 +475,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const connect = useCallback(async () => {
     if (ws.current) return;
 
-    // Mobile Safari Audio Unlock:
-    // Create and resume contexts inside this user-gesture (click) event.
-    try {
-      if (!audioContext.current || audioContext.current.state === "closed") {
-        audioContext.current = new AudioContext();
-      }
-      if (audioContext.current.state === "suspended") {
-        // Try to resume immediately (might fail if no gesture)
-        await audioContext.current.resume().catch(() => {});
-      }
-
-      if (
-        !playbackContext.current ||
-        playbackContext.current.state === "closed"
-      ) {
-        playbackContext.current = new AudioContext({ sampleRate: 16000 });
-      }
-      if (playbackContext.current.state === "suspended") {
-        await playbackContext.current.resume().catch(() => {});
-      }
-
-      // Check if we are still suspended (likely on mobile)
-      if (audioContext.current.state === "suspended" || playbackContext.current.state === "suspended") {
-          console.warn("[Audio] AudioContext is suspended. Waiting for user gesture.");
-          setIsAudioBlocked(true);
-      }
-
-    } catch (err) {
-      console.error("[Audio] Failed to unlock audio contexts:", err);
-    }
+    // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
+    await initializeAudio();
 
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = token ? `token=${token}` : `guestId=${guestId}`;

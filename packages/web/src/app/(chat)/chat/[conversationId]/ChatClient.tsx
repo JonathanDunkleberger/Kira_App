@@ -16,6 +16,7 @@ export default function ChatClient() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Create a stable guest ID if the user is not logged in
   const [guestId] = useState(() => {
@@ -43,14 +44,32 @@ export default function ChatClient() {
     }
   }, [getToken, userId]);
 
-  // 2. Auto-connect when ready
+  // 2. Detect Mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = typeof window.navigator === "undefined" ? "" : navigator.userAgent;
+      const mobile = Boolean(
+        userAgent.match(
+          /Android|BlackBerry|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i
+        )
+      );
+      setIsMobile(mobile);
+    };
+    checkMobile();
+  }, []);
+
+  // 3. Auto-connect when ready (Desktop Only)
   useEffect(() => {
     // Only connect if we have a valid identity (guestId or user token)
     if (guestId || (userId && token)) {
-      console.log("[ChatClient] Auto-connecting to Kira...");
-      connect();
+      if (!isMobile) {
+        console.log("[ChatClient] Auto-connecting to Kira (Desktop)...");
+        connect();
+      } else {
+        console.log("[ChatClient] Mobile detected. Waiting for user gesture.");
+      }
     }
-  }, [guestId, userId, token, connect]);
+  }, [guestId, userId, token, connect, isMobile]);
 
   // Disconnect only on unmount
   useEffect(() => {
@@ -109,6 +128,38 @@ export default function ChatClient() {
         <div className="p-12 bg-kira-green rounded-lg text-xl font-medium text-gray-800 animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
           Connecting to Kira...
         </div>
+      </div>
+    );
+  }
+
+  // Mobile Start Screen (Initial State)
+  if (isMobile && socketState === "idle") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
+        <button
+          onClick={() => connect()}
+          className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+        >
+          <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-[2.5rem] animate-pulse" />
+          
+          <div className="relative z-10 w-24 h-24 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </div>
+          
+          <div className="relative z-10 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg mb-2">
+              Ready to talk?
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400">
+              Tap to start conversation
+            </p>
+          </div>
+        </button>
       </div>
     );
   }

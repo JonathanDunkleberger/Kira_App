@@ -42,6 +42,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   let dailyUsageSeconds = 0;
   const FREE_LIMIT_SECONDS = 15 * 60; // 15 minutes
   const PRO_LIMIT_SECONDS = 4 * 60 * 60; // 4 hours
+  let limit = FREE_LIMIT_SECONDS;
 
   // Usage Tracking Timer
   let usageInterval: NodeJS.Timeout | null = null;
@@ -219,6 +220,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
             ttsStreamer = null;
+
+            if (dailyUsageSeconds >= limit) {
+                 console.log("[Usage] Limit reached after response. Closing.");
+                 ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+                 ws.close(1008, "Daily limit reached");
+                 return;
+            }
+
             await startSTT();
           });
           ttsStreamer.on("error", async (err: Error) => {
@@ -357,7 +366,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }
 
       // 5. Check Limits
-      const limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
+      limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
       console.log(`[Usage] User: ${userId} | Pro: ${isPro} | Usage: ${dailyUsageSeconds}/${limit}`);
 
       if (dailyUsageSeconds >= limit) {
@@ -377,6 +386,11 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
              });
              
              if (dailyUsageSeconds >= limit) {
+                 if (state === "speaking" || state === "thinking") {
+                     console.log("[Usage] Limit reached, waiting for response to complete...");
+                     return;
+                 }
+                 console.log("[Usage] Limit reached. Closing connection.");
                  ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
                  ws.close(1008, "Daily limit reached");
              }

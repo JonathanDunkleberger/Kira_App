@@ -548,7 +548,16 @@ export const useKiraSocket = (token: string, guestId: string) => {
     ws.current.onclose = (event) => {
       console.log(`[WS] 🔌 Connection closed: ${event.code} - ${event.reason}`);
       setSocketState("closed");
-      setError(`Connection closed (Code: ${event.code})`);
+      
+      if (event.code === 1008) {
+        setError("limit_reached");
+      } else {
+        setError((prev) => {
+            if (prev === "limit_reached") return prev;
+            return `Connection closed (Code: ${event.code})`;
+        });
+      }
+
       stopAudioPipeline();
       ws.current = null;
     };

@@ -100,6 +100,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   let ttsStreamer: AzureTTSStreamer | null = null;
   let currentTurnTranscript = "";
   let latestInterimTranscript = "";
+  let pendingImage: string | null = null; // Store the latest image received in this turn
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -167,9 +168,12 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }
 
       if (controlMessage) {
-        console.log(`[WS] Received control message: ${JSON.stringify(controlMessage)}`);
+        console.log(`[WS] Received control message: ${JSON.stringify(controlMessage).substring(0, 200)}...`);
 
-        if (controlMessage.type === "interrupt") {
+        if (controlMessage.type === "image") {
+            console.log("[WS] 📷 Received image snapshot.");
+            pendingImage = controlMessage.image;
+        } else if (controlMessage.type === "interrupt") {
           console.log("[WS] 🛑 Interruption signal received.");
           if (ttsStreamer) {
             console.log("[WS] Stopping active TTS streamer...");
@@ -221,7 +225,21 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
           ws.send(JSON.stringify({ type: "state_thinking" }));
-          chatHistory.push({ role: "user", content: userMessage });
+          
+          // Construct message with or without image
+          if (pendingImage) {
+              console.log("[LLM] Attaching image to user message.");
+              chatHistory.push({
+                  role: "user",
+                  content: [
+                      { type: "text", text: userMessage },
+                      { type: "image_url", image_url: { url: pendingImage } }
+                  ]
+              });
+              pendingImage = null; // Clear after using
+          } else {
+              chatHistory.push({ role: "user", content: userMessage });
+          }
 
           let llmResponse = "I'm not sure what to say.";
           try {

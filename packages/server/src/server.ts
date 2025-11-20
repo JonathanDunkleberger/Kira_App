@@ -12,6 +12,7 @@ import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY!;
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
@@ -24,8 +25,30 @@ console.log("[Server] Starting...");
 console.log("[Config] PORT:", PORT);
 console.log("[Config] CLERK_SECRET_KEY:", CLERK_SECRET_KEY ? "Set" : "Missing");
 console.log("[Config] OPENAI_API_KEY:", OPENAI_API_KEY ? "Set" : "Missing");
+console.log("[Config] STRIPE_SECRET_KEY:", STRIPE_SECRET_KEY ? "Set" : "Missing");
 console.log("[Config] DEEPGRAM_API_KEY:", process.env.DEEPGRAM_API_KEY ? "Set" : "Missing");
 console.log("[Config] AZURE_SPEECH_KEY:", process.env.AZURE_SPEECH_KEY ? "Set" : "Missing");
+
+// --- HELPER: Check Stripe Subscription Directly ---
+const checkStripeSubscription = async (customerId: string): Promise<boolean> => {
+  if (!STRIPE_SECRET_KEY) return false;
+  try {
+    const response = await fetch(
+      `https://api.stripe.com/v1/subscriptions?customer=${customerId}&status=active&limit=1`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+        },
+      }
+    );
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.data && data.data.length > 0;
+  } catch (e) {
+    console.error("[Stripe] Failed to check subscription:", e);
+    return false;
+  }
+};
 
 wss.on("connection", async (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
@@ -363,6 +386,24 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       // 4. Check Pro Status
       if (user.stripeSubscriptionId && user.stripeCurrentPeriodEnd && user.stripeCurrentPeriodEnd > new Date()) {
           isPro = true;
+      } else if (user.stripeCustomerId) {
+          // Fallback: Check Stripe directly if DB says not pro but we have a customer ID
+          // This handles cases where webhook failed or is delayed (common in dev)
+          console.log(`[Auth] Checking Stripe API for customer ${user.stripeCustomerId}...`);
+          const hasActiveSubscription = await checkStripeSubscription(user.stripeCustomerId);
+          if (hasActiveSubscription) {
+              console.log("[Auth] Stripe API confirmed active subscription. Updating DB...");
+              isPro = true;
+              // Self-heal the DB
+              // Note: We don't have the sub ID here easily without more parsing, but we can at least set a future date
+              // to avoid hitting API every time.
+              await prisma.user.update({
+                  where: { id: user.id },
+                  data: { 
+                      stripeCurrentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000) // Set to 24h from now as a temporary fix
+                  }
+              });
+          }
       }
 
       // 5. Check Limits

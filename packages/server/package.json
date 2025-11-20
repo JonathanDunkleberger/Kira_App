@@ -14,6 +14,7 @@
     "@prisma/client": "5.22.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.38.0",
     "openai": "^4.52.7",
+    "stripe": "^16.2.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

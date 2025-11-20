@@ -21,6 +21,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
 
@@ -449,6 +450,25 @@ export const useKiraSocket = (token: string, guestId: string) => {
   }, [startAudioPipeline]);
 
   /**
+   * Explicitly resume audio contexts.
+   * Call this from a user gesture (click/tap) if audio is blocked.
+   */
+  const resumeAudio = useCallback(async () => {
+    try {
+      if (audioContext.current && audioContext.current.state === "suspended") {
+        await audioContext.current.resume();
+      }
+      if (playbackContext.current && playbackContext.current.state === "suspended") {
+        await playbackContext.current.resume();
+      }
+      setIsAudioBlocked(false);
+      console.log("[Audio] Audio contexts resumed by user.");
+    } catch (e) {
+      console.error("[Audio] Failed to resume audio:", e);
+    }
+  }, []);
+
+  /**
    * Main connection logic
    */
   const connect = useCallback(async () => {
@@ -461,7 +481,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
         audioContext.current = new AudioContext();
       }
       if (audioContext.current.state === "suspended") {
-        await audioContext.current.resume();
+        // Try to resume immediately (might fail if no gesture)
+        await audioContext.current.resume().catch(() => {});
       }
 
       if (
@@ -471,8 +492,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
         playbackContext.current = new AudioContext({ sampleRate: 16000 });
       }
       if (playbackContext.current.state === "suspended") {
-        await playbackContext.current.resume();
+        await playbackContext.current.resume().catch(() => {});
       }
+
+      // Check if we are still suspended (likely on mobile)
+      if (audioContext.current.state === "suspended" || playbackContext.current.state === "suspended") {
+          console.warn("[Audio] AudioContext is suspended. Waiting for user gesture.");
+          setIsAudioBlocked(true);
+      }
+
     } catch (err) {
       console.error("[Audio] Failed to unlock audio contexts:", err);
     }
@@ -622,5 +650,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     playerVolume,
     transcript,
     error,
+    isAudioBlocked,
+    resumeAudio
   };
 };

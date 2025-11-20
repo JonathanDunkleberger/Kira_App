@@ -30,7 +30,7 @@ export default function ChatClient() {
     return "";
   });
 
-  const { connect, disconnect, socketState, kiraState, micVolume, playerVolume, transcript, error } = useKiraSocket(
+  const { connect, disconnect, socketState, kiraState, micVolume, playerVolume, transcript, error, isAudioBlocked, resumeAudio } = useKiraSocket(
     token || "",
     guestId
   );
@@ -319,6 +319,29 @@ export default function ChatClient() {
               </Link>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Mobile Audio Unlock Overlay */}
+      {isAudioBlocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <button
+            onClick={resumeAudio}
+            className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+          >
+            <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-3xl animate-pulse" />
+            <div className="relative z-10 w-20 h-20 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </div>
+            <span className="relative z-10 text-lg font-semibold text-gray-900 dark:text-tokyo-fg">
+              Tap to Start
+            </span>
+          </button>
         </div>
       )}
     </div>

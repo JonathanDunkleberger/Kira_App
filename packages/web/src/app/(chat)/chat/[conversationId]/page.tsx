@@ -1,8 +1,8 @@
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 
 export const dynamic = 'force-dynamic';
 
-const DynamicChatClient = dynamic(() => import("./ChatClient"), {
+const DynamicChatClient = nextDynamic(() => import("./ChatClient"), {
   ssr: false,
 });
 

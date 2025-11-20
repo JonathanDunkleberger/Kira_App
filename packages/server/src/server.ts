@@ -291,6 +291,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
   const initializeSession = async () => {
     try {
+      // 1. Resolve User ID
       if (token) {
         const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
         if (!payload?.sub) {
@@ -298,79 +299,91 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         }
         userId = payload.sub;
         console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-
-        // --- DB SYNC & FETCH ---
-        let user = await prisma.user.findUnique({ where: { clerkId: userId } });
-        
-        if (!user) {
-            const clerkUser = await clerkClient.users.getUser(userId);
-            const email = clerkUser.emailAddresses[0]?.emailAddress;
-            const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim();
-            
-            user = await prisma.user.create({
-                data: {
-                    clerkId: userId,
-                    email: email || `no-email-${userId}@example.com`,
-                    name: name || "User",
-                }
-            });
-        }
-
-        userDbId = user.id;
-        userName = user.name;
-        userMemory = user.memory;
-        dailyUsageSeconds = user.dailyUsageSeconds;
-        
-        // Check if usage needs reset (new day)
-        const lastUsage = new Date(user.lastUsageDate);
-        const now = new Date();
-        if (lastUsage.getDate() !== now.getDate() || lastUsage.getMonth() !== now.getMonth() || lastUsage.getFullYear() !== now.getFullYear()) {
-            console.log("[Usage] New day detected. Resetting usage.");
-            dailyUsageSeconds = 0;
-            await prisma.user.update({
-                where: { id: user.id },
-                data: { dailyUsageSeconds: 0, lastUsageDate: now }
-            });
-        }
-
-        // Check Pro Status
-        if (user.stripeSubscriptionId && user.stripeCurrentPeriodEnd && user.stripeCurrentPeriodEnd > new Date()) {
-            isPro = true;
-        }
-
-        // Check Limits
-        const limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
-        if (dailyUsageSeconds >= limit) {
-            console.log(`[Usage] Limit reached: ${dailyUsageSeconds}/${limit}`);
-            ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
-            ws.close(1008, "Daily limit reached");
-            return;
-        }
-
-        // Start Usage Tracking
-        usageInterval = setInterval(async () => {
-            dailyUsageSeconds += 10;
-            try {
-               await prisma.user.update({
-                   where: { id: user!.id },
-                   data: { dailyUsageSeconds: dailyUsageSeconds, lastUsageDate: new Date() }
-               });
-               
-               if (dailyUsageSeconds >= limit) {
-                   ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
-                   ws.close(1008, "Daily limit reached");
-               }
-            } catch (e) {
-                console.error("[Usage] Failed to update usage:", e);
-            }
-        }, 10000);
-
       } else if (guestId) {
         userId = `guest_${guestId}`;
-        console.log(`[Auth] - Guest user: ${userId}`);
+        console.log(`[Auth] 👤 Guest user: ${userId}`);
       } else {
         throw new Error("No auth provided.");
       }
+
+      // 2. DB Sync & Fetch (Unified for both Auth and Guest)
+      let user = await prisma.user.findUnique({ where: { clerkId: userId } });
+      
+      if (!user) {
+          let email = `guest-${userId}@example.com`;
+          let name = "Guest";
+
+          // Only fetch Clerk details if it's a real user
+          if (!userId.startsWith("guest_")) {
+              try {
+                  const clerkUser = await clerkClient.users.getUser(userId);
+                  email = clerkUser.emailAddresses[0]?.emailAddress || email;
+                  name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || name;
+              } catch (e) {
+                  console.warn("[Auth] Failed to fetch Clerk user details:", e);
+              }
+          }
+          
+          // Create user (works for both Guest and Auth)
+          user = await prisma.user.create({
+              data: {
+                  clerkId: userId,
+                  email: email,
+                  name: name,
+              }
+          });
+      }
+
+      userDbId = user.id;
+      userName = user.name;
+      userMemory = user.memory;
+      dailyUsageSeconds = user.dailyUsageSeconds;
+      
+      // 3. Check if usage needs reset (new day)
+      const lastUsage = new Date(user.lastUsageDate);
+      const now = new Date();
+      if (lastUsage.getDate() !== now.getDate() || lastUsage.getMonth() !== now.getMonth() || lastUsage.getFullYear() !== now.getFullYear()) {
+          console.log("[Usage] New day detected. Resetting usage.");
+          dailyUsageSeconds = 0;
+          await prisma.user.update({
+              where: { id: user.id },
+              data: { dailyUsageSeconds: 0, lastUsageDate: now }
+          });
+      }
+
+      // 4. Check Pro Status
+      if (user.stripeSubscriptionId && user.stripeCurrentPeriodEnd && user.stripeCurrentPeriodEnd > new Date()) {
+          isPro = true;
+      }
+
+      // 5. Check Limits
+      const limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
+      console.log(`[Usage] User: ${userId} | Pro: ${isPro} | Usage: ${dailyUsageSeconds}/${limit}`);
+
+      if (dailyUsageSeconds >= limit) {
+          console.log(`[Usage] Limit reached: ${dailyUsageSeconds}/${limit}`);
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+          ws.close(1008, "Daily limit reached");
+          return;
+      }
+
+      // 6. Start Usage Tracking
+      usageInterval = setInterval(async () => {
+          dailyUsageSeconds += 10;
+          try {
+             await prisma.user.update({
+                 where: { id: user!.id },
+                 data: { dailyUsageSeconds: dailyUsageSeconds, lastUsageDate: new Date() }
+             });
+             
+             if (dailyUsageSeconds >= limit) {
+                 ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+                 ws.close(1008, "Daily limit reached");
+             }
+          } catch (e) {
+              console.error("[Usage] Failed to update usage:", e);
+          }
+      }, 10000);
       
       // --- MEMORY INJECTION ---
       if (userName) {

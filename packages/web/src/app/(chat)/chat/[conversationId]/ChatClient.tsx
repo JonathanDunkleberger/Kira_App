@@ -247,7 +247,7 @@ export default function ChatClient() {
       
       {/* Transcript Container - Scrollable Box */}
       <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center">
-          <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent text-center flex flex-col items-center justify-start pt-2">
+          <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-discreet text-center flex flex-col items-center justify-start pt-2">
             {transcript ? (
               <div
                 className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${

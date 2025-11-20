@@ -7,3 +7,32 @@
     --background: 251 100% 99%;
   }
 }
+
+@layer utilities {
+  .scrollbar-discreet::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-discreet::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-discreet::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.3); /* gray-400 with opacity */
+    border-radius: 20px;
+  }
+
+  .scrollbar-discreet::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.5);
+  }
+
+  /* Dark mode */
+  .dark .scrollbar-discreet::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.2);
+  }
+
+  .dark .scrollbar-discreet::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(156, 163, 175, 0.4);
+  }
+}

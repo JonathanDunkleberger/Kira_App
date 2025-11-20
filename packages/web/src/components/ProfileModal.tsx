@@ -15,6 +15,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const { signOut, openSignIn } = useClerk();
   const router = useRouter();
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     // Check local storage or system preference
@@ -101,6 +103,29 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     } catch (error) {
       console.error("Subscription error:", error);
       alert("An error occurred. Please try again.");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    try {
+      setIsDeleting(true);
+      const res = await fetch("/api/user/delete", {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete account");
+      }
+
+      // Sign out and redirect
+      await signOut();
+      router.push("/");
+      onClose();
+    } catch (error) {
+      console.error("Delete account error:", error);
+      alert("Failed to delete account. Please try again.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -199,16 +224,41 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 </button>
 
                 {/* Delete Account */}
-                <button
-                  className="w-full flex items-center justify-between p-4 bg-transparent rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg text-gray-400 group-hover:text-red-500 transition-colors">
-                      <Trash2 size={20} />
+                {!showDeleteConfirm ? (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="w-full flex items-center justify-between p-4 bg-transparent rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg text-gray-400 group-hover:text-red-500 transition-colors">
+                        <Trash2 size={20} />
+                      </div>
+                      <span className="font-medium text-gray-400 group-hover:text-red-500">Delete Account</span>
                     </div>
-                    <span className="font-medium text-gray-400 group-hover:text-red-500">Delete Account</span>
+                  </button>
+                ) : (
+                  <div className="w-full p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2">
+                    <p className="text-sm text-red-600 dark:text-red-400 mb-3 font-medium">
+                      Are you sure? This action cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={isDeleting}
+                        className="flex-1 py-2 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDeleting ? "Deleting..." : "Yes, Delete"}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        disabled={isDeleting}
+                        className="flex-1 py-2 px-3 bg-white dark:bg-transparent border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                </button>
+                )}
               </>
             ) : (
               /* Sign In */

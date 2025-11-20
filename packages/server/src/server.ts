@@ -1,5 +1,5 @@
 import { WebSocketServer } from "ws";
-import type { IncomingMessage } from "http";
+import type { IncomingMessage, ServerResponse } from "http";
 import { createServer } from "http";
 import { URL } from "url";
 import { PrismaClient } from "@prisma/client";
@@ -18,7 +18,16 @@ const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const server = createServer();
+const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  // Health check endpoint for Render
+  if (req.url === "/healthz" || req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
 const wss = new WebSocketServer({ server });
 
 console.log("[Server] Starting...");
@@ -105,7 +114,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     {
       role: "system",
       content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, engaging, and conversational. Feel free to elaborate on your thoughts, but keep it natural. You never interrupt.",
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, engaging, and conversational. Feel free to elaborate on your thoughts, but keep it natural. You never interrupt. You have vision capabilities: if the user shares their screen or camera, you will receive images. Use these images to understand the user's context, answer questions about what is on screen, or comment on what you see.",
     },
   ];
 

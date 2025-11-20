@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 
 export default function ChatClient() {
@@ -30,7 +30,23 @@ export default function ChatClient() {
     return "";
   });
 
-  const { connect, disconnect, socketState, kiraState, micVolume, playerVolume, transcript, error, isAudioBlocked, resumeAudio } = useKiraSocket(
+  const { 
+    connect, 
+    disconnect, 
+    socketState, 
+    kiraState, 
+    micVolume, 
+    playerVolume, 
+    transcript, 
+    error, 
+    isAudioBlocked, 
+    resumeAudio,
+    isMuted,
+    toggleMute,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare
+  } = useKiraSocket(
     token || "",
     guestId
   );
@@ -267,12 +283,37 @@ export default function ChatClient() {
 
       {/* Footer Controls */}
       <div className="flex items-center gap-6 p-8">
+        {/* Vision Button */}
+        <button
+          onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
+            isScreenSharing 
+              ? "bg-white text-black hover:bg-gray-200" 
+              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
+          }`}
+        >
+          {isScreenSharing ? <Eye size={24} /> : <EyeOff size={24} />}
+        </button>
+
+        {/* Mute Button */}
+        <button
+          onClick={toggleMute}
+          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
+            isMuted 
+              ? "bg-white text-black hover:bg-gray-200" 
+              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
+          }`}
+        >
+          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+        </button>
+
+        {/* End Call Button */}
         <button
           onClick={handleEndCall}
-          className="flex flex-col items-center justify-center w-20 h-20 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+          className="flex flex-col items-center justify-center w-16 h-16 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+          title="End Call"
         >
-          <PhoneOff size={28} />
-          <span className="text-sm mt-1">End call</span>
+          <PhoneOff size={24} />
         </button>
       </div>
 

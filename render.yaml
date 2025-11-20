@@ -2,11 +2,11 @@ services:
   - type: web
     name: kira-voice-ws
     env: node
-    rootDir: packages/socket-server
+    rootDir: .
     plan: starter
     region: oregon
-    buildCommand: pnpm install --frozen-lockfile && pnpm build
-    startCommand: node --enable-source-maps dist/socket-server.mjs
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter server build
+    startCommand: pnpm --filter server start
     envVars:
       - key: NODE_VERSION
         value: "20.x"

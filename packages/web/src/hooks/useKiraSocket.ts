@@ -22,6 +22,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
 
@@ -30,6 +32,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const audioWorkletNode = useRef<AudioWorkletNode | null>(null);
   const audioSource = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioStream = useRef<MediaStream | null>(null);
+
+  // --- Screen Share Refs ---
+  const screenStream = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
@@ -210,6 +217,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     audioWorkletNode.current?.port.close();
     audioSource.current?.disconnect();
     audioStream.current?.getTracks().forEach((track) => track.stop());
+    screenStream.current?.getTracks().forEach((track) => track.stop()); // Stop screen share
     audioContext.current?.close().catch(console.error);
     playbackContext.current?.close().catch(console.error);
 
@@ -268,6 +276,108 @@ export const useKiraSocket = (token: string, guestId: string) => {
       setIsAudioBlocked(true);
       return false;
     }
+  }, []);
+
+  /**
+   * Toggles microphone mute state
+   */
+  const toggleMute = useCallback(() => {
+    if (audioStream.current) {
+      const audioTracks = audioStream.current.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsMuted(prev => !prev);
+    }
+  }, []);
+
+  /**
+   * Starts screen sharing
+   */
+  const startScreenShare = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 10 } // Low framerate is fine for snapshots
+        },
+        audio: false
+      });
+
+      screenStream.current = stream;
+      setIsScreenSharing(true);
+
+      // Setup hidden video element for capturing frames
+      if (!videoRef.current) {
+        videoRef.current = document.createElement("video");
+        videoRef.current.autoplay = true;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+      }
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+
+      // Handle user stopping share via browser UI
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+
+      console.log("[Vision] Screen share started");
+      
+      // Send an initial snapshot immediately to establish context
+      setTimeout(() => {
+          const snapshot = captureScreenSnapshot();
+          if (snapshot && ws.current?.readyState === WebSocket.OPEN) {
+              console.log("[Vision] Sending initial snapshot...");
+              ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+          }
+      }, 1000);
+
+    } catch (err) {
+      console.error("[Vision] Failed to start screen share:", err);
+      setIsScreenSharing(false);
+    }
+  }, []);
+
+  /**
+   * Stops screen sharing
+   */
+  const stopScreenShare = useCallback(() => {
+    if (screenStream.current) {
+      screenStream.current.getTracks().forEach(track => track.stop());
+      screenStream.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsScreenSharing(false);
+    console.log("[Vision] Screen share stopped");
+  }, []);
+
+  const captureScreenSnapshot = useCallback(() => {
+    if (!videoRef.current || !screenStream.current) return null;
+
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    // Set canvas dimensions to match video
+    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Get base64 string (JPEG for smaller size)
+    return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
   /**
@@ -366,6 +476,16 @@ export const useKiraSocket = (token: string, guestId: string) => {
               const isSpeaking = speechFrameCount.current > 3;
     
               if (isSpeaking) {
+                // --- VISION: Snapshot-on-Speech ---
+                // If this is the START of speech (transition from silence), capture a frame
+                if (speechFrameCount.current === 4 && isScreenSharing) {
+                    const snapshot = captureScreenSnapshot();
+                    if (snapshot) {
+                        console.log("[Vision] Sending snapshot on speech start...");
+                        ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+                    }
+                }
+
                 if (eouTimer.current) {
                   clearTimeout(eouTimer.current);
                   eouTimer.current = null;
@@ -633,6 +753,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
     transcript,
     error,
     isAudioBlocked,
-    resumeAudio
+    resumeAudio,
+    isMuted,
+    toggleMute,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare
   };
 };

@@ -34,7 +34,7 @@ export default function ChatClient() {
     token || "",
     guestId
   );
-  const [hasStarted, setHasStarted] = useState(false);
+  // Removed hasStarted state to allow auto-start
 
   // 1. Get Clerk auth token
   useEffect(() => {
@@ -43,25 +43,22 @@ export default function ChatClient() {
     }
   }, [getToken, userId]);
 
-  // REMOVED: Automatic connection
-  // We now wait for user interaction to start the session
+  // 2. Auto-connect when ready
+  useEffect(() => {
+    // Only connect if we have a valid identity (guestId or user token)
+    // and we are not already connected/connecting (handled by hook check, but good to be explicit if possible)
+    if (guestId || (userId && token)) {
+      connect();
+    }
+  }, [guestId, userId, token, connect]);
 
   // Disconnect only on unmount
   useEffect(() => {
     return () => {
-      if (hasStarted) {
-        disconnect();
-      }
+      disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasStarted]);
-
-  const handleStart = () => {
-    if (guestId || (userId && token)) {
-      connect();
-      setHasStarted(true);
-    }
-  };
+  }, []);
 
   // --- UI Logic ---
   // The orb is now a fluid, living object that always moves slightly.
@@ -105,47 +102,6 @@ export default function ChatClient() {
   const handleContinue = () => {
     router.push("/");
   };
-
-  if (!hasStarted) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
-        <div className="flex flex-col items-center gap-8 max-w-sm text-center">
-          <div className="w-48 h-48 rounded-full bg-kira-orb shadow-orb opacity-50 dark:bg-tokyo-accent/20 dark:shadow-none dark:border dark:border-tokyo-accent/30" />
-          <h1 className="text-2xl font-medium">Ready to talk?</h1>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Status: <span className={`font-medium ${socketState === 'connected' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>{socketState}</span>
-          </div>
-          <button
-            onClick={handleStart}
-            className="flex items-center justify-center gap-3 px-8 py-4 bg-kira-green rounded-full text-xl font-medium text-gray-800 hover:bg-kira-green-dark transition-all hover:scale-105 shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg dark:hover:bg-tokyo-accent/90"
-          >
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-800 opacity-75 dark:bg-tokyo-bg"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-800 dark:bg-tokyo-bg"></span>
-            </span>
-            Start Conversation
-          </button>
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-        </div>
-        
-        {/* Profile Button for Ready Screen */}
-        <div className="absolute top-0 right-0 p-6">
-          <button 
-            onClick={() => setShowProfileModal(true)}
-            className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
-          >
-              <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
-          </button>
-        </div>
-        
-        {/* Profile Modal */}
-        <ProfileModal 
-          isOpen={showProfileModal} 
-          onClose={() => setShowProfileModal(false)} 
-        />
-      </div>
-    );
-  }
 
   if (socketState === "connecting") {
     return (
@@ -246,7 +202,12 @@ export default function ChatClient() {
       </div>
       
       {/* Transcript Container - Scrollable Box */}
-      <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center">
+      <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center flex-col items-center">
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded relative dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
           <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-discreet text-center flex flex-col items-center justify-start pt-2">
             {transcript ? (
               <div

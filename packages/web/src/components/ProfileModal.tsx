@@ -198,20 +198,20 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
 
             {isSignedIn ? (
               <>
-                {/* Subscribe - Only show if NOT Pro */}
-                {!isPro && (
-                  <button
-                    onClick={handleSubscription}
-                    className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
-                        <CreditCard size={20} />
-                      </div>
-                      <span className="font-medium text-gray-700 dark:text-gray-200">Subscription</span>
+                {/* Subscription Management */}
+                <button
+                  onClick={handleSubscription}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
+                      <CreditCard size={20} />
                     </div>
-                  </button>
-                )}
+                    <span className="font-medium text-gray-700 dark:text-gray-200">
+                      {isPro ? "Manage Subscription" : "Upgrade to Pro"}
+                    </span>
+                  </div>
+                </button>
 
                 {/* Sign Out */}
                 <button

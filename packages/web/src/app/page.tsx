@@ -113,6 +113,7 @@ export default function HomePage() {
       <ProfileModal 
         isOpen={showProfileModal} 
         onClose={() => setShowProfileModal(false)} 
+        isPro={isPro}
       />
 
       {/* Persona Button */}

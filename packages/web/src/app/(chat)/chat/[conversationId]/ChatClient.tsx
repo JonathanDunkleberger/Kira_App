@@ -385,12 +385,14 @@ export default function ChatClient() {
             </div>
 
             <div className="flex flex-col w-full gap-3 mt-4">
-              <button
-                onClick={handleUpgrade}
-                className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
-              >
-                Upgrade to Pro
-              </button>
+              {!isPro && (
+                <button
+                  onClick={handleUpgrade}
+                  className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
+                >
+                  Upgrade to Pro
+                </button>
+              )}
               <Link
                 href="/"
                 className="w-full py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-tokyo-fg font-medium transition-colors text-center"

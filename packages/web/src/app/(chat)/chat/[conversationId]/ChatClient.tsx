@@ -45,7 +45,8 @@ export default function ChatClient() {
     toggleMute,
     isScreenSharing,
     startScreenShare,
-    stopScreenShare
+    stopScreenShare,
+    isPro
   } = useKiraSocket(
     token || "",
     guestId
@@ -220,6 +221,7 @@ export default function ChatClient() {
       <ProfileModal 
         isOpen={showProfileModal} 
         onClose={() => setShowProfileModal(false)} 
+        isPro={isPro}
       />
 
       {/* Main Orb */}

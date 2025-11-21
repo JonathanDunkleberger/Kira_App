@@ -464,6 +464,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       limit = isPro ? PRO_LIMIT_SECONDS : FREE_LIMIT_SECONDS;
       console.log(`[Usage] User: ${userId} | Pro: ${isPro} | Usage: ${dailyUsageSeconds}/${limit}`);
 
+      // Send session configuration to client
+      ws.send(JSON.stringify({ 
+          type: "session_config", 
+          isPro: isPro,
+          dailyUsageSeconds: dailyUsageSeconds,
+          limit: limit
+      }));
+
       if (dailyUsageSeconds >= limit) {
           console.log(`[Usage] Limit reached: ${dailyUsageSeconds}/${limit}`);
           ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));

@@ -122,8 +122,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   // --- HELPER FUNCTIONS ---
 
   const updateRollingSummary = async () => {
-    const MAX_HISTORY = 30; // Trigger summary when we have > 30 messages
-    const SUMMARY_CHUNK = 10; // Summarize 10 messages at a time
+    const MAX_HISTORY = 10; // Trigger summary when we have > 10 messages
+    const SUMMARY_CHUNK = 4; // Summarize 4 messages at a time
 
     if (chatHistory.length <= MAX_HISTORY) return;
 
@@ -306,7 +306,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           // --- CONTEXT MANAGEMENT ---
           // To keep the conversation snappy, we only send the last N messages to the LLM.
           // We always preserve the System Prompt (index 0) and the Memory Injection (which is appended to index 0).
-          const MAX_CONTEXT_MESSAGES = 20; // Adjust based on desired context window
+          const MAX_CONTEXT_MESSAGES = 6; // Adjust based on desired context window
           let messagesPayload = chatHistory;
 
           if (conversationSummary) {

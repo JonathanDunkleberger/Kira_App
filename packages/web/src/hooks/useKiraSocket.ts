@@ -317,6 +317,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
         videoRef.current.autoplay = true;
         videoRef.current.muted = true;
         videoRef.current.playsInline = true;
+        // Ensure it's in the DOM so it processes frames
+        videoRef.current.style.position = "absolute";
+        videoRef.current.style.top = "-9999px";
+        videoRef.current.style.left = "-9999px";
+        videoRef.current.style.width = "1px";
+        videoRef.current.style.height = "1px";
+        videoRef.current.style.opacity = "0";
+        videoRef.current.style.pointerEvents = "none";
+        document.body.appendChild(videoRef.current);
       }
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
@@ -334,6 +343,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
           if (snapshot && ws.current?.readyState === WebSocket.OPEN) {
               console.log("[Vision] Sending initial snapshot...");
               ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+          } else {
+              console.warn("[Vision] Failed to capture initial snapshot.");
           }
       }, 1000);
 
@@ -353,6 +364,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
+      // Remove from DOM
+      if (videoRef.current.parentNode) {
+          videoRef.current.parentNode.removeChild(videoRef.current);
+      }
+      videoRef.current = null; // Reset ref
     }
     setIsScreenSharing(false);
     isScreenSharingRef.current = false;
@@ -360,7 +376,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
   }, []);
 
   const captureScreenSnapshot = useCallback(() => {
-    if (!videoRef.current || !screenStream.current) return null;
+    if (!videoRef.current || !screenStream.current) {
+        console.warn("[Vision] Capture failed: No video or stream.");
+        return null;
+    }
 
     if (!canvasRef.current) {
       canvasRef.current = document.createElement("canvas");
@@ -370,7 +389,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
     const canvas = canvasRef.current;
     
     // Set canvas dimensions to match video
-    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn("[Vision] Capture failed: Video dimensions are 0.");
+        return null;
+    }
     
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -483,10 +505,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
                 if (speechFrameCount.current === 4 && isScreenSharingRef.current) {
+                    console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
                     const snapshot = captureScreenSnapshot();
                     if (snapshot) {
                         console.log("[Vision] Sending snapshot on speech start...");
                         ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+                    } else {
+                        console.warn("[Vision] Snapshot capture returned null.");
                     }
                 }
 
@@ -559,7 +584,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
       console.error("[Audio] ❌ Failed to start audio pipeline:", err);
       setError("Microphone access denied or failed. Please check permissions.");
     }
-  }, [stopAudioPlayback, initializeAudio]);
+  }, [stopAudioPlayback, initializeAudio, captureScreenSnapshot]);
 
   /**
    * Explicitly start the conversation: send start_stream and start mic pipeline.

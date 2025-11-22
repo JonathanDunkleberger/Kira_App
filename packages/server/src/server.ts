@@ -117,8 +117,61 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
         "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, engaging, and conversational. Feel free to elaborate on your thoughts, but keep it natural. You never interrupt. You have vision capabilities. When the user shares their screen, you will receive snapshots. Treat these snapshots as your view of the user's screen. DO NOT say 'I can't see your screen' if you are receiving images. Instead, describe what you see in the images directly. If the user asks if you can see their screen, and you have received an image, answer 'Yes'. You are an expert in anime, movies, and pop culture. If you see a character you recognize (especially from anime or games), please identify them by name. Do not be shy about guessing characters.",
     },
   ];
+  let conversationSummary = "";
 
   // --- HELPER FUNCTIONS ---
+
+  const updateRollingSummary = async () => {
+    const MAX_HISTORY = 30; // Trigger summary when we have > 30 messages
+    const SUMMARY_CHUNK = 10; // Summarize 10 messages at a time
+
+    if (chatHistory.length <= MAX_HISTORY) return;
+
+    console.log("[Summary] Updating rolling summary...");
+
+    // Get messages to summarize (skip system prompt at 0)
+    const chunk = chatHistory.slice(1, 1 + SUMMARY_CHUNK);
+
+    // Create a text-only version for the summarizer to save tokens
+    const textChunk = chunk.map(m => {
+        const role = m.role.toUpperCase();
+        let content = "";
+        if (typeof m.content === "string") {
+            content = m.content;
+        } else if (Array.isArray(m.content)) {
+            content = m.content.map(c => c.type === "text" ? c.text : "[Image]").join(" ");
+        }
+        return `${role}: ${content}`;
+    }).join("\n");
+
+    const prompt = `
+    Update the following conversation summary with the new interaction below.
+    Keep the summary concise but retain key details about the user (names, preferences, specific topics).
+
+    CURRENT SUMMARY:
+    ${conversationSummary || "None"}
+
+    NEW INTERACTION:
+    ${textChunk}
+    `;
+
+    try {
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "system", content: "You are a helpful summarizer." }, { role: "user", content: prompt }]
+        });
+
+        const newSummary = completion.choices[0]?.message?.content;
+        if (newSummary) {
+            conversationSummary = newSummary;
+            // Remove the summarized messages
+            chatHistory.splice(1, SUMMARY_CHUNK);
+            console.log("[Summary] Updated. History length now:", chatHistory.length);
+        }
+    } catch (e) {
+        console.error("[Summary] Failed:", e);
+    }
+  };
 
   const startSTT = async () => {
     if (sttStreamer) {
@@ -256,7 +309,22 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           const MAX_CONTEXT_MESSAGES = 20; // Adjust based on desired context window
           let messagesPayload = chatHistory;
 
-          if (chatHistory.length > MAX_CONTEXT_MESSAGES) {
+          if (conversationSummary) {
+              const summaryMessage: OpenAI.Chat.ChatCompletionMessageParam = {
+                  role: "system",
+                  content: `[Previous Conversation Summary]: ${conversationSummary}`
+              };
+              
+              const recentMessages = chatHistory.length > MAX_CONTEXT_MESSAGES 
+                  ? chatHistory.slice(-MAX_CONTEXT_MESSAGES)
+                  : chatHistory.slice(1); // Skip system prompt
+                  
+              messagesPayload = [
+                  chatHistory[0],
+                  summaryMessage,
+                  ...recentMessages
+              ];
+          } else if (chatHistory.length > MAX_CONTEXT_MESSAGES) {
               // Keep System Prompt (0) + Last N messages
               messagesPayload = [
                   chatHistory[0],
@@ -273,6 +341,9 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             llmResponse =
               chatCompletion.choices[0]?.message?.content || llmResponse;
             chatHistory.push({ role: "assistant", content: llmResponse });
+
+            // Trigger background summarization
+            updateRollingSummary().catch(err => console.error("Background summary error:", err));
           } catch (err) {
             console.error(
               "[Pipeline] ❌ OpenAI Error:",
@@ -353,14 +424,28 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   };
 
   const saveMemory = async () => {
-      if (!userDbId || chatHistory.length < 4) return;
+      if (!userDbId) return;
+      if (!conversationSummary && chatHistory.length < 4) return;
       
       console.log("[Memory] Generating summary...");
       try {
-          // Create a summary of the current conversation
+          // Combine rolling summary with remaining chat history
+          const remainingHistory = chatHistory.filter(m => m.role !== "system").map(m => {
+               if (typeof m.content === "string") return `${m.role}: ${m.content}`;
+               if (Array.isArray(m.content)) return `${m.role}: [Complex Content]`;
+               return `${m.role}: [Unknown]`;
+          }).join("\n");
+          
+          const fullContext = `
+          Past Summary: ${conversationSummary || "None"}
+          
+          Recent Conversation:
+          ${remainingHistory}
+          `;
+
           const summaryPrompt: OpenAI.Chat.ChatCompletionMessageParam[] = [
               { role: "system", content: "Summarize the key facts, preferences, and topics discussed in this conversation. Be concise. Focus on what you learned about the user." },
-              ...chatHistory.filter(m => m.role !== "system")
+              { role: "user", content: fullContext }
           ];
           
           const completion = await openai.chat.completions.create({

@@ -250,11 +250,25 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
               chatHistory.push({ role: "user", content: userMessage });
           }
 
+          // --- CONTEXT MANAGEMENT ---
+          // To keep the conversation snappy, we only send the last N messages to the LLM.
+          // We always preserve the System Prompt (index 0) and the Memory Injection (which is appended to index 0).
+          const MAX_CONTEXT_MESSAGES = 20; // Adjust based on desired context window
+          let messagesPayload = chatHistory;
+
+          if (chatHistory.length > MAX_CONTEXT_MESSAGES) {
+              // Keep System Prompt (0) + Last N messages
+              messagesPayload = [
+                  chatHistory[0],
+                  ...chatHistory.slice(-MAX_CONTEXT_MESSAGES)
+              ];
+          }
+
           let llmResponse = "I'm not sure what to say.";
           try {
             const chatCompletion = await openai.chat.completions.create({
               model: "gpt-4o",
-              messages: chatHistory,
+              messages: messagesPayload,
             });
             llmResponse =
               chatCompletion.choices[0]?.message?.content || llmResponse;

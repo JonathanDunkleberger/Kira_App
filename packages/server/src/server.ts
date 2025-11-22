@@ -332,71 +332,139 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
               ];
           }
 
-          let llmResponse = "I'm not sure what to say.";
+          let fullResponse = "";
+          let sentenceBuffer = "";
+          const audioQueue: string[] = [];
+          let isSpeaking = false;
+          let isFirstChunk = true;
+
+          // Helper to process the audio queue sequentially
+          const processAudioQueue = async () => {
+              if (isSpeaking || audioQueue.length === 0) return;
+              
+              isSpeaking = true;
+              const textToSpeak = audioQueue.shift();
+              if (!textToSpeak) {
+                  isSpeaking = false;
+                  return;
+              }
+
+              console.log(`[TTS] Processing chunk: "${textToSpeak}"`);
+              const tts = new AzureTTSStreamer();
+              
+              // If this is the very first audio chunk of the turn, send the start signal
+              if (isFirstChunk) {
+                  ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                  isFirstChunk = false;
+              }
+
+              tts.on("audio_chunk", (chunk: Buffer) => {
+                  if (ws.readyState === (ws as any).OPEN) {
+                      ws.send(chunk);
+                  }
+              });
+
+              tts.on("tts_complete", () => {
+                  isSpeaking = false;
+                  // Add a small delay/silence between sentences if needed, or just proceed
+                  processAudioQueue();
+              });
+
+              tts.on("error", (err: Error) => {
+                  console.error("[TTS] Error in chunk:", err);
+                  isSpeaking = false;
+                  processAudioQueue();
+              });
+
+              ttsStreamer = tts; // Keep reference for interruption
+              tts.synthesize(textToSpeak);
+          };
+
           try {
-            const chatCompletion = await openai.chat.completions.create({
+            state = "speaking";
+            ws.send(JSON.stringify({ type: "state_speaking" }));
+
+            const stream = await openai.chat.completions.create({
               model: "gpt-4o",
               messages: messagesPayload,
+              stream: true,
             });
-            llmResponse =
-              chatCompletion.choices[0]?.message?.content || llmResponse;
-            chatHistory.push({ role: "assistant", content: llmResponse });
 
-            // Trigger background summarization
-            updateRollingSummary().catch(err => console.error("Background summary error:", err));
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (content) {
+                    fullResponse += content;
+                    sentenceBuffer += content;
+
+                    // Send incremental text transcript
+                    ws.send(JSON.stringify({
+                        type: "transcript",
+                        role: "ai",
+                        text: fullResponse,
+                        isFinal: false
+                    }));
+
+                    // Check for sentence delimiters
+                    // We look for . ! ? followed by space or end of string
+                    if (/[.!?]\s$/.test(sentenceBuffer) || /[\n]/.test(sentenceBuffer)) {
+                        const sentence = sentenceBuffer.trim();
+                        if (sentence.length > 0) {
+                            audioQueue.push(sentence);
+                            processAudioQueue();
+                            sentenceBuffer = "";
+                        }
+                    }
+                }
+            }
+
+            // Process any remaining text in buffer
+            if (sentenceBuffer.trim().length > 0) {
+                audioQueue.push(sentenceBuffer.trim());
+                processAudioQueue();
+            }
+
+            chatHistory.push({ role: "assistant", content: fullResponse });
+
+            // Wait for audio queue to drain before resetting state
+            const checkQueueInterval = setInterval(async () => {
+                if (audioQueue.length === 0 && !isSpeaking) {
+                    clearInterval(checkQueueInterval);
+                    
+                    ws.send(JSON.stringify({
+                        type: "transcript",
+                        role: "ai",
+                        text: fullResponse,
+                        isFinal: true
+                    }));
+                    
+                    ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                    state = "listening";
+                    ws.send(JSON.stringify({ type: "state_listening" }));
+                    ttsStreamer = null;
+
+                    // Trigger background summarization
+                    updateRollingSummary().catch(err => console.error("Background summary error:", err));
+
+                    if (dailyUsageSeconds >= limit) {
+                        console.log("[Usage] Limit reached after response. Closing.");
+                        ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
+                        ws.close(1008, "Daily limit reached");
+                        return;
+                    }
+
+                    await startSTT();
+                }
+            }, 100);
+
           } catch (err) {
             console.error(
               "[Pipeline] ❌ OpenAI Error:",
               (err as Error).message
             );
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
+            await startSTT();
           }
-
-          console.log(`[AI RESPONSE]: "${llmResponse}"`);
-          console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
-          
-          // Send AI transcript to client
-          ws.send(
-            JSON.stringify({
-              type: "transcript",
-              role: "ai",
-              text: llmResponse,
-              isFinal: true,
-            })
-          );
-
-          state = "speaking";
-          ws.send(JSON.stringify({ type: "state_speaking" }));
-
-          // --- Real Azure TTS Integration ---
-          console.log("[TTS] Sending to Azure...");
-          ttsStreamer = new AzureTTSStreamer();
-          ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-          ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
-          ttsStreamer.on("tts_complete", async () => {
-            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-            ttsStreamer = null;
-
-            if (dailyUsageSeconds >= limit) {
-                 console.log("[Usage] Limit reached after response. Closing.");
-                 ws.send(JSON.stringify({ type: "error", code: "limit_reached", message: "Daily limit reached." }));
-                 ws.close(1008, "Daily limit reached");
-                 return;
-            }
-
-            await startSTT();
-          });
-          ttsStreamer.on("error", async (err: Error) => {
-            console.error("[Pipeline] ❌ TTS Error:", err);
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-            ttsStreamer = null;
-            await startSTT();
-          });
-
-          ttsStreamer.synthesize(llmResponse);
         }
       } 
       

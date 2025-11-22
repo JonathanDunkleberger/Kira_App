@@ -1,7 +1,7 @@
 "use client"; // This page is interactive, so it's a client component
 export const dynamic = "force-dynamic"; // prevent prerender/SSG to avoid SSR-only runtime on client hooks
 
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useUser, UserButton, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { Phone, Star, Zap, User } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription"; // Our new hook
@@ -11,6 +11,7 @@ import ProfileModal from "@/components/ProfileModal";
 // This is the clean "Sesame" clone homepage
 export default function HomePage() {
   const { user, isSignedIn, isLoaded } = useUser();
+  const { openSignIn } = useClerk();
   const { isPro, isLoading } = useSubscription();
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -38,6 +39,11 @@ export default function HomePage() {
     : getGreeting();
 
   const handleUpgrade = async () => {
+    if (!isSignedIn) {
+      openSignIn();
+      return;
+    }
+
     try {
       const res = await fetch("/api/stripe/checkout", { method: "POST" });
       if (res.ok) {
@@ -90,7 +96,7 @@ export default function HomePage() {
           Kira
         </span>
         <div className="flex items-center gap-4">
-          {!isLoading && !isPro && isSignedIn && (
+          {!isLoading && !isPro && (
             <button
               onClick={handleUpgrade}
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-500 px-3 py-1.5 rounded-full hover:bg-blue-600 dark:bg-tokyo-accent dark:text-tokyo-bg dark:hover:bg-tokyo-accent/90 transition-colors"

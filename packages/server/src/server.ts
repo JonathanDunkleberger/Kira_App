@@ -670,7 +670,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }, 10000);
       
       // --- MEMORY INJECTION ---
-      if (userName) {
+      if (userName && !userId?.startsWith("guest_")) {
           const firstName = userName.split(" ")[0];
           chatHistory[0].content += ` The user's name is ${userName}, but please call them ${firstName}.`;
       }

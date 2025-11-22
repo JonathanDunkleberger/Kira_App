@@ -38,6 +38,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const screenStream = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isScreenSharingRef = useRef(false); // Ref to track screen share state in callbacks
 
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
@@ -308,6 +309,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
       screenStream.current = stream;
       setIsScreenSharing(true);
+      isScreenSharingRef.current = true;
 
       // Setup hidden video element for capturing frames
       if (!videoRef.current) {
@@ -353,6 +355,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
       videoRef.current.srcObject = null;
     }
     setIsScreenSharing(false);
+    isScreenSharingRef.current = false;
     console.log("[Vision] Screen share stopped");
   }, []);
 
@@ -479,7 +482,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
               if (isSpeaking) {
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
-                if (speechFrameCount.current === 4 && isScreenSharing) {
+                if (speechFrameCount.current === 4 && isScreenSharingRef.current) {
                     const snapshot = captureScreenSnapshot();
                     if (snapshot) {
                         console.log("[Vision] Sending snapshot on speech start...");

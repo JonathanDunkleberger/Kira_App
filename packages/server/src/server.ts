@@ -253,7 +253,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           let llmResponse = "I'm not sure what to say.";
           try {
             const chatCompletion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
+              model: "gpt-4o",
               messages: chatHistory,
             });
             llmResponse =
@@ -350,7 +350,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           ];
           
           const completion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
+              model: "gpt-4o",
               messages: summaryPrompt
           });
           

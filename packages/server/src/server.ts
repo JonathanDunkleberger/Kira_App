@@ -518,7 +518,8 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       
       // --- MEMORY INJECTION ---
       if (userName) {
-          chatHistory[0].content += ` The user's name is ${userName}.`;
+          const firstName = userName.split(" ")[0];
+          chatHistory[0].content += ` The user's name is ${userName}, but please call them ${firstName}.`;
       }
       if (userMemory) {
           chatHistory[0].content += `\n\nHere is a summary of past conversations:\n${userMemory}`;

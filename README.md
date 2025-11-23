@@ -117,7 +117,7 @@ The WebSocket server manages: audio ingestion, transcription buffering, LLM stre
 
 ```mermaid
 flowchart LR
-    subgraph Browser (Vercel - packages/web)
+    subgraph Browser ["Browser (Vercel - packages/web)"]
         MIC[Microphone]
         SCR[Screen Share]
         HK[useKiraSocket Hook]
@@ -125,7 +125,7 @@ flowchart LR
         UI[Chat / Transcript UI]
     end
 
-    subgraph Render (packages/server)
+    subgraph Render ["Render (packages/server)"]
         WS[WebSocket Server]
         STT[Deepgram Streaming STT]
         LLM[OpenAI GPT-4o]

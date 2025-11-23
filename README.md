@@ -141,7 +141,10 @@ flowchart LR
     WS -->|audio stream| STT -->|final sentences| SB
     WS -->|image context| LLM
     SB -->|prompt segments| LLM -->|token stream| SB
-    SB -->|complete sentence text| TTS -->|audio chunks (base64)| WS -->|assistant_audio events| Q --> UI
+    SB -->|complete sentence text| TTS
+    TTS -->|audio chunks base64| WS
+    WS -->|assistant_audio events| Q
+    Q --> UI
     STT -->|user_transcript events| WS --> HK --> UI
     LLM -->|assistant_message events| WS --> HK --> UI
     USG -->|usage_update events| WS --> HK --> UI

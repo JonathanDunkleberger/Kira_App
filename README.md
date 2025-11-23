@@ -11,7 +11,7 @@ Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebS
 | Path                     | Name            | Purpose                                                                         |
 | ------------------------ | --------------- | ------------------------------------------------------------------------------- |
 | `packages/web`           | `web`           | Next.js App Router frontend (UI, auth, billing UX)                              |
-| `packages/socket-server` | `socket-server` | Plain Node WS server: Deepgram STT, OpenAI responses, Azure TTS, usage metering |
+| `packages/server`        | `server`        | Plain Node WS server: Deepgram STT, OpenAI responses, Azure TTS, usage metering |
 | `prisma/` (root)         | —               | Shared Prisma schema + migrations used by both packages                         |
 
 Root `package.json` exposes convenience scripts for parallel dev.
@@ -31,14 +31,12 @@ Root `package.json` exposes convenience scripts for parallel dev.
 ## 🗂️ Monorepo Scripts (Root)
 
 ```bash
-npm run dev         # Run socket server (port 10000 or PORT) + web (3000) in parallel
-npm run dev:server  # Only websocket server
-npm run dev:web     # Only frontend
-npm run build       # Build frontend (web)
-npm run start       # Start production frontend
+npm run dev:server  # Only websocket server (port 10000)
+npm run dev:web     # Only frontend (port 3000)
+npm run build       # Build both packages
 ```
 
-Package‑local scripts follow conventional names (`npm run build --workspace=socket-server`, etc.).
+Package‑local scripts follow conventional names (`npm run build --filter=server`, etc.).
 
 ---
 
@@ -77,10 +75,12 @@ Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency
 ## Core Features
 
 - **End-to-End Voice Streaming:** Real-time pipeline: client microphone → Deepgram STT (streaming) → OpenAI response (streaming) → Azure Speech TTS (sentence streaming back to browser).
+- **Vision Capabilities:** Real-time screen sharing analysis. The AI can "see" your screen via periodic snapshots and answer questions about what you're watching or doing (e.g., identifying anime characters).
+- **Long-term Memory:** Remembers user details and conversation context across sessions using a summarized memory system stored in the database.
 - **Dual-Service Architecture:** Stateless Next.js frontend (Vercel) + dedicated Node WebSocket server (Render) for persistent audio sessions.
-- **Authentication:** Clerk-powered user accounts (sign up, sign in, profile management).
+- **Authentication:** Clerk-powered user accounts (sign up, sign in, profile management) + Guest access.
 - **Subscription Billing:** Stripe Checkout + Billing Portal; server-side webhook processing (subscription lifecycle).
-- **Modern Monorepo:** `pnpm` workspaces (`packages/web`, `packages/socket-server`) with shared Prisma schema.
+- **Modern Monorepo:** `pnpm` workspaces (`packages/web`, `packages/server`) with shared Prisma schema.
 
 ---
 
@@ -106,10 +106,10 @@ Monorepo layout:
 | Path                     | Description                                                          |
 | ------------------------ | -------------------------------------------------------------------- |
 | `packages/web`           | Next.js frontend (UI, auth, billing routes, static assets)           |
-| `packages/socket-server` | Long-running WebSocket server orchestrating STT → LLM → TTS pipeline |
+| `packages/server`        | Long-running WebSocket server orchestrating STT → LLM → TTS pipeline |
 | `prisma/`                | Shared Prisma schema & migrations                                    |
 
-The WebSocket server manages: audio ingestion, transcription buffering, LLM stream aggregation, sentence boundary detection, Azure TTS synthesis, usage accounting, and event emission back to the client.
+The WebSocket server manages: audio ingestion, transcription buffering, LLM stream aggregation, sentence boundary detection, Azure TTS synthesis, usage accounting, vision snapshots, memory persistence, and event emission back to the client.
 
 ---
 
@@ -119,23 +119,27 @@ The WebSocket server manages: audio ingestion, transcription buffering, LLM stre
 flowchart LR
     subgraph Browser (Vercel - packages/web)
         MIC[Microphone]
+        SCR[Screen Share]
         HK[useKiraSocket Hook]
         Q[Playback Queue]
         UI[Chat / Transcript UI]
     end
 
-    subgraph Render (packages/socket-server)
+    subgraph Render (packages/server)
         WS[WebSocket Server]
         STT[Deepgram Streaming STT]
-        LLM[OpenAI Streaming Response]
+        LLM[OpenAI GPT-4o]
         SB[Sentence Buffer]
         TTS[Azure Speech TTS]
         USG[Usage Meter]
+        MEM[Memory Manager]
         DB[(Postgres / Supabase)]
     end
 
     MIC -->|Opus/WebM chunks| HK -->|binary frames| WS
+    SCR -->|Image Snapshots| HK -->|base64 images| WS
     WS -->|audio stream| STT -->|final sentences| SB
+    WS -->|image context| LLM
     SB -->|prompt segments| LLM -->|token stream| SB
     SB -->|complete sentence text| TTS -->|audio chunks (base64)| WS -->|assistant_audio events| Q --> UI
     STT -->|user_transcript events| WS --> HK --> UI
@@ -143,6 +147,7 @@ flowchart LR
     USG -->|usage_update events| WS --> HK --> UI
     WS -->|persist user/assistant messages| DB
     USG -->|read/write usage| DB
+    MEM -->|load/save summary| DB
 ```
 
 ---
@@ -168,14 +173,15 @@ Two `.env.local` files are required for local dev:
 
 **A. Frontend (root `./.env.local`)** — copy `./.env.example`.
 
-**B. Socket Server (`./packages/socket-server/.env.local`)** — copy `./packages/socket-server/.env.example`.
+**B. Socket Server (`./packages/server/.env.local`)** — copy `./packages/server/.env.example`.
 
 Fill in service keys (leave `NEXT_PUBLIC_*` only in the root file). Never commit secrets.
 
 ### 4. Run Locally
 
 ```bash
-pnpm dev
+pnpm dev:web
+pnpm dev:server
 ```
 
 Frontend: <http://localhost:3000>  
@@ -184,11 +190,9 @@ WebSocket server: ws://localhost:10000 (health: GET <http://localhost:10000/heal
 Root scripts:
 
 ```bash
-pnpm run dev        # parallel: socket-server + web
 pnpm run dev:server # only socket-server
 pnpm run dev:web    # only web
-pnpm run build      # build web
-pnpm run start      # start production web
+pnpm run build      # build both
 ```
 
 ---
@@ -228,11 +232,12 @@ Keep STT / LLM / TTS secrets out of any `NEXT_PUBLIC_*` names.
 ## Realtime Flow (High Level)
 
 1. Browser captures mic (MediaRecorder WebM Opus) → sends binary chunks via WS.
-2. Server streams audio to Deepgram → receives interim/final transcripts.
-3. Final sentence aggregated → prompt sent to OpenAI (streaming tokens).
-4. Sentence buffer triggers Azure TTS; audio chunks base64-encoded → client.
-5. Client queues & plays audio while next sentence is already processing.
-6. Usage metering updates sent periodically; limits enforced server-side.
+2. Browser optionally captures screen snapshots → sends base64 images via WS.
+3. Server streams audio to Deepgram → receives interim/final transcripts.
+4. Final sentence aggregated (plus pending image if any) → prompt sent to OpenAI (streaming tokens).
+5. Sentence buffer triggers Azure TTS; audio chunks base64-encoded → client.
+6. Client queues & plays audio while next sentence is already processing.
+7. Usage metering updates sent periodically; limits enforced server-side.
 
 ---
 
@@ -246,17 +251,17 @@ Keep STT / LLM / TTS secrets out of any `NEXT_PUBLIC_*` names.
 
 ### WebSocket Server (Render)
 
-1. New Web Service → Root Directory: `packages/socket-server`.
+1. New Web Service → Root Directory: `packages/server`.
 1. Build Command:
 
 ```bash
-pnpm install --filter socket-server... && pnpm --filter socket-server run build
+pnpm install --filter server... && pnpm --filter server run build
 ```
 
 1. Start Command:
 
 ```bash
-pnpm --filter socket-server start
+pnpm --filter server start
 ```
 
 1. Set env vars: `DATABASE_URL`, `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, Stripe keys, Clerk secrets.
@@ -273,7 +278,7 @@ pnpm --filter web prisma:deploy
 or
 
 ```bash
-pnpm --filter socket-server prisma:deploy
+pnpm --filter server prisma:deploy
 ```
 
 ---
@@ -286,7 +291,7 @@ pnpm --filter socket-server prisma:deploy
 | `pnpm --filter web test`            | Unit tests (Vitest)    |
 | `pnpm --filter web typecheck`       | TypeScript diagnostics |
 | `pnpm --filter web build`           | Build Next.js app      |
-| `pnpm --filter socket-server build` | Compile server TS → JS |
+| `pnpm --filter server build`        | Compile server TS → JS |
 
 Add Playwright tests as needed for end-to-end voice flows.
 

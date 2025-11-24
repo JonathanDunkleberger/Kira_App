@@ -4,6 +4,8 @@ Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebS
 
 > Official site: <https://www.xoxokira.com>
 
+![Kira AI Banner](./packages/docs/KIRA2-README.png)
+
 ---
 
 ## 📦 Packages

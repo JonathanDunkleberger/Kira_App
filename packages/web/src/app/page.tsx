@@ -5,7 +5,7 @@ import { useUser, UserButton, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { Phone, Star, Zap, User } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription"; // Our new hook
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ProfileModal from "@/components/ProfileModal";
 
 // This is the clean "Sesame" clone homepage
@@ -14,28 +14,19 @@ export default function HomePage() {
   const { openSignIn } = useClerk();
   const { isPro, isLoading } = useSubscription();
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [timeGreeting, setTimeGreeting] = useState("Hello");
 
-  console.log("HomePage Render:", { isLoaded, isSignedIn, isPro, isLoading });
-  // console.log("Clerk Key:", process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
-  // if (!isLoaded) {
-  //   return (
-  //     <div className="flex items-center justify-center min-h-screen bg-kira-bg">
-  //       <div className="animate-pulse text-gray-500">Loading Kira...</div>
-  //     </div>
-  //   );
-  // }
-
-  const getGreeting = () => {
-    // Use a fixed greeting on server/initial render to avoid hydration mismatch
-    // We can update it on the client if needed, but "Hello" is safe.
-    return "Hello";
-  };
+  useEffect(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) setTimeGreeting("Good morning");
+    else if (hour < 18) setTimeGreeting("Good afternoon");
+    else setTimeGreeting("Good evening");
+  }, []);
 
   // This is the "Afternoon, Jonny" feature
   const greeting = user?.firstName
-    ? `${getGreeting()}, ${user.firstName}`
-    : getGreeting();
+    ? `${timeGreeting}, ${user.firstName}`
+    : timeGreeting;
 
   const handleUpgrade = async () => {
     if (!isSignedIn) {

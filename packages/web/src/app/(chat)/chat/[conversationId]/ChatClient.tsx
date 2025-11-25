@@ -16,19 +16,19 @@ export default function ChatClient() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
+  const [guestId, setGuestId] = useState("");
 
   // Create a stable guest ID if the user is not logged in
-  const [guestId] = useState(() => {
-    if (typeof window !== "undefined" && !userId) {
+  useEffect(() => {
+    if (!userId) {
       let id = localStorage.getItem("kira-guest-id");
       if (!id) {
         id = `guest_${crypto.randomUUID()}`;
         localStorage.setItem("kira-guest-id", id);
       }
-      return id;
+      setGuestId(id);
     }
-    return "";
-  });
+  }, [userId]);
 
   const { 
     connect, 

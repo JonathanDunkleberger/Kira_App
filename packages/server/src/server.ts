@@ -31,29 +31,29 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let userId: string | null = null;
   
   // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
-  const authPromise = (async () => {
-    try {
-      if (token) {
-        const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-        if (!payload?.sub) {
-          throw new Error("Unable to resolve user id from token");
-        }
-        userId = payload.sub;
-        console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-        return true;
-      } else if (guestId) {
-        userId = `guest_${guestId}`;
-        console.log(`[Auth] - Guest user: ${userId}`);
-        return true;
-      } else {
-        throw new Error("No auth provided.");
-      }
-    } catch (err) {
-      console.error("[Auth] ❌ Failed:", (err as Error).message);
-      ws.close(1008, "Authentication failed");
-      return false;
-    }
-  })();
+  // const authPromise = (async () => {
+  //   try {
+  //     if (token) {
+  //       const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+  //       if (!payload?.sub) {
+  //         throw new Error("Unable to resolve user id from token");
+  //       }
+  //       userId = payload.sub;
+  //       console.log(`[Auth] ✅ Authenticated user: ${userId}`);
+  //       return true;
+  //     } else if (guestId) {
+  //       userId = `guest_${guestId}`;
+  //       console.log(`[Auth] - Guest user: ${userId}`);
+  //       return true;
+  //     } else {
+  //       throw new Error("No auth provided.");
+  //     }
+  //   } catch (err) {
+  //     console.error("[Auth] ❌ Failed:", (err as Error).message);
+  //     ws.close(1008, "Authentication failed");
+  //     return false;
+  //   }
+  // })();
 
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
@@ -72,8 +72,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   ws.on("message", async (message: Buffer, isBinary: boolean) => {
     // Wait for auth to complete before processing ANY message
-    const isAuthenticated = await authPromise;
-    if (!isAuthenticated) return; 
+    // const isAuthenticated = await authPromise;
+    // if (!isAuthenticated) return; 
 
     try {
       // --- 3. MESSAGE HANDLING ---

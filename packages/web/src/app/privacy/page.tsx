@@ -20,8 +20,8 @@ export default function PrivacyPage() {
         <h2>3. How We Use Your Data</h2>
         <p>We use your data solely to provide the conversational service.</p>
         <ul>
-          <li><strong>Audio & Text:</strong> Sent to Deepgram (transcription/voice) and OpenAI (intelligence) to generate responses.</li>
-          <li><strong>Infrastructure:</strong> Hosted on Vercel and Render, utilizing Azure services.</li>
+          <li><strong>Audio & Text:</strong> Sent to Deepgram (transcription), OpenAI (intelligence), and Microsoft Azure (text-to-speech) to generate responses.</li>
+          <li><strong>Infrastructure:</strong> Hosted on Vercel and Render.</li>
         </ul>
 
         <h2>4. Data Retention</h2>
@@ -36,7 +36,7 @@ export default function PrivacyPage() {
         </ul>
 
         <h2>6. Contact</h2>
-        <p>For privacy concerns, please contact us at: support@xoxokira.com</p>
+        <p>For privacy concerns, please contact us at: info@elsaresearch.co</p>
       </div>
     </div>
   );

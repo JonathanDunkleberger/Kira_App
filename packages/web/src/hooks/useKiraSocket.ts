@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSceneDetection } from "./useSceneDetection";
 
 // Define the states
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
@@ -39,6 +40,20 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isScreenSharingRef = useRef(false); // Ref to track screen share state in callbacks
+
+  // --- Scene Detection ---
+  const sceneBuffer = useSceneDetection({
+    videoRef,
+    enabled: isScreenSharing,
+    checkInterval: 2000,
+    threshold: 15
+  });
+  const sceneBufferRef = useRef<string[]>([]);
+
+  // Sync sceneBuffer to ref for access in callbacks
+  useEffect(() => {
+    sceneBufferRef.current = sceneBuffer;
+  }, [sceneBuffer]);
 
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
@@ -342,7 +357,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
           const snapshot = captureScreenSnapshot();
           if (snapshot && ws.current?.readyState === WebSocket.OPEN) {
               console.log("[Vision] Sending initial snapshot...");
-              ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+              // Send buffer + current frame
+              const payload = {
+                  type: "image",
+                  images: [...sceneBufferRef.current, snapshot]
+              };
+              ws.current.send(JSON.stringify(payload));
           } else {
               console.warn("[Vision] Failed to capture initial snapshot.");
           }
@@ -509,7 +529,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
                     const snapshot = captureScreenSnapshot();
                     if (snapshot) {
                         console.log("[Vision] Sending snapshot on speech start...");
-                        ws.current.send(JSON.stringify({ type: "image", image: snapshot }));
+                        // Send buffer + current frame
+                        const payload = {
+                            type: "image",
+                            images: [...sceneBufferRef.current, snapshot]
+                        };
+                        ws.current.send(JSON.stringify(payload));
                     } else {
                         console.warn("[Vision] Snapshot capture returned null.");
                     }

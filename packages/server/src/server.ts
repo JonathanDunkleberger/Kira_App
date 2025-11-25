@@ -59,14 +59,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let state = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
-  let latestImage: string | null = null;
+  let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
 
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it. If they ask if you can see their screen, say yes and describe what you see.",
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it. If they ask if you can see their screen, say yes and describe what you see.\n\n[TECHNICAL NOTE: VISUAL INPUT]\nWhen the user shares their screen, you may receive a sequence of images instead of a single snapshot. These images represent a timeline of events leading up to the current moment. The LAST image in the sequence is the current moment. The previous images are context (e.g., previous scenes in a video). Use this sequence to understand what is happening over time, but focus your response on the current moment unless the user asks about the past.",
     },
   ];
 
@@ -136,27 +136,29 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // Check if we have a recent image (within last 10 seconds)
           const now = Date.now();
-          if (latestImage && (now - lastImageTimestamp < 10000)) {
-            console.log("[Vision] Attaching latest image to user message.");
+          if (latestImages && latestImages.length > 0 && (now - lastImageTimestamp < 10000)) {
+            console.log(`[Vision] Attaching ${latestImages.length} images to user message.`);
+            
+            const content: OpenAI.Chat.ChatCompletionContentPart[] = [
+                { type: "text", text: userMessage }
+            ];
+
+            latestImages.forEach((img) => {
+                content.push({
+                    type: "image_url",
+                    image_url: {
+                        url: img,
+                        detail: "low"
+                    }
+                });
+            });
+
             chatHistory.push({
               role: "user",
-              content: [
-                { type: "text", text: userMessage },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: latestImage,
-                    detail: "low"
-                  },
-                },
-              ],
+              content: content,
             });
-            // Clear image after using it to avoid sending old context repeatedly? 
-            // Actually, keeping it might be fine, but let's clear it to ensure we only comment on what's currently visible if asked again.
-            // But if the user asks a follow-up question, we might want the image context.
-            // However, the client sends snapshots continuously when speech starts.
-            // So we will likely get a new snapshot for the next turn anyway.
-            latestImage = null; 
+            
+            latestImages = null; 
           } else {
             chatHistory.push({ role: "user", content: userMessage });
           }
@@ -210,10 +212,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           ttsStreamer.synthesize(llmResponse);
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
-          const imageBase64 = controlMessage.image;
-          if (imageBase64) {
-            console.log("[Vision] Received image snapshot. Updating buffer.");
-            latestImage = imageBase64;
+          // Support both single 'image' (legacy/fallback) and 'images' array
+          if (controlMessage.images && Array.isArray(controlMessage.images)) {
+             console.log(`[Vision] Received ${controlMessage.images.length} images. Updating buffer.`);
+             latestImages = controlMessage.images;
+             lastImageTimestamp = Date.now();
+          } else if (controlMessage.image) {
+            console.log("[Vision] Received single image snapshot. Updating buffer.");
+            latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
           }
         }

@@ -65,12 +65,23 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
     },
   ];
 
-  ws.on("message", async (message: Buffer | string) => {
+  ws.on("message", async (message: Buffer, isBinary: boolean) => {
     try {
       // --- 3. MESSAGE HANDLING ---
-      if (typeof message === "string") {
-        const controlMessage = JSON.parse(message);
+      // In ws v8+, message is a Buffer. We need to check if it's a JSON control message.
+      let controlMessage: any = null;
+      
+      // Try to parse as JSON if it looks like text
+      try {
+        const str = message.toString();
+        if (str.trim().startsWith("{")) {
+          controlMessage = JSON.parse(str);
+        }
+      } catch (e) {
+        // Not JSON, treat as binary audio
+      }
 
+      if (controlMessage) {
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
           sttStreamer = new DeepgramSTTStreamer();

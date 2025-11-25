@@ -61,12 +61,33 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let currentTurnTranscript = "";
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
+  let viewingContext = ""; // Track the current media context
+
+  const tools: OpenAI.Chat.ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "update_viewing_context",
+        description: "Updates the current media or activity context that the user is watching or doing. Call this when the user mentions watching a specific movie, show, or playing a game.",
+        parameters: {
+          type: "object",
+          properties: {
+            context: {
+              type: "string",
+              description: "The name of the media or activity (e.g., 'Berserk 1997', 'The Office', 'Coding').",
+            },
+          },
+          required: ["context"],
+        },
+      },
+    },
+  ];
 
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it. If they ask if you can see their screen, say yes and describe what you see.\n\n[TECHNICAL NOTE: VISUAL INPUT]\nWhen the user shares their screen, you may receive a sequence of images instead of a single snapshot. These images represent a timeline of events leading up to the current moment. The LAST image in the sequence is the current moment. The previous images are context (e.g., previous scenes in a video). Use this sequence to understand what is happening over time, but focus your response on the current moment unless the user asks about the past.",
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it. If they ask if you can see their screen, say yes and describe what you see.\n\n[TECHNICAL NOTE: VISUAL INPUT]\nWhen the user shares their screen, you may receive a sequence of images instead of a single snapshot. These images represent a timeline of events leading up to the current moment. The LAST image in the sequence is the current moment. The previous images are context (e.g., previous scenes in a video). Use this sequence to understand what is happening over time, but focus your response on the current moment unless the user asks about the past. IMPORTANT: Do NOT mention 'images', 'frames', or 'sequence' in your response. Speak naturally as if you are watching the video alongside the user (e.g., 'I see that he just walked into the room' instead of 'The last image shows him walking').\n\n[CONTEXT MANAGEMENT]\nIf the user mentions what they are watching or doing, use the 'update_viewing_context' tool to set the context. This helps you understand the images better.",
     },
   ];
 
@@ -165,13 +186,54 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           let llmResponse = "I'm not sure what to say.";
           try {
-            const chatCompletion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
-              messages: chatHistory,
-            });
-            llmResponse =
-              chatCompletion.choices[0]?.message?.content || llmResponse;
-            chatHistory.push({ role: "assistant", content: llmResponse });
+            // Loop to handle tool calls
+            let keepProcessing = true;
+            while (keepProcessing) {
+                const chatCompletion = await openai.chat.completions.create({
+                    model: "gpt-4o-mini",
+                    messages: chatHistory,
+                    tools: tools,
+                    tool_choice: "auto",
+                });
+
+                const message = chatCompletion.choices[0]?.message;
+                if (!message) break;
+
+                chatHistory.push(message);
+
+                if (message.tool_calls) {
+                    for (const toolCall of message.tool_calls) {
+                        if (toolCall.function.name === "update_viewing_context") {
+                            const args = JSON.parse(toolCall.function.arguments);
+                            viewingContext = args.context;
+                            console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
+                            
+                            // Update System Prompt dynamically to reinforce context
+                            const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
+                            if (systemMsg) {
+                                // Remove old context line if exists
+                                let content = systemMsg.content as string;
+                                const contextMarker = "\n\n[CURRENT CONTEXT]:";
+                                if (content.includes(contextMarker)) {
+                                    content = content.split(contextMarker)[0];
+                                }
+                                systemMsg.content = content + `${contextMarker} ${viewingContext}`;
+                            }
+
+                            chatHistory.push({
+                                role: "tool",
+                                tool_call_id: toolCall.id,
+                                content: `Context updated to: ${viewingContext}`,
+                            });
+                        }
+                    }
+                    // Loop again to get the final text response
+                } else {
+                    // No tool calls, we have the final text response
+                    llmResponse = message.content || llmResponse;
+                    keepProcessing = false;
+                }
+            }
           } catch (err) {
             console.error(
               "[Pipeline] ❌ OpenAI Error:",

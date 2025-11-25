@@ -57,11 +57,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   let state = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
+  let latestImage: string | null = null;
+  let lastImageTimestamp = 0;
+
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt.",
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it. If they ask if you can see their screen, say yes and describe what you see.",
     },
   ];
 
@@ -123,7 +126,33 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
           ws.send(JSON.stringify({ type: "state_thinking" }));
-          chatHistory.push({ role: "user", content: userMessage });
+
+          // Check if we have a recent image (within last 10 seconds)
+          const now = Date.now();
+          if (latestImage && (now - lastImageTimestamp < 10000)) {
+            console.log("[Vision] Attaching latest image to user message.");
+            chatHistory.push({
+              role: "user",
+              content: [
+                { type: "text", text: userMessage },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: latestImage,
+                    detail: "low"
+                  },
+                },
+              ],
+            });
+            // Clear image after using it to avoid sending old context repeatedly? 
+            // Actually, keeping it might be fine, but let's clear it to ensure we only comment on what's currently visible if asked again.
+            // But if the user asks a follow-up question, we might want the image context.
+            // However, the client sends snapshots continuously when speech starts.
+            // So we will likely get a new snapshot for the next turn anyway.
+            latestImage = null; 
+          } else {
+            chatHistory.push({ role: "user", content: userMessage });
+          }
 
           let llmResponse = "I'm not sure what to say.";
           try {
@@ -176,21 +205,9 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           // Handle incoming image snapshot
           const imageBase64 = controlMessage.image;
           if (imageBase64) {
-            console.log("[Vision] Received image snapshot.");
-            // Add image to chat history as a user message with image content
-            chatHistory.push({
-              role: "user",
-              content: [
-                { type: "text", text: "I am sharing my screen with you. Here is a snapshot." },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageBase64, // Data URL is already formatted by client
-                    detail: "low"
-                  },
-                },
-              ],
-            });
+            console.log("[Vision] Received image snapshot. Updating buffer.");
+            latestImage = imageBase64;
+            lastImageTimestamp = Date.now();
           }
         }
       } else if (message instanceof Buffer) {

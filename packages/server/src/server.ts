@@ -91,6 +91,12 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
             "transcript",
             (transcript: string, isFinal: boolean) => {
               if (isFinal) currentTurnTranscript += transcript + " ";
+              // Send transcript to client for real-time display
+              ws.send(JSON.stringify({ 
+                type: "transcript", 
+                role: "user", 
+                text: currentTurnTranscript.trim() || transcript 
+              }));
             }
           );
 
@@ -110,7 +116,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           }
 
           state = "thinking";
-          sttStreamer.finalize();
+          // sttStreamer.finalize(); // Don't close the STT stream, just pause processing
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
 
@@ -137,6 +143,14 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
 
           console.log(`[AI RESPONSE]: "${llmResponse}"`);
           console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
+          
+          // Send AI transcript to client
+          ws.send(JSON.stringify({ 
+            type: "transcript", 
+            role: "ai", 
+            text: llmResponse 
+          }));
+
           state = "speaking";
           ws.send(JSON.stringify({ type: "state_speaking" }));
 

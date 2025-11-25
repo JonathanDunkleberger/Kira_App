@@ -22,36 +22,38 @@ const wss = new WebSocketServer({ server });
 
 console.log("[Server] Starting...");
 
-wss.on("connection", async (ws: any, req: IncomingMessage) => {
+wss.on("connection", (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
 
   let userId: string | null = null;
-  // TODO: Add your free trial timer logic here
-  // let timer = FREE_TRIAL_SECONDS;
-
-  // --- 1. AUTH & USER SETUP ---
-  try {
-    if (token) {
-      const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-      if (!payload?.sub) {
-        throw new Error("Unable to resolve user id from token");
+  
+  // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
+  const authPromise = (async () => {
+    try {
+      if (token) {
+        const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+        if (!payload?.sub) {
+          throw new Error("Unable to resolve user id from token");
+        }
+        userId = payload.sub;
+        console.log(`[Auth] ✅ Authenticated user: ${userId}`);
+        return true;
+      } else if (guestId) {
+        userId = `guest_${guestId}`;
+        console.log(`[Auth] - Guest user: ${userId}`);
+        return true;
+      } else {
+        throw new Error("No auth provided.");
       }
-      userId = payload.sub;
-      console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-    } else if (guestId) {
-      userId = `guest_${guestId}`;
-      console.log(`[Auth] - Guest user: ${userId}`);
-    } else {
-      throw new Error("No auth provided.");
+    } catch (err) {
+      console.error("[Auth] ❌ Failed:", (err as Error).message);
+      ws.close(1008, "Authentication failed");
+      return false;
     }
-  } catch (err) {
-    console.error("[Auth] ❌ Failed:", (err as Error).message);
-    ws.close(1008, "Authentication failed");
-    return;
-  }
+  })();
 
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
@@ -69,6 +71,10 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
   ];
 
   ws.on("message", async (message: Buffer, isBinary: boolean) => {
+    // Wait for auth to complete before processing ANY message
+    const isAuthenticated = await authPromise;
+    if (!isAuthenticated) return; 
+
     try {
       // --- 3. MESSAGE HANDLING ---
       // In ws v8+, message is a Buffer. We need to check if it's a JSON control message.
@@ -85,6 +91,7 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
       }
 
       if (controlMessage) {
+        console.log(`[WS] Control message: ${controlMessage.type}`);
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
           sttStreamer = new DeepgramSTTStreamer();

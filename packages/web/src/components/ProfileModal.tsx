@@ -3,7 +3,8 @@
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Moon, Sun, Trash2, CreditCard, LogOut, X, User } from "lucide-react";
+import { Moon, Sun, Trash2, CreditCard, LogOut, X, User, FileText, Shield } from "lucide-react";
+import Link from "next/link";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -277,6 +278,26 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
                 </div>
               </button>
             )}
+
+            {/* Legal Links */}
+            <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 gap-3">
+                <Link 
+                  href="/privacy" 
+                  className="flex items-center justify-center gap-2 p-3 rounded-xl bg-gray-50 dark:bg-black/20 hover:bg-gray-100 dark:hover:bg-black/30 transition-colors text-sm font-medium text-gray-600 dark:text-gray-400"
+                  onClick={onClose}
+                >
+                  <Shield size={16} />
+                  Privacy
+                </Link>
+                <Link 
+                  href="/terms" 
+                  className="flex items-center justify-center gap-2 p-3 rounded-xl bg-gray-50 dark:bg-black/20 hover:bg-gray-100 dark:hover:bg-black/30 transition-colors text-sm font-medium text-gray-600 dark:text-gray-400"
+                  onClick={onClose}
+                >
+                  <FileText size={16} />
+                  Terms
+                </Link>
+            </div>
           </div>
         </div>
       </div>

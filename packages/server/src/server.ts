@@ -172,6 +172,26 @@ wss.on("connection", async (ws: any, req: IncomingMessage) => {
           });
 
           ttsStreamer.synthesize(llmResponse);
+        } else if (controlMessage.type === "image") {
+          // Handle incoming image snapshot
+          const imageBase64 = controlMessage.image;
+          if (imageBase64) {
+            console.log("[Vision] Received image snapshot.");
+            // Add image to chat history as a user message with image content
+            chatHistory.push({
+              role: "user",
+              content: [
+                { type: "text", text: "I am sharing my screen with you. Here is a snapshot." },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: imageBase64, // Data URL is already formatted by client
+                    detail: "low"
+                  },
+                },
+              ],
+            });
+          }
         }
       } else if (message instanceof Buffer) {
         if (state === "listening" && sttStreamer) {

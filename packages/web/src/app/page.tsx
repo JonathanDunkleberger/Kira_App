@@ -27,10 +27,9 @@ export default function HomePage() {
   // }
 
   const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
+    // Use a fixed greeting on server/initial render to avoid hydration mismatch
+    // We can update it on the client if needed, but "Hello" is safe.
+    return "Hello";
   };
 
   // This is the "Afternoon, Jonny" feature

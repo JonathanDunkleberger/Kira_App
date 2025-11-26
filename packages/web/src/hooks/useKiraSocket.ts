@@ -682,6 +682,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
             setKiraState("listening");
             isServerReady.current = true;
             break;
+          case "ping":
+            // Respond to server heartbeat to keep connection alive
+            if (ws.current?.readyState === WebSocket.OPEN) {
+                ws.current.send(JSON.stringify({ type: "pong" }));
+            }
+            break;
           case "state_thinking":
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
             setKiraState("thinking");

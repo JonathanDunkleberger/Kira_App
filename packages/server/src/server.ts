@@ -20,7 +20,7 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const server = createServer();
 const wss = new WebSocketServer({ server });
 
-console.log("[Server] Starting...");
+  console.log("[Server] Starting...");
 
 wss.on("connection", (ws: any, req: IncomingMessage) => {
   console.log("[WS] New client connecting...");
@@ -28,9 +28,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
 
-  let userId: string | null = null;
-  
-  // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
+  // --- KEEP-ALIVE HEARTBEAT ---
+  // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
+  const keepAliveInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }, 30000);
+
+  let userId: string | null = null;  // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
   // const authPromise = (async () => {
   //   try {
   //     if (token) {
@@ -314,10 +320,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
+    clearInterval(keepAliveInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
+    clearInterval(keepAliveInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
 });

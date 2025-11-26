@@ -184,6 +184,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             chatHistory.push({ role: "user", content: userMessage });
           }
 
+          // --- CONTEXT MANAGEMENT (Sliding Window) ---
+          // Keep System Prompt (index 0) + Last 10 messages to stay under TPM limit
+          const MAX_HISTORY = 10; 
+          if (chatHistory.length > MAX_HISTORY + 1) {
+             const elementsToRemove = chatHistory.length - (MAX_HISTORY + 1);
+             chatHistory.splice(1, elementsToRemove);
+             console.log(`[Context] Pruned history to last ${MAX_HISTORY} messages to save tokens.`);
+          }
+
           let llmResponse = "I'm not sure what to say.";
           try {
             // Loop to handle tool calls

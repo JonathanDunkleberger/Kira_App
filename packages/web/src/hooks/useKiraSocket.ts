@@ -6,7 +6,10 @@ import { useSceneDetection } from "./useSceneDetection";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 500; // 500ms of silence before EOU (snappy response)
+// Adaptive EOU: short utterances get snappy response, long utterances get patience for multi-part questions
+const EOU_TIMEOUT_MIN = 500;   // 500ms silence for short utterances ("yes", "no", "hi")
+const EOU_TIMEOUT_MAX = 1500;  // 1500ms silence for long multi-part questions
+const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each frame ≈ 2.67ms at 48kHz)
 const MIN_SPEECH_FRAMES_FOR_EOU = 50; // Must have ~50 speech frames to prevent junk utterances
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
@@ -75,6 +78,16 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const speechFrameCount = useRef(0); // Track consecutive speech frames for VAD stability
   const totalSpeechFrames = useRef(0); // Total speech frames in current utterance (reset on EOU)
   const hasSpoken = useRef(false); // Whether user has spoken enough to trigger EOU
+
+  /**
+   * Calculates adaptive EOU timeout based on how long the user has been speaking.
+   * Short utterances ("yes") → fast 500ms cutoff for snappy responses.
+   * Long utterances (multi-part questions) → patient 1500ms to allow thinking pauses.
+   */
+  const getAdaptiveEOUTimeout = () => {
+    const ratio = Math.min(totalSpeechFrames.current / LONG_UTTERANCE_FRAMES, 1.0);
+    return Math.round(EOU_TIMEOUT_MIN + (EOU_TIMEOUT_MAX - EOU_TIMEOUT_MIN) * ratio);
+  };
 
   /**
    * Visualizer loop
@@ -582,8 +595,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
               } else {
                 // Silence detected — start EOU timer if user has spoken enough
                 if (!eouTimer.current && hasSpoken.current) {
+                  const adaptiveTimeout = getAdaptiveEOUTimeout();
                   eouTimer.current = setTimeout(() => {
-                    console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames), sending End of Utterance.`);
+                    console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames, timeout: ${adaptiveTimeout}ms), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {
                       ws.current.send(JSON.stringify({ type: "eou" }));
                     }
@@ -595,7 +609,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
                     // Reset speech tracking for next utterance
                     totalSpeechFrames.current = 0;
                     hasSpoken.current = false;
-                  }, EOU_TIMEOUT);
+                  }, adaptiveTimeout);
                 }
               }
               } // end if (kiraStateRef.current === "listening")

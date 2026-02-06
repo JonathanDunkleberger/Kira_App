@@ -68,6 +68,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
+  let lastEouTime = 0;
+  const EOU_DEBOUNCE_MS = 2000; // Ignore EOU if within 2s of last one
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -144,6 +146,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           ws.send(JSON.stringify({ type: "stream_ready" }));
         } else if (controlMessage.type === "eou") {
+          // Debounce: ignore EOU if one was just processed
+          const now = Date.now();
+          if (now - lastEouTime < EOU_DEBOUNCE_MS) {
+            console.log(`[EOU] Ignoring spurious EOU (debounced, ${now - lastEouTime}ms since last)`);
+            return;
+          }
+
           if (
             state !== "listening" ||
             !sttStreamer ||
@@ -153,6 +162,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
 
           state = "thinking";
+          lastEouTime = now; // Record this EOU time for debouncing
           // sttStreamer.finalize(); // Don't close the STT stream, just pause processing
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
@@ -162,8 +172,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           ws.send(JSON.stringify({ type: "state_thinking" }));
 
           // Check if we have a recent image (within last 10 seconds)
-          const now = Date.now();
-          if (latestImages && latestImages.length > 0 && (now - lastImageTimestamp < 10000)) {
+          const imageCheckTime = Date.now();
+          if (latestImages && latestImages.length > 0 && (imageCheckTime - lastImageTimestamp < 10000)) {
             console.log(`[Vision] Attaching ${latestImages.length} images to user message.`);
             
             const content: OpenAI.Chat.ChatCompletionContentPart[] = [

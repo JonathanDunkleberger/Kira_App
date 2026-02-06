@@ -6,6 +6,7 @@ class Linear16Processor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.targetSampleRate = options.processorOptions.targetSampleRate || 16000;
+    this.frameCount = 0;
   }
 
   /**
@@ -74,9 +75,19 @@ class Linear16Processor extends AudioWorkletProcessor {
     // 3. Send the raw PCM ArrayBuffer back to the main thread
     this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
 
-    // Debug: Log every ~100 frames (approx 1 sec)
-    if (Math.random() < 0.01) {
-      this.port.postMessage({ type: "debug", message: "Worklet processing..." });
+    // Debug: Log RMS level every ~100 frames (~1.3 seconds at 128 samples/frame)
+    this.frameCount++;
+    if (this.frameCount % 100 === 0) {
+      // Calculate RMS from the PCM data for diagnostics
+      let sum = 0;
+      for (let i = 0; i < pcmData.length; i++) {
+        sum += pcmData[i] * pcmData[i];
+      }
+      const rms = Math.sqrt(sum / pcmData.length);
+      this.port.postMessage({
+        type: "debug",
+        message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 1500`
+      });
     }
 
     return true; // Tell the browser we're still processing

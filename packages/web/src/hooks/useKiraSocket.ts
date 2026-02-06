@@ -6,7 +6,9 @@ import { useSceneDetection } from "./useSceneDetection";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 1500; // Reduced to 1.5 seconds for snappier responses
+const EOU_TIMEOUT = 2000; // 2 seconds of silence before EOU
+const MIN_SPEECH_FRAMES_FOR_EOU = 10; // Must have at least ~10 speech frames before allowing EOU
+const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
 export const useKiraSocket = (token: string, guestId: string) => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
@@ -71,6 +73,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
   const maxUtteranceTimer = useRef<NodeJS.Timeout | null>(null);
   const speechFrameCount = useRef(0); // Track consecutive speech frames for VAD stability
+  const totalSpeechFrames = useRef(0); // Total speech frames in current utterance (reset on EOU)
+  const hasSpoken = useRef(false); // Whether user has spoken enough to trigger EOU
 
   /**
    * Visualizer loop
@@ -515,16 +519,22 @@ export const useKiraSocket = (token: string, guestId: string) => {
     
               if (isSpeakingFrame) {
                 speechFrameCount.current++;
+                totalSpeechFrames.current++;
               } else {
                 speechFrameCount.current = 0;
               }
     
-              const isSpeaking = speechFrameCount.current > 3;
+              const isSpeaking = speechFrameCount.current > VAD_STABILITY_FRAMES;
+
+              // Mark that the user has spoken enough to warrant an EOU
+              if (totalSpeechFrames.current >= MIN_SPEECH_FRAMES_FOR_EOU) {
+                hasSpoken.current = true;
+              }
     
               if (isSpeaking) {
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
-                if (speechFrameCount.current === 4 && isScreenSharingRef.current) {
+                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current) {
                     console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
                     const snapshot = captureScreenSnapshot();
                     if (snapshot) {
@@ -540,6 +550,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
                     }
                 }
 
+                // User is speaking — cancel any pending EOU timer
                 if (eouTimer.current) {
                   clearTimeout(eouTimer.current);
                   eouTimer.current = null;
@@ -564,12 +575,17 @@ export const useKiraSocket = (token: string, guestId: string) => {
                     if (eouTimer.current) clearTimeout(eouTimer.current);
                     eouTimer.current = null;
                     maxUtteranceTimer.current = null;
+                    // Reset speech tracking for next utterance
+                    totalSpeechFrames.current = 0;
+                    hasSpoken.current = false;
                   }, 60000); 
                 }
               } else {
-                if (!eouTimer.current) {
+                // Silence detected — but ONLY start EOU timer if user has actually spoken
+                // This prevents false EOUs from startup silence or ambient noise
+                if (!eouTimer.current && hasSpoken.current) {
                   eouTimer.current = setTimeout(() => {
-                    console.log("[EOU] Silence detected, sending End of Utterance.");
+                    console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {
                       ws.current.send(JSON.stringify({ type: "eou" }));
                     }
@@ -578,6 +594,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
                       clearTimeout(maxUtteranceTimer.current);
                       maxUtteranceTimer.current = null;
                     }
+                    // Reset speech tracking for next utterance
+                    totalSpeechFrames.current = 0;
+                    hasSpoken.current = false;
                   }, EOU_TIMEOUT);
                 }
               }

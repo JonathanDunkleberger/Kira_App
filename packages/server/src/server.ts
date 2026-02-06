@@ -167,35 +167,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           // CRITICAL: Lock state IMMEDIATELY to prevent audio from leaking into next turn
           state = "thinking";
 
-          // Flush Deepgram to get any pending final transcripts
-          try {
-            sttStreamer.finalize();
-          } catch (e) {
-            // ignore
-          }
-
-          // Wait up to 300ms for a final transcript to arrive from Deepgram
-          if (currentTurnTranscript.trim().length === 0) {
-            console.log("[EOU] No final transcript yet, waiting up to 300ms for Deepgram to finalize...");
-            await new Promise<void>((resolve) => {
-              const checkInterval = setInterval(() => {
-                if (currentTurnTranscript.trim().length > 0) {
-                  clearInterval(checkInterval);
-                  resolve();
-                }
-              }, 30);
-              setTimeout(() => {
-                clearInterval(checkInterval);
-                resolve();
-              }, 300);
-            });
-          }
-
-          // Fall back to interim transcript if final never arrived
+          // If no final transcript, immediately use interim (no waiting needed)
           if (currentTurnTranscript.trim().length === 0 && currentInterimTranscript.trim().length > 0) {
-            console.log(`[EOU] Using interim transcript as fallback: "${currentInterimTranscript}"`);
+            console.log(`[EOU] Using interim transcript: "${currentInterimTranscript}"`);
             currentTurnTranscript = currentInterimTranscript;
-            currentInterimTranscript = "";
           }
 
           // Final check: if still empty, nothing was actually said
@@ -415,7 +390,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         }
       } else if (message instanceof Buffer) {
         if (state === "listening" && sttStreamer) {
-          sttStreamer.write(message); // Forward raw audio to Google
+          sttStreamer.write(message); // Forward raw audio to Deepgram
+        } else {
+          // Log occasionally to confirm audio is being blocked when not listening
+          if (Math.random() < 0.01) console.log(`[AUDIO] Blocked audio forward (state: ${state})`);
         }
       }
     } catch (err) {

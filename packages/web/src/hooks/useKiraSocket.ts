@@ -708,6 +708,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     ws.current.onopen = () => {
       setSocketState("connected");
       reconnectAttempts.current = 0; // Reset on successful connection
+      setError(null); // Clear any error banner from a previous disconnect
       console.log("[WS] ✅ WebSocket connected.");
       // Auto-start the conversation and mic pipeline as soon as socket is open
       startConversation();
@@ -781,12 +782,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
       
       if (event.code === 1008) {
         setError("limit_reached");
-      } else {
-        setError((prev) => {
-            if (prev === "limit_reached") return prev;
-            return `Connection closed (Code: ${event.code})`;
-        });
       }
+      // Don't set error for reconnectable disconnects — only show after all retries fail
 
       stopAudioPipeline();
       ws.current = null;
@@ -799,14 +796,17 @@ export const useKiraSocket = (token: string, guestId: string) => {
         setTimeout(() => {
           connect();
         }, delay);
+      } else if (event.code !== 1000 && event.code !== 1008) {
+        // All reconnect attempts exhausted — show error to user
+        setError("Connection lost. Please refresh the page.");
       }
     };
 
     ws.current.onerror = (err) => {
       console.error("[WS] ❌ WebSocket error:", err);
       setSocketState("closed");
-      setError("WebSocket connection error");
       stopAudioPipeline();
+      // Don't set error here — onclose will handle reconnection or final error
     };
   }, [token, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
 

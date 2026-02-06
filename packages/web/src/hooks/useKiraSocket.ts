@@ -513,12 +513,12 @@ export const useKiraSocket = (token: string, guestId: string) => {
     
             if (
               ws.current?.readyState === WebSocket.OPEN &&
-              kiraStateRef.current === "listening" &&
               isServerReady.current
             ) {
+              // Always send audio to server — server handles state gating for Deepgram
               ws.current.send(pcmBuffer);
     
-              // VAD & EOU Logic
+              // VAD & EOU Logic (runs regardless of state for interrupt detection)
               const VAD_THRESHOLD = 300; 
               const isSpeakingFrame = rms > VAD_THRESHOLD;
     
@@ -587,8 +587,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
                 }
               } else {
                 // Silence detected — but ONLY start EOU timer if user has actually spoken
-                // This prevents false EOUs from startup silence or ambient noise
-                if (!eouTimer.current && hasSpoken.current) {
+                // and we're in listening state (don't send EOU while AI is still responding)
+                if (!eouTimer.current && hasSpoken.current && kiraStateRef.current === "listening") {
                   eouTimer.current = setTimeout(() => {
                     console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {

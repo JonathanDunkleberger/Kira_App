@@ -519,7 +519,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
               ws.current.send(pcmBuffer);
     
               // VAD & EOU Logic
-              const VAD_THRESHOLD = 1500; 
+              const VAD_THRESHOLD = 150; 
               const isSpeakingFrame = rms > VAD_THRESHOLD;
     
               if (isSpeakingFrame) {

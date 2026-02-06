@@ -91,7 +91,7 @@ class Linear16Processor extends AudioWorkletProcessor {
     if (this.frameCount % 100 === 0) {
       this.port.postMessage({
         type: "debug",
-        message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 1500`
+        message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 150`
       });
     }
 

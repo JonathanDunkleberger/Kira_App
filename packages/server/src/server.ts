@@ -73,6 +73,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let viewingContext = ""; // Track the current media context
   let lastEouTime = 0;
   const EOU_DEBOUNCE_MS = 600; // Ignore EOU if within 600ms of last one
+  let consecutiveEmptyEOUs = 0;
+  let lastTranscriptReceivedAt = Date.now();
+  let isReconnectingDeepgram = false;
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -102,6 +105,74 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     },
   ];
 
+  // --- Reusable Deepgram initialization ---
+  async function initDeepgram() {
+    const streamer = new DeepgramSTTStreamer();
+    await streamer.start();
+
+    streamer.on(
+      "transcript",
+      (transcript: string, isFinal: boolean) => {
+        // Reset health tracking — Deepgram is alive
+        consecutiveEmptyEOUs = 0;
+        lastTranscriptReceivedAt = Date.now();
+
+        // Ignore stale transcripts that arrive within 500ms of clearing
+        // These are from Deepgram's pipeline processing old audio from the previous turn
+        if (Date.now() - transcriptClearedAt < 500) {
+          console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
+          return;
+        }
+
+        if (isFinal) {
+          currentTurnTranscript += transcript + " ";
+          currentInterimTranscript = ""; // Clear interim since we got a final
+        } else {
+          currentInterimTranscript = transcript; // Always track latest interim
+        }
+        // Send transcript to client for real-time display
+        ws.send(JSON.stringify({ 
+          type: "transcript", 
+          role: "user", 
+          text: currentTurnTranscript.trim() || transcript 
+        }));
+      }
+    );
+
+    streamer.on("error", (err: Error) => {
+      console.error("[Pipeline] ❌ STT Error:", err.message);
+      reconnectDeepgram();
+    });
+
+    return streamer;
+  }
+
+  // --- Self-healing Deepgram reconnection ---
+  async function reconnectDeepgram() {
+    if (isReconnectingDeepgram) return;
+    isReconnectingDeepgram = true;
+    console.log("[Deepgram] ⚠️ Connection appears dead. Reconnecting...");
+
+    try {
+      // Close old connection if still open
+      if (sttStreamer) {
+        try { sttStreamer.destroy(); } catch (e) { /* ignore */ }
+      }
+
+      // Re-create with same config and listeners
+      sttStreamer = await initDeepgram();
+
+      // Reset tracking
+      consecutiveEmptyEOUs = 0;
+      lastTranscriptReceivedAt = Date.now();
+      console.log("[Deepgram] ✅ Reconnected successfully.");
+    } catch (err) {
+      console.error("[Deepgram] ❌ Reconnection failed:", (err as Error).message);
+    } finally {
+      isReconnectingDeepgram = false;
+    }
+  }
+
   ws.on("message", async (message: Buffer, isBinary: boolean) => {
     // Wait for auth to complete before processing ANY message
     // const isAuthenticated = await authPromise;
@@ -126,39 +197,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         console.log(`[WS] Control message: ${controlMessage.type}`);
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
-          sttStreamer = new DeepgramSTTStreamer();
-          await sttStreamer.start();
-
-          sttStreamer.on(
-            "transcript",
-            (transcript: string, isFinal: boolean) => {
-              // Ignore stale transcripts that arrive within 500ms of clearing
-              // These are from Deepgram's pipeline processing old audio from the previous turn
-              if (Date.now() - transcriptClearedAt < 500) {
-                console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
-                return;
-              }
-
-              if (isFinal) {
-                currentTurnTranscript += transcript + " ";
-                currentInterimTranscript = ""; // Clear interim since we got a final
-              } else {
-                currentInterimTranscript = transcript; // Always track latest interim
-              }
-              // Send transcript to client for real-time display
-              ws.send(JSON.stringify({ 
-                type: "transcript", 
-                role: "user", 
-                text: currentTurnTranscript.trim() || transcript 
-              }));
-            }
-          );
-
-          sttStreamer.on("error", (err: Error) => {
-            console.error("[Pipeline] ❌ STT Error:", err.message);
-            state = "listening"; // Reset
-          });
-
+          sttStreamer = await initDeepgram();
           ws.send(JSON.stringify({ type: "stream_ready" }));
         } else if (controlMessage.type === "eou") {
           // Debounce: ignore EOU if one was just processed
@@ -183,7 +222,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // Final check: if still empty, nothing was actually said
           if (currentTurnTranscript.trim().length === 0) {
-            console.log("[EOU] No transcript available, ignoring EOU.");
+            consecutiveEmptyEOUs++;
+            console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
+            state = "listening"; // Reset state — don't get stuck in "thinking"
+
+            if (consecutiveEmptyEOUs >= 2) {
+              console.log("[EOU] Multiple empty EOUs detected — Deepgram likely dead. Triggering reconnect.");
+              await reconnectDeepgram();
+            }
             return;
           }
 

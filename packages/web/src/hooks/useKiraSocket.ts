@@ -490,8 +490,13 @@ export const useKiraSocket = (token: string, guestId: string) => {
             // We received a 16-bit PCM buffer from the worklet
             const pcmBuffer = event.data as ArrayBuffer;
     
+            // Safety: skip empty/detached buffers
+            if (!pcmBuffer || pcmBuffer.byteLength === 0) return;
+
             // Calculate Mic Volume (RMS)
             const pcmData = new Int16Array(pcmBuffer);
+            if (pcmData.length === 0) return;
+
             let sum = 0;
             for (let i = 0; i < pcmData.length; i++) {
               sum += pcmData[i] * pcmData[i];

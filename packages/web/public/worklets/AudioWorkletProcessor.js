@@ -72,18 +72,23 @@ class Linear16Processor extends AudioWorkletProcessor {
     // 2. Convert to 16-bit PCM (this is the crucial step)
     const pcmData = this.floatTo16BitPCM(downsampled);
 
-    // 3. Send the raw PCM ArrayBuffer back to the main thread
-    this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
-
-    // Debug: Log RMS level every ~100 frames (~1.3 seconds at 128 samples/frame)
+    // 3. Calculate RMS BEFORE transferring the buffer
+    //    (postMessage with transferable detaches the ArrayBuffer, making pcmData empty)
     this.frameCount++;
+    let rms = 0;
     if (this.frameCount % 100 === 0) {
-      // Calculate RMS from the PCM data for diagnostics
       let sum = 0;
       for (let i = 0; i < pcmData.length; i++) {
         sum += pcmData[i] * pcmData[i];
       }
-      const rms = Math.sqrt(sum / pcmData.length);
+      rms = pcmData.length > 0 ? Math.sqrt(sum / pcmData.length) : 0;
+    }
+
+    // 4. Send the raw PCM ArrayBuffer back to the main thread (transfers ownership)
+    this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
+
+    // 5. Send debug info AFTER transfer (uses pre-computed rms)
+    if (this.frameCount % 100 === 0) {
       this.port.postMessage({
         type: "debug",
         message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 1500`

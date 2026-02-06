@@ -18,7 +18,15 @@ const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-const server = createServer();
+const server = createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("ok");
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
 const wss = new WebSocketServer({ server });
 
   console.log("[Server] Starting...");
@@ -57,7 +65,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         console.log(`[Auth] ✅ Authenticated user: ${userId}`);
         return true;
       } else if (guestId) {
-        userId = `guest_${guestId}`;
+        userId = guestId; // Client already sends "guest_<uuid>"
         console.log(`[Auth] - Guest user: ${userId}`);
         return true;
       } else {
@@ -90,6 +98,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let consecutiveEmptyEOUs = 0;
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
+  let clientDisconnected = false;
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -168,7 +177,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- Self-healing Deepgram reconnection ---
   async function reconnectDeepgram() {
-    if (isReconnectingDeepgram) return;
+    if (isReconnectingDeepgram || clientDisconnected) return;
     isReconnectingDeepgram = true;
     console.log("[Deepgram] ⚠️ Connection appears dead. Reconnecting...");
 
@@ -536,12 +545,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
+    clientDisconnected = true;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
+    clientDisconnected = true;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (sttStreamer) sttStreamer.destroy();

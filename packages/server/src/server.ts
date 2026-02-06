@@ -70,8 +70,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     }
   })();
 
-  // --- RATE LIMITING ---
-  const MAX_MESSAGES_PER_SECOND = 100;
+  // --- RATE LIMITING (control messages only — binary audio is exempt) ---
+  const MAX_CONTROL_MESSAGES_PER_SECOND = 50;
   let messageCount = 0;
   const messageCountResetInterval = setInterval(() => { messageCount = 0; }, 1000);
 
@@ -197,13 +197,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     const isAuthenticated = await authPromise;
     if (!isAuthenticated) return;
 
-    // Rate limiting: drop messages if client is flooding
-    messageCount++;
-    if (messageCount > MAX_MESSAGES_PER_SECOND) {
-      console.warn("[WS] Rate limit exceeded, dropping message");
-      return;
-    }
-
     try {
       // --- 3. MESSAGE HANDLING ---
       // In ws v8+, message is a Buffer. We need to check if it's a JSON control message.
@@ -220,6 +213,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       }
 
       if (controlMessage) {
+        // Rate limiting: only count control (JSON) messages, never binary audio
+        messageCount++;
+        if (messageCount > MAX_CONTROL_MESSAGES_PER_SECOND) {
+          console.warn("[WS] Rate limit exceeded, dropping control message");
+          return;
+        }
+
         console.log(`[WS] Control message: ${controlMessage.type}`);
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");

@@ -318,8 +318,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               }
 
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+              // Clear any stale transcripts that accumulated during thinking/speaking
+              currentTurnTranscript = "";
+              currentInterimTranscript = "";
               state = "listening";
               ws.send(JSON.stringify({ type: "state_listening" }));
+              console.log("[STATE] Back to listening, transcripts cleared.");
               
               // Skip the streaming path below
               return;
@@ -380,13 +384,21 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             console.log(`[AI RESPONSE]: "${llmResponse}"`);
             ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
             ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+            // Clear any stale transcripts that accumulated during thinking/speaking
+            currentTurnTranscript = "";
+            currentInterimTranscript = "";
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            console.log("[STATE] Back to listening, transcripts cleared.");
 
           } catch (err) {
             console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
+            // Clear any stale transcripts that accumulated during thinking/speaking
+            currentTurnTranscript = "";
+            currentInterimTranscript = "";
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            console.log("[STATE] Back to listening, transcripts cleared.");
           }
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot

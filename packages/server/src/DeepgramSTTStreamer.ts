@@ -21,6 +21,9 @@ export class DeepgramSTTStreamer extends EventEmitter {
         sample_rate: 16000,
         channels: 1,
         interim_results: true,
+        smart_format: true,
+        endpointing: 300,
+        utterance_end_ms: 1000,
       });
 
       if (this.connection) {

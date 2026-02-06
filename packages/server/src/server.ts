@@ -67,6 +67,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
   let currentInterimTranscript = "";
+  let transcriptClearedAt = 0;
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
@@ -131,6 +132,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           sttStreamer.on(
             "transcript",
             (transcript: string, isFinal: boolean) => {
+              // Ignore stale transcripts that arrive within 500ms of clearing
+              // These are from Deepgram's pipeline processing old audio from the previous turn
+              if (Date.now() - transcriptClearedAt < 500) {
+                console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
+                return;
+              }
+
               if (isFinal) {
                 currentTurnTranscript += transcript + " ";
                 currentInterimTranscript = ""; // Clear interim since we got a final
@@ -183,6 +191,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
           currentInterimTranscript = ""; // Reset interim too
+          transcriptClearedAt = Date.now();
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
@@ -296,6 +305,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               // Clear any stale transcripts that accumulated during thinking/speaking
               currentTurnTranscript = "";
               currentInterimTranscript = "";
+              transcriptClearedAt = Date.now();
               state = "listening";
               ws.send(JSON.stringify({ type: "state_listening" }));
               console.log("[STATE] Back to listening, transcripts cleared.");
@@ -362,6 +372,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             // Clear any stale transcripts that accumulated during thinking/speaking
             currentTurnTranscript = "";
             currentInterimTranscript = "";
+            transcriptClearedAt = Date.now();
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
             console.log("[STATE] Back to listening, transcripts cleared.");
@@ -371,6 +382,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             // Clear any stale transcripts that accumulated during thinking/speaking
             currentTurnTranscript = "";
             currentInterimTranscript = "";
+            transcriptClearedAt = Date.now();
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
             console.log("[STATE] Back to listening, transcripts cleared.");

@@ -515,10 +515,14 @@ export const useKiraSocket = (token: string, guestId: string) => {
               ws.current?.readyState === WebSocket.OPEN &&
               isServerReady.current
             ) {
-              // Always send audio to server — server handles state gating for Deepgram
-              ws.current.send(pcmBuffer);
+              // Only send audio when listening — no interrupt feature
+              if (kiraStateRef.current === "listening") {
+                ws.current.send(pcmBuffer);
+              }
     
-              // VAD & EOU Logic (runs regardless of state for interrupt detection)
+              // VAD & EOU Logic — only runs in listening state
+              // (no interrupt feature; Kira finishes her response before we process speech)
+              if (kiraStateRef.current === "listening") {
               const VAD_THRESHOLD = 300; 
               const isSpeakingFrame = rms > VAD_THRESHOLD;
     
@@ -561,16 +565,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
                   eouTimer.current = null;
                 }
     
-                const currentState = kiraStateRef.current as KiraState;
-                const isAudioPlaying = scheduledSources.current.length > 0 || audioQueue.current.length > 0;
-    
-                if (currentState === "speaking" || currentState === "thinking" || isAudioPlaying) {
-                   stopAudioPlayback();
-                   setKiraState("listening");
-                   kiraStateRef.current = "listening"; 
-                   ws.current.send(JSON.stringify({ type: "interrupt" }));
-                }
-    
                 if (!maxUtteranceTimer.current) {
                   maxUtteranceTimer.current = setTimeout(() => {
                     console.log("[EOU] Max utterance length reached. Forcing EOU.");
@@ -586,9 +580,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
                   }, 60000); 
                 }
               } else {
-                // Silence detected — but ONLY start EOU timer if user has actually spoken
-                // and we're in listening state (don't send EOU while AI is still responding)
-                if (!eouTimer.current && hasSpoken.current && kiraStateRef.current === "listening") {
+                // Silence detected — start EOU timer if user has spoken enough
+                if (!eouTimer.current && hasSpoken.current) {
                   eouTimer.current = setTimeout(() => {
                     console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {
@@ -605,6 +598,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
                   }, EOU_TIMEOUT);
                 }
               }
+              } // end if (kiraStateRef.current === "listening")
             }
           };
       }

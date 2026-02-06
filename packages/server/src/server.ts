@@ -376,11 +376,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             console.log("[STATE] Back to listening, transcripts cleared.");
           }
         } else if (controlMessage.type === "interrupt") {
-          console.log("[WS] Interrupt received — returning to listening (transcripts preserved)");
-          // Return to listening but do NOT clear transcripts
-          // The user's interrupt speech is already being transcribed by Deepgram
-          // and will be captured by the next EOU
-          state = "listening";
+          // Interrupt disabled — too sensitive (desk taps, coughs break conversation)
+          // Kira finishes her response, then listens
+          console.log("[WS] Interrupt received but ignored (feature disabled)");
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array
@@ -395,8 +393,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
         }
       } else if (message instanceof Buffer) {
-        if (sttStreamer) {
-          sttStreamer.write(message); // Always forward audio to Deepgram
+        if (state === "listening" && sttStreamer) {
+          sttStreamer.write(message); // Only forward audio when listening
         }
       }
     } catch (err) {

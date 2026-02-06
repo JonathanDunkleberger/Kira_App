@@ -6,8 +6,8 @@ import { useSceneDetection } from "./useSceneDetection";
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-const EOU_TIMEOUT = 2000; // 2 seconds of silence before EOU
-const MIN_SPEECH_FRAMES_FOR_EOU = 10; // Must have at least ~10 speech frames before allowing EOU
+const EOU_TIMEOUT = 500; // 500ms of silence before EOU (snappy response)
+const MIN_SPEECH_FRAMES_FOR_EOU = 50; // Must have ~50 speech frames to prevent junk utterances
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
 export const useKiraSocket = (token: string, guestId: string) => {
@@ -205,7 +205,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
         const currentTime = playbackContext.current.currentTime;
         // If nextStartTime is in the past (gap in stream), reset to now + small buffer
         if (nextStartTime.current < currentTime) {
-          nextStartTime.current = currentTime + 0.05;
+          nextStartTime.current = currentTime + 0.02;
         }
 
         source.start(nextStartTime.current);
@@ -519,7 +519,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
               ws.current.send(pcmBuffer);
     
               // VAD & EOU Logic
-              const VAD_THRESHOLD = 150; 
+              const VAD_THRESHOLD = 300; 
               const isSpeakingFrame = rms > VAD_THRESHOLD;
     
               if (isSpeakingFrame) {

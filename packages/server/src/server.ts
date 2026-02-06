@@ -69,7 +69,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
   let lastEouTime = 0;
-  const EOU_DEBOUNCE_MS = 2000; // Ignore EOU if within 2s of last one
+  const EOU_DEBOUNCE_MS = 600; // Ignore EOU if within 600ms of last one
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -209,65 +209,130 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
              console.log(`[Context] Pruned history to last ${MAX_HISTORY} messages to save tokens.`);
           }
 
-          let llmResponse = "I'm not sure what to say.";
+          let llmResponse = "";
           try {
-            // Loop to handle tool calls
-            let keepProcessing = true;
-            while (keepProcessing) {
-                const chatCompletion = await openai.chat.completions.create({
-                    model: "gpt-4o",
-                    messages: chatHistory,
-                    tools: tools,
-                    tool_choice: "auto",
-                });
+            // First, handle tool calls with a non-streaming request
+            const initialCompletion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: chatHistory,
+                tools: tools,
+                tool_choice: "auto",
+            });
 
-                const message = chatCompletion.choices[0]?.message;
-                if (!message) break;
+            const initialMessage = initialCompletion.choices[0]?.message;
 
-                chatHistory.push(message);
-
-                if (message.tool_calls) {
-                    for (const toolCall of message.tool_calls) {
-                        if (toolCall.function.name === "update_viewing_context") {
-                            const args = JSON.parse(toolCall.function.arguments);
-                            viewingContext = args.context;
-                            console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
-                            
-                            // Update System Prompt dynamically to reinforce context
-                            const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
-                            if (systemMsg) {
-                                // Remove old context line if exists
-                                let content = systemMsg.content as string;
-                                const contextMarker = "\n\n[CURRENT CONTEXT]:";
-                                if (content.includes(contextMarker)) {
-                                    content = content.split(contextMarker)[0];
-                                }
-                                systemMsg.content = content + `${contextMarker} ${viewingContext}`;
+            if (initialMessage?.tool_calls) {
+                // Handle tool calls (keep existing tool call logic)
+                chatHistory.push(initialMessage);
+                for (const toolCall of initialMessage.tool_calls) {
+                    if (toolCall.function.name === "update_viewing_context") {
+                        const args = JSON.parse(toolCall.function.arguments);
+                        viewingContext = args.context;
+                        console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
+                        const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
+                        if (systemMsg) {
+                            let content = systemMsg.content as string;
+                            const contextMarker = "\n\n[CURRENT CONTEXT]:";
+                            if (content.includes(contextMarker)) {
+                                content = content.split(contextMarker)[0];
                             }
-
-                            chatHistory.push({
-                                role: "tool",
-                                tool_call_id: toolCall.id,
-                                content: `Context updated to: ${viewingContext}`,
-                            });
+                            systemMsg.content = content + `${contextMarker} ${viewingContext}`;
                         }
+                        chatHistory.push({
+                            role: "tool",
+                            tool_call_id: toolCall.id,
+                            content: `Context updated to: ${viewingContext}`,
+                        });
                     }
-                    // Loop again to get the final text response
-                } else {
-                    // No tool calls, we have the final text response
-                    llmResponse = message.content || llmResponse;
-                    keepProcessing = false;
+                }
+                // Now do a STREAMING follow-up call for the actual text response
+            }
+
+            // Streaming LLM call
+            const stream = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: chatHistory,
+                stream: true,
+            });
+
+            // Send state_speaking immediately so client is ready for audio
+            state = "speaking";
+            ws.send(JSON.stringify({ type: "state_speaking" }));
+
+            let sentenceBuffer = "";
+            let fullResponse = "";
+            let ttsQueue: string[] = [];
+            let ttsProcessing = false;
+
+            const processTTSQueue = async () => {
+                if (ttsProcessing || ttsQueue.length === 0) return;
+                ttsProcessing = true;
+
+                while (ttsQueue.length > 0) {
+                    const sentence = ttsQueue.shift()!;
+                    await new Promise<void>((resolve, reject) => {
+                        const streamer = new AzureTTSStreamer();
+                        streamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                        streamer.on("tts_complete", () => resolve());
+                        streamer.on("error", (err: Error) => {
+                            console.error("[TTS] Error:", err);
+                            resolve(); // Continue with next sentence
+                        });
+                        streamer.synthesize(sentence);
+                    });
+                }
+
+                ttsProcessing = false;
+            };
+
+            ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+            for await (const chunk of stream) {
+                const delta = chunk.choices[0]?.delta?.content || "";
+                sentenceBuffer += delta;
+                fullResponse += delta;
+
+                // Check for sentence boundaries
+                const sentenceMatch = sentenceBuffer.match(/^(.*?[.!?…]+\s)/s);
+                if (sentenceMatch) {
+                    const sentence = sentenceMatch[1].trim();
+                    sentenceBuffer = sentenceBuffer.slice(sentenceMatch[0].length);
+                    if (sentence.length > 0) {
+                        console.log(`[TTS] Queuing sentence: "${sentence}"`);
+                        ttsQueue.push(sentence);
+                        processTTSQueue();
+                    }
                 }
             }
+
+            // Flush remaining text
+            if (sentenceBuffer.trim().length > 0) {
+                ttsQueue.push(sentenceBuffer.trim());
+                processTTSQueue();
+            }
+
+            // Wait for all TTS to finish
+            while (ttsProcessing || ttsQueue.length > 0) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            llmResponse = fullResponse;
+            chatHistory.push({ role: "assistant", content: llmResponse });
+
+            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
+
           } catch (err) {
             console.error(
               "[Pipeline] ❌ OpenAI Error:",
               (err as Error).message
             );
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
           }
 
           console.log(`[AI RESPONSE]: "${llmResponse}"`);
-          console.log(`[LLM] Received from OpenAI: "${llmResponse}"`);
           
           // Send AI transcript to client
           ws.send(JSON.stringify({ 
@@ -275,28 +340,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             role: "ai", 
             text: llmResponse 
           }));
-
-          state = "speaking";
-          ws.send(JSON.stringify({ type: "state_speaking" }));
-
-          // --- Real Azure TTS Integration ---
-          console.log("[TTS] Sending to Azure...");
-          const ttsStreamer = new AzureTTSStreamer();
-          ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-          ttsStreamer.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
-          ttsStreamer.on("tts_complete", () => {
-            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-          });
-          ttsStreamer.on("error", (err: Error) => {
-            console.error("[Pipeline] ❌ TTS Error:", err);
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-          });
-
-          ttsStreamer.synthesize(llmResponse);
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array

@@ -68,6 +68,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let currentTurnTranscript = "";
   let currentInterimTranscript = "";
   let transcriptClearedAt = 0;
+  let lastProcessedTranscript = "";
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
@@ -119,7 +120,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
         // Ignore stale transcripts that arrive within 500ms of clearing
         // These are from Deepgram's pipeline processing old audio from the previous turn
-        if (Date.now() - transcriptClearedAt < 500) {
+        if (Date.now() - transcriptClearedAt < 1500) {
           console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
           return;
         }
@@ -238,6 +239,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           currentTurnTranscript = ""; // Reset for next turn
           currentInterimTranscript = ""; // Reset interim too
           transcriptClearedAt = Date.now();
+
+          // Content-based dedup: reject if identical to last processed message
+          if (userMessage === lastProcessedTranscript) {
+            console.log(`[EOU] Ignoring duplicate transcript: "${userMessage}"`);
+            state = "listening";
+            return;
+          }
+          lastProcessedTranscript = userMessage;
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);

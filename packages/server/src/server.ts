@@ -66,6 +66,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let state = "listening";
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
+  let currentInterimTranscript = "";
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
@@ -130,7 +131,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           sttStreamer.on(
             "transcript",
             (transcript: string, isFinal: boolean) => {
-              if (isFinal) currentTurnTranscript += transcript + " ";
+              if (isFinal) {
+                currentTurnTranscript += transcript + " ";
+                currentInterimTranscript = ""; // Clear interim since we got a final
+              } else {
+                currentInterimTranscript = transcript; // Always track latest interim
+              }
               // Send transcript to client for real-time display
               ws.send(JSON.stringify({ 
                 type: "transcript", 
@@ -154,19 +160,52 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             return;
           }
 
-          if (
-            state !== "listening" ||
-            !sttStreamer ||
-            currentTurnTranscript.trim().length === 0
-          ) {
-            return; // Already thinking or nothing was said
+          if (state !== "listening" || !sttStreamer) {
+            return; // Already thinking/speaking
+          }
+
+          // Flush Deepgram to get any pending final transcripts
+          try {
+            sttStreamer.finalize();
+          } catch (e) {
+            // ignore
+          }
+
+          // Wait up to 300ms for a final transcript to arrive from Deepgram
+          if (currentTurnTranscript.trim().length === 0) {
+            console.log("[EOU] No final transcript yet, waiting up to 300ms for Deepgram to finalize...");
+            await new Promise<void>((resolve) => {
+              const checkInterval = setInterval(() => {
+                if (currentTurnTranscript.trim().length > 0) {
+                  clearInterval(checkInterval);
+                  resolve();
+                }
+              }, 30);
+              setTimeout(() => {
+                clearInterval(checkInterval);
+                resolve();
+              }, 300);
+            });
+          }
+
+          // Fall back to interim transcript if final never arrived
+          if (currentTurnTranscript.trim().length === 0 && currentInterimTranscript.trim().length > 0) {
+            console.log(`[EOU] Using interim transcript as fallback: "${currentInterimTranscript}"`);
+            currentTurnTranscript = currentInterimTranscript;
+            currentInterimTranscript = "";
+          }
+
+          // Final check: if still empty, nothing was actually said
+          if (currentTurnTranscript.trim().length === 0) {
+            console.log("[EOU] No transcript available, ignoring EOU.");
+            return;
           }
 
           state = "thinking";
           lastEouTime = now; // Record this EOU time for debouncing
-          // sttStreamer.finalize(); // Don't close the STT stream, just pause processing
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
+          currentInterimTranscript = ""; // Reset interim too
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);

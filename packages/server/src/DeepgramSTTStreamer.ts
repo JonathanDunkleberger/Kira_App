@@ -90,8 +90,11 @@ export class DeepgramSTTStreamer extends EventEmitter {
 
   public finalize() {
     try {
-      this.connection?.finalize?.();
-      this.connection?.finish?.();
+      // Send a finalize message to flush pending transcripts
+      // Do NOT call finish() as that closes the connection
+      if (this.connection && this.connection.getReadyState() === 1) {
+        this.connection.finalize();
+      }
     } catch (err) {
       // ignore
     }

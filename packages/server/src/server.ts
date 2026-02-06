@@ -375,6 +375,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             ws.send(JSON.stringify({ type: "state_listening" }));
             console.log("[STATE] Back to listening, transcripts cleared.");
           }
+        } else if (controlMessage.type === "interrupt") {
+          console.log("[WS] Interrupt received — returning to listening (transcripts preserved)");
+          // Return to listening but do NOT clear transcripts
+          // The user's interrupt speech is already being transcribed by Deepgram
+          // and will be captured by the next EOU
+          state = "listening";
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array
@@ -389,11 +395,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
         }
       } else if (message instanceof Buffer) {
-        if (state === "listening" && sttStreamer) {
-          sttStreamer.write(message); // Forward raw audio to Deepgram
-        } else {
-          // Log occasionally to confirm audio is being blocked when not listening
-          if (Math.random() < 0.01) console.log(`[AUDIO] Blocked audio forward (state: ${state})`);
+        if (sttStreamer) {
+          sttStreamer.write(message); // Always forward audio to Deepgram
         }
       }
     } catch (err) {

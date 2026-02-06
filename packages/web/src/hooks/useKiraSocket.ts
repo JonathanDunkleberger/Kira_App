@@ -62,7 +62,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
   // --- Audio Playback Refs ---
   const audioQueue = useRef<ArrayBuffer[]>([]);
-  const isPlaying = useRef(false);
   const nextStartTime = useRef(0); // Track where the next chunk should start
   const isProcessingQueue = useRef(false); // Lock for the processing loop
   const scheduledSources = useRef<AudioBufferSourceNode[]>([]); // Track all scheduled sources
@@ -78,6 +77,14 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const speechFrameCount = useRef(0); // Track consecutive speech frames for VAD stability
   const totalSpeechFrames = useRef(0); // Total speech frames in current utterance (reset on EOU)
   const hasSpoken = useRef(false); // Whether user has spoken enough to trigger EOU
+
+  // --- Vision: Snapshot Cooldown ---
+  const lastSnapshotTime = useRef(0);
+  const SNAPSHOT_COOLDOWN_MS = 5000; // One snapshot per 5 seconds max
+
+  // --- WebSocket Auto-Reconnect ---
+  const reconnectAttempts = useRef(0);
+  const MAX_RECONNECT_ATTEMPTS = 5;
 
   /**
    * Calculates adaptive EOU timeout based on how long the user has been speaking.
@@ -425,22 +432,24 @@ export const useKiraSocket = (token: string, guestId: string) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
-    // Set canvas dimensions to match video
     if (video.videoWidth === 0 || video.videoHeight === 0) {
         console.warn("[Vision] Capture failed: Video dimensions are 0.");
         return null;
     }
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+
+    // Downscale to max 512px on longest side (matches GPT-4o "low" detail)
+    const MAX_DIM = 512;
+    const scale = Math.min(MAX_DIM / video.videoWidth, MAX_DIM / video.videoHeight, 1);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // Get base64 string (JPEG for smaller size)
-    return canvas.toDataURL("image/jpeg", 0.7);
+    // Lower quality since images are already small
+    return canvas.toDataURL("image/jpeg", 0.5);
   }, []);
 
   /**
@@ -556,19 +565,23 @@ export const useKiraSocket = (token: string, guestId: string) => {
               if (isSpeaking) {
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
+                // Cooldown prevents re-triggering from micro-dips in natural speech
                 if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current) {
-                    console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
-                    const snapshot = captureScreenSnapshot();
-                    if (snapshot) {
-                        console.log("[Vision] Sending snapshot on speech start...");
-                        // Send buffer + current frame
-                        const payload = {
-                            type: "image",
-                            images: [...sceneBufferRef.current, snapshot]
-                        };
-                        ws.current.send(JSON.stringify(payload));
-                    } else {
-                        console.warn("[Vision] Snapshot capture returned null.");
+                    const now = Date.now();
+                    if (now - lastSnapshotTime.current > SNAPSHOT_COOLDOWN_MS) {
+                        lastSnapshotTime.current = now;
+                        console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
+                        const snapshot = captureScreenSnapshot();
+                        if (snapshot) {
+                            console.log("[Vision] Sending snapshot on speech start...");
+                            const payload = {
+                                type: "image",
+                                images: [...sceneBufferRef.current, snapshot]
+                            };
+                            ws.current.send(JSON.stringify(payload));
+                        } else {
+                            console.warn("[Vision] Snapshot capture returned null.");
+                        }
                     }
                 }
 
@@ -694,6 +707,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
     ws.current.onopen = () => {
       setSocketState("connected");
+      reconnectAttempts.current = 0; // Reset on successful connection
       console.log("[WS] ✅ WebSocket connected.");
       // Auto-start the conversation and mic pipeline as soon as socket is open
       startConversation();
@@ -776,6 +790,16 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
       stopAudioPipeline();
       ws.current = null;
+
+      // Auto-reconnect on unexpected closes (not user-initiated or auth failure)
+      if (event.code !== 1000 && event.code !== 1008 && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
+        reconnectAttempts.current++;
+        console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+        setTimeout(() => {
+          connect();
+        }, delay);
+      }
     };
 
     ws.current.onerror = (err) => {

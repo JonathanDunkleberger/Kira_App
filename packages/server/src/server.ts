@@ -37,30 +37,43 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     }
   }, 30000);
 
-  let userId: string | null = null;  // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
-  // const authPromise = (async () => {
-  //   try {
-  //     if (token) {
-  //       const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-  //       if (!payload?.sub) {
-  //         throw new Error("Unable to resolve user id from token");
-  //       }
-  //       userId = payload.sub;
-  //       console.log(`[Auth] ✅ Authenticated user: ${userId}`);
-  //       return true;
-  //     } else if (guestId) {
-  //       userId = `guest_${guestId}`;
-  //       console.log(`[Auth] - Guest user: ${userId}`);
-  //       return true;
-  //     } else {
-  //       throw new Error("No auth provided.");
-  //     }
-  //   } catch (err) {
-  //     console.error("[Auth] ❌ Failed:", (err as Error).message);
-  //     ws.close(1008, "Authentication failed");
-  //     return false;
-  //   }
-  // })();
+  let userId: string | null = null;
+
+  // --- 1. AUTH & USER SETUP ---
+  if (!token && !guestId) {
+    console.error("[Auth] ❌ No authentication provided. Closing connection.");
+    ws.close(1008, "No authentication provided");
+    return;
+  }
+
+  const authPromise = (async () => {
+    try {
+      if (token) {
+        const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+        if (!payload?.sub) {
+          throw new Error("Unable to resolve user id from token");
+        }
+        userId = payload.sub;
+        console.log(`[Auth] ✅ Authenticated user: ${userId}`);
+        return true;
+      } else if (guestId) {
+        userId = `guest_${guestId}`;
+        console.log(`[Auth] - Guest user: ${userId}`);
+        return true;
+      } else {
+        throw new Error("No auth provided.");
+      }
+    } catch (err) {
+      console.error("[Auth] ❌ Failed:", (err as Error).message);
+      ws.close(1008, "Authentication failed");
+      return false;
+    }
+  })();
+
+  // --- RATE LIMITING ---
+  const MAX_MESSAGES_PER_SECOND = 100;
+  let messageCount = 0;
+  const messageCountResetInterval = setInterval(() => { messageCount = 0; }, 1000);
 
   // --- 2. PIPELINE SETUP ---
   let state = "listening";
@@ -145,6 +158,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       reconnectDeepgram();
     });
 
+    streamer.on("close", () => {
+      console.log("[Deepgram] Connection closed unexpectedly. Triggering reconnect.");
+      reconnectDeepgram();
+    });
+
     return streamer;
   }
 
@@ -176,8 +194,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   ws.on("message", async (message: Buffer, isBinary: boolean) => {
     // Wait for auth to complete before processing ANY message
-    // const isAuthenticated = await authPromise;
-    // if (!isAuthenticated) return; 
+    const isAuthenticated = await authPromise;
+    if (!isAuthenticated) return;
+
+    // Rate limiting: drop messages if client is flooding
+    messageCount++;
+    if (messageCount > MAX_MESSAGES_PER_SECOND) {
+      console.warn("[WS] Rate limit exceeded, dropping message");
+      return;
+    }
 
     try {
       // --- 3. MESSAGE HANDLING ---
@@ -283,11 +308,26 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // --- CONTEXT MANAGEMENT (Sliding Window) ---
           // Keep System Prompt (index 0) + Last 10 messages to stay under TPM limit
+          // Preserves the most recent message containing images so visual context isn't lost
           const MAX_HISTORY = 10; 
           if (chatHistory.length > MAX_HISTORY + 1) {
+             // Find the last message with images to preserve
+             let lastImageIdx = -1;
+             for (let i = chatHistory.length - 1; i > 0; i--) {
+               const msg = chatHistory[i];
+               if (Array.isArray(msg.content) && (msg.content as any[]).some((c: any) => c.type === 'image_url')) {
+                 lastImageIdx = i;
+                 break;
+               }
+             }
+
              const elementsToRemove = chatHistory.length - (MAX_HISTORY + 1);
-             chatHistory.splice(1, elementsToRemove);
-             console.log(`[Context] Pruned history to last ${MAX_HISTORY} messages to save tokens.`);
+             // Don't remove past the latest image message
+             const safeToRemove = lastImageIdx > 0 ? Math.min(elementsToRemove, lastImageIdx - 1) : elementsToRemove;
+             if (safeToRemove > 0) {
+               chatHistory.splice(1, safeToRemove);
+             }
+             console.log(`[Context] Pruned history to last ${chatHistory.length - 1} messages.`);
           }
 
           let llmResponse = "";
@@ -339,11 +379,60 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
 
-              // Split into sentences and TTS each one sequentially
-              const sentences = llmResponse.match(/[^.!?…]+[.!?…]+\s?/g) || [llmResponse];
-              for (const sentence of sentences) {
-                const trimmed = sentence.trim();
-                if (trimmed.length === 0) continue;
+              try {
+                // Split on sentence-ending punctuation followed by space+uppercase or end of string
+                // Avoids splitting on "Dr.", "e.g.", "3.14", "U.S.A.", etc.
+                const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
+                for (const sentence of sentences) {
+                  const trimmed = sentence.trim();
+                  if (trimmed.length === 0) continue;
+                  await new Promise<void>((resolve) => {
+                    const tts = new AzureTTSStreamer();
+                    tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                    tts.on("tts_complete", () => resolve());
+                    tts.on("error", (err: Error) => {
+                      console.error("[TTS] Sentence error:", err);
+                      resolve();
+                    });
+                    tts.synthesize(trimmed);
+                  });
+                }
+              } catch (ttsErr) {
+                console.error("[TTS] Fatal error in TTS pipeline:", ttsErr);
+              } finally {
+                ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                currentTurnTranscript = "";
+                currentInterimTranscript = "";
+                transcriptClearedAt = Date.now();
+                state = "listening";
+                ws.send(JSON.stringify({ type: "state_listening" }));
+                console.log("[STATE] Back to listening, transcripts cleared.");
+              }
+              
+              // Skip the streaming path below
+              return;
+            }
+
+            // Step 2: Streaming LLM call (only reached if tool calls were processed)
+            // NOTE: This is an intentional second LLM call. After processing tool calls (e.g.
+            // update_viewing_context), we need a fresh completion that incorporates the tool
+            // results. Tools are omitted here to prevent infinite chaining. Adds ~1-2s latency
+            // on tool-call turns only (which are infrequent).
+            state = "speaking";
+            ws.send(JSON.stringify({ type: "state_speaking" }));
+            ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+            try {
+              const stream = await openai.chat.completions.create({
+                model: OPENAI_MODEL,
+                messages: chatHistory,
+                stream: true,
+              });
+
+              let sentenceBuffer = "";
+              let fullResponse = "";
+
+              const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
                   const tts = new AzureTTSStreamer();
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
@@ -352,95 +441,63 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                     console.error("[TTS] Sentence error:", err);
                     resolve();
                   });
-                  tts.synthesize(trimmed);
+                  tts.synthesize(text);
                 });
+              };
+
+              for await (const chunk of stream) {
+                const delta = chunk.choices[0]?.delta?.content || "";
+                sentenceBuffer += delta;
+                fullResponse += delta;
+
+                // Split on sentence-ending punctuation followed by space+uppercase or end
+                const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
+                if (match) {
+                  const sentence = match[1].trim();
+                  sentenceBuffer = sentenceBuffer.slice(match[0].length);
+                  if (sentence.length > 0) {
+                    console.log(`[TTS] Streaming sentence: "${sentence}"`);
+                    await speakSentence(sentence);
+                  }
+                }
               }
 
+              // Flush remaining text
+              if (sentenceBuffer.trim().length > 0) {
+                await speakSentence(sentenceBuffer.trim());
+              }
+
+              llmResponse = fullResponse;
+              chatHistory.push({ role: "assistant", content: llmResponse });
+
+              console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+            } catch (ttsErr) {
+              console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
+            } finally {
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-              // Clear any stale transcripts that accumulated during thinking/speaking
               currentTurnTranscript = "";
               currentInterimTranscript = "";
               transcriptClearedAt = Date.now();
               state = "listening";
               ws.send(JSON.stringify({ type: "state_listening" }));
               console.log("[STATE] Back to listening, transcripts cleared.");
-              
-              // Skip the streaming path below
-              return;
             }
-
-            // Step 2: Streaming LLM call (only reached if tool calls were processed)
-            state = "speaking";
-            ws.send(JSON.stringify({ type: "state_speaking" }));
-            ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-            const stream = await openai.chat.completions.create({
-              model: OPENAI_MODEL,
-              messages: chatHistory,
-              stream: true,
-            });
-
-            let sentenceBuffer = "";
-            let fullResponse = "";
-
-            const speakSentence = async (text: string) => {
-              await new Promise<void>((resolve) => {
-                const tts = new AzureTTSStreamer();
-                tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
-                tts.on("tts_complete", () => resolve());
-                tts.on("error", (err: Error) => {
-                  console.error("[TTS] Sentence error:", err);
-                  resolve();
-                });
-                tts.synthesize(text);
-              });
-            };
-
-            for await (const chunk of stream) {
-              const delta = chunk.choices[0]?.delta?.content || "";
-              sentenceBuffer += delta;
-              fullResponse += delta;
-
-              // Look for sentence boundaries
-              const match = sentenceBuffer.match(/^(.*?[.!?…]+\s)/s);
-              if (match) {
-                const sentence = match[1].trim();
-                sentenceBuffer = sentenceBuffer.slice(match[0].length);
-                if (sentence.length > 0) {
-                  console.log(`[TTS] Streaming sentence: "${sentence}"`);
-                  await speakSentence(sentence);
-                }
-              }
-            }
-
-            // Flush remaining text
-            if (sentenceBuffer.trim().length > 0) {
-              await speakSentence(sentenceBuffer.trim());
-            }
-
-            llmResponse = fullResponse;
-            chatHistory.push({ role: "assistant", content: llmResponse });
-
-            console.log(`[AI RESPONSE]: "${llmResponse}"`);
-            ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
-            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-            // Clear any stale transcripts that accumulated during thinking/speaking
-            currentTurnTranscript = "";
-            currentInterimTranscript = "";
-            transcriptClearedAt = Date.now();
-            state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-            console.log("[STATE] Back to listening, transcripts cleared.");
 
           } catch (err) {
             console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
-            // Clear any stale transcripts that accumulated during thinking/speaking
+            // Ensure client always returns to listening state on any error
+            try {
+              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+            } catch (_) { /* ws may be closed */ }
             currentTurnTranscript = "";
             currentInterimTranscript = "";
             transcriptClearedAt = Date.now();
             state = "listening";
-            ws.send(JSON.stringify({ type: "state_listening" }));
-            console.log("[STATE] Back to listening, transcripts cleared.");
+            try {
+              ws.send(JSON.stringify({ type: "state_listening" }));
+            } catch (_) { /* ws may be closed */ }
+            console.log("[STATE] Back to listening after error, transcripts cleared.");
           }
         } else if (controlMessage.type === "interrupt") {
           // Interrupt disabled — too sensitive (desk taps, coughs break conversation)
@@ -480,11 +537,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   ws.on("close", (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
     clearInterval(keepAliveInterval);
+    clearInterval(messageCountResetInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
     clearInterval(keepAliveInterval);
+    clearInterval(messageCountResetInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
 });

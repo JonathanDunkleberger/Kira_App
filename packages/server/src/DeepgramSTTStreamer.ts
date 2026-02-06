@@ -68,6 +68,7 @@ export class DeepgramSTTStreamer extends EventEmitter {
 
       this.connection.on(LiveTranscriptionEvents.Close, () => {
         console.log("[Deepgram] Connection closed.");
+        this.emit("close");
       });
     } catch (err) {
       this.emit("error", err);

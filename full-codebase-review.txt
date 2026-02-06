@@ -1,0 +1,2440 @@
+﻿
+================================================================
+FILE: packages/server/src/server.ts
+================================================================
+import { WebSocketServer } from "ws";
+import type { IncomingMessage } from "http";
+import { createServer } from "http";
+import { URL } from "url";
+import { PrismaClient } from "@prisma/client";
+import { createClerkClient, verifyToken } from "@clerk/backend";
+import { OpenAI } from "openai";
+import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
+import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
+
+// --- CONFIGURATION ---
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
+const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
+const prisma = new PrismaClient();
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+const server = createServer();
+const wss = new WebSocketServer({ server });
+
+  console.log("[Server] Starting...");
+
+wss.on("connection", (ws: any, req: IncomingMessage) => {
+  console.log("[WS] New client connecting...");
+  const url = new URL(req.url!, `wss://${req.headers.host}`);
+  const token = url.searchParams.get("token");
+  const guestId = url.searchParams.get("guestId");
+
+  // --- KEEP-ALIVE HEARTBEAT ---
+  // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
+  const keepAliveInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "ping" }));
+    }
+  }, 30000);
+
+  let userId: string | null = null;  // --- 1. AUTH & USER SETUP (Async, but non-blocking for listener attachment) ---
+  // const authPromise = (async () => {
+  //   try {
+  //     if (token) {
+  //       const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
+  //       if (!payload?.sub) {
+  //         throw new Error("Unable to resolve user id from token");
+  //       }
+  //       userId = payload.sub;
+  //       console.log(`[Auth] âœ… Authenticated user: ${userId}`);
+  //       return true;
+  //     } else if (guestId) {
+  //       userId = `guest_${guestId}`;
+  //       console.log(`[Auth] - Guest user: ${userId}`);
+  //       return true;
+  //     } else {
+  //       throw new Error("No auth provided.");
+  //     }
+  //   } catch (err) {
+  //     console.error("[Auth] âŒ Failed:", (err as Error).message);
+  //     ws.close(1008, "Authentication failed");
+  //     return false;
+  //   }
+  // })();
+
+  // --- 2. PIPELINE SETUP ---
+  let state = "listening";
+  let sttStreamer: DeepgramSTTStreamer | null = null;
+  let currentTurnTranscript = "";
+  let currentInterimTranscript = "";
+  let transcriptClearedAt = 0;
+  let lastProcessedTranscript = "";
+  let latestImages: string[] | null = null;
+  let lastImageTimestamp = 0;
+  let viewingContext = ""; // Track the current media context
+  let lastEouTime = 0;
+  const EOU_DEBOUNCE_MS = 600; // Ignore EOU if within 600ms of last one
+  let consecutiveEmptyEOUs = 0;
+  let lastTranscriptReceivedAt = Date.now();
+  let isReconnectingDeepgram = false;
+
+  const tools: OpenAI.Chat.ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "update_viewing_context",
+        description: "Updates the current media or activity context that the user is watching or doing. Call this when the user mentions watching a specific movie, show, or playing a game.",
+        parameters: {
+          type: "object",
+          properties: {
+            context: {
+              type: "string",
+              description: "The name of the media or activity (e.g., 'Berserk 1997', 'The Office', 'Coding').",
+            },
+          },
+          required: ["context"],
+        },
+      },
+    },
+  ];
+
+  const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    {
+      role: "system",
+      content:
+        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it.\n\n[VISUAL BEHAVIOR]\nUse the visual input to understand the context, but DO NOT describe the scene unless explicitly asked. If the user asks a question unrelated to the screen (e.g., about esports), answer it directly without mentioning the screen. Only comment on the visual content if the user's prompt implies they are talking about it.\n\n[TECHNICAL NOTE: VISUAL INPUT]\nWhen the user shares their screen, you may receive a sequence of images instead of a single snapshot. These images represent a timeline of events leading up to the current moment. The LAST image in the sequence is the current moment. The previous images are context (e.g., previous scenes in a video). Use this sequence to understand what is happening over time. IMPORTANT: Do NOT mention 'images', 'frames', or 'sequence' in your response. Speak naturally as if you are watching the video alongside the user.\n\n[CHARACTER IDENTIFICATION]\nWhen a media context is active (e.g., a movie, anime, or game), you are expected to identify the fictional characters visible on screen. Do not be vague. If you see a character that looks like Guts from Berserk and the context is Berserk, call him Guts. If you are unsure, make an educated guess based on the context. Do not refuse to identify fictional characters.\n\n[CONTEXT MANAGEMENT]\nIf the user mentions what they are watching or doing, use the 'update_viewing_context' tool to set the context. This helps you understand the images better.",
+    },
+  ];
+
+  // --- Reusable Deepgram initialization ---
+  async function initDeepgram() {
+    const streamer = new DeepgramSTTStreamer();
+    await streamer.start();
+
+    streamer.on(
+      "transcript",
+      (transcript: string, isFinal: boolean) => {
+        // Reset health tracking â€” Deepgram is alive
+        consecutiveEmptyEOUs = 0;
+        lastTranscriptReceivedAt = Date.now();
+
+        // Ignore stale transcripts that arrive within 500ms of clearing
+        // These are from Deepgram's pipeline processing old audio from the previous turn
+        if (Date.now() - transcriptClearedAt < 1500) {
+          console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
+          return;
+        }
+
+        if (isFinal) {
+          currentTurnTranscript += transcript + " ";
+          currentInterimTranscript = ""; // Clear interim since we got a final
+        } else {
+          currentInterimTranscript = transcript; // Always track latest interim
+        }
+        // Send transcript to client for real-time display
+        ws.send(JSON.stringify({ 
+          type: "transcript", 
+          role: "user", 
+          text: currentTurnTranscript.trim() || transcript 
+        }));
+      }
+    );
+
+    streamer.on("error", (err: Error) => {
+      console.error("[Pipeline] âŒ STT Error:", err.message);
+      reconnectDeepgram();
+    });
+
+    return streamer;
+  }
+
+  // --- Self-healing Deepgram reconnection ---
+  async function reconnectDeepgram() {
+    if (isReconnectingDeepgram) return;
+    isReconnectingDeepgram = true;
+    console.log("[Deepgram] âš ï¸ Connection appears dead. Reconnecting...");
+
+    try {
+      // Close old connection if still open
+      if (sttStreamer) {
+        try { sttStreamer.destroy(); } catch (e) { /* ignore */ }
+      }
+
+      // Re-create with same config and listeners
+      sttStreamer = await initDeepgram();
+
+      // Reset tracking
+      consecutiveEmptyEOUs = 0;
+      lastTranscriptReceivedAt = Date.now();
+      console.log("[Deepgram] âœ… Reconnected successfully.");
+    } catch (err) {
+      console.error("[Deepgram] âŒ Reconnection failed:", (err as Error).message);
+    } finally {
+      isReconnectingDeepgram = false;
+    }
+  }
+
+  ws.on("message", async (message: Buffer, isBinary: boolean) => {
+    // Wait for auth to complete before processing ANY message
+    // const isAuthenticated = await authPromise;
+    // if (!isAuthenticated) return; 
+
+    try {
+      // --- 3. MESSAGE HANDLING ---
+      // In ws v8+, message is a Buffer. We need to check if it's a JSON control message.
+      let controlMessage: any = null;
+      
+      // Try to parse as JSON if it looks like text
+      try {
+        const str = message.toString();
+        if (str.trim().startsWith("{")) {
+          controlMessage = JSON.parse(str);
+        }
+      } catch (e) {
+        // Not JSON, treat as binary audio
+      }
+
+      if (controlMessage) {
+        console.log(`[WS] Control message: ${controlMessage.type}`);
+        if (controlMessage.type === "start_stream") {
+          console.log("[WS] Received start_stream. Initializing pipeline...");
+          sttStreamer = await initDeepgram();
+          ws.send(JSON.stringify({ type: "stream_ready" }));
+        } else if (controlMessage.type === "eou") {
+          // Debounce: ignore EOU if one was just processed
+          const now = Date.now();
+          if (now - lastEouTime < EOU_DEBOUNCE_MS) {
+            console.log(`[EOU] Ignoring spurious EOU (debounced, ${now - lastEouTime}ms since last)`);
+            return;
+          }
+
+          if (state !== "listening" || !sttStreamer) {
+            return; // Already thinking/speaking
+          }
+
+          // CRITICAL: Lock state IMMEDIATELY to prevent audio from leaking into next turn
+          state = "thinking";
+
+          // If no final transcript, immediately use interim (no waiting needed)
+          if (currentTurnTranscript.trim().length === 0 && currentInterimTranscript.trim().length > 0) {
+            console.log(`[EOU] Using interim transcript: "${currentInterimTranscript}"`);
+            currentTurnTranscript = currentInterimTranscript;
+          }
+
+          // Final check: if still empty, nothing was actually said
+          if (currentTurnTranscript.trim().length === 0) {
+            consecutiveEmptyEOUs++;
+            console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
+            state = "listening"; // Reset state â€” don't get stuck in "thinking"
+
+            if (consecutiveEmptyEOUs >= 2) {
+              console.log("[EOU] Multiple empty EOUs detected â€” Deepgram likely dead. Triggering reconnect.");
+              await reconnectDeepgram();
+            }
+            return;
+          }
+
+          lastEouTime = now; // Record this EOU time for debouncing
+          const userMessage = currentTurnTranscript.trim();
+          currentTurnTranscript = ""; // Reset for next turn
+          currentInterimTranscript = ""; // Reset interim too
+          transcriptClearedAt = Date.now();
+
+          // Content-based dedup: reject if identical to last processed message
+          if (userMessage === lastProcessedTranscript) {
+            console.log(`[EOU] Ignoring duplicate transcript: "${userMessage}"`);
+            state = "listening";
+            return;
+          }
+          lastProcessedTranscript = userMessage;
+
+          console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
+          console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
+          ws.send(JSON.stringify({ type: "state_thinking" }));
+
+          // Check if we have a recent image (within last 10 seconds)
+          const imageCheckTime = Date.now();
+          if (latestImages && latestImages.length > 0 && (imageCheckTime - lastImageTimestamp < 10000)) {
+            console.log(`[Vision] Attaching ${latestImages.length} images to user message.`);
+            
+            const content: OpenAI.Chat.ChatCompletionContentPart[] = [
+                { type: "text", text: userMessage }
+            ];
+
+            latestImages.forEach((img) => {
+                content.push({
+                    type: "image_url",
+                    image_url: {
+                        url: img,
+                        detail: "low"
+                    }
+                });
+            });
+
+            chatHistory.push({
+              role: "user",
+              content: content,
+            });
+            
+            latestImages = null; 
+          } else {
+            chatHistory.push({ role: "user", content: userMessage });
+          }
+
+          // --- CONTEXT MANAGEMENT (Sliding Window) ---
+          // Keep System Prompt (index 0) + Last 10 messages to stay under TPM limit
+          const MAX_HISTORY = 10; 
+          if (chatHistory.length > MAX_HISTORY + 1) {
+             const elementsToRemove = chatHistory.length - (MAX_HISTORY + 1);
+             chatHistory.splice(1, elementsToRemove);
+             console.log(`[Context] Pruned history to last ${MAX_HISTORY} messages to save tokens.`);
+          }
+
+          let llmResponse = "";
+          try {
+            // Step 1: Check for tool calls with a non-streaming request
+            const initialCompletion = await openai.chat.completions.create({
+              model: OPENAI_MODEL,
+              messages: chatHistory,
+              tools: tools,
+              tool_choice: "auto",
+            });
+
+            const initialMessage = initialCompletion.choices[0]?.message;
+
+            if (initialMessage?.tool_calls) {
+              // Handle tool calls (existing logic)
+              chatHistory.push(initialMessage);
+              for (const toolCall of initialMessage.tool_calls) {
+                if (toolCall.function.name === "update_viewing_context") {
+                  const args = JSON.parse(toolCall.function.arguments);
+                  viewingContext = args.context;
+                  console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
+                  const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
+                  if (systemMsg) {
+                    let content = systemMsg.content as string;
+                    const contextMarker = "\n\n[CURRENT CONTEXT]:";
+                    if (content.includes(contextMarker)) {
+                      content = content.split(contextMarker)[0];
+                    }
+                    systemMsg.content = content + `${contextMarker} ${viewingContext}`;
+                  }
+                  chatHistory.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: `Context updated to: ${viewingContext}`,
+                  });
+                }
+              }
+            } else if (initialMessage && !initialMessage.tool_calls) {
+              // No tool calls on first try â€” use this response directly
+              // (skip the streaming call since we already have the answer)
+              llmResponse = initialMessage.content || "";
+              chatHistory.push({ role: "assistant", content: llmResponse });
+
+              console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+              
+              state = "speaking";
+              ws.send(JSON.stringify({ type: "state_speaking" }));
+              ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+              // Split into sentences and TTS each one sequentially
+              const sentences = llmResponse.match(/[^.!?â€¦]+[.!?â€¦]+\s?/g) || [llmResponse];
+              for (const sentence of sentences) {
+                const trimmed = sentence.trim();
+                if (trimmed.length === 0) continue;
+                await new Promise<void>((resolve) => {
+                  const tts = new AzureTTSStreamer();
+                  tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                  tts.on("tts_complete", () => resolve());
+                  tts.on("error", (err: Error) => {
+                    console.error("[TTS] Sentence error:", err);
+                    resolve();
+                  });
+                  tts.synthesize(trimmed);
+                });
+              }
+
+              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+              // Clear any stale transcripts that accumulated during thinking/speaking
+              currentTurnTranscript = "";
+              currentInterimTranscript = "";
+              transcriptClearedAt = Date.now();
+              state = "listening";
+              ws.send(JSON.stringify({ type: "state_listening" }));
+              console.log("[STATE] Back to listening, transcripts cleared.");
+              
+              // Skip the streaming path below
+              return;
+            }
+
+            // Step 2: Streaming LLM call (only reached if tool calls were processed)
+            state = "speaking";
+            ws.send(JSON.stringify({ type: "state_speaking" }));
+            ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+            const stream = await openai.chat.completions.create({
+              model: OPENAI_MODEL,
+              messages: chatHistory,
+              stream: true,
+            });
+
+            let sentenceBuffer = "";
+            let fullResponse = "";
+
+            const speakSentence = async (text: string) => {
+              await new Promise<void>((resolve) => {
+                const tts = new AzureTTSStreamer();
+                tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                tts.on("tts_complete", () => resolve());
+                tts.on("error", (err: Error) => {
+                  console.error("[TTS] Sentence error:", err);
+                  resolve();
+                });
+                tts.synthesize(text);
+              });
+            };
+
+            for await (const chunk of stream) {
+              const delta = chunk.choices[0]?.delta?.content || "";
+              sentenceBuffer += delta;
+              fullResponse += delta;
+
+              // Look for sentence boundaries
+              const match = sentenceBuffer.match(/^(.*?[.!?â€¦]+\s)/s);
+              if (match) {
+                const sentence = match[1].trim();
+                sentenceBuffer = sentenceBuffer.slice(match[0].length);
+                if (sentence.length > 0) {
+                  console.log(`[TTS] Streaming sentence: "${sentence}"`);
+                  await speakSentence(sentence);
+                }
+              }
+            }
+
+            // Flush remaining text
+            if (sentenceBuffer.trim().length > 0) {
+              await speakSentence(sentenceBuffer.trim());
+            }
+
+            llmResponse = fullResponse;
+            chatHistory.push({ role: "assistant", content: llmResponse });
+
+            console.log(`[AI RESPONSE]: "${llmResponse}"`);
+            ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+            // Clear any stale transcripts that accumulated during thinking/speaking
+            currentTurnTranscript = "";
+            currentInterimTranscript = "";
+            transcriptClearedAt = Date.now();
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
+            console.log("[STATE] Back to listening, transcripts cleared.");
+
+          } catch (err) {
+            console.error("[Pipeline] âŒ OpenAI Error:", (err as Error).message);
+            // Clear any stale transcripts that accumulated during thinking/speaking
+            currentTurnTranscript = "";
+            currentInterimTranscript = "";
+            transcriptClearedAt = Date.now();
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
+            console.log("[STATE] Back to listening, transcripts cleared.");
+          }
+        } else if (controlMessage.type === "interrupt") {
+          // Interrupt disabled â€” too sensitive (desk taps, coughs break conversation)
+          // Kira finishes her response, then listens
+          console.log("[WS] Interrupt received but ignored (feature disabled)");
+        } else if (controlMessage.type === "image") {
+          // Handle incoming image snapshot
+          // Support both single 'image' (legacy/fallback) and 'images' array
+          if (controlMessage.images && Array.isArray(controlMessage.images)) {
+             console.log(`[Vision] Received ${controlMessage.images.length} images. Updating buffer.`);
+             latestImages = controlMessage.images;
+             lastImageTimestamp = Date.now();
+          } else if (controlMessage.image) {
+            console.log("[Vision] Received single image snapshot. Updating buffer.");
+            latestImages = [controlMessage.image];
+            lastImageTimestamp = Date.now();
+          }
+        }
+      } else if (message instanceof Buffer) {
+        if (state === "listening" && sttStreamer) {
+          sttStreamer.write(message); // Only forward audio when listening
+        }
+      }
+    } catch (err) {
+      console.error(
+        "[FATAL] MESSAGE HANDLER CRASHED:",
+        (err as Error).message
+      );
+      console.error((err as Error).stack);
+      if (ws.readyState === (ws as any).OPEN) {
+        ws.send(JSON.stringify({ type: "error", message: "Internal server error" }));
+        ws.close(1011, "Internal server error");
+      }
+    }
+  });
+
+  ws.on("close", (code: number) => {
+    console.log(`[WS] Client disconnected. Code: ${code}`);
+    clearInterval(keepAliveInterval);
+    if (sttStreamer) sttStreamer.destroy();
+  });
+  ws.on("error", (err: Error) => {
+    console.error("[WS] WebSocket error:", err);
+    clearInterval(keepAliveInterval);
+    if (sttStreamer) sttStreamer.destroy();
+  });
+});
+
+// --- START THE SERVER ---
+server.listen(PORT, () => {
+  console.log(`ðŸš€ Voice pipeline server listening on :${PORT}`);
+});
+
+
+
+================================================================
+FILE: packages/server/src/DeepgramSTTStreamer.ts
+================================================================
+import { EventEmitter } from "events";
+import type { LiveClient } from "@deepgram/sdk";
+import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY!;
+
+export class DeepgramSTTStreamer extends EventEmitter {
+  private connection: LiveClient | null = null;
+  private keepAliveInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    super();
+  }
+
+  public async start() {
+    try {
+      const deepgram = createClient(DEEPGRAM_API_KEY);
+      this.connection = await deepgram.listen.live({
+        model: "nova-2",
+        encoding: "linear16",
+        sample_rate: 16000,
+        channels: 1,
+        interim_results: true,
+        smart_format: true,
+        endpointing: 300,
+        utterance_end_ms: 1000,
+      });
+
+      if (this.connection) {
+        this.keepAliveInterval = setInterval(() => {
+          if (this.connection && this.connection.getReadyState() === 1) {
+            this.connection.keepAlive();
+          }
+        }, 3000);
+      }
+
+      this.connection.on(LiveTranscriptionEvents.Open, () => {
+        console.log("[Deepgram] Connection opened.");
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+        try {
+          const channel =
+            data.channel || data.channel_index || data.data?.channel;
+          const alt =
+            data.channel?.alternatives?.[0] ||
+            data.alternatives?.[0] ||
+            channel?.alternatives?.[0];
+          const transcript: string | undefined = alt?.transcript;
+          const isFinal: boolean = Boolean(
+            data.is_final ?? data.speech_final ?? alt?.is_final
+          );
+          
+          if (transcript && transcript.trim().length > 0) {
+            // console.log(`[Deepgram] Transcript: "${transcript}" (Final: ${isFinal})`);
+            this.emit("transcript", transcript, isFinal);
+          }
+        } catch (err) {
+          console.error("[Deepgram] Error processing transcript:", err);
+          this.emit("error", err);
+        }
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
+        console.error("[Deepgram] Error:", e);
+        this.emit("error", e);
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Close, () => {
+        console.log("[Deepgram] Connection closed.");
+      });
+    } catch (err) {
+      this.emit("error", err);
+    }
+  }
+
+  public write(audioChunk: Buffer) {
+    if (!this.connection) return;
+    try {
+      // Deepgram expects raw PCM LINEAR16 at 16kHz as ArrayBuffer/Blob
+      const ab = audioChunk.buffer.slice(
+        audioChunk.byteOffset,
+        audioChunk.byteOffset + audioChunk.byteLength
+      );
+      this.connection.send(ab);
+    } catch (err) {
+      this.emit("error", err);
+    }
+  }
+
+  public finalize() {
+    try {
+      // Send a finalize message to flush pending transcripts
+      // Do NOT call finish() as that closes the connection
+      if (this.connection && this.connection.getReadyState() === 1) {
+        this.connection.finalize();
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  public destroy() {
+    try {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = null;
+      }
+      this.connection?.finalize?.();
+      this.connection?.finish?.();
+    } catch (err) {
+      // ignore
+    } finally {
+      this.connection = null;
+    }
+  }
+}
+
+
+
+================================================================
+FILE: packages/server/src/AzureTTSStreamer.ts
+================================================================
+import {
+  SpeechSynthesizer,
+  SpeechConfig,
+  AudioConfig,
+  ResultReason,
+  CancellationDetails,
+  SpeechSynthesisOutputFormat,
+  PushAudioOutputStreamCallback,
+  PushAudioOutputStream,
+} from "microsoft-cognitiveservices-speech-sdk";
+import { EventEmitter } from "events";
+import { PassThrough } from "stream";
+
+const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_KEY!;
+const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION!;
+const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
+const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+25.00%";
+const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+25.00%";
+
+const speechConfig = SpeechConfig.fromSubscription(
+  AZURE_SPEECH_KEY,
+  AZURE_SPEECH_REGION
+);
+// We request raw 16kHz PCM to feed directly to the LINEAR16 WebSocket pipeline.
+speechConfig.speechSynthesisOutputFormat =
+  SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm;
+
+class NodePushAudioStream extends PushAudioOutputStreamCallback {
+  constructor(private readonly stream: PassThrough) {
+    super();
+  }
+
+  write(data: ArrayBuffer): number {
+    const buffer = Buffer.from(data);
+    this.stream.write(buffer);
+    return buffer.length;
+  }
+
+  close(): void {
+    this.stream.end();
+  }
+}
+
+export class AzureTTSStreamer extends EventEmitter {
+  private synthesizer: SpeechSynthesizer;
+  private audioStream: PassThrough;
+
+  constructor() {
+    super();
+    this.audioStream = new PassThrough();
+    const pushStream = PushAudioOutputStream.create(
+      new NodePushAudioStream(this.audioStream)
+    );
+    const audioConfig = AudioConfig.fromStreamOutput(pushStream);
+    this.synthesizer = new SpeechSynthesizer(speechConfig, audioConfig);
+
+    this.audioStream.on("data", (chunk) => this.emit("audio_chunk", chunk));
+    this.audioStream.on("end", () => this.emit("tts_complete"));
+  }
+
+  public stop() {
+    try {
+      // Close the synthesizer to stop generation
+      this.synthesizer.close();
+      // Destroy the stream to stop emitting data events
+      this.audioStream.destroy();
+      console.log("[AzureTTS] Stopped synthesis.");
+    } catch (e) {
+      console.error("[AzureTTS] Error stopping synthesizer:", e);
+    }
+  }
+
+  private buildSsml(text: string): string {
+    return `
+      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+        <voice name="${AZURE_TTS_VOICE}">
+          <prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">
+            ${text}
+          </prosody>
+        </voice>
+      </speak>
+    `;
+  }
+
+  public synthesize(text: string) {
+    const ssml = this.buildSsml(text);
+    this.synthesizer.speakSsmlAsync(
+      ssml,
+      (result) => {
+        if (result.reason !== ResultReason.SynthesizingAudioCompleted) {
+          const errorDetails = CancellationDetails.fromResult(result);
+          console.error(
+            "[AzureTTS] âŒ Synthesis canceled:",
+            errorDetails.reason,
+            errorDetails.errorDetails
+          );
+          this.emit("error", errorDetails.errorDetails);
+        }
+        this.synthesizer.close();
+      },
+      (err) => {
+        console.error("[AzureTTS] âŒ Synthesis error:", err);
+        this.emit("error", err);
+        this.synthesizer.close();
+      }
+    );
+  }
+}
+
+
+
+================================================================
+FILE: packages/server/package.json
+================================================================
+{
+  "name": "server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "prisma generate --schema=../../prisma/schema.prisma && tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.3.0",
+    "@google-cloud/speech": "^6.5.0",
+    "@prisma/client": "5.22.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.38.0",
+    "openai": "^4.52.7",
+    "stripe": "^16.2.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@deepgram/sdk": "^3.5.0",
+    "prisma": "5.22.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.3"
+  }
+}
+
+
+
+================================================================
+FILE: packages/web/src/hooks/useKiraSocket.ts
+================================================================
+"use client";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useSceneDetection } from "./useSceneDetection";
+
+// Define the states
+type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
+export type KiraState = "listening" | "thinking" | "speaking";
+
+// Adaptive EOU: short utterances get snappy response, long utterances get patience for multi-part questions
+const EOU_TIMEOUT_MIN = 500;   // 500ms silence for short utterances ("yes", "no", "hi")
+const EOU_TIMEOUT_MAX = 1500;  // 1500ms silence for long multi-part questions
+const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each frame â‰ˆ 2.67ms at 48kHz)
+const MIN_SPEECH_FRAMES_FOR_EOU = 50; // Must have ~50 speech frames to prevent junk utterances
+const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
+
+export const useKiraSocket = (token: string, guestId: string) => {
+  const [socketState, setSocketState] = useState<SocketState>("idle");
+  const [kiraState, setKiraState] = useState<KiraState>("listening");
+  const kiraStateRef = useRef<KiraState>("listening"); // Ref to track state in callbacks
+
+  // Sync ref with state
+  useEffect(() => {
+    kiraStateRef.current = kiraState;
+  }, [kiraState]);
+
+  const [micVolume, setMicVolume] = useState(0);
+  const [playerVolume, setPlayerVolume] = useState(0);
+  const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isPro, setIsPro] = useState(false);
+  const ws = useRef<WebSocket | null>(null);
+  const isServerReady = useRef(false); // Gate for sending audio
+
+  // --- Audio Pipeline Refs ---
+  const audioContext = useRef<AudioContext | null>(null);
+  const audioWorkletNode = useRef<AudioWorkletNode | null>(null);
+  const audioSource = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioStream = useRef<MediaStream | null>(null);
+
+  // --- Screen Share Refs ---
+  const screenStream = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isScreenSharingRef = useRef(false); // Ref to track screen share state in callbacks
+
+  // --- Scene Detection ---
+  const sceneBuffer = useSceneDetection({
+    videoRef,
+    enabled: isScreenSharing,
+    checkInterval: 2000,
+    threshold: 15
+  });
+  const sceneBufferRef = useRef<string[]>([]);
+
+  // Sync sceneBuffer to ref for access in callbacks
+  useEffect(() => {
+    sceneBufferRef.current = sceneBuffer;
+  }, [sceneBuffer]);
+
+  // --- Audio Playback Refs ---
+  const audioQueue = useRef<ArrayBuffer[]>([]);
+  const isPlaying = useRef(false);
+  const nextStartTime = useRef(0); // Track where the next chunk should start
+  const isProcessingQueue = useRef(false); // Lock for the processing loop
+  const scheduledSources = useRef<AudioBufferSourceNode[]>([]); // Track all scheduled sources
+
+  const playbackContext = useRef<AudioContext | null>(null);
+  const playbackSource = useRef<AudioBufferSourceNode | null>(null);
+  const playbackAnalyser = useRef<AnalyserNode | null>(null);
+  const playbackAnimationFrame = useRef<number | null>(null);
+
+  // --- "Ramble Bot" EOU Timer ---
+  const eouTimer = useRef<NodeJS.Timeout | null>(null);
+  const maxUtteranceTimer = useRef<NodeJS.Timeout | null>(null);
+  const speechFrameCount = useRef(0); // Track consecutive speech frames for VAD stability
+  const totalSpeechFrames = useRef(0); // Total speech frames in current utterance (reset on EOU)
+  const hasSpoken = useRef(false); // Whether user has spoken enough to trigger EOU
+
+  /**
+   * Calculates adaptive EOU timeout based on how long the user has been speaking.
+   * Short utterances ("yes") â†’ fast 500ms cutoff for snappy responses.
+   * Long utterances (multi-part questions) â†’ patient 1500ms to allow thinking pauses.
+   */
+  const getAdaptiveEOUTimeout = () => {
+    const ratio = Math.min(totalSpeechFrames.current / LONG_UTTERANCE_FRAMES, 1.0);
+    return Math.round(EOU_TIMEOUT_MIN + (EOU_TIMEOUT_MAX - EOU_TIMEOUT_MIN) * ratio);
+  };
+
+  /**
+   * Visualizer loop
+   */
+  const startVisualizer = useCallback(() => {
+    if (playbackAnimationFrame.current) return; // Already running
+
+    const updateVolume = () => {
+      if (!playbackAnalyser.current || !playbackContext.current) {
+        playbackAnimationFrame.current = null;
+        return;
+      }
+
+      // Stop visualizing if we are past the scheduled audio end time (plus a small buffer)
+      // and the queue is empty.
+      // We use time-based checking as it's more reliable for continuous streams than tracking source nodes.
+      if (
+        playbackContext.current.currentTime > nextStartTime.current + 0.5 &&
+        audioQueue.current.length === 0
+      ) {
+        setPlayerVolume(0);
+        playbackAnimationFrame.current = null;
+        return; // Stop the loop
+      }
+
+      const dataArray = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
+      playbackAnalyser.current.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      // Normalize to 0-1 range (approximate)
+      const rawVolume = Math.min(1, average / 128);
+      
+      // Smooth the player volume
+      setPlayerVolume((prev) => {
+          const smoothingFactor = 0.3;
+          return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+      });
+      
+      playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
+    };
+    updateVolume();
+  }, []);
+
+  /**
+   * Stops current audio playback and clears the queue.
+   */
+  const stopAudioPlayback = useCallback(() => {
+    // 1. Clear the queue so no new chunks are scheduled
+    audioQueue.current = [];
+    
+    // 2. Stop ALL scheduled sources
+    scheduledSources.current.forEach((source) => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
+    });
+    scheduledSources.current = []; // Clear the list
+    playbackSource.current = null;
+
+    // 3. Reset scheduling time
+    if (playbackContext.current) {
+        nextStartTime.current = playbackContext.current.currentTime;
+    } else {
+        nextStartTime.current = 0;
+    }
+
+    // 4. Stop visualizer
+    if (playbackAnimationFrame.current) {
+        cancelAnimationFrame(playbackAnimationFrame.current);
+        playbackAnimationFrame.current = null;
+        setPlayerVolume(0);
+    }
+  }, []);
+
+  /**
+   * Processes the audio queue and schedules chunks to play back-to-back.
+   * This eliminates gaps/pops caused by waiting for onended events.
+   */
+  const processAudioQueue = useCallback(async () => {
+    if (isProcessingQueue.current) return;
+    isProcessingQueue.current = true;
+
+    // Ensure the playback audio context is running (and is 16kHz for Azure's output)
+    if (
+      !playbackContext.current ||
+      playbackContext.current.state === "closed"
+    ) {
+      playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      playbackAnalyser.current = null; // Reset analyser if context is recreated
+    }
+    if (playbackContext.current.state === "suspended") {
+      await playbackContext.current.resume();
+    }
+
+    while (audioQueue.current.length > 0) {
+      const buffer = audioQueue.current.shift();
+      if (!buffer) continue;
+
+      try {
+        // 1. Decode the raw PCM buffer
+        const wavBuffer = createWavHeader(buffer, 16000, 16);
+        const audioBuffer = await playbackContext.current.decodeAudioData(
+          wavBuffer
+        );
+
+        // 2. Create a source node
+        const source = playbackContext.current.createBufferSource();
+        source.buffer = audioBuffer;
+
+        // Create Analyser for visualization if needed
+        if (!playbackAnalyser.current) {
+          playbackAnalyser.current = playbackContext.current.createAnalyser();
+          playbackAnalyser.current.fftSize = 256;
+          playbackAnalyser.current.connect(playbackContext.current.destination);
+        }
+        // Connect source -> analyser -> destination
+        // Note: We already connected analyser -> destination above, so just source -> analyser
+        source.connect(playbackAnalyser.current);
+
+        // 3. Schedule playback
+        const currentTime = playbackContext.current.currentTime;
+        // If nextStartTime is in the past (gap in stream), reset to now + small buffer
+        if (nextStartTime.current < currentTime) {
+          nextStartTime.current = currentTime + 0.02;
+        }
+
+        source.start(nextStartTime.current);
+        nextStartTime.current += audioBuffer.duration;
+
+        // Keep track of the source so we can stop it later
+        scheduledSources.current.push(source);
+        source.onended = () => {
+          // Remove from list when done to keep memory clean
+          scheduledSources.current = scheduledSources.current.filter(s => s !== source);
+        };
+
+        // Keep track of the last source if we need to stop it manually later
+        playbackSource.current = source;
+
+        // Start visualizer if not running
+        startVisualizer();
+
+      } catch (e) {
+        console.error("[AudioPlayer] Error decoding or playing audio:", e);
+      }
+    }
+
+    isProcessingQueue.current = false;
+  }, [startVisualizer]);
+
+  const stopAudioPipeline = useCallback(() => {
+    if (eouTimer.current) clearTimeout(eouTimer.current);
+
+    audioWorkletNode.current?.port.close();
+    audioSource.current?.disconnect();
+    audioStream.current?.getTracks().forEach((track) => track.stop());
+    screenStream.current?.getTracks().forEach((track) => track.stop()); // Stop screen share
+    audioContext.current?.close().catch(console.error);
+    playbackContext.current?.close().catch(console.error);
+
+    audioWorkletNode.current = null;
+    audioSource.current = null;
+    audioStream.current = null;
+    audioContext.current = null;
+    playbackContext.current = null;
+    playbackAnalyser.current = null; // Ensure analyser is cleared so it's recreated with new context
+
+    console.log("[Audio] ðŸ›‘ Audio pipeline stopped.");
+  }, []);
+
+  /**
+   * Initializes audio contexts and requests mic permission.
+   * Must be called from a user gesture.
+   */
+  const initializeAudio = useCallback(async () => {
+    try {
+      console.log("[Audio] Initializing audio contexts...");
+      
+      // 1. Create/Resume AudioContext
+      if (!audioContext.current || audioContext.current.state === "closed") {
+        audioContext.current = new AudioContext();
+      }
+      if (audioContext.current.state === "suspended") {
+        await audioContext.current.resume();
+      }
+
+      // 2. Create/Resume PlaybackContext
+      if (!playbackContext.current || playbackContext.current.state === "closed") {
+        playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      }
+      if (playbackContext.current.state === "suspended") {
+        await playbackContext.current.resume();
+      }
+
+      // 3. Request Mic Permission (if not already)
+      if (!audioStream.current) {
+        console.log("[Audio] Requesting mic permission...");
+        audioStream.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            autoGainControl: true,
+            noiseSuppression: true,
+          },
+        });
+        console.log("[Audio] Mic permission granted.");
+      }
+
+      setIsAudioBlocked(false);
+      return true;
+    } catch (err) {
+      console.error("[Audio] Failed to initialize audio:", err);
+      setIsAudioBlocked(true);
+      return false;
+    }
+  }, []);
+
+  /**
+   * Toggles microphone mute state
+   */
+  const toggleMute = useCallback(() => {
+    if (audioStream.current) {
+      const audioTracks = audioStream.current.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsMuted(prev => !prev);
+    }
+  }, []);
+
+  /**
+   * Starts screen sharing
+   */
+  const startScreenShare = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 10 } // Low framerate is fine for snapshots
+        },
+        audio: false
+      });
+
+      screenStream.current = stream;
+      setIsScreenSharing(true);
+      isScreenSharingRef.current = true;
+
+      // Setup hidden video element for capturing frames
+      if (!videoRef.current) {
+        videoRef.current = document.createElement("video");
+        videoRef.current.autoplay = true;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        // Ensure it's in the DOM so it processes frames
+        videoRef.current.style.position = "absolute";
+        videoRef.current.style.top = "-9999px";
+        videoRef.current.style.left = "-9999px";
+        videoRef.current.style.width = "1px";
+        videoRef.current.style.height = "1px";
+        videoRef.current.style.opacity = "0";
+        videoRef.current.style.pointerEvents = "none";
+        document.body.appendChild(videoRef.current);
+      }
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+
+      // Handle user stopping share via browser UI
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+
+      console.log("[Vision] Screen share started");
+      
+      // Send an initial snapshot immediately to establish context
+      setTimeout(() => {
+          const snapshot = captureScreenSnapshot();
+          if (snapshot && ws.current?.readyState === WebSocket.OPEN) {
+              console.log("[Vision] Sending initial snapshot...");
+              // Send buffer + current frame
+              const payload = {
+                  type: "image",
+                  images: [...sceneBufferRef.current, snapshot]
+              };
+              ws.current.send(JSON.stringify(payload));
+          } else {
+              console.warn("[Vision] Failed to capture initial snapshot.");
+          }
+      }, 1000);
+
+    } catch (err) {
+      console.error("[Vision] Failed to start screen share:", err);
+      setIsScreenSharing(false);
+    }
+  }, []);
+
+  /**
+   * Stops screen sharing
+   */
+  const stopScreenShare = useCallback(() => {
+    if (screenStream.current) {
+      screenStream.current.getTracks().forEach(track => track.stop());
+      screenStream.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+      // Remove from DOM
+      if (videoRef.current.parentNode) {
+          videoRef.current.parentNode.removeChild(videoRef.current);
+      }
+      videoRef.current = null; // Reset ref
+    }
+    setIsScreenSharing(false);
+    isScreenSharingRef.current = false;
+    console.log("[Vision] Screen share stopped");
+  }, []);
+
+  const captureScreenSnapshot = useCallback(() => {
+    if (!videoRef.current || !screenStream.current) {
+        console.warn("[Vision] Capture failed: No video or stream.");
+        return null;
+    }
+
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    // Set canvas dimensions to match video
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn("[Vision] Capture failed: Video dimensions are 0.");
+        return null;
+    }
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Get base64 string (JPEG for smaller size)
+    return canvas.toDataURL("image/jpeg", 0.7);
+  }, []);
+
+  /**
+   * Initializes and starts the audio capture pipeline (Mic -> Worklet -> WebSocket)
+   */
+  const startAudioPipeline = useCallback(async () => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      console.error("[Audio] WebSocket not open, cannot start pipeline.");
+      return;
+    }
+
+    try {
+      // Ensure audio is initialized (should be done by connect/initializeAudio already)
+      if (!audioStream.current) {
+         const success = await initializeAudio();
+         if (!success) throw new Error("Audio initialization failed");
+      }
+
+      // 2. Load AudioWorklet module
+      if (!audioContext.current) throw new Error("AudioContext is null");
+      
+      console.log("[Audio] Loading AudioWorklet module...");
+      try {
+        // Use a robust path for the worklet
+        const workletUrl = "/worklets/AudioWorkletProcessor.js";
+        // Check if module is already added (not directly possible, but addModule is idempotent-ish or throws)
+        // We'll just try adding it.
+        await audioContext.current.audioWorklet.addModule(workletUrl);
+        console.log("[Audio] AudioWorklet module loaded.");
+      } catch (e) {
+        // Ignore error if module already added (DOMException)
+        console.log("[Audio] Worklet might already be loaded:", e);
+      }
+
+      // 3. Create the Worklet Node
+      if (!audioWorkletNode.current) {
+          audioWorkletNode.current = new AudioWorkletNode(
+            audioContext.current,
+            "audio-worklet-processor",
+            {
+              processorOptions: {
+                targetSampleRate: 16000,
+              },
+            }
+          );
+          
+          audioWorkletNode.current.onprocessorerror = (err) => {
+            console.error("[Audio] Worklet processor error:", err);
+          };
+
+          // 5. Connect the Worklet to the main app (this hook)
+          audioWorkletNode.current.port.onmessage = (event) => {
+            // ... (Existing message handler logic) ...
+            // Handle Debug Messages from Worklet
+            if (event.data && event.data.type === "debug") {
+               console.log("[AudioWorklet]", event.data.message);
+               return;
+            }
+    
+            // We received a 16-bit PCM buffer from the worklet
+            const pcmBuffer = event.data as ArrayBuffer;
+    
+            // Safety: skip empty/detached buffers
+            if (!pcmBuffer || pcmBuffer.byteLength === 0) return;
+
+            // Calculate Mic Volume (RMS)
+            const pcmData = new Int16Array(pcmBuffer);
+            if (pcmData.length === 0) return;
+
+            let sum = 0;
+            for (let i = 0; i < pcmData.length; i++) {
+              sum += pcmData[i] * pcmData[i];
+            }
+            const rms = Math.sqrt(sum / pcmData.length);
+            // Normalize (16-bit max is 32768)
+            // Multiply by a factor to make it more sensitive visually
+            const rawVolume = Math.min(1, (rms / 32768) * 5);
+            
+            setMicVolume((prev) => {
+                const smoothingFactor = 0.3; 
+                return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+            });
+    
+            if (
+              ws.current?.readyState === WebSocket.OPEN &&
+              isServerReady.current
+            ) {
+              // Only send audio when listening â€” no interrupt feature
+              if (kiraStateRef.current === "listening") {
+                ws.current.send(pcmBuffer);
+              }
+    
+              // VAD & EOU Logic â€” only runs in listening state
+              // (no interrupt feature; Kira finishes her response before we process speech)
+              if (kiraStateRef.current === "listening") {
+              const VAD_THRESHOLD = 300; 
+              const isSpeakingFrame = rms > VAD_THRESHOLD;
+    
+              if (isSpeakingFrame) {
+                speechFrameCount.current++;
+                totalSpeechFrames.current++;
+              } else {
+                speechFrameCount.current = 0;
+              }
+    
+              const isSpeaking = speechFrameCount.current > VAD_STABILITY_FRAMES;
+
+              // Mark that the user has spoken enough to warrant an EOU
+              if (totalSpeechFrames.current >= MIN_SPEECH_FRAMES_FOR_EOU) {
+                hasSpoken.current = true;
+              }
+    
+              if (isSpeaking) {
+                // --- VISION: Snapshot-on-Speech ---
+                // If this is the START of speech (transition from silence), capture a frame
+                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current) {
+                    console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
+                    const snapshot = captureScreenSnapshot();
+                    if (snapshot) {
+                        console.log("[Vision] Sending snapshot on speech start...");
+                        // Send buffer + current frame
+                        const payload = {
+                            type: "image",
+                            images: [...sceneBufferRef.current, snapshot]
+                        };
+                        ws.current.send(JSON.stringify(payload));
+                    } else {
+                        console.warn("[Vision] Snapshot capture returned null.");
+                    }
+                }
+
+                // User is speaking â€” cancel any pending EOU timer
+                if (eouTimer.current) {
+                  clearTimeout(eouTimer.current);
+                  eouTimer.current = null;
+                }
+    
+                if (!maxUtteranceTimer.current) {
+                  maxUtteranceTimer.current = setTimeout(() => {
+                    console.log("[EOU] Max utterance length reached. Forcing EOU.");
+                    if (ws.current?.readyState === WebSocket.OPEN) {
+                      ws.current.send(JSON.stringify({ type: "eou" }));
+                    }
+                    if (eouTimer.current) clearTimeout(eouTimer.current);
+                    eouTimer.current = null;
+                    maxUtteranceTimer.current = null;
+                    // Reset speech tracking for next utterance
+                    totalSpeechFrames.current = 0;
+                    hasSpoken.current = false;
+                  }, 60000); 
+                }
+              } else {
+                // Silence detected â€” start EOU timer if user has spoken enough
+                if (!eouTimer.current && hasSpoken.current) {
+                  const adaptiveTimeout = getAdaptiveEOUTimeout();
+                  eouTimer.current = setTimeout(() => {
+                    console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames, timeout: ${adaptiveTimeout}ms), sending End of Utterance.`);
+                    if (ws.current?.readyState === WebSocket.OPEN) {
+                      ws.current.send(JSON.stringify({ type: "eou" }));
+                    }
+                    eouTimer.current = null;
+                    if (maxUtteranceTimer.current) {
+                      clearTimeout(maxUtteranceTimer.current);
+                      maxUtteranceTimer.current = null;
+                    }
+                    // Reset speech tracking for next utterance
+                    totalSpeechFrames.current = 0;
+                    hasSpoken.current = false;
+                  }, adaptiveTimeout);
+                }
+              }
+              } // end if (kiraStateRef.current === "listening")
+            }
+          };
+      }
+
+      // 4. Connect the Mic to the Worklet (if not already)
+      if (audioSource.current) audioSource.current.disconnect();
+      
+      console.log("[Audio] Connecting mic to worklet...");
+      if (audioStream.current) {
+        audioSource.current = audioContext.current.createMediaStreamSource(
+          audioStream.current
+        );
+        audioSource.current.connect(audioWorkletNode.current);
+      } else {
+        console.error("[Audio] No audio stream available to connect.");
+      }
+
+      // WORKAROUND: Connect worklet to a silent destination
+      const silentGain = audioContext.current.createGain();
+      silentGain.gain.value = 0;
+      audioWorkletNode.current.connect(silentGain);
+      silentGain.connect(audioContext.current.destination);
+
+      console.log("[Audio] âœ… Audio pipeline started.");
+    } catch (err) {
+      console.error("[Audio] âŒ Failed to start audio pipeline:", err);
+      setError("Microphone access denied or failed. Please check permissions.");
+    }
+  }, [stopAudioPlayback, initializeAudio, captureScreenSnapshot]);
+
+  /**
+   * Explicitly start the conversation: send start_stream and start mic pipeline.
+   * Adds detailed logs to trace user action and pipeline startup.
+   */
+  const startConversation = useCallback(() => {
+    console.log("[UI] Start button clicked.");
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("[WS] Sending 'start_stream' message...");
+      try {
+        ws.current.send(JSON.stringify({ type: "start_stream" }));
+      } catch (err) {
+        console.error("[WS] Failed to send start_stream:", err);
+      }
+      
+      // Start mic immediately to satisfy browser user-gesture requirements
+      console.log("[Audio] Starting local audio pipeline...");
+      startAudioPipeline();
+    } else {
+      console.error(
+        "[WS] Cannot start stream: WebSocket is not open or not connected."
+      );
+    }
+  }, [startAudioPipeline]);
+
+  /**
+   * Explicitly resume audio contexts.
+   * Call this from a user gesture (click/tap) if audio is blocked.
+   */
+  const resumeAudio = useCallback(async () => {
+    await initializeAudio();
+  }, [initializeAudio]);
+
+  /**
+   * Main connection logic
+   */
+  const connect = useCallback(async () => {
+    if (ws.current) return;
+
+    // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
+    await initializeAudio();
+
+    const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
+    const authParam = token ? `token=${token}` : `guestId=${guestId}`;
+
+    setSocketState("connecting");
+    isServerReady.current = false;
+    ws.current = new WebSocket(`${wsUrl}?${authParam}`);
+    ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
+
+    ws.current.onopen = () => {
+      setSocketState("connected");
+      console.log("[WS] âœ… WebSocket connected.");
+      // Auto-start the conversation and mic pipeline as soon as socket is open
+      startConversation();
+    };
+
+    ws.current.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        // This is a JSON control message
+        const msg = JSON.parse(event.data);
+
+        switch (msg.type) {
+          case "session_config":
+            console.log("[WS] Received session config:", msg);
+            setIsPro(msg.isPro);
+            break;
+          case "stream_ready":
+            console.log("[WS] Received stream_ready.");
+            setKiraState("listening");
+            isServerReady.current = true;
+            break;
+          case "ping":
+            // Respond to server heartbeat to keep connection alive
+            if (ws.current?.readyState === WebSocket.OPEN) {
+                ws.current.send(JSON.stringify({ type: "pong" }));
+            }
+            break;
+          case "state_thinking":
+            if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
+            setKiraState("thinking");
+            break;
+          case "state_speaking":
+            setKiraState("speaking");
+            audioQueue.current = []; // Clear old queue
+            nextStartTime.current = 0; // Reset scheduling time
+            break;
+          case "state_listening":
+            setKiraState("listening");
+            break;
+          case "transcript":
+            setTranscript({ role: msg.role, text: msg.text });
+            break;
+          case "tts_chunk_starts":
+            break;
+          case "tts_chunk_ends":
+            // The server is done sending audio for this turn
+            break;
+          case "error":
+            if (msg.code === "limit_reached") {
+              console.warn("[WS] Daily limit reached.");
+              setError("limit_reached"); // Special error code for UI
+            } else {
+              console.error("[WS] Server error:", msg.message);
+              setError(msg.message);
+            }
+            break;
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        // This is a raw PCM audio chunk from Azure
+        // Only process audio if we are in 'speaking' state.
+        // If we are 'listening' (e.g. due to interruption), we drop these packets.
+        if (kiraStateRef.current === "speaking") {
+            audioQueue.current.push(event.data);
+            processAudioQueue();
+        }
+      }
+    };
+
+    ws.current.onclose = (event) => {
+      console.log(`[WS] ðŸ”Œ Connection closed: ${event.code} - ${event.reason}`);
+      setSocketState("closed");
+      
+      if (event.code === 1008) {
+        setError("limit_reached");
+      } else {
+        setError((prev) => {
+            if (prev === "limit_reached") return prev;
+            return `Connection closed (Code: ${event.code})`;
+        });
+      }
+
+      stopAudioPipeline();
+      ws.current = null;
+    };
+
+    ws.current.onerror = (err) => {
+      console.error("[WS] âŒ WebSocket error:", err);
+      setSocketState("closed");
+      setError("WebSocket connection error");
+      stopAudioPipeline();
+    };
+  }, [token, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
+
+  const disconnect = useCallback(() => {
+    if (eouTimer.current) clearTimeout(eouTimer.current);
+    if (ws.current) {
+      setSocketState("closing");
+      ws.current.close();
+    }
+  }, []);
+
+  /**
+   * Helper function to create a WAV header for raw PCM data
+   */
+  const createWavHeader = (
+    data: ArrayBuffer,
+    sampleRate: number,
+    sampleBits: number
+  ): ArrayBuffer => {
+    const dataLength = data.byteLength;
+    const buffer = new ArrayBuffer(44 + dataLength);
+    const view = new DataView(buffer);
+
+    const writeString = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    const channels = 1;
+    const byteRate = (sampleRate * channels * sampleBits) / 8;
+    const blockAlign = (channels * sampleBits) / 8;
+
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, sampleBits, true);
+    writeString(36, "data");
+    view.setUint32(40, dataLength, true);
+
+    // Copy the PCM data
+    const pcm = new Uint8Array(data);
+    const dataView = new Uint8Array(buffer, 44);
+    dataView.set(pcm);
+
+    return buffer;
+  };
+
+  return {
+    connect,
+    disconnect,
+    startConversation,
+    socketState,
+    kiraState,
+    micVolume,
+    playerVolume,
+    transcript,
+    error,
+    isAudioBlocked,
+    resumeAudio,
+    isMuted,
+    toggleMute,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare,
+    isPro
+  };
+};
+
+
+
+================================================================
+FILE: packages/web/src/hooks/useSceneDetection.ts
+================================================================
+import { useEffect, useRef, useState } from "react";
+
+interface UseSceneDetectionProps {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  enabled: boolean;
+  checkInterval?: number; // ms, default 2000
+  threshold?: number; // percentage 0-100, default 15
+}
+
+export const useSceneDetection = ({
+  videoRef,
+  enabled,
+  checkInterval = 2000,
+  threshold = 15,
+}: UseSceneDetectionProps) => {
+  const [sceneBuffer, setSceneBuffer] = useState<string[]>([]);
+  const lastFrameData = useRef<Uint8ClampedArray | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Reset buffer when disabled
+  useEffect(() => {
+    if (!enabled) {
+      setSceneBuffer([]);
+      lastFrameData.current = null;
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled || !videoRef.current) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+
+    const detectSceneChange = () => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) return;
+
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement("canvas");
+        canvasRef.current.width = 64;
+        canvasRef.current.height = 64;
+      }
+
+      const ctx = canvasRef.current.getContext("2d");
+      if (!ctx) return;
+
+      // Draw small frame for comparison
+      ctx.drawImage(video, 0, 0, 64, 64);
+      const currentFrameData = ctx.getImageData(0, 0, 64, 64).data;
+
+      if (lastFrameData.current) {
+        let diffPixels = 0;
+        const totalPixels = 64 * 64;
+
+        for (let i = 0; i < currentFrameData.length; i += 4) {
+          const rDiff = Math.abs(currentFrameData[i] - lastFrameData.current[i]);
+          const gDiff = Math.abs(currentFrameData[i + 1] - lastFrameData.current[i + 1]);
+          const bDiff = Math.abs(currentFrameData[i + 2] - lastFrameData.current[i + 2]);
+
+          // Simple difference threshold per pixel (sensitivity)
+          if (rDiff + gDiff + bDiff > 100) {
+            diffPixels++;
+          }
+        }
+
+        const changePercentage = (diffPixels / totalPixels) * 100;
+
+        if (changePercentage > threshold) {
+          // Significant change detected! Capture full res frame.
+          // console.log(`[SceneDetection] Change detected: ${changePercentage.toFixed(2)}%`);
+          captureFullResFrame(video);
+        }
+      } else {
+        // First run, just capture to start the buffer
+        captureFullResFrame(video);
+      }
+
+      lastFrameData.current = currentFrameData;
+    };
+
+    const captureFullResFrame = (video: HTMLVideoElement) => {
+      const fullCanvas = document.createElement("canvas");
+      fullCanvas.width = video.videoWidth;
+      fullCanvas.height = video.videoHeight;
+      const fullCtx = fullCanvas.getContext("2d");
+      if (fullCtx) {
+        fullCtx.drawImage(video, 0, 0);
+        const base64 = fullCanvas.toDataURL("image/jpeg", 0.7);
+        
+        setSceneBuffer((prev) => {
+          // Keep last 3 distinct frames
+          const newBuffer = [...prev, base64];
+          if (newBuffer.length > 3) {
+            return newBuffer.slice(newBuffer.length - 3);
+          }
+          return newBuffer;
+        });
+      }
+    };
+
+    intervalRef.current = setInterval(detectSceneChange, checkInterval);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [enabled, videoRef, checkInterval, threshold]);
+
+  return sceneBuffer;
+};
+
+
+
+================================================================
+FILE: packages/web/public/worklets/AudioWorkletProcessor.js
+================================================================
+// This runs in a separate, high-priority audio thread.
+// Its only job is to capture audio, downsample it, convert it to 16-bit PCM,
+// and send it back to the main app.
+
+class Linear16Processor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.targetSampleRate = options.processorOptions.targetSampleRate || 16000;
+    this.frameCount = 0;
+  }
+
+  /**
+   * Converts 32-bit Float audio to 16-bit PCM audio (LINEAR16).
+   */
+  floatTo16BitPCM(input) {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return output;
+  }
+
+  /**
+   * A simple (but fast) downsampler.
+   */
+  downsample(buffer, inputSampleRate, outputSampleRate) {
+    if (inputSampleRate === outputSampleRate) {
+      return buffer;
+    }
+    const sampleRateRatio = inputSampleRate / outputSampleRate;
+    const newLength = Math.round(buffer.length / sampleRateRatio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+      let accum = 0,
+        count = 0;
+      for (
+        let i = offsetBuffer;
+        i < nextOffsetBuffer && i < buffer.length;
+        i++
+      ) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = accum / count;
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
+  process(inputs) {
+    // We only care about the first input (the microphone)
+    const input = inputs[0];
+    if (input.length === 0 || !input[0]) {
+      return true; // Keep the node alive
+    }
+
+    // inputs[0][0] is the Float32Array of raw audio data
+    const audioData = input[0];
+
+    // 1. Downsample from browser's native rate (sampleRate) to 16000
+    const downsampled = this.downsample(
+      audioData,
+      sampleRate, // This is a global var in the AudioWorklet scope
+      this.targetSampleRate
+    );
+
+    // 2. Convert to 16-bit PCM (this is the crucial step)
+    const pcmData = this.floatTo16BitPCM(downsampled);
+
+    // 3. Calculate RMS BEFORE transferring the buffer
+    //    (postMessage with transferable detaches the ArrayBuffer, making pcmData empty)
+    this.frameCount++;
+    let rms = 0;
+    if (this.frameCount % 100 === 0) {
+      let sum = 0;
+      for (let i = 0; i < pcmData.length; i++) {
+        sum += pcmData[i] * pcmData[i];
+      }
+      rms = pcmData.length > 0 ? Math.sqrt(sum / pcmData.length) : 0;
+    }
+
+    // 4. Send the raw PCM ArrayBuffer back to the main thread (transfers ownership)
+    this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
+
+    // 5. Send debug info AFTER transfer (uses pre-computed rms)
+    if (this.frameCount % 100 === 0) {
+      this.port.postMessage({
+        type: "debug",
+        message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 300`
+      });
+    }
+
+    return true; // Tell the browser we're still processing
+  }
+}
+
+registerProcessor("audio-worklet-processor", Linear16Processor);
+
+
+
+================================================================
+FILE: packages/web/src/app/(chat)/chat/[conversationId]/ChatClient.tsx
+================================================================
+"use client";
+
+import { useAuth } from "@clerk/nextjs";
+import { useEffect, useRef, useState } from "react";
+import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
+import ProfileModal from "@/components/ProfileModal";
+
+export default function ChatClient() {
+  const router = useRouter();
+  const { getToken, userId } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [guestId, setGuestId] = useState("");
+
+  // Create a stable guest ID if the user is not logged in
+  useEffect(() => {
+    if (!userId) {
+      let id = localStorage.getItem("kira-guest-id");
+      if (!id) {
+        id = `guest_${crypto.randomUUID()}`;
+        localStorage.setItem("kira-guest-id", id);
+      }
+      setGuestId(id);
+    }
+  }, [userId]);
+
+  const { 
+    connect, 
+    disconnect, 
+    socketState, 
+    kiraState, 
+    micVolume, 
+    playerVolume, 
+    transcript, 
+    error, 
+    isAudioBlocked, 
+    resumeAudio,
+    isMuted,
+    toggleMute,
+    isScreenSharing,
+    startScreenShare,
+    stopScreenShare,
+    isPro
+  } = useKiraSocket(
+    token || "",
+    guestId
+  );
+  // Removed hasStarted state to allow auto-start
+
+  // 1. Get Clerk auth token
+  useEffect(() => {
+    if (userId) {
+      getToken().then(setToken);
+    }
+  }, [getToken, userId]);
+
+  // Disconnect only on unmount
+  useEffect(() => {
+    return () => {
+      disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- UI Logic ---
+  // The orb is now a fluid, living object that always moves slightly.
+  // It pulses based on volume (handled by getDynamicStyle).
+
+  const getDynamicStyle = () => {
+    const baseScale = 1;
+    let scale = baseScale;
+    let opacity = 1;
+
+    if (kiraState === "speaking") {
+      // AI Speaking: Pulse with playerVolume (0-1)
+      // Scale up to 1.5x (Matched to user speaking)
+      scale = 1 + playerVolume * 0.5;
+      // Opacity fluctuates slightly
+      opacity = 0.8 + playerVolume * 0.2;
+    } else if (kiraState === "listening") {
+      // User Speaking: Pulse with micVolume (0-1)
+      // Scale up to 1.5x
+      scale = 1 + micVolume * 0.5;
+      opacity = 0.8 + micVolume * 0.2;
+    }
+
+    return {
+      transform: `scale(${scale})`,
+      opacity: opacity,
+    };
+  };
+
+  const handleEndCall = () => {
+    disconnect();
+    setShowRatingModal(true);
+  };
+
+  const handleRate = () => {
+    // TODO: Save rating to backend
+    console.log("User rated conversation:", rating);
+    router.push("/");
+  };
+
+  const handleContinue = () => {
+    router.push("/");
+  };
+
+  const handleUpgrade = async () => {
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        window.location.href = data.url;
+      } else {
+        console.error("Failed to start checkout");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+    }
+  };
+
+  if (socketState === "connecting") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
+        <div className="p-12 bg-kira-green rounded-lg text-xl font-medium text-gray-800 animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
+          Connecting to Kira...
+        </div>
+      </div>
+    );
+  }
+
+  // Start Screen (Initial State for ALL users)
+  if (socketState === "idle") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
+        <button
+          onClick={() => connect()}
+          className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+        >
+          <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-[2.5rem] animate-pulse" />
+          
+          <div className="relative z-10 w-24 h-24 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </div>
+          
+          <div className="relative z-10 text-center">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg mb-2">
+              Ready to talk?
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400">
+              Tap to start conversation
+            </p>
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center w-full h-screen bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
+        <Link href="/">
+          <span className="font-semibold text-lg flex items-center gap-2 dark:text-tokyo-fg">
+            {/* Your Logo */}
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="text-black dark:text-tokyo-fg"
+            >
+              <path
+                d="M12 2L2 7L12 12L22 7L12 2Z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 17L12 22L22 17"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M2 12L12 17L22 12"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Kira
+          </span>
+        </Link>
+        
+        {/* Profile Link */}
+        <button 
+          onClick={() => setShowProfileModal(true)}
+          className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+        >
+            <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+        </button>
+      </div>
+
+      {/* Profile Modal */}
+      <ProfileModal 
+        isOpen={showProfileModal} 
+        onClose={() => setShowProfileModal(false)} 
+        isPro={isPro}
+      />
+
+      {/* Main Orb */}
+      <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
+        <div
+          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8] dark:bg-[#1a1b26] dark:shadow-none dark:border dark:border-tokyo-fg/10 isolate transform-gpu [mask-image:radial-gradient(white,black)] [-webkit-mask-image:radial-gradient(white,black)]"
+          style={getDynamicStyle()}
+        >
+           {/* Base Gradient - More Green Presence */}
+           <div className="absolute inset-0 bg-gradient-to-br from-[#D4D7C2] via-[#FBFBF8] to-[#C2C6A3] opacity-50 dark:from-[#24283b] dark:via-[#1a1b26] dark:to-[#414868]" />
+
+           {/* Dark Green Cloud - Stronger opacity */}
+           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow dark:bg-[#7aa2f7] dark:mix-blend-screen dark:opacity-30" />
+           
+           {/* Light Green Cloud - Stronger opacity */}
+           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow [animation-delay:3000ms] dark:bg-[#bb9af7] dark:mix-blend-screen dark:opacity-30" />
+           
+           {/* White Mist - Reduced opacity to let greens show through */}
+           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-40 animate-flow [animation-delay:5000ms] dark:bg-[#c0caf5] dark:mix-blend-screen dark:opacity-20" />
+           
+           {/* Floating Highlight - Adds the "cloud" texture */}
+           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-flow [animation-delay:7000ms] dark:bg-[#7dcfff] dark:mix-blend-screen dark:opacity-20" />
+        </div>
+
+        {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl px-6 text-center pointer-events-none flex items-center justify-center h-full">
+           {/* We use a container that pushes content away from the center orb */}
+           {/* Actually, the user wants it NOT to cover the bubble. 
+               The screenshot shows text ON TOP of the bubble.
+               Let's move it BELOW the bubble.
+           */}
+        </div>
+      </div>
+      
+      {/* Transcript Container - Scrollable Box */}
+      <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center flex-col items-center">
+          {error && error !== "limit_reached" && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded relative dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+          <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-discreet text-center flex flex-col items-center justify-start pt-2">
+            {transcript ? (
+              <div
+                className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
+                  transcript.role === "user" ? "text-gray-600 dark:text-tokyo-fg/70" : "text-kira-green-dark dark:text-tokyo-accent"
+                }`}
+              >
+                {transcript.text}
+                {transcript.role === "user" && kiraState === "listening" && (
+                  <span className="animate-pulse">|</span>
+                )}
+              </div>
+            ) : (
+              <div className="text-gray-400 dark:text-gray-600 text-sm italic mt-10">
+                Listening...
+              </div>
+            )}
+          </div>
+      </div>
+
+      {/* Footer Controls */}
+      <div className="flex items-center gap-6 p-8">
+        {/* Vision Button */}
+        <button
+          onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
+            isScreenSharing 
+              ? "bg-white text-black hover:bg-gray-200" 
+              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
+          }`}
+        >
+          {isScreenSharing ? <Eye size={24} /> : <EyeOff size={24} />}
+        </button>
+
+        {/* Mute Button */}
+        <button
+          onClick={toggleMute}
+          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
+            isMuted 
+              ? "bg-white text-black hover:bg-gray-200" 
+              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
+          }`}
+        >
+          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+        </button>
+
+        {/* End Call Button */}
+        <button
+          onClick={handleEndCall}
+          className="flex flex-col items-center justify-center w-16 h-16 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+          title="End Call"
+        >
+          <PhoneOff size={24} />
+        </button>
+      </div>
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center gap-6 max-w-sm w-full mx-4 animate-in fade-in zoom-in duration-200">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Rate your conversation
+            </h2>
+
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(0)}
+                  onClick={() => setRating(star)}
+                  className="transition-transform hover:scale-110 focus:outline-none p-1"
+                >
+                  <Star
+                    size={32}
+                    className={`${
+                      star <= (hoverRating || rating)
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-gray-300"
+                    } transition-colors duration-150`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col w-full gap-3">
+              <button
+                onClick={handleRate}
+                disabled={rating === 0}
+                className="w-full py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Rate it
+              </button>
+              <button
+                onClick={handleContinue}
+                className="w-full py-3 text-gray-500 hover:text-gray-900 font-medium transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Limit Reached Modal */}
+      {error === "limit_reached" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-tokyo-card p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-6 max-w-md w-full mx-4 animate-in fade-in zoom-in duration-300 border border-gray-200 dark:border-tokyo-fg/10">
+            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500 dark:text-red-400 mb-2">
+              <PhoneOff size={32} />
+            </div>
+            
+            <div className="text-center space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg">
+                Daily Limit Reached
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                You've used all your free conversation time for today.
+              </p>
+            </div>
+
+            <div className="flex flex-col w-full gap-3 mt-4">
+              {!isPro && (
+                <button
+                  onClick={handleUpgrade}
+                  className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
+                >
+                  Upgrade to Pro
+                </button>
+              )}
+              <Link
+                href="/"
+                className="w-full py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-tokyo-fg font-medium transition-colors text-center"
+              >
+                Come back tomorrow
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Audio Unlock Overlay */}
+      {isAudioBlocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <button
+            onClick={resumeAudio}
+            className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+          >
+            <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-3xl animate-pulse" />
+            <div className="relative z-10 w-20 h-20 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </div>
+            <span className="relative z-10 text-lg font-semibold text-gray-900 dark:text-tokyo-fg">
+              Tap to Start
+            </span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+================================================================
+FILE: packages/web/src/app/(chat)/chat/[conversationId]/page.tsx
+================================================================
+import nextDynamic from "next/dynamic";
+
+export const dynamic = 'force-dynamic';
+
+const DynamicChatClient = nextDynamic(() => import("./ChatClient"), {
+  ssr: false,
+});
+
+export default function ChatPage() {
+  return <DynamicChatClient />;
+}
+
+
+
+
+================================================================
+FILE: packages/web/src/app/layout.tsx
+================================================================
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Kira AI",
+  description: "Your AI media companion",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <ClerkProvider>
+      <html lang="en" suppressHydrationWarning>
+        <head>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                try {
+                  if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                    document.documentElement.classList.add('dark')
+                  } else {
+                    document.documentElement.classList.remove('dark')
+                  }
+                } catch (_) {}
+              `,
+            }}
+          />
+        </head>
+        <body className={`${inter.className} bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg`}>
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
+  );
+}
+
+
+
+================================================================
+FILE: packages/web/package.json
+================================================================
+{
+  "name": "web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate --schema=../../prisma/schema.prisma && next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^5.2.3",
+    "@prisma/client": "^5.22.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.407.0",
+    "next": "14.2.5",
+    "react": "^18",
+    "react-dom": "^18",
+    "stripe": "^16.2.0",
+    "tailwind-merge": "^2.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8",
+    "prisma": "5.22.0",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}
+
+
+
+================================================================
+FILE: package.json
+================================================================
+{
+  "name": "kira-2.0-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:web": "pnpm --filter web build",
+    "build:server": "pnpm --filter server build",
+    "build": "pnpm build:server && pnpm build:web",
+    "dev:web": "pnpm --filter web dev",
+    "dev:server": "pnpm --filter server dev"
+  },
+  "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "dotenv": "^17.2.3",
+    "prisma": "5.22.0",
+    "tsx": "^4.20.6"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0"
+  }
+}
+
+
+
+

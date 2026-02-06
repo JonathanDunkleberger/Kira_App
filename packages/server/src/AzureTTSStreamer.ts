@@ -70,12 +70,20 @@ export class AzureTTSStreamer extends EventEmitter {
     }
   }
 
+  private escapeXml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   private buildSsml(text: string): string {
     return `
       <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
         <voice name="${AZURE_TTS_VOICE}">
           <prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">
-            ${text}
+            ${this.escapeXml(text)}
           </prosody>
         </voice>
       </speak>

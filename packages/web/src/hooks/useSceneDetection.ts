@@ -16,6 +16,7 @@ export const useSceneDetection = ({
   const [sceneBuffer, setSceneBuffer] = useState<string[]>([]);
   const lastFrameData = useRef<Uint8ClampedArray | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fullCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset buffer when disabled
@@ -42,7 +43,7 @@ export const useSceneDetection = ({
         canvasRef.current.height = 64;
       }
 
-      const ctx = canvasRef.current.getContext("2d");
+      const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
       if (!ctx) return;
 
       // Draw small frame for comparison
@@ -80,13 +81,21 @@ export const useSceneDetection = ({
     };
 
     const captureFullResFrame = (video: HTMLVideoElement) => {
-      const fullCanvas = document.createElement("canvas");
-      fullCanvas.width = video.videoWidth;
-      fullCanvas.height = video.videoHeight;
+      if (!fullCanvasRef.current) {
+        fullCanvasRef.current = document.createElement("canvas");
+      }
+      const fullCanvas = fullCanvasRef.current;
+
+      // Downscale to max 512px on longest side (matches GPT-4o "low" detail)
+      const MAX_DIM = 512;
+      const scale = Math.min(MAX_DIM / video.videoWidth, MAX_DIM / video.videoHeight, 1);
+      fullCanvas.width = Math.round(video.videoWidth * scale);
+      fullCanvas.height = Math.round(video.videoHeight * scale);
+
       const fullCtx = fullCanvas.getContext("2d");
       if (fullCtx) {
-        fullCtx.drawImage(video, 0, 0);
-        const base64 = fullCanvas.toDataURL("image/jpeg", 0.7);
+        fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+        const base64 = fullCanvas.toDataURL("image/jpeg", 0.5);
         
         setSceneBuffer((prev) => {
           // Keep last 3 distinct frames

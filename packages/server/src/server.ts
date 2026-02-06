@@ -164,6 +164,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             return; // Already thinking/speaking
           }
 
+          // CRITICAL: Lock state IMMEDIATELY to prevent audio from leaking into next turn
+          state = "thinking";
+
           // Flush Deepgram to get any pending final transcripts
           try {
             sttStreamer.finalize();
@@ -201,7 +204,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             return;
           }
 
-          state = "thinking";
           lastEouTime = now; // Record this EOU time for debouncing
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn

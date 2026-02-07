@@ -119,9 +119,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
         ttsChunksDone.current &&
         playbackContext.current.currentTime > nextStartTime.current + 0.5
       ) {
-        setPlayerVolume(0);
+        // Don't snap to 0 — let it decay naturally via the asymmetric smoothing above
+        // The CSS breathing handles the alive feel; this just needs to stop the loop
         playbackAnimationFrame.current = null;
-        return; // Stop the loop
+        return;
       }
 
       const dataArray = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
@@ -136,10 +137,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
       // Normalize to 0-1 range (approximate)
       const rawVolume = Math.min(1, average / 128);
       
-      // Smooth the player volume
+      // Asymmetric smoothing: fast attack for responsive peaks, slow decay for smooth fade
       setPlayerVolume((prev) => {
-          const smoothingFactor = 0.3;
-          return prev * (1 - smoothingFactor) + rawVolume * smoothingFactor;
+          if (rawVolume > prev) {
+            // Fast attack — orb responds quickly to audio
+            return prev * 0.6 + rawVolume * 0.4;
+          } else {
+            // Slow decay — orb fades gracefully between chunks
+            return prev * 0.95 + rawVolume * 0.05;
+          }
       });
       
       playbackAnimationFrame.current = requestAnimationFrame(updateVolume);

@@ -52,6 +52,8 @@ const config = {
         "spin-slow": "spin 12s linear infinite",
         blob: "blob 14s infinite",
         flow: "flow 15s ease-in-out infinite",
+        "orb-speaking": "orb-speaking 2.2s ease-in-out infinite",
+        "orb-idle": "orb-idle 4s ease-in-out infinite",
       },
       boxShadow: {
         orb: "0 0 25px 10px rgba(212, 215, 194, 0.5)",

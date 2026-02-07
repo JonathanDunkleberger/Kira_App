@@ -73,28 +73,20 @@ export default function ChatClient() {
   // The orb is now a fluid, living object that always moves slightly.
   // It pulses based on volume (handled by getDynamicStyle).
 
-  const getDynamicStyle = () => {
-    const baseScale = 1;
-    let scale = baseScale;
-    let opacity = 1;
-
-    if (kiraState === "speaking") {
-      // AI Speaking: Pulse with playerVolume (0-1)
-      // Scale up to 1.5x (Matched to user speaking)
-      scale = 1 + playerVolume * 0.5;
-      // Opacity fluctuates slightly
-      opacity = 0.8 + playerVolume * 0.2;
-    } else if (kiraState === "listening") {
-      // User Speaking: Pulse with micVolume (0-1)
-      // Scale up to 1.5x
-      scale = 1 + micVolume * 0.5;
-      opacity = 0.8 + micVolume * 0.2;
+  const getDynamicStyle = (): React.CSSProperties => {
+    if (kiraState === "listening") {
+      // User speaking: reactive to mic volume (this works great, don't change it)
+      const scale = 1 + micVolume * 0.5;
+      const opacity = 0.8 + micVolume * 0.2;
+      return {
+        transform: `scale(${scale})`,
+        opacity,
+        animation: 'none', // Override any CSS animation when mic-driven
+      };
     }
-
-    return {
-      transform: `scale(${scale})`,
-      opacity: opacity,
-    };
+    // For "speaking" and "idle/thinking" states, return empty —
+    // the CSS animation classes handle everything
+    return {};
   };
 
   const handleEndCall = () => {
@@ -233,7 +225,13 @@ export default function ChatClient() {
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
         <div
-          className="w-48 h-48 rounded-full relative overflow-hidden transition-transform duration-75 ease-out shadow-orb bg-[#FBFBF8] dark:bg-[#1a1b26] dark:shadow-none dark:border dark:border-tokyo-fg/10 isolate transform-gpu [mask-image:radial-gradient(white,black)] [-webkit-mask-image:radial-gradient(white,black)]"
+          className={`w-48 h-48 rounded-full relative overflow-hidden shadow-orb bg-[#FBFBF8] dark:bg-[#1a1b26] dark:shadow-none dark:border dark:border-tokyo-fg/10 isolate transform-gpu [mask-image:radial-gradient(white,black)] [-webkit-mask-image:radial-gradient(white,black)] ${
+            kiraState === "speaking"
+              ? "animate-orb-speaking"
+              : kiraState === "listening"
+                ? "transition-transform duration-75 ease-out"
+                : "animate-orb-idle"
+          }`}
           style={getDynamicStyle()}
         >
            {/* Base Gradient - More Green Presence */}

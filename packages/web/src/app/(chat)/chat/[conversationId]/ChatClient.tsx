@@ -13,6 +13,7 @@ export default function ChatClient() {
   const { getToken, userId } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const hasShownRating = useRef(false); // Prevent rating dialog from showing twice
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -98,16 +99,21 @@ export default function ChatClient() {
 
   const handleEndCall = () => {
     disconnect();
-    setShowRatingModal(true);
+    if (!hasShownRating.current) {
+      hasShownRating.current = true;
+      setShowRatingModal(true);
+    }
   };
 
   const handleRate = () => {
     // TODO: Save rating to backend
     console.log("User rated conversation:", rating);
+    setShowRatingModal(false);
     router.push("/");
   };
 
   const handleContinue = () => {
+    setShowRatingModal(false);
     router.push("/");
   };
 

@@ -65,6 +65,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const nextStartTime = useRef(0); // Track where the next chunk should start
   const isProcessingQueue = useRef(false); // Lock for the processing loop
   const scheduledSources = useRef<AudioBufferSourceNode[]>([]); // Track all scheduled sources
+  const ttsChunksDone = useRef(true); // Whether server has finished sending audio for this turn
 
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
@@ -108,12 +109,15 @@ export const useKiraSocket = (token: string, guestId: string) => {
         return;
       }
 
-      // Stop visualizing if we are past the scheduled audio end time (plus a small buffer)
-      // and the queue is empty.
-      // We use time-based checking as it's more reliable for continuous streams than tracking source nodes.
+      // Stop visualizing only when:
+      // 1. The queue is empty (no buffered chunks waiting)
+      // 2. The server has confirmed no more chunks are coming (tts_chunk_ends received)
+      // 3. All scheduled audio has finished playing (currentTime past nextStartTime)
+      // This prevents the orb from going flat between sentence TTS chunks.
       if (
-        playbackContext.current.currentTime > nextStartTime.current + 0.5 &&
-        audioQueue.current.length === 0
+        audioQueue.current.length === 0 &&
+        ttsChunksDone.current &&
+        playbackContext.current.currentTime > nextStartTime.current + 0.5
       ) {
         setPlayerVolume(0);
         playbackAnimationFrame.current = null;
@@ -174,6 +178,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
         playbackAnimationFrame.current = null;
         setPlayerVolume(0);
     }
+    ttsChunksDone.current = true; // Reset for next turn
   }, []);
 
   /**
@@ -751,9 +756,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
             setTranscript({ role: msg.role, text: msg.text });
             break;
           case "tts_chunk_starts":
+            ttsChunksDone.current = false; // More audio chunks incoming
             break;
           case "tts_chunk_ends":
             // The server is done sending audio for this turn
+            ttsChunksDone.current = true; // Visualizer can now self-terminate when queue drains
             break;
           case "error":
             if (msg.code === "limit_reached") {

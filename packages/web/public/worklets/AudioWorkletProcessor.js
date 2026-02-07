@@ -76,7 +76,7 @@ class Linear16Processor extends AudioWorkletProcessor {
     //    (postMessage with transferable detaches the ArrayBuffer, making pcmData empty)
     this.frameCount++;
     let rms = 0;
-    if (this.frameCount % 100 === 0) {
+    if (this.frameCount % 1000 === 0) {
       let sum = 0;
       for (let i = 0; i < pcmData.length; i++) {
         sum += pcmData[i] * pcmData[i];
@@ -88,7 +88,8 @@ class Linear16Processor extends AudioWorkletProcessor {
     this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
 
     // 5. Send debug info AFTER transfer (uses pre-computed rms)
-    if (this.frameCount % 100 === 0) {
+    // Only log every 1000 frames (~2.7s) to avoid flooding console in production
+    if (this.frameCount % 1000 === 0) {
       this.port.postMessage({
         type: "debug",
         message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 300`

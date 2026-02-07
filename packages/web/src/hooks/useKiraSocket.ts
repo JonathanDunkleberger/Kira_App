@@ -748,6 +748,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
             setKiraState("speaking");
             audioQueue.current = []; // Clear old queue
             nextStartTime.current = 0; // Reset scheduling time
+            ttsChunksDone.current = false; // CRITICAL: Prevent visualizer from self-terminating before audio arrives
             break;
           case "state_listening":
             setKiraState("listening");
@@ -790,10 +791,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
       if (event.code === 1008) {
         setError("limit_reached");
       }
-      // Don't set error for reconnectable disconnects — only show after all retries fail
 
       stopAudioPipeline();
       ws.current = null;
+      isServerReady.current = false; // Prevent stale audio sends on reconnect
 
       // Auto-reconnect on unexpected closes (not user-initiated or auth failure)
       if (event.code !== 1000 && event.code !== 1008 && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
@@ -819,9 +820,10 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
   const disconnect = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);
+    reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
     if (ws.current) {
       setSocketState("closing");
-      ws.current.close();
+      ws.current.close(1000, "User ended call"); // Code 1000 = intentional close, won't trigger reconnect
     }
   }, []);
 

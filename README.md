@@ -1,347 +1,125 @@
-# ✨ Kira AI — Monorepo (Web + Realtime Voice Server)
-
-Voice‑first AI media companion. Browser UI (Next.js) + dedicated realtime WebSocket server for STT → LLM → TTS. This README documents the _current_ monorepo layout and deployment model (Vercel + Render).
-
-> Official site: <https://www.xoxokira.com>
+# ✨ Kira AI — Voice-First AI Media Companion
 
 ![Kira AI Banner](./packages/docs/KIRA2-README.png)
 
----
+**An AI you talk to while watching, gaming, or reading — hands free, in real time.**
 
-## 📦 Packages
+Kira is a voice AI companion built for media consumption. You speak, she listens. She can see your screen, remember what you talked about last week, and hold a natural conversation without you ever touching your keyboard.
 
-| Path                     | Name            | Purpose                                                                         |
-| ------------------------ | --------------- | ------------------------------------------------------------------------------- |
-| `packages/web`           | `web`           | Next.js App Router frontend (UI, auth, billing UX)                              |
-| `packages/server`        | `server`        | Plain Node WS server: Deepgram STT, OpenAI responses, Azure TTS, usage metering |
-| `prisma/` (root)         | —               | Shared Prisma schema + migrations used by both packages                         |
-
-Root `package.json` exposes convenience scripts for parallel dev.
+🔗 **Try it live:** [xoxokira.com](https://www.xoxokira.com)
 
 ---
 
-## 🚀 Key Capabilities
+## 🎯 What It Does
 
-- Low‑latency voice loop: microphone → streaming STT → LLM → streaming TTS.
-- Server‑authoritative usage & limits (daily seconds, guest IP fallback).
-- Upgrade nudges & limit banner (`LimitBanner`) triggered by `limit_exceeded` event.
-- Pluggable TTS (Azure default, ElevenLabs optional).
-- Clean public env surface via `publicEnv` (only `NEXT_PUBLIC_*`).
+You're watching *Garden of Words* and want to talk about it without pausing. You say "Have you seen this? What do you think about the animation?" and Kira responds conversationally — she can see your screen, knows what you're watching, and remembers that you love Makoto Shinkai films from a conversation two weeks ago.
+
+The experience is built around a simple idea: **the best companion for media doesn't compete with it for your hands or your eyes.** Voice-in, voice-out, always listening, always watching alongside you.
 
 ---
 
-## 🗂️ Monorepo Scripts (Root)
+## 🧠 How It Works
 
-```bash
-npm run dev:server  # Only websocket server (port 10000)
-npm run dev:web     # Only frontend (port 3000)
-npm run build       # Build both packages
-```
+Not a wrapper around a single API — it's a full real-time system where every component operates under tight latency constraints:
 
-Package‑local scripts follow conventional names (`npm run build --filter=server`, etc.).
+**Streaming voice pipeline** — Microphone audio flows through a client-side AudioWorklet, streams to Deepgram for real-time transcription, routes through GPT-4o for a response, then streams sentence-by-sentence through Azure TTS back to your speakers. Every stage operates incrementally so nothing waits for anything else to finish. The first sentence of a response plays while the third is still being written.
 
----
+**Adaptive conversation timing** — The hardest UX problem in voice AI is knowing when someone has stopped talking. Say "yes" and you want an instant response. Ask a long philosophical question with a thinking pause in the middle and you don't want to get cut off. The adaptive silence detector scales its patience based on how long you've been speaking — fast for short replies, patient for complex thoughts.
 
-## 🔑 Environment Variables
+**Vision system** — Screen share frames run through a scene-change detection algorithm that maintains a rolling buffer of visual context. When you speak, Kira receives not just a single screenshot but a timeline of the last 3 scene changes plus the current frame — so she can answer "what just happened?" not just "what's on screen right now?"
 
-Copy `.env.example` → `.env.local`. Frontend only sees `NEXT_PUBLIC_*`.
+**Self-healing connections** — Third-party WebSocket connections die silently during long sessions. No error, no close event — they just stop producing data. Health monitoring detects when the speech-to-text stream has gone quiet and automatically tears down and re-establishes the connection transparently.
 
-| Category              | Vars                                                                          |
-| --------------------- | ----------------------------------------------------------------------------- |
-| Auth (Clerk)          | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`           |
-| Stripe                | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` (server only) |
-| OpenAI                | `OPENAI_API_KEY`, `OPENAI_MODEL`                                              |
-| Deepgram STT          | `DEEPGRAM_API_KEY`                                                            |
-| Azure TTS             | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`                                     |
-| ElevenLabs (optional) | `TTS_PROVIDER=elevenlabs`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`        |
-| Usage limits          | `FREE_DAILY_LIMIT_SECONDS`, `FREE_TRIAL_SECONDS` (names may evolve)           |
-| Realtime              | `NEXT_PUBLIC_WEBSOCKET_URL` (e.g. ws://localhost:10000)                       |
-| Database              | `DATABASE_URL` (Postgres for Prisma)                                          |
-
-Only the websocket server needs the STT / TTS secrets; keep them out of `NEXT_PUBLIC_*`.
+**Persistent memory** — Conversations are summarized and stored. When you come back tomorrow, Kira remembers your name, your taste in anime, and that you were on episode 3 of something last time.
 
 ---
 
-## 🔁 Realtime Event Protocol (Representative)
-
-﻿# ✨ Kira AI — Voice‑First Media Companion
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJonathanDunkleberger%2FKira_AI_2)
-
-Kira is a voice‑first AI media companion, inspired by the fluid, low‑latency conversational UX of apps like Sesami AI. The goal: eliminate alt‑tab friction so you can talk to an AI while gaming, reading, or watching media—hands free.
-
-**Live Demo:** <https://www.xoxokira.com>
-
----
-
-## Core Features
-
-- **End-to-End Voice Streaming:** Real-time pipeline: client microphone → Deepgram STT (streaming) → OpenAI response (streaming) → Azure Speech TTS (sentence streaming back to browser).
-- **Vision Capabilities:** Real-time screen sharing analysis. The AI can "see" your screen via periodic snapshots and answer questions about what you're watching or doing (e.g., identifying anime characters).
-- **Long-term Memory:** Remembers user details and conversation context across sessions using a summarized memory system stored in the database.
-- **Dual-Service Architecture:** Stateless Next.js frontend (Vercel) + dedicated Node WebSocket server (Render) for persistent audio sessions.
-- **Authentication:** Clerk-powered user accounts (sign up, sign in, profile management) + Guest access.
-- **Subscription Billing:** Stripe Checkout + Billing Portal; server-side webhook processing (subscription lifecycle).
-- **Modern Monorepo:** `pnpm` workspaces (`packages/web`, `packages/server`) with shared Prisma schema.
-
----
-
-## Tech Stack
-
-| Area                 | Technology / Service                                    |
-| :------------------- | :------------------------------------------------------ |
-| **Frontend**         | Next.js 14 (App Router), React 18, Tailwind CSS, Vercel |
-| **Realtime Backend** | Node.js, `ws` WebSocket server (Render)                 |
-| **Database**         | Supabase (PostgreSQL) + Prisma ORM                      |
-| **Auth**             | Clerk                                                   |
-| **Billing**          | Stripe (Checkout + Portal + Webhooks)                   |
-| **Speech-to-Text**   | Deepgram Live                                           |
-| **Language Model**   | OpenAI (streamed responses)                             |
-| **Text-to-Speech**   | Azure Speech (per-sentence streaming)                   |
-
----
-
-## Architecture Overview
-
-Monorepo layout:
-
-| Path                     | Description                                                          |
-| ------------------------ | -------------------------------------------------------------------- |
-| `packages/web`           | Next.js frontend (UI, auth, billing routes, static assets)           |
-| `packages/server`        | Long-running WebSocket server orchestrating STT → LLM → TTS pipeline |
-| `prisma/`                | Shared Prisma schema & migrations                                    |
-
-The WebSocket server manages: audio ingestion, transcription buffering, LLM stream aggregation, sentence boundary detection, Azure TTS synthesis, usage accounting, vision snapshots, memory persistence, and event emission back to the client.
-
----
-
-### Architecture Diagram
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Browser_Web [Browser: Vercel - packages/web]
-        MIC[Microphone]
-        SCR[Screen Share]
-        HK[useKiraSocket Hook]
-        Q[Playback Queue]
-        UI[Chat / Transcript UI]
+    subgraph Browser["🖥️ Browser (Next.js on Vercel)"]
+        MIC[🎙️ Microphone] --> AW[AudioWorklet\nVAD + Adaptive EOU]
+        SCR[🖵 Screen Share] --> SD[Scene Detection\nTemporal Buffer]
+        AW --> WS_C[WebSocket]
+        SD --> WS_C
+        Q[🔊 Playback Queue] --> SPK[Speaker]
     end
 
-    subgraph Render_Server [Render: packages/server]
-        WS[WebSocket Server]
-        STT[Deepgram Streaming STT]
-        LLM[OpenAI GPT-4o]
-        SB[Sentence Buffer]
-        TTS[Azure Speech TTS]
-        USG[Usage Meter]
-        MEM[Memory Manager]
-        DB[(Postgres / Supabase)]
+    subgraph Server["⚡ Node.js Server (Render)"]
+        WS_S[WebSocket] --> STT[Deepgram STT\nStreaming]
+        STT --> TB[Transcript Buffer\nStale Filter + Dedup]
+        TB --> LLM[GPT-4o\nStreaming + Vision]
+        LLM --> SB[Sentence Splitter]
+        SB --> TTS[Azure TTS\nSSML Streaming]
+        TTS --> WS_S
+        LLM --> MEM[Memory]
+        MEM --> DB[(PostgreSQL)]
     end
 
-    MIC -->|Opus/WebM chunks| HK -->|binary frames| WS
-    SCR -->|Image Snapshots| HK -->|base64 images| WS
-    WS -->|audio stream| STT -->|final sentences| SB
-    WS -->|image context| LLM
-    SB -->|prompt segments| LLM -->|token stream| SB
-    SB -->|complete sentence text| TTS
-    TTS -->|audio chunks base64| WS
-    WS -->|assistant_audio events| Q
-    Q --> UI
-    STT -->|user_transcript events| WS --> HK --> UI
-    LLM -->|assistant_message events| WS --> HK --> UI
-    USG -->|usage_update events| WS --> HK --> UI
-    WS -->|persist user/assistant messages| DB
-    USG -->|read/write usage| DB
-    MEM -->|load/save summary| DB
+    WS_C <-->|"audio + images + control"| WS_S
+    WS_S -->|"audio + transcripts + state"| Q
 ```
 
 ---
 
-## Getting Started
+## 🛠️ Tech Stack
 
-### 1. Clone
+| Layer | Technology |
+|:------|:-----------|
+| Frontend | Next.js 14, React 18, Tailwind CSS, Vercel |
+| Realtime Server | Node.js, `ws`, custom streaming orchestration |
+| Speech-to-Text | Deepgram (live WebSocket) |
+| Language Model | OpenAI GPT-4o (streaming + tool use + vision) |
+| Text-to-Speech | Azure Cognitive Services (per-sentence SSML) |
+| Vision | `getDisplayMedia` + canvas scene diffing → GPT-4o |
+| Auth & Billing | Clerk + Stripe |
+| Database | Supabase (PostgreSQL) + Prisma ORM |
+
+---
+
+## 📂 Project Structure
+
+```
+ai-media-companion/
+├── packages/
+│   ├── web/                        # Next.js frontend
+│   │   ├── src/hooks/
+│   │   │   ├── useKiraSocket.ts        # WebSocket + VAD + adaptive EOU
+│   │   │   └── useSceneDetection.ts    # Screen share scene diffing
+│   │   └── public/worklets/
+│   │       └── AudioWorkletProcessor.js
+│   │
+│   └── server/                     # Realtime voice server
+│       └── src/
+│           ├── server.ts               # Pipeline orchestration
+│           ├── DeepgramSTTStreamer.ts   # STT with self-healing
+│           └── AzureTTSStreamer.ts      # SSML synthesis
+│
+└── prisma/                         # Shared schema + migrations
+```
+
+---
+
+## 🚀 Run It Yourself
 
 ```bash
 git clone https://github.com/JonathanDunkleberger/Kira_AI_2.git
 cd Kira_AI_2/ai-media-companion
-```
-
-### 2. Install Dependencies (pnpm preferred)
-
-```bash
 pnpm install
 ```
 
-### 3. Environment Variables
-
-Two `.env.local` files are required for local dev:
-
-**A. Frontend (root `./.env.local`)** — copy `./.env.example`.
-
-**B. Socket Server (`./packages/server/.env.local`)** — copy `./packages/server/.env.example`.
-
-Fill in service keys (leave `NEXT_PUBLIC_*` only in the root file). Never commit secrets.
-
-### 4. Run Locally
+Create `.env.local` files at root and in `packages/server/` — see the `.env.example` files for what's needed.
 
 ```bash
-pnpm dev:web
-pnpm dev:server
+pnpm dev:web      # → http://localhost:3000
+pnpm dev:server   # → ws://localhost:10000
 ```
 
-Frontend: <http://localhost:3000>  
-WebSocket server: ws://localhost:10000 (health: GET <http://localhost:10000/healthz>)
-
-Root scripts:
-
-```bash
-pnpm run dev:server # only socket-server
-pnpm run dev:web    # only web
-pnpm run build      # build both
-```
+Deployment details (Vercel + Render setup) are in [`DEPLOY.md`](./DEPLOY.md).
 
 ---
 
-## Environment Reference (Union of Examples)
+## 📄 License
 
-Frontend `.env.example`:
-
-```text
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-CLERK_WEBHOOK_SECRET=
-DATABASE_URL=
-DIRECT_URL=
-STRIPE_SECRET_KEY=
-STRIPE_PRICE_ID=
-STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_APP_URL=https://www.xoxokira.com
-NEXT_PUBLIC_WEBSOCKET_URL=wss://kira-voice-ws.onrender.com
-```
-
-Socket server `.env.example`:
-
-```text
-DATABASE_URL=
-DIRECT_URL=
-DEEPGRAM_API_KEY=
-OPENAI_API_KEY=
-AZURE_SPEECH_KEY=
-AZURE_SPEECH_REGION=
-```
-
-Keep STT / LLM / TTS secrets out of any `NEXT_PUBLIC_*` names.
-
----
-
-## Realtime Flow (High Level)
-
-1. Browser captures mic (MediaRecorder WebM Opus) → sends binary chunks via WS.
-2. Browser optionally captures screen snapshots → sends base64 images via WS.
-3. Server streams audio to Deepgram → receives interim/final transcripts.
-4. Final sentence aggregated (plus pending image if any) → prompt sent to OpenAI (streaming tokens).
-5. Sentence buffer triggers Azure TTS; audio chunks base64-encoded → client.
-6. Client queues & plays audio while next sentence is already processing.
-7. Usage metering updates sent periodically; limits enforced server-side.
-
----
-
-## Deployment
-
-### Frontend (Vercel)
-
-1. Import repo → set root (or monorepo framework auto-detect) pointing to repository root (build script targets `packages/web`).
-1. Configure env vars from root example (exclude STT/LLM/TTS secrets unless needed by API routes).
-1. Build output: `.next` (handled automatically).
-
-### WebSocket Server (Render)
-
-1. New Web Service → Root Directory: `packages/server`.
-1. Build Command:
-
-```bash
-pnpm install --filter server... && pnpm --filter server run build
-```
-
-1. Start Command:
-
-```bash
-pnpm --filter server start
-```
-
-1. Set env vars: `DATABASE_URL`, `DEEPGRAM_API_KEY`, `OPENAI_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`, Stripe keys, Clerk secrets.
-1. Copy deployed wss URL into Vercel `NEXT_PUBLIC_WEBSOCKET_URL`.
-
-### Prisma
-
-Run migrations anywhere both services can reach the DB:
-
-```bash
-pnpm --filter web prisma:deploy
-```
-
-or
-
-```bash
-pnpm --filter server prisma:deploy
-```
-
----
-
-## Testing & Quality
-
-| Command                             | Purpose                |
-| ----------------------------------- | ---------------------- |
-| `pnpm --filter web lint`            | Lint code (web)        |
-| `pnpm --filter web test`            | Unit tests (Vitest)    |
-| `pnpm --filter web typecheck`       | TypeScript diagnostics |
-| `pnpm --filter web build`           | Build Next.js app      |
-| `pnpm --filter server build`        | Compile server TS → JS |
-
-Add Playwright tests as needed for end-to-end voice flows.
-
----
-
-## Security & Secrets
-
-History was scrubbed to remove an accidental code dump. If rotating keys:
-
-1. Revoke old Azure / OpenAI / Stripe / Clerk / Supabase keys.
-2. Issue new keys; store only in appropriate `.env.local` / hosting provider dashboard.
-3. Never commit raw dumps containing secrets.
-
----
-
-## Roadmap (Sample)
-
-1. Conversation persistence + titles.
-2. Rich memory window / context summarization.
-3. Improved adaptive VAD + silence trimming.
-4. Fine-grained streaming prosody controls.
-5. Progressive enhancement for low-bandwidth clients.
-
----
-
-## Contributing
-
-PRs welcome. Before submitting:
-
-```bash
-pnpm --filter web lint
-pnpm --filter web typecheck
-pnpm --filter web test
-```
-
-Document any new env var in BOTH example files.
-
----
-
-## License
-
-MIT — see `LICENSE`.
-
----
-
-## Attribution / Inspiration
-
-Inspired by modern low-latency conversational assistants (e.g., Sesami AI) emphasizing real-time bidirectional streaming UX.
+MIT

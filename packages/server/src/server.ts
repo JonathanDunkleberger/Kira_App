@@ -134,8 +134,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let conversationSummary = "";
 
   // --- USAGE TRACKING ---
-  const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900");
-  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_SESSION_SECONDS || "36000");
+  const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
+  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "36000"); // 10 hrs/month
   let sessionStartTime: number | null = null;
   let usageCheckInterval: NodeJS.Timeout | null = null;
   let isProUser = false;
@@ -284,11 +284,29 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   dbUser.stripeCurrentPeriodEnd.getTime() > Date.now()
                 );
 
-                // Reset daily counter if it's a new day
-                const today = new Date().toDateString();
-                const lastUsage = dbUser.lastUsageDate?.toDateString();
+                // Reset counter based on tier:
+                // - Free: resets daily (15 min/day)
+                // - Pro:  resets each billing period (10 hrs/month)
                 let currentUsage = dbUser.dailyUsageSeconds;
-                if (today !== lastUsage) {
+                let shouldReset = false;
+
+                if (isProUser && dbUser.stripeCurrentPeriodEnd) {
+                  // Pro resets when a new billing period starts.
+                  // Billing period start ≈ periodEnd minus ~30 days.
+                  // If lastUsageDate is before the current period started,
+                  // the counter belongs to a previous cycle.
+                  const periodEnd = dbUser.stripeCurrentPeriodEnd.getTime();
+                  const approxPeriodStart = periodEnd - 30 * 24 * 60 * 60 * 1000;
+                  const lastUsageMs = dbUser.lastUsageDate?.getTime() || 0;
+                  shouldReset = lastUsageMs < approxPeriodStart;
+                } else {
+                  // Free users reset daily
+                  const today = new Date().toDateString();
+                  const lastUsage = dbUser.lastUsageDate?.toDateString();
+                  shouldReset = today !== lastUsage;
+                }
+
+                if (shouldReset) {
                   currentUsage = 0;
                   await prisma.user.update({
                     where: { clerkId: userId },

@@ -42,7 +42,6 @@ export default function ChatClient() {
     playerVolume, 
     transcript,
     sentiment,
-    chatMessages,
     sendText,
     error, 
     isAudioBlocked, 
@@ -260,24 +259,6 @@ export default function ChatClient() {
             zIndex: 0,
           }}
         />
-
-        {/* Text Chat Bubbles */}
-        {chatMessages.length > 0 && (
-          <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 scrollbar-discreet relative z-[1]">
-            {chatMessages.map((msg, i) => (
-              <div
-                key={i}
-                className={`max-w-[80%] px-3.5 py-2 rounded-xl text-sm text-[#C9D1D9] ${
-                  msg.role === "user"
-                    ? "self-end bg-[rgba(107,125,179,0.15)]"
-                    : "self-start bg-white/[0.05]"
-                }`}
-              >
-                {msg.text}
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* Text Input */}
         <TextInput

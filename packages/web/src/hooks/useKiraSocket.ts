@@ -27,7 +27,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
   const [sentiment, setSentiment] = useState<string>("neutral");
-  const [chatMessages, setChatMessages] = useState<Array<{ role: string; text: string }>>([]);
+
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -779,7 +779,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
             break;
           case "text_response":
             setTranscript({ role: "ai", text: msg.text });
-            setChatMessages(prev => [...prev, { role: "ai", text: msg.text }]);
             if (msg.sentiment) setSentiment(msg.sentiment);
             // Orb goes to "speaking" briefly to visually acknowledge
             kiraStateRef.current = "speaking";
@@ -904,7 +903,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({ type: "text_message", text }));
       setTranscript({ role: "user", text });
-      setChatMessages(prev => [...prev, { role: "user", text }]);
     }
   }, []);
 
@@ -918,7 +916,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
     playerVolume,
     transcript,
     sentiment,
-    chatMessages,
     sendText,
     error,
     isAudioBlocked,

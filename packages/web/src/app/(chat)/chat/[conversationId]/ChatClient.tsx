@@ -249,12 +249,21 @@ export default function ChatClient() {
 
       {/* ─── Bottom Area: Text Chat + Input + Controls ─── */}
       <div
-        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-4 pb-8 pt-10 z-10"
-        style={{ background: "linear-gradient(transparent, #0D1117 30%)" }}
+        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
       >
+        {/* Ultra-smooth gradient fade */}
+        <div
+          className="absolute bottom-0 left-0 right-0 pointer-events-none"
+          style={{
+            height: 200,
+            background: "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)",
+            zIndex: 0,
+          }}
+        />
+
         {/* Text Chat Bubbles */}
         {chatMessages.length > 0 && (
-          <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 scrollbar-discreet">
+          <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 scrollbar-discreet relative z-[1]">
             {chatMessages.map((msg, i) => (
               <div
                 key={i}
@@ -278,38 +287,39 @@ export default function ChatClient() {
         />
 
         {/* Voice Controls */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 relative z-[1]">
         {/* Vision Button */}
         <button
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
-            isScreenSharing 
-              ? "bg-white text-black hover:bg-gray-200" 
-              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
-          }`}
+          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+          style={{
+            background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+            color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+          }}
         >
-          {isScreenSharing ? <Eye size={24} /> : <EyeOff size={24} />}
+          {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
         </button>
 
         {/* Mute Button */}
         <button
           onClick={toggleMute}
-          className={`flex flex-col items-center justify-center w-16 h-16 rounded-full transition-colors ${
-            isMuted 
-              ? "bg-white text-black hover:bg-gray-200" 
-              : "bg-black/20 text-white hover:bg-black/30 dark:bg-white/10 dark:hover:bg-white/20"
-          }`}
+          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+          style={{
+            background: isMuted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+            color: isMuted ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+          }}
         >
-          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+          {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
         </button>
 
         {/* End Call Button */}
         <button
           onClick={handleEndCall}
-          className="flex flex-col items-center justify-center w-16 h-16 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+          style={{ background: "rgba(200,55,55,0.75)", color: "rgba(255,255,255,0.9)" }}
           title="End Call"
         >
-          <PhoneOff size={24} />
+          <PhoneOff size={18} />
         </button>
         </div>
       </div>

@@ -14,8 +14,8 @@ const SENTIMENTS: Record<
     glow: "rgba(107,125,179,0.15)",
   },
   warm: {
-    colors: ["#8A5A3A", "#C4785A", "#E8A07A", "#A06040"],
-    glow: "rgba(196,120,90,0.18)",
+    colors: ["#8A7030", "#C4A04A", "#E8C86A", "#A08838"],
+    glow: "rgba(196,160,74,0.18)",
   },
   cool: {
     colors: ["#2A5A6A", "#4A8A9A", "#6AAABA", "#3A7080"],
@@ -109,7 +109,7 @@ export default function KiraOrb({
     if (state === "listening") targetVol = mic;
     else if (state === "speaking") targetVol = spk;
     else targetVol = 0; // thinking
-    volumeRef.current = lerp(volumeRef.current, targetVol, 0.06);
+    volumeRef.current = lerp(volumeRef.current, targetVol, 0.04);
     const vol = volumeRef.current;
 
     // Smooth color transitions (per-channel lerp)
@@ -117,7 +117,7 @@ export default function KiraOrb({
     const tc = targetColorsRef.current;
     for (let i = 0; i < 4; i++) {
       for (let j = 0; j < 3; j++) {
-        cc[i][j] = lerp(cc[i][j], tc[i][j], 0.015);
+        cc[i][j] = lerp(cc[i][j], tc[i][j], 0.008);
       }
     }
 
@@ -127,18 +127,18 @@ export default function KiraOrb({
     let glowIntensity = 0.3;
 
     if (state === "thinking") {
-      breatheScale = 0.97 + Math.sin(t * 1.2) * 0.03;
-      internalSpeed = 0.3;
-      glowIntensity = 0.15 + Math.sin(t * 1.2) * 0.1;
+      breatheScale = 0.97 + Math.sin(t * 0.8) * 0.03;
+      internalSpeed = 0.12;
+      glowIntensity = 0.15 + Math.sin(t * 0.8) * 0.08;
     } else if (state === "speaking") {
-      breatheScale = 1.0 + vol * 0.12;
-      internalSpeed = 1.0 + vol * 1.5;
-      glowIntensity = 0.3 + vol * 0.3;
+      breatheScale = 1.0 + vol * 0.1;
+      internalSpeed = 0.2 + vol * 0.4;
+      glowIntensity = 0.3 + vol * 0.25;
     } else {
       // listening
-      breatheScale = 0.98 + Math.sin(t * 1.8) * 0.02 + vol * 0.08;
-      internalSpeed = 0.5 + vol * 1.5;
-      glowIntensity = 0.2 + vol * 0.2;
+      breatheScale = 0.98 + Math.sin(t * 1.2) * 0.02 + vol * 0.06;
+      internalSpeed = 0.15 + vol * 0.3;
+      glowIntensity = 0.2 + vol * 0.15;
     }
 
     const s = size; // logical size
@@ -151,12 +151,12 @@ export default function KiraOrb({
 
     // ── Outer glow ──
     const glowGrad = ctx.createRadialGradient(
-      cx, cy, radius * 0.8,
-      cx, cy, radius * 1.8
+      cx, cy, radius * 0.7,
+      cx, cy, radius * 2.0
     );
     const gc = cc[1];
-    glowGrad.addColorStop(0, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.12})`);
-    glowGrad.addColorStop(0.5, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.04})`);
+    glowGrad.addColorStop(0, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.1})`);
+    glowGrad.addColorStop(0.4, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.03})`);
     glowGrad.addColorStop(1, "transparent");
     ctx.fillStyle = glowGrad;
     ctx.fillRect(0, 0, s, s);
@@ -167,32 +167,34 @@ export default function KiraOrb({
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
 
-    // ── Base fill (radial gradient from color[0] → color[3]) ──
-    const baseFill = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    // ── Base fill — smooth radial ──
+    const baseFill = ctx.createRadialGradient(cx - radius * 0.15, cy - radius * 0.15, 0, cx, cy, radius);
     baseFill.addColorStop(0, `rgb(${cc[0][0]},${cc[0][1]},${cc[0][2]})`);
+    baseFill.addColorStop(0.7, `rgb(${Math.round((cc[0][0]+cc[3][0])/2)},${Math.round((cc[0][1]+cc[3][1])/2)},${Math.round((cc[0][2]+cc[3][2])/2)})`);
     baseFill.addColorStop(1, `rgb(${cc[3][0]},${cc[3][1]},${cc[3][2]})`);
     ctx.fillStyle = baseFill;
     ctx.fillRect(0, 0, s, s);
 
-    // ── Flowing internal gradients (the "alive" part) ──
-    // Multiple overlapping radial gradients that drift inside the sphere
+    // ── Slow internal flow — drifting light spots ──
     const spots = [
-      { phase: 0, speed: 0.4, orbitR: 35, sz: 70, colorIdx: 1 },
-      { phase: 2.1, speed: 0.3, orbitR: 40, sz: 60, colorIdx: 2 },
-      { phase: 4.2, speed: 0.5, orbitR: 30, sz: 80, colorIdx: 1 },
-      { phase: 1.0, speed: 0.35, orbitR: 45, sz: 55, colorIdx: 2 },
+      { phase: 0, speed: 0.08, orbitR: 30, sz: 75, colorIdx: 1, yMult: 0.7 },
+      { phase: 2.4, speed: 0.06, orbitR: 35, sz: 65, colorIdx: 2, yMult: 0.9 },
+      { phase: 4.8, speed: 0.1, orbitR: 25, sz: 85, colorIdx: 1, yMult: 0.6 },
+      { phase: 1.2, speed: 0.07, orbitR: 40, sz: 55, colorIdx: 2, yMult: 0.8 },
+      { phase: 3.6, speed: 0.05, orbitR: 20, sz: 70, colorIdx: 1, yMult: 1.0 },
     ];
 
     for (const spot of spots) {
       const sp = spot.phase + t * spot.speed * internalSpeed;
-      const sx = cx + Math.cos(sp) * spot.orbitR * (1 + vol * 0.3);
-      const sy = cy + Math.sin(sp * 1.3) * spot.orbitR * (1 + vol * 0.3);
-      const sr = spot.sz * (1 + vol * 0.2);
+      const sx = cx + Math.cos(sp) * spot.orbitR * (1 + vol * 0.15);
+      const sy = cy + Math.sin(sp * spot.yMult) * spot.orbitR * (1 + vol * 0.15);
+      const sr = spot.sz * (1 + vol * 0.12);
 
       const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
       const sc = cc[spot.colorIdx];
-      sg.addColorStop(0, `rgba(${sc[0]},${sc[1]},${sc[2]},0.6)`);
-      sg.addColorStop(0.5, `rgba(${sc[0]},${sc[1]},${sc[2]},0.2)`);
+      sg.addColorStop(0, `rgba(${sc[0]},${sc[1]},${sc[2]},0.45)`);
+      sg.addColorStop(0.4, `rgba(${sc[0]},${sc[1]},${sc[2]},0.15)`);
+      sg.addColorStop(0.7, `rgba(${sc[0]},${sc[1]},${sc[2]},0.04)`);
       sg.addColorStop(1, `rgba(${sc[0]},${sc[1]},${sc[2]},0)`);
 
       ctx.globalCompositeOperation = "screen";
@@ -200,23 +202,23 @@ export default function KiraOrb({
       ctx.fillRect(0, 0, s, s);
     }
 
-    // ── Highlight / specular ──
+    // ── Specular highlight — very subtle ──
     ctx.globalCompositeOperation = "screen";
     const hlX = cx - radius * 0.25;
     const hlY = cy - radius * 0.3;
-    const highlight = ctx.createRadialGradient(hlX, hlY, 0, hlX, hlY, radius * 0.6);
-    highlight.addColorStop(0, `rgba(255,255,255,${0.06 + vol * 0.04})`);
-    highlight.addColorStop(0.5, "rgba(255,255,255,0.02)");
+    const highlight = ctx.createRadialGradient(hlX, hlY, 0, hlX, hlY, radius * 0.5);
+    highlight.addColorStop(0, `rgba(255,255,255,${0.04 + vol * 0.03})`);
+    highlight.addColorStop(0.4, "rgba(255,255,255,0.015)");
     highlight.addColorStop(1, "transparent");
     ctx.fillStyle = highlight;
     ctx.fillRect(0, 0, s, s);
 
-    // ── Subtle rim light ──
+    // ── Soft rim ──
     ctx.globalCompositeOperation = "source-over";
-    const rim = ctx.createRadialGradient(cx, cy, radius * 0.85, cx, cy, radius);
+    const rim = ctx.createRadialGradient(cx, cy, radius * 0.88, cx, cy, radius);
     rim.addColorStop(0, "transparent");
-    rim.addColorStop(0.7, "transparent");
-    rim.addColorStop(1, `rgba(${cc[2][0]},${cc[2][1]},${cc[2][2]},${0.12 + vol * 0.08})`);
+    rim.addColorStop(0.6, "transparent");
+    rim.addColorStop(1, `rgba(${cc[2][0]},${cc[2][1]},${cc[2][2]},${0.08 + vol * 0.06})`);
     ctx.fillStyle = rim;
     ctx.fillRect(0, 0, s, s);
 
@@ -247,19 +249,19 @@ export default function KiraOrb({
         style={{
           width: size,
           height: size,
-          transition: "filter 0.8s ease",
+          transition: "filter 1s ease",
           filter:
             kiraState === "thinking"
-              ? "brightness(0.8) saturate(0.8)"
+              ? "brightness(0.82) saturate(0.85)"
               : kiraState === "speaking"
-                ? "brightness(1.1)"
+                ? "brightness(1.08)"
                 : "brightness(1.0)",
         }}
       />
       {/* State indicator */}
       <div
         className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
-        style={{ color: "rgba(139,157,195,0.4)", height: 16 }}
+        style={{ color: "rgba(139,157,195,0.35)", height: 16 }}
       >
         {kiraState === "listening"
           ? "Listening..."

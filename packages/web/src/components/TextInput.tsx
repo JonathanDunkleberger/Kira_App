@@ -30,9 +30,9 @@ export default function TextInput({ onSend, disabled, kiraState }: TextInputProp
 
   return (
     <div
-      className="flex items-center w-full max-w-[340px] pb-1 transition-all duration-300"
+      className="flex items-center w-full max-w-[320px] pb-1 transition-all duration-300"
       style={{
-        borderBottom: `1px solid rgba(139,157,195,${isActive ? 0.2 : 0.06})`,
+        borderBottom: `1px solid rgba(139,157,195,${isActive ? 0.15 : 0.04})`,
       }}
     >
       <input

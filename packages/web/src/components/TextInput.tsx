@@ -14,7 +14,7 @@ export default function TextInput({ onSend, disabled, kiraState }: TextInputProp
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if (!trimmed || disabled || kiraState !== "listening") return;
+    if (!trimmed || disabled) return;
     onSend(trimmed);
     setText("");
   };
@@ -43,15 +43,15 @@ export default function TextInput({ onSend, disabled, kiraState }: TextInputProp
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={handleKeyDown}
-        placeholder={kiraState === "listening" ? "Type a message..." : "Kira is thinking..."}
-        disabled={disabled || kiraState !== "listening"}
+        placeholder="Type a message..."
+        disabled={disabled}
         className="flex-1 bg-transparent border-none outline-none text-[#C9D1D9] text-sm font-light tracking-[0.01em] py-2 placeholder:text-gray-600 disabled:opacity-50"
         style={{ fontFamily: "inherit" }}
       />
       {text.trim() && (
         <button
           onClick={handleSend}
-          disabled={disabled || kiraState !== "listening"}
+          disabled={disabled}
           className="bg-transparent border-none text-[rgba(139,157,195,0.6)] hover:text-[rgba(139,157,195,1)] cursor-pointer px-2 py-1 text-[13px] transition-colors duration-200 disabled:opacity-50"
         >
           ↵

@@ -1,6 +1,5 @@
 "use client";
 import { useState, useRef, KeyboardEvent } from "react";
-import { Send } from "lucide-react";
 
 interface TextInputProps {
   onSend: (text: string) => void;
@@ -10,6 +9,7 @@ interface TextInputProps {
 
 export default function TextInput({ onSend, disabled, kiraState }: TextInputProps) {
   const [text, setText] = useState("");
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
@@ -26,29 +26,37 @@ export default function TextInput({ onSend, disabled, kiraState }: TextInputProp
     }
   };
 
+  const isActive = focused || !!text;
+
   return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] rounded-xl border border-white/[0.06] max-w-[400px] w-full">
+    <div
+      className="flex items-center w-full max-w-[340px] pb-1 transition-all duration-300"
+      style={{
+        borderBottom: `1px solid rgba(139,157,195,${isActive ? 0.2 : 0.06})`,
+      }}
+    >
       <input
         ref={inputRef}
         type="text"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onKeyDown={handleKeyDown}
         placeholder={kiraState === "listening" ? "Type a message..." : "Kira is thinking..."}
         disabled={disabled || kiraState !== "listening"}
-        className="flex-1 bg-transparent border-none outline-none text-[#C9D1D9] text-sm font-inherit placeholder:text-gray-600 disabled:opacity-50"
+        className="flex-1 bg-transparent border-none outline-none text-[#C9D1D9] text-sm font-light tracking-[0.01em] py-2 placeholder:text-gray-600 disabled:opacity-50"
+        style={{ fontFamily: "inherit" }}
       />
-      <button
-        onClick={handleSend}
-        disabled={!text.trim() || disabled || kiraState !== "listening"}
-        className={`border-none rounded-lg p-1.5 flex items-center transition-all duration-200 ${
-          text.trim()
-            ? "bg-[rgba(107,125,179,0.2)] text-[#8B9DC3] cursor-pointer hover:bg-[rgba(107,125,179,0.3)]"
-            : "bg-transparent text-gray-700 cursor-default"
-        } disabled:opacity-50 disabled:cursor-default`}
-      >
-        <Send size={16} />
-      </button>
+      {text.trim() && (
+        <button
+          onClick={handleSend}
+          disabled={disabled || kiraState !== "listening"}
+          className="bg-transparent border-none text-[rgba(139,157,195,0.6)] hover:text-[rgba(139,157,195,1)] cursor-pointer px-2 py-1 text-[13px] transition-colors duration-200 disabled:opacity-50"
+        >
+          ↵
+        </button>
+      )}
     </div>
   );
 }

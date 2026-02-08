@@ -209,77 +209,76 @@ export default function ChatClient() {
         isPro={isPro}
       />
 
-      {/* Main Orb */}
-      <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
+      {/* Main Content Area */}
+      <div className="flex-grow flex flex-col items-center justify-center w-full max-w-4xl mx-auto" style={{ paddingBottom: 100 }}>
+        {/* Orb */}
         <KiraOrb
           kiraState={kiraState}
           micVolume={micVolume}
           speakerVolume={playerVolume}
           sentiment={sentiment}
-          size={280}
+          size={300}
         />
 
-        {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl px-6 text-center pointer-events-none flex items-center justify-center h-full">
-        </div>
-      </div>
-      
-      {/* Transcript Container - Scrollable Box */}
-      <div className="w-full max-w-3xl px-6 pb-8 z-10 flex justify-center flex-col items-center">
+        {/* Transcript — single line, styled by role */}
+        <div className="mt-6 min-h-[48px] flex items-center justify-center max-w-[500px] px-6">
           {error && error !== "limit_reached" && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded relative dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
               <span className="block sm:inline">{error}</span>
             </div>
           )}
-          <div className="w-full max-w-2xl h-32 overflow-y-auto scrollbar-discreet text-center flex flex-col items-center justify-start pt-2">
-            {transcript ? (
-              <div
-                className={`text-xl md:text-2xl font-medium transition-opacity duration-300 leading-relaxed ${
-                  transcript.role === "user" ? "text-gray-600 dark:text-tokyo-fg/70" : "text-kira-green-dark dark:text-tokyo-accent"
-                }`}
-              >
-                {transcript.text}
-                {transcript.role === "user" && kiraState === "listening" && (
-                  <span className="animate-pulse">|</span>
-                )}
-              </div>
-            ) : (
-              <div className="text-gray-400 dark:text-gray-600 text-sm italic mt-10">
-                Listening...
-              </div>
-            )}
-          </div>
+          {transcript ? (
+            <p
+              className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
+              style={{
+                color: transcript.role === "ai"
+                  ? "rgba(139,157,195,0.9)"
+                  : "rgba(201,209,217,0.7)",
+                fontWeight: transcript.role === "ai" ? 400 : 300,
+                fontStyle: transcript.role === "user" ? "italic" : "normal",
+              }}
+            >
+              {transcript.text}
+              {transcript.role === "user" && kiraState === "listening" && (
+                <span className="animate-pulse">|</span>
+              )}
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      {/* Text Chat Bubbles */}
-      {chatMessages.length > 0 && (
-        <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 py-3 scrollbar-discreet">
-          {chatMessages.map((msg, i) => (
-            <div
-              key={i}
-              className={`max-w-[80%] px-3.5 py-2 rounded-xl text-sm text-[#C9D1D9] ${
-                msg.role === "user"
-                  ? "self-end bg-[rgba(107,125,179,0.15)]"
-                  : "self-start bg-white/[0.05]"
-              }`}
-            >
-              {msg.text}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* ─── Bottom Area: Text Chat + Input + Controls ─── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-4 pb-8 pt-10 z-10"
+        style={{ background: "linear-gradient(transparent, #0D1117 30%)" }}
+      >
+        {/* Text Chat Bubbles */}
+        {chatMessages.length > 0 && (
+          <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 scrollbar-discreet">
+            {chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`max-w-[80%] px-3.5 py-2 rounded-xl text-sm text-[#C9D1D9] ${
+                  msg.role === "user"
+                    ? "self-end bg-[rgba(107,125,179,0.15)]"
+                    : "self-start bg-white/[0.05]"
+                }`}
+              >
+                {msg.text}
+              </div>
+            ))}
+          </div>
+        )}
 
-      {/* Text Input */}
-      <div className="w-full flex justify-center px-6 pb-2">
+        {/* Text Input */}
         <TextInput
           onSend={sendText}
           disabled={socketState !== "connected"}
           kiraState={kiraState}
         />
-      </div>
 
-      {/* Footer Controls */}
-      <div className="flex items-center gap-6 p-8">
+        {/* Voice Controls */}
+        <div className="flex items-center gap-4">
         {/* Vision Button */}
         <button
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
@@ -312,6 +311,7 @@ export default function ChatClient() {
         >
           <PhoneOff size={24} />
         </button>
+        </div>
       </div>
 
       {/* Rating Modal */}

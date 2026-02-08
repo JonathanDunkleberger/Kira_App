@@ -3,55 +3,57 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { KiraState } from "@/hooks/useKiraSocket";
 
-// ─── Sentiment palette ──────────────────────────────────────────────────────
-// The server can set these in the future via a WS message.
-// For now, "neutral" is the default.
-const SENTIMENTS: Record<string, { primary: string; secondary: string; accent: string }> = {
-  neutral: { primary: "#6B7DB3", secondary: "#4A5A8A", accent: "#8B9DC3" },
-  warm:    { primary: "#C4785A", secondary: "#A85A3A", accent: "#E8A07A" },
-  cool:    { primary: "#5A8FA0", secondary: "#3A6F80", accent: "#7AB0C0" },
-  tender:  { primary: "#9B7AAA", secondary: "#7B5A8A", accent: "#BB9ACA" },
-  playful: { primary: "#B08A5A", secondary: "#90703A", accent: "#D0AA7A" },
+// ─── Sentiment color palettes ────────────────────────────────────────────────
+// Each sentiment has 4 colors (used as [base-dark, mid, highlight, edge]) + a glow
+const SENTIMENTS: Record<
+  string,
+  { colors: [string, string, string, string]; glow: string }
+> = {
+  neutral: {
+    colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"],
+    glow: "rgba(107,125,179,0.15)",
+  },
+  warm: {
+    colors: ["#8A5A3A", "#C4785A", "#E8A07A", "#A06040"],
+    glow: "rgba(196,120,90,0.18)",
+  },
+  cool: {
+    colors: ["#2A5A6A", "#4A8A9A", "#6AAABA", "#3A7080"],
+    glow: "rgba(90,143,160,0.15)",
+  },
+  tender: {
+    colors: ["#6A4A7A", "#9B7AAA", "#BB9ACA", "#7A5A8A"],
+    glow: "rgba(155,122,170,0.15)",
+  },
+  playful: {
+    colors: ["#7A6030", "#B08A5A", "#D0AA7A", "#907040"],
+    glow: "rgba(176,138,90,0.15)",
+  },
 };
 
 export type Sentiment = keyof typeof SENTIMENTS;
 
 interface KiraOrbProps {
   kiraState: KiraState;
-  micVolume: number;       // 0-1  (from useKiraSocket)
-  speakerVolume: number;   // 0-1  (playerVolume from useKiraSocket)
+  micVolume: number; // 0-1  (from useKiraSocket)
+  speakerVolume: number; // 0-1  (playerVolume from useKiraSocket)
   sentiment?: Sentiment;
-  /** CSS px – defaults to 280 */
+  /** CSS px – defaults to 300 */
   size?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+type RGB = [number, number, number];
 
-const lerpColor = (hex1: string, hex2: string, t: number): string => {
-  const r1 = parseInt(hex1.slice(1, 3), 16),
-    g1 = parseInt(hex1.slice(3, 5), 16),
-    b1 = parseInt(hex1.slice(5, 7), 16);
-  const r2 = parseInt(hex2.slice(1, 3), 16),
-    g2 = parseInt(hex2.slice(3, 5), 16),
-    b2 = parseInt(hex2.slice(5, 7), 16);
-  const r = Math.round(lerp(r1, r2, t)),
-    g = Math.round(lerp(g1, g2, t)),
-    b = Math.round(lerp(b1, b2, t));
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-};
-
-interface Blob {
-  x: number;
-  y: number;
-  radius: number;
-  baseRadius: number;
-  phase: number;
-  phaseSpeed: number;
-  orbitRadius: number;
-  orbitSpeed: number;
-  orbitPhase: number;
+function hexToRgb(hex: string): RGB {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
 }
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function KiraOrb({
@@ -59,16 +61,21 @@ export default function KiraOrb({
   micVolume,
   speakerVolume,
   sentiment = "neutral",
-  size = 280,
+  size = 300,
 }: KiraOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const timeRef = useRef(0);
-  const blobsRef = useRef<Blob[]>([]);
-  const targetColorsRef = useRef(SENTIMENTS.neutral);
-  const currentColorsRef = useRef({ ...SENTIMENTS.neutral });
   const volumeRef = useRef(0);
   const stateRef = useRef<KiraState>("listening");
+
+  // 4 colours, each as [r,g,b], smoothly interpolated every frame
+  const currentColorsRef = useRef<RGB[]>(
+    SENTIMENTS.neutral.colors.map(hexToRgb)
+  );
+  const targetColorsRef = useRef<RGB[]>(
+    SENTIMENTS.neutral.colors.map(hexToRgb)
+  );
 
   // Keep refs in sync (synchronous — no React batching delay)
   const micRef = useRef(micVolume);
@@ -77,200 +84,143 @@ export default function KiraOrb({
   spkRef.current = speakerVolume;
   stateRef.current = kiraState;
 
-  // Colour target
+  // Update target colors on sentiment change
   useEffect(() => {
-    targetColorsRef.current = SENTIMENTS[sentiment];
+    targetColorsRef.current = SENTIMENTS[sentiment].colors.map(hexToRgb);
   }, [sentiment]);
 
-  // Initialise metaball blobs once
-  useEffect(() => {
-    blobsRef.current = Array.from({ length: 8 }, () => ({
-      x: 0,
-      y: 0,
-      radius: 30 + Math.random() * 40,
-      baseRadius: 30 + Math.random() * 40,
-      phase: Math.random() * Math.PI * 2,
-      phaseSpeed: 0.3 + Math.random() * 0.5,
-      orbitRadius: 20 + Math.random() * 60,
-      orbitSpeed: 0.2 + Math.random() * 0.4,
-      orbitPhase: Math.random() * Math.PI * 2,
-    }));
-  }, []);
-
-  // ─── Render loop ────────────────────────────────────────────────────────
+  // ─── Render loop (gradient-based, no pixel field) ───────────────────────
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dt = 0.016;
-    timeRef.current += dt;
+    timeRef.current += 0.016;
     const t = timeRef.current;
 
-    // Read live values from refs (no React re-render dependency)
+    // Read live values from refs
     const state = stateRef.current;
     const mic = micRef.current;
     const spk = spkRef.current;
 
-    // Smooth colour transition
-    const tc = targetColorsRef.current;
-    const cc = currentColorsRef.current;
-    cc.primary = lerpColor(cc.primary, tc.primary, 0.02);
-    cc.secondary = lerpColor(cc.secondary, tc.secondary, 0.02);
-    cc.accent = lerpColor(cc.accent, tc.accent, 0.02);
-
-    // Volume reactivity
+    // Smooth volume
     let targetVol = 0;
     if (state === "listening") targetVol = mic;
     else if (state === "speaking") targetVol = spk;
-    else targetVol = 0.1; // thinking — subtle pulse
-    volumeRef.current = lerp(volumeRef.current, targetVol, 0.08);
+    else targetVol = 0; // thinking
+    volumeRef.current = lerp(volumeRef.current, targetVol, 0.06);
     const vol = volumeRef.current;
 
-    // State-specific behaviour
-    let globalSpeed = 1;
-    let globalScale = 1;
-    let pulseIntensity = 0;
-    let breatheSpeed = 1;
-
-    if (state === "thinking") {
-      globalSpeed = 0.4;
-      pulseIntensity = 0.15 * Math.sin(t * 1.5) + 0.15;
-      breatheSpeed = 0.6;
-      globalScale = 0.95 + pulseIntensity * 0.1;
-    } else if (state === "speaking") {
-      globalSpeed = 1.2 + vol * 1.5;
-      globalScale = 1.0 + vol * 0.2;
-      breatheSpeed = 1.5;
-    } else {
-      globalSpeed = 0.7 + vol * 2;
-      globalScale = 0.98 + vol * 0.15;
-      breatheSpeed = 0.8;
-    }
-
-    // ── Canvas dimensions (match CSS size via DPR) ─────────────────────
-    const s = size; // logical pixels
-    const cx = s / 2,
-      cy = s / 2;
-
-    ctx.clearRect(0, 0, s, s);
-
-    // Outer glow
-    const glowSize = 100 + vol * 40;
-    const outerGlow = ctx.createRadialGradient(cx, cy, 50, cx, cy, glowSize + 50);
-    outerGlow.addColorStop(0, cc.primary + "15");
-    outerGlow.addColorStop(0.5, cc.primary + "08");
-    outerGlow.addColorStop(1, "transparent");
-    ctx.fillStyle = outerGlow;
-    ctx.fillRect(0, 0, s, s);
-
-    // Update blobs
-    const blobs = blobsRef.current;
-    for (let i = 0; i < blobs.length; i++) {
-      const b = blobs[i];
-      b.orbitPhase += b.orbitSpeed * dt * globalSpeed;
-      b.phase += b.phaseSpeed * dt * globalSpeed;
-
-      const breathe = Math.sin(t * breatheSpeed + b.phase) * 0.15;
-      const volPush = vol * 0.4;
-
-      b.x = cx + Math.cos(b.orbitPhase) * b.orbitRadius * (1 + volPush) * globalScale;
-      b.y = cy + Math.sin(b.orbitPhase * 1.3 + b.phase * 0.5) * b.orbitRadius * (1 + volPush) * globalScale;
-      b.radius = b.baseRadius * (1 + breathe + vol * 0.3) * globalScale;
-    }
-
-    // ── Metaball field render ──────────────────────────────────────────
-    const imageData = ctx.createImageData(s, s);
-    const data = imageData.data;
-
-    const pr = parseInt(cc.primary.slice(1, 3), 16);
-    const pg = parseInt(cc.primary.slice(3, 5), 16);
-    const pb = parseInt(cc.primary.slice(5, 7), 16);
-    const sr = parseInt(cc.secondary.slice(1, 3), 16);
-    const sg = parseInt(cc.secondary.slice(3, 5), 16);
-    const sb = parseInt(cc.secondary.slice(5, 7), 16);
-    const ar = parseInt(cc.accent.slice(1, 3), 16);
-    const ag = parseInt(cc.accent.slice(3, 5), 16);
-    const ab = parseInt(cc.accent.slice(5, 7), 16);
-
-    const step = 2; // half-res for performance
-    for (let y = 0; y < s; y += step) {
-      for (let x = 0; x < s; x += step) {
-        let field = 0;
-        for (let i = 0; i < blobs.length; i++) {
-          const b = blobs[i];
-          const dx = x - b.x;
-          const dy = y - b.y;
-          const distSq = dx * dx + dy * dy;
-          field += (b.radius * b.radius) / distSq;
-        }
-
-        if (field > 1.0) {
-          const edgeFactor = Math.min(1, (field - 1.0) * 2);
-          const depthFactor = Math.min(1, (field - 1.0) * 0.5);
-
-          let r = lerp(pr, sr, depthFactor);
-          let g = lerp(pg, sg, depthFactor);
-          let bv = lerp(pb, sb, depthFactor);
-
-          // Internal lava flow
-          const flowX = Math.sin(x * 0.02 + t * 0.8) * Math.cos(y * 0.015 + t * 0.6);
-          const flowY = Math.cos(x * 0.015 - t * 0.5) * Math.sin(y * 0.02 + t * 0.7);
-          const flow = (flowX + flowY) * 0.5 + 0.5;
-          const flowIntensity = depthFactor * flow * 0.6;
-
-          r = lerp(r, ar, flowIntensity);
-          g = lerp(g, ag, flowIntensity);
-          bv = lerp(bv, ab, flowIntensity);
-
-          // Highlights
-          const highlight = Math.pow(flow, 3) * depthFactor * 0.4;
-          r = Math.min(255, r + highlight * 80);
-          g = Math.min(255, g + highlight * 60);
-          bv = Math.min(255, bv + highlight * 40);
-
-          // Edge glow
-          const edgeGlow = Math.pow(1 - edgeFactor, 2) * 0.6;
-          r = Math.min(255, r + edgeGlow * 60);
-          g = Math.min(255, g + edgeGlow * 50);
-          bv = Math.min(255, bv + edgeGlow * 40);
-
-          const alpha = Math.min(255, edgeFactor * 280);
-
-          for (let sy = 0; sy < step && y + sy < s; sy++) {
-            for (let sx = 0; sx < step && x + sx < s; sx++) {
-              const idx = ((y + sy) * s + (x + sx)) * 4;
-              data[idx] = r;
-              data[idx + 1] = g;
-              data[idx + 2] = bv;
-              data[idx + 3] = alpha;
-            }
-          }
-        }
+    // Smooth color transitions (per-channel lerp)
+    const cc = currentColorsRef.current;
+    const tc = targetColorsRef.current;
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 3; j++) {
+        cc[i][j] = lerp(cc[i][j], tc[i][j], 0.015);
       }
     }
 
-    ctx.putImageData(imageData, 0, 0);
+    // ── State behaviours ──
+    let breatheScale = 1;
+    let internalSpeed = 1;
+    let glowIntensity = 0.3;
 
-    // Soft inner glow overlay
-    const innerGlow = ctx.createRadialGradient(
-      cx + Math.sin(t * 0.7) * 15,
-      cy + Math.cos(t * 0.5) * 15,
-      0,
-      cx,
-      cy,
-      80 * globalScale
+    if (state === "thinking") {
+      breatheScale = 0.97 + Math.sin(t * 1.2) * 0.03;
+      internalSpeed = 0.3;
+      glowIntensity = 0.15 + Math.sin(t * 1.2) * 0.1;
+    } else if (state === "speaking") {
+      breatheScale = 1.0 + vol * 0.12;
+      internalSpeed = 1.0 + vol * 1.5;
+      glowIntensity = 0.3 + vol * 0.3;
+    } else {
+      // listening
+      breatheScale = 0.98 + Math.sin(t * 1.8) * 0.02 + vol * 0.08;
+      internalSpeed = 0.5 + vol * 1.5;
+      glowIntensity = 0.2 + vol * 0.2;
+    }
+
+    const s = size; // logical size
+    const cx = s / 2;
+    const cy = s / 2;
+    const baseRadius = s * 0.317; // ~95px at size 300
+    const radius = baseRadius * breatheScale;
+
+    ctx.clearRect(0, 0, s, s);
+
+    // ── Outer glow ──
+    const glowGrad = ctx.createRadialGradient(
+      cx, cy, radius * 0.8,
+      cx, cy, radius * 1.8
     );
-    innerGlow.addColorStop(0, cc.accent + "20");
-    innerGlow.addColorStop(0.6, cc.primary + "08");
-    innerGlow.addColorStop(1, "transparent");
-    ctx.globalCompositeOperation = "screen";
-    ctx.fillStyle = innerGlow;
+    const gc = cc[1];
+    glowGrad.addColorStop(0, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.12})`);
+    glowGrad.addColorStop(0.5, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.04})`);
+    glowGrad.addColorStop(1, "transparent");
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(0, 0, s, s);
+
+    // ── Clipping circle ──
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, 120, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // ── Base fill (radial gradient from color[0] → color[3]) ──
+    const baseFill = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    baseFill.addColorStop(0, `rgb(${cc[0][0]},${cc[0][1]},${cc[0][2]})`);
+    baseFill.addColorStop(1, `rgb(${cc[3][0]},${cc[3][1]},${cc[3][2]})`);
+    ctx.fillStyle = baseFill;
+    ctx.fillRect(0, 0, s, s);
+
+    // ── Flowing internal gradients (the "alive" part) ──
+    // Multiple overlapping radial gradients that drift inside the sphere
+    const spots = [
+      { phase: 0, speed: 0.4, orbitR: 35, sz: 70, colorIdx: 1 },
+      { phase: 2.1, speed: 0.3, orbitR: 40, sz: 60, colorIdx: 2 },
+      { phase: 4.2, speed: 0.5, orbitR: 30, sz: 80, colorIdx: 1 },
+      { phase: 1.0, speed: 0.35, orbitR: 45, sz: 55, colorIdx: 2 },
+    ];
+
+    for (const spot of spots) {
+      const sp = spot.phase + t * spot.speed * internalSpeed;
+      const sx = cx + Math.cos(sp) * spot.orbitR * (1 + vol * 0.3);
+      const sy = cy + Math.sin(sp * 1.3) * spot.orbitR * (1 + vol * 0.3);
+      const sr = spot.sz * (1 + vol * 0.2);
+
+      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+      const sc = cc[spot.colorIdx];
+      sg.addColorStop(0, `rgba(${sc[0]},${sc[1]},${sc[2]},0.6)`);
+      sg.addColorStop(0.5, `rgba(${sc[0]},${sc[1]},${sc[2]},0.2)`);
+      sg.addColorStop(1, `rgba(${sc[0]},${sc[1]},${sc[2]},0)`);
+
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, s, s);
+    }
+
+    // ── Highlight / specular ──
+    ctx.globalCompositeOperation = "screen";
+    const hlX = cx - radius * 0.25;
+    const hlY = cy - radius * 0.3;
+    const highlight = ctx.createRadialGradient(hlX, hlY, 0, hlX, hlY, radius * 0.6);
+    highlight.addColorStop(0, `rgba(255,255,255,${0.06 + vol * 0.04})`);
+    highlight.addColorStop(0.5, "rgba(255,255,255,0.02)");
+    highlight.addColorStop(1, "transparent");
+    ctx.fillStyle = highlight;
+    ctx.fillRect(0, 0, s, s);
+
+    // ── Subtle rim light ──
     ctx.globalCompositeOperation = "source-over";
+    const rim = ctx.createRadialGradient(cx, cy, radius * 0.85, cx, cy, radius);
+    rim.addColorStop(0, "transparent");
+    rim.addColorStop(0.7, "transparent");
+    rim.addColorStop(1, `rgba(${cc[2][0]},${cc[2][1]},${cc[2][2]},${0.12 + vol * 0.08})`);
+    ctx.fillStyle = rim;
+    ctx.fillRect(0, 0, s, s);
+
+    ctx.restore();
 
     animRef.current = requestAnimationFrame(render);
   }, [size]);
@@ -290,35 +240,32 @@ export default function KiraOrb({
     return () => cancelAnimationFrame(animRef.current);
   }, [render, size]);
 
-  // CSS brightness driven by state + volume
-  const brightness =
-    kiraState === "speaking"
-      ? 1.1 + speakerVolume * 0.2
-      : kiraState === "thinking"
-        ? 0.85
-        : 1;
-
   return (
-    <div className="relative">
+    <div className="relative flex flex-col items-center">
       <canvas
         ref={canvasRef}
         style={{
           width: size,
           height: size,
-          filter: `blur(1px) brightness(${brightness})`,
-          transition: "filter 0.5s ease",
+          transition: "filter 0.8s ease",
+          filter:
+            kiraState === "thinking"
+              ? "brightness(0.8) saturate(0.8)"
+              : kiraState === "speaking"
+                ? "brightness(1.1)"
+                : "brightness(1.0)",
         }}
       />
-      {/* State label */}
+      {/* State indicator */}
       <div
-        className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[13px] tracking-[0.15em] uppercase font-light transition-colors duration-1000"
-        style={{ color: currentColorsRef.current.accent + "90" }}
+        className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
+        style={{ color: "rgba(139,157,195,0.4)", height: 16 }}
       >
         {kiraState === "listening"
           ? "Listening..."
           : kiraState === "thinking"
             ? "Thinking..."
-            : "Speaking..."}
+            : ""}
       </div>
     </div>
   );

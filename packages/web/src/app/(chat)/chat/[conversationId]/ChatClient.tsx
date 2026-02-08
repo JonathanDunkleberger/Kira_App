@@ -1,11 +1,11 @@
 "use client";
 
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useClerk } from "@clerk/nextjs";
 import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";
@@ -13,6 +13,7 @@ import TextInput from "@/components/TextInput";
 export default function ChatClient() {
   const router = useRouter();
   const { getToken, userId } = useAuth();
+  const { openSignIn } = useClerk();
   const [token, setToken] = useState<string | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const hasShownRating = useRef(false); // Prevent rating dialog from showing twice
@@ -50,7 +51,8 @@ export default function ChatClient() {
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
-    isPro
+    isPro,
+    remainingSeconds
   } = useKiraSocket(
     token || "",
     guestId
@@ -107,6 +109,37 @@ export default function ChatClient() {
       console.error("Checkout error:", error);
     }
   };
+
+  const isGuest = !userId;
+
+  const handleSignUp = () => {
+    // Pass guestId via unsafe_metadata so the Clerk webhook can migrate the conversation
+    openSignIn({
+      afterSignInUrl: window.location.href,
+      afterSignUpUrl: window.location.href,
+    });
+    // Note: guestId is preserved in localStorage — on next connect as signed-in user,
+    // the webhook will have already migrated the buffer
+  };
+
+  // --- Local countdown for time remaining ---
+  const [localRemaining, setLocalRemaining] = useState<number | null>(null);
+
+  // Sync from server when session_config arrives
+  useEffect(() => {
+    if (remainingSeconds !== null) {
+      setLocalRemaining(remainingSeconds);
+    }
+  }, [remainingSeconds]);
+
+  // Tick down every second while connected
+  useEffect(() => {
+    if (socketState !== "connected" || localRemaining === null) return;
+    const interval = setInterval(() => {
+      setLocalRemaining((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [socketState, localRemaining !== null]);
 
   if (socketState === "connecting") {
     return (
@@ -341,6 +374,27 @@ export default function ChatClient() {
           }}
         />
 
+        {/* Time Remaining Indicator — visible under 5 minutes for free users */}
+        {!isPro && localRemaining !== null && localRemaining <= 300 && localRemaining > 0 && (
+          <div
+            className="flex items-center gap-1.5 relative z-[1]"
+            style={{
+              opacity: localRemaining <= 120 ? 0.4 : 0.2,
+              transition: "opacity 0.8s ease",
+              fontSize: 12,
+              fontWeight: 400,
+              color: "rgba(201,209,217,0.6)",
+              fontFamily: "'DM Sans', sans-serif",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <Clock size={12} style={{ opacity: 0.7 }} />
+            <span>
+              {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")} remaining
+            </span>
+          </div>
+        )}
+
         {/* Text Input */}
         <TextInput
           onSend={sendText}
@@ -477,90 +531,164 @@ export default function ChatClient() {
         </div>
       )}
 
-      {/* Limit Reached Modal */}
+      {/* Limit Reached — Paywall Overlay */}
       {error === "limit_reached" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)" }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{
+            background: "rgba(13,17,23,0.85)",
+            backdropFilter: "blur(20px)",
+            animation: "paywallFadeIn 0.6s ease both",
+          }}
+        >
           <div style={{
-            background: "#0D1117",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: 16,
-            padding: "32px 28px",
-            maxWidth: 400,
+            background: "linear-gradient(135deg, rgba(20,25,35,0.95), rgba(13,17,23,0.98))",
+            border: "1px solid rgba(107,125,179,0.12)",
+            borderRadius: 20,
+            padding: "40px 32px",
+            maxWidth: 420,
             width: "100%",
             fontFamily: "'DM Sans', sans-serif",
             textAlign: "center",
+            boxShadow: "0 0 80px rgba(107,125,179,0.06)",
           }}>
+            {/* Ambient glow */}
             <div style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: "rgba(200,55,55,0.12)",
-              border: "1px solid rgba(200,55,55,0.2)",
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              background: "linear-gradient(135deg, rgba(107,125,179,0.15), rgba(107,125,179,0.05))",
+              border: "1px solid rgba(107,125,179,0.2)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              margin: "0 auto 20px",
+              margin: "0 auto 24px",
             }}>
-              <PhoneOff size={24} style={{ color: "rgba(255,120,120,0.7)" }} />
+              <Clock size={28} style={{ color: "rgba(139,157,195,0.7)" }} />
             </div>
-            
-            <h2 style={{
-              fontSize: 22,
-              fontFamily: "'Playfair Display', serif",
-              fontWeight: 400,
-              color: "#E2E8F0",
-              marginBottom: 8,
-              marginTop: 0,
-            }}>
-              Daily Limit Reached
-            </h2>
-            <p style={{
-              fontSize: 15,
-              fontWeight: 300,
-              color: "rgba(201,209,217,0.45)",
-              marginBottom: 28,
-            }}>
-              You&apos;ve used all your free conversation time for today.
-            </p>
 
-            <div className="flex flex-col w-full gap-3">
-              {!isPro && (
-                <button
-                  onClick={handleUpgrade}
-                  style={{
-                    width: "100%",
-                    padding: "12px 0",
-                    borderRadius: 10,
-                    border: "none",
-                    background: "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))",
-                    color: "#C9D1D9",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  Upgrade to Pro
-                </button>
-              )}
-              <Link
-                href="/"
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: "12px 0",
-                  color: "rgba(201,209,217,0.35)",
-                  fontSize: 14,
+            {isGuest ? (
+              <>
+                <h2 style={{
+                  fontSize: 24,
+                  fontFamily: "'Playfair Display', serif",
                   fontWeight: 400,
-                  textAlign: "center",
-                  textDecoration: "none",
-                  transition: "color 0.2s",
-                }}
-              >
-                Come back tomorrow
-              </Link>
-            </div>
+                  color: "#E2E8F0",
+                  marginBottom: 10,
+                  marginTop: 0,
+                }}>
+                  Kira will remember this
+                </h2>
+                <p style={{
+                  fontSize: 15,
+                  fontWeight: 300,
+                  color: "rgba(201,209,217,0.5)",
+                  lineHeight: 1.7,
+                  marginBottom: 32,
+                }}>
+                  Create a free account to save this conversation
+                  and pick up right where you left off. Your 15 daily minutes
+                  continue — no credit card needed.
+                </p>
+                <div className="flex flex-col w-full gap-3">
+                  <button
+                    onClick={handleSignUp}
+                    style={{
+                      width: "100%",
+                      padding: "14px 0",
+                      borderRadius: 12,
+                      border: "1px solid rgba(107,125,179,0.25)",
+                      background: "linear-gradient(135deg, rgba(107,125,179,0.25), rgba(107,125,179,0.1))",
+                      color: "#C9D1D9",
+                      fontSize: 15,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      fontFamily: "'DM Sans', sans-serif",
+                      transition: "all 0.3s ease",
+                      boxShadow: "0 0 30px rgba(107,125,179,0.08)",
+                    }}
+                  >
+                    Create free account
+                  </button>
+                  <Link
+                    href="/"
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "12px 0",
+                      color: "rgba(201,209,217,0.3)",
+                      fontSize: 14,
+                      fontWeight: 400,
+                      textAlign: "center",
+                      textDecoration: "none",
+                      transition: "color 0.2s",
+                    }}
+                  >
+                    I&apos;ll come back tomorrow
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 style={{
+                  fontSize: 24,
+                  fontFamily: "'Playfair Display', serif",
+                  fontWeight: 400,
+                  color: "#E2E8F0",
+                  marginBottom: 10,
+                  marginTop: 0,
+                }}>
+                  You&apos;ve used your 15 minutes
+                </h2>
+                <p style={{
+                  fontSize: 15,
+                  fontWeight: 300,
+                  color: "rgba(201,209,217,0.5)",
+                  lineHeight: 1.7,
+                  marginBottom: 32,
+                }}>
+                  Upgrade to Pro for 10 hours of conversation time per month,
+                  priority responses, and persistent memory across sessions.
+                </p>
+                <div className="flex flex-col w-full gap-3">
+                  <button
+                    onClick={handleUpgrade}
+                    style={{
+                      width: "100%",
+                      padding: "14px 0",
+                      borderRadius: 12,
+                      border: "1px solid rgba(107,125,179,0.25)",
+                      background: "linear-gradient(135deg, rgba(107,125,179,0.25), rgba(107,125,179,0.1))",
+                      color: "#C9D1D9",
+                      fontSize: 15,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      fontFamily: "'DM Sans', sans-serif",
+                      transition: "all 0.3s ease",
+                      boxShadow: "0 0 30px rgba(107,125,179,0.08)",
+                    }}
+                  >
+                    Upgrade to Pro — $9.99/mo
+                  </button>
+                  <Link
+                    href="/"
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "12px 0",
+                      color: "rgba(201,209,217,0.3)",
+                      fontSize: 14,
+                      fontWeight: 400,
+                      textAlign: "center",
+                      textDecoration: "none",
+                      transition: "color 0.2s",
+                    }}
+                  >
+                    I&apos;ll come back tomorrow
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

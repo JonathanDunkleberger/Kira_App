@@ -10,6 +10,7 @@ import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
+import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./guestMemoryBuffer.js";
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
@@ -25,10 +26,26 @@ const server = createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("ok");
-  } else {
-    res.writeHead(404);
-    res.end();
+    return;
   }
+
+  // --- Guest buffer retrieval endpoint (called by Clerk webhook) ---
+  if (req.url?.startsWith("/api/guest-buffer/") && req.method === "DELETE") {
+    const guestId = decodeURIComponent(req.url.split("/api/guest-buffer/")[1]);
+    const buffer = getGuestBuffer(guestId);
+    if (buffer) {
+      clearGuestBuffer(guestId);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(buffer));
+    } else {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "No buffer found" }));
+    }
+    return;
+  }
+
+  res.writeHead(404);
+  res.end();
 });
 const wss = new WebSocketServer({ server });
 
@@ -348,6 +365,18 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // --- USAGE: Start session timer ---
           sessionStartTime = Date.now();
+
+          // Send session_config for guests (signed-in users already get it above)
+          if (isGuest) {
+            ws.send(
+              JSON.stringify({
+                type: "session_config",
+                isPro: false,
+                remainingSeconds: FREE_LIMIT_SECONDS,
+              })
+            );
+          }
+
           usageCheckInterval = setInterval(async () => {
             if (!sessionStartTime) return;
 
@@ -905,6 +934,29 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (sttStreamer) sttStreamer.destroy();
+
+    // --- GUEST MEMORY BUFFER (save for potential account creation) ---
+    if (isGuest && userId) {
+      try {
+        const userMsgs = chatHistory
+          .filter(m => m.role === "user" || m.role === "assistant")
+          .map(m => ({
+            role: m.role as string,
+            content: typeof m.content === "string"
+              ? m.content
+              : "[media message]",
+          }));
+
+        if (userMsgs.length >= 2) {
+          bufferGuestConversation(userId, userMsgs, conversationSummary);
+        }
+      } catch (err) {
+        console.error(
+          "[Memory] Guest buffer failed:",
+          (err as Error).message
+        );
+      }
+    }
 
     // --- MEMORY EXTRACTION (signed-in users only) ---
     if (!isGuest && userId) {

@@ -32,6 +32,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isPro, setIsPro] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
 
@@ -735,6 +736,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "session_config":
             console.log("[WS] Received session config:", msg);
             setIsPro(msg.isPro);
+            if (msg.remainingSeconds !== undefined) {
+              setRemainingSeconds(msg.remainingSeconds);
+            }
             break;
           case "stream_ready":
             console.log("[WS] Received stream_ready.");
@@ -919,6 +923,7 @@ export const useKiraSocket = (token: string, guestId: string) => {
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
-    isPro
+    isPro,
+    remainingSeconds
   };
 };

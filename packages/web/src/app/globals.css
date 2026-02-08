@@ -27,3 +27,9 @@
     background-color: rgba(156, 163, 175, 0.4);
   }
 }
+
+/* Paywall overlay entrance animation */
+@keyframes paywallFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -37,7 +37,7 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
         borderBottom: `1px solid ${
           isDark
             ? `rgba(139,157,195,${isActive ? 0.15 : 0.04})`
-            : `rgba(100,110,140,${isActive ? 0.2 : 0.08})`
+            : `rgba(90,110,88,${isActive ? 0.2 : 0.08})`
         }`,
       }}
     >
@@ -52,11 +52,11 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
         placeholder="Type a message..."
         disabled={disabled}
         className={`flex-1 bg-transparent border-none outline-none text-sm font-light tracking-[0.01em] py-2 disabled:opacity-50 ${
-          isDark ? "placeholder:text-[rgba(139,157,195,0.3)]" : "placeholder:text-[rgba(100,110,140,0.35)]"
+          isDark ? "placeholder:text-[rgba(139,157,195,0.3)]" : "placeholder:text-[rgba(90,110,88,0.35)]"
         }`}
         style={{
           fontFamily: "inherit",
-          color: isDark ? "rgba(201,209,217,0.7)" : "rgba(60,60,70,0.8)",
+          color: isDark ? "rgba(201,209,217,0.7)" : "rgba(50,60,48,0.8)",
         }}
       />
       {text.trim() && (
@@ -65,7 +65,7 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
           disabled={disabled}
           className="bg-transparent border-none cursor-pointer px-2 py-1 text-[13px] transition-colors duration-200 disabled:opacity-50"
           style={{
-            color: isDark ? "rgba(139,157,195,0.6)" : "rgba(100,110,140,0.5)",
+            color: isDark ? "rgba(139,157,195,0.6)" : "rgba(90,110,88,0.5)",
           }}
         >
           ↵

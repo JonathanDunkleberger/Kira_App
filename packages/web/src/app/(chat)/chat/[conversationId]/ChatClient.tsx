@@ -241,8 +241,8 @@ export default function ChatClient() {
               className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
               style={{
                 color: transcript.role === "ai"
-                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
-                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(60,60,70,0.6)",
+                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(60,80,58,0.85)"
+                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(80,80,70,0.55)",
                 fontWeight: transcript.role === "ai" ? 400 : 300,
                 fontStyle: transcript.role === "user" ? "italic" : "normal",
               }}
@@ -289,10 +289,10 @@ export default function ChatClient() {
           style={{
             background: isScreenSharing
               ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
-              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
             color: isScreenSharing
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(100,110,140,0.4)",
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(80,100,78,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(80,100,78,0.45)",
           }}
         >
           {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
@@ -305,10 +305,10 @@ export default function ChatClient() {
           style={{
             background: isMuted
               ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
-              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
             color: isMuted
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(100,110,140,0.4)",
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(80,100,78,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(80,100,78,0.45)",
           }}
         >
           {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
@@ -318,7 +318,10 @@ export default function ChatClient() {
         <button
           onClick={handleEndCall}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
-          style={{ background: "rgba(200,55,55,0.75)", color: "rgba(255,255,255,0.9)" }}
+          style={{
+            background: theme === "dark" ? "rgba(200,55,55,0.75)" : "rgba(200,65,65,0.75)",
+            color: theme === "dark" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.95)",
+          }}
           title="End Call"
         >
           <PhoneOff size={18} />

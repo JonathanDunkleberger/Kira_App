@@ -1,9 +1,9 @@
 "use client"; // This page is interactive, so it's a client component
 export const dynamic = "force-dynamic"; // prevent prerender/SSG to avoid SSR-only runtime on client hooks
 
-import { useUser, UserButton, useClerk } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
-import { Phone, Star, Zap, User } from "lucide-react";
+import { Phone, Zap, User } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription"; // Our new hook
 import { useState, useEffect } from "react";
 import ProfileModal from "@/components/ProfileModal";
@@ -113,18 +113,29 @@ export default function HomePage() {
       />
 
       {/* Persona Button */}
-      <main className="flex flex-col gap-6 w-full max-w-sm text-center">
-        <h1 className="text-3xl font-medium text-gray-800 dark:text-tokyo-fg">{greeting}</h1>
+      <main className="flex flex-col items-center gap-0 w-full max-w-md text-center">
+        {isSignedIn ? (
+          <h1 className="text-[26px] font-light tracking-[-0.01em] mb-8 text-gray-700 dark:text-[rgba(139,157,195,0.85)] transition-colors duration-500">
+            {greeting}
+          </h1>
+        ) : (
+          <div className="flex flex-col items-center gap-2 mb-9">
+            <h1 className="text-2xl font-light tracking-[-0.01em] text-center leading-[1.4] m-0 text-gray-700 dark:text-[rgba(139,157,195,0.85)] transition-colors duration-500">
+              An AI companion that actually<br />remembers you.
+            </h1>
+            <p className="text-sm font-light tracking-[0.01em] m-0 text-gray-400 dark:text-[rgba(139,157,195,0.35)] transition-colors duration-500">
+              Real-time voice · Persistent memory · Screen sharing
+            </p>
+          </div>
+        )}
 
         <Link
-          href="/chat/kira" // This is the link to start the call
-          className="flex items-center justify-center gap-3 p-8 bg-kira-green rounded-lg text-2xl font-medium text-gray-800 hover:bg-kira-green-dark transition-colors dark:bg-tokyo-card dark:text-tokyo-fg dark:hover:bg-tokyo-card/80 dark:border dark:border-tokyo-fg/10"
+          href="/chat/kira"
+          className="inline-flex items-center gap-2.5 px-9 py-4 rounded-[14px] text-base font-normal tracking-[0.01em] transition-all duration-300 border border-gray-200 dark:border-[rgba(139,157,195,0.12)] bg-gray-50 dark:bg-[rgba(139,157,195,0.06)] text-gray-700 dark:text-[rgba(139,157,195,0.85)] hover:bg-gray-100 dark:hover:bg-[rgba(139,157,195,0.1)]"
         >
-          <Phone size={24} />
+          <Phone size={18} />
           <span>Talk to Kira</span>
         </Link>
-
-        {/* We can add other personas here later */}
       </main>
     </div>
   );

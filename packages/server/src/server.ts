@@ -618,6 +618,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
 
+              // Yield one event-loop tick so the WebSocket control frames
+              // (state_speaking, tts_chunk_starts) are flushed to the client
+              // BEFORE any binary TTS audio frames are sent
+              await new Promise(resolve => setImmediate(resolve));
+
               try {
                 // Split on sentence-ending punctuation followed by space+uppercase or end of string
                 // Avoids splitting on "Dr.", "e.g.", "3.14", "U.S.A.", etc.
@@ -660,6 +665,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             state = "speaking";
             ws.send(JSON.stringify({ type: "state_speaking" }));
             ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+
+            // Yield one event-loop tick so the WebSocket control frames
+            // (state_speaking, tts_chunk_starts) are flushed to the client
+            // BEFORE any binary TTS audio frames are sent
+            await new Promise(resolve => setImmediate(resolve));
 
             try {
               const stream = await openai.chat.completions.create({

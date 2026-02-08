@@ -6,7 +6,7 @@ import type { KiraState } from "@/hooks/useKiraSocket";
 // ─── Theme color palettes ────────────────────────────────────────────────────
 const ORB_COLORS = {
   dark: { colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string] },
-  light: { colors: ["#8A9BC0", "#A0B0D0", "#B8C8E0", "#95A5C8"] as [string, string, string, string] },
+  light: { colors: ["#7A9A78", "#9AB898", "#B8D4B0", "#88A886"] as [string, string, string, string] },
 };
 
 interface KiraOrbProps {
@@ -238,7 +238,7 @@ export default function KiraOrb({
       <div
         className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
         style={{
-          color: theme === "dark" ? "rgba(139,157,195,0.35)" : "rgba(100,110,140,0.4)",
+          color: theme === "dark" ? "rgba(139,157,195,0.35)" : "rgba(90,110,88,0.35)",
           height: 16,
         }}
       >

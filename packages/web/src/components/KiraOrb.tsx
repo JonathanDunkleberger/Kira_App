@@ -6,7 +6,7 @@ import type { KiraState } from "@/hooks/useKiraSocket";
 // ─── Theme color palettes ────────────────────────────────────────────────────
 const ORB_COLORS = {
   dark: { colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string] },
-  light: { colors: ["#7A9A78", "#9AB898", "#B8D4B0", "#88A886"] as [string, string, string, string] },
+  light: { colors: ["#8EA86E", "#A8C288", "#C2D8A2", "#98B478"] as [string, string, string, string] },
 };
 
 interface KiraOrbProps {

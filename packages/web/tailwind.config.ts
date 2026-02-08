@@ -20,10 +20,9 @@ const config = {
     extend: {
       colors: {
         "kira-bg": "#FBFBF8",
-        "kira-green": "#D4D7C2",
-        "kira-green-dark": "#C2C6A3",
-        "kira-orb": "#D4D7C2",
-        "kira-orb-shadow": "rgba(212, 215, 194, 0.5)",
+        "kira-accent": "#3B82F6",
+        "kira-accent-dark": "#2563EB",
+        "kira-surface": "#E8E4DE",
         "kira-blue-light": "#E0F2FE", // sky-100
         "kira-blue-dark": "#0284C7",  // sky-600
         

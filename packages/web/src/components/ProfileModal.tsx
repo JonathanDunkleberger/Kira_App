@@ -161,7 +161,7 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
                 <img 
                   src={user.imageUrl} 
                   alt={user.fullName || "User"} 
-                  className="w-16 h-16 rounded-full border-2 border-kira-green dark:border-tokyo-accent"
+                  className="w-16 h-16 rounded-full border-2 border-kira-accent dark:border-tokyo-accent"
                 />
                 <div>
                   <h3 className="text-xl font-medium text-gray-900 dark:text-tokyo-fg">{user.fullName}</h3>
@@ -189,7 +189,7 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
               className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
             >
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
+                <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
                   {isDarkMode ? <Moon size={20} /> : <Sun size={20} />}
                 </div>
                 <span className="font-medium text-gray-700 dark:text-gray-200">Appearance</span>
@@ -207,7 +207,7 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
                   className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
+                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
                       <CreditCard size={20} />
                     </div>
                     <span className="font-medium text-gray-700 dark:text-gray-200">
@@ -222,7 +222,7 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
                   className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
+                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
                       <MessageCircle size={20} />
                     </div>
                     <span className="font-medium text-gray-700 dark:text-gray-200">Past Conversations</span>
@@ -283,13 +283,13 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
               /* Sign In */
               <button
                 onClick={handleSignIn}
-                className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-kira-green/10 dark:hover:bg-kira-green/20 transition-colors group"
+                className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-kira-accent/10 dark:hover:bg-kira-accent/20 transition-colors group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-kira-green-dark dark:text-tokyo-accent group-hover:text-kira-green-darker transition-colors">
+                  <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-kira-accent-dark dark:text-tokyo-accent group-hover:text-kira-accent-dark transition-colors">
                     <User size={20} />
                   </div>
-                  <span className="font-medium text-kira-green-dark dark:text-tokyo-accent">Sign In</span>
+                  <span className="font-medium text-kira-accent-dark dark:text-tokyo-accent">Sign In</span>
                 </div>
               </button>
             )}

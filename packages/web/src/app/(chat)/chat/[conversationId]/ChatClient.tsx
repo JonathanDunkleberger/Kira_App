@@ -122,7 +122,7 @@ export default function ChatClient() {
   if (socketState === "connecting") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
-        <div className="p-12 bg-kira-green rounded-lg text-xl font-medium text-gray-800 animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
+        <div className="p-12 bg-kira-accent rounded-lg text-xl font-medium text-white animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
           Connecting to Kira...
         </div>
       </div>
@@ -137,9 +137,9 @@ export default function ChatClient() {
           onClick={() => connect()}
           className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
         >
-          <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-[2.5rem] animate-pulse" />
+          <div className="absolute inset-0 bg-kira-accent/20 dark:bg-tokyo-accent/20 rounded-[2.5rem] animate-pulse" />
           
-          <div className="relative z-10 w-24 h-24 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+          <div className="relative z-10 w-24 h-24 bg-kira-accent dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-accent/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -241,8 +241,8 @@ export default function ChatClient() {
               className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
               style={{
                 color: transcript.role === "ai"
-                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(60,80,58,0.85)"
-                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(80,80,70,0.55)",
+                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(60,70,100,0.85)"
+                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(70,70,80,0.55)",
                 fontWeight: transcript.role === "ai" ? 400 : 300,
                 fontStyle: transcript.role === "user" ? "italic" : "normal",
               }}
@@ -291,8 +291,8 @@ export default function ChatClient() {
               ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
               : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
             color: isScreenSharing
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(80,100,78,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(80,100,78,0.45)",
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(75,90,130,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(75,90,130,0.45)",
           }}
         >
           {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
@@ -307,8 +307,8 @@ export default function ChatClient() {
               ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
               : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
             color: isMuted
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(80,100,78,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(80,100,78,0.45)",
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(75,90,130,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(75,90,130,0.45)",
           }}
         >
           {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
@@ -398,7 +398,7 @@ export default function ChatClient() {
               {!isPro && (
                 <button
                   onClick={handleUpgrade}
-                  className="w-full py-3 bg-kira-green text-gray-900 rounded-lg font-bold hover:bg-kira-green-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
+                  className="w-full py-3 bg-kira-accent text-white rounded-lg font-bold hover:bg-kira-accent-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
                 >
                   Upgrade to Pro
                 </button>
@@ -421,8 +421,8 @@ export default function ChatClient() {
             onClick={resumeAudio}
             className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
           >
-            <div className="absolute inset-0 bg-kira-green/20 dark:bg-tokyo-accent/20 rounded-3xl animate-pulse" />
-            <div className="relative z-10 w-20 h-20 bg-kira-green dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-green/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
+            <div className="absolute inset-0 bg-kira-accent/20 dark:bg-tokyo-accent/20 rounded-3xl animate-pulse" />
+            <div className="relative z-10 w-20 h-20 bg-kira-accent dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-accent/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />

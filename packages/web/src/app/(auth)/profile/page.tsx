@@ -94,7 +94,7 @@ export default function ProfilePage() {
           <img 
             src={user.imageUrl} 
             alt={user.fullName || "User"} 
-            className="w-20 h-20 rounded-full border-4 border-kira-green dark:border-tokyo-accent"
+            className="w-20 h-20 rounded-full border-4 border-kira-accent dark:border-tokyo-accent"
           />
           <div>
             <h2 className="text-2xl font-medium">{user.fullName}</h2>
@@ -110,7 +110,7 @@ export default function ProfilePage() {
             className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group"
           >
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-green dark:group-hover:bg-tokyo-accent transition-colors">
+              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-accent dark:group-hover:bg-tokyo-accent transition-colors">
                 {isDarkMode ? <Moon size={24} /> : <Sun size={24} />}
               </div>
               <div className="text-left">
@@ -129,7 +129,7 @@ export default function ProfilePage() {
             className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group"
           >
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-green dark:group-hover:bg-tokyo-accent transition-colors">
+              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-accent dark:group-hover:bg-tokyo-accent transition-colors">
                 <CreditCard size={24} />
               </div>
               <div className="text-left">

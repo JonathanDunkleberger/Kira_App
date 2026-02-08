@@ -11,6 +11,35 @@ import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
 
+// --- SENTIMENT CLASSIFICATION ---
+// Lightweight keyword-based sentiment classifier.
+// Runs on LLM response text — no extra API call needed.
+function classifySentiment(text: string): string {
+  const lower = text.toLowerCase();
+
+  const warmWords = ["love", "amazing", "awesome", "excited", "fantastic", "great", "fun", "haha", "lol", "hell yeah", "oh my god", "no way", "incredible"];
+  const warmCount = warmWords.filter(w => lower.includes(w)).length;
+
+  const coolWords = ["hmm", "interesting", "think about", "wonder", "consider", "philosophical", "perspective", "honestly", "complicated", "nuanced"];
+  const coolCount = coolWords.filter(w => lower.includes(w)).length;
+
+  const tenderWords = ["sorry", "feel", "understand", "care", "miss", "hurt", "tough", "proud of you", "here for you", "that sucks", "hang in there"];
+  const tenderCount = tenderWords.filter(w => lower.includes(w)).length;
+
+  const playfulWords = ["just kidding", "obviously", "excuse me", "rude", "fight me", "smh", "literally", "bestie", "bold", "chaotic", "iconic"];
+  const playfulCount = playfulWords.filter(w => lower.includes(w)).length;
+
+  const counts = { warm: warmCount, cool: coolCount, tender: tenderCount, playful: playfulCount };
+  const max = Math.max(...Object.values(counts));
+
+  if (max === 0) return "neutral";
+  if (counts.warm === max) return "warm";
+  if (counts.cool === max) return "cool";
+  if (counts.tender === max) return "tender";
+  if (counts.playful === max) return "playful";
+  return "neutral";
+}
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -132,6 +161,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- L1: In-Conversation Memory ---
   let conversationSummary = "";
+
+  // --- CONTEXT MANAGEMENT CONSTANTS ---
+  const MAX_RECENT_MESSAGES = 10;
+  const SUMMARIZE_THRESHOLD = 14;
+  const MESSAGES_TO_SUMMARIZE = 4;
 
   // --- USAGE TRACKING ---
   const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
@@ -476,10 +510,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
 
           // --- CONTEXT MANAGEMENT (Sliding Window + Rolling Summary / L1) ---
-          const MAX_RECENT_MESSAGES = 10;
-          const SUMMARIZE_THRESHOLD = 14;
-          const MESSAGES_TO_SUMMARIZE = 4;
-
           // Count non-system messages
           const nonSystemCount = chatHistory.filter(m => m.role !== "system").length;
 
@@ -610,8 +640,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               llmResponse = initialMessage.content || "";
               chatHistory.push({ role: "assistant", content: llmResponse });
 
-              console.log(`[AI RESPONSE]: "${llmResponse}"`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+              const sentiment = classifySentiment(llmResponse);
+              console.log(`[AI RESPONSE]: "${llmResponse}" [sentiment: ${sentiment}]`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse, sentiment }));
               
               state = "speaking";
               ws.send(JSON.stringify({ type: "state_speaking" }));
@@ -712,8 +743,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               llmResponse = fullResponse;
               chatHistory.push({ role: "assistant", content: llmResponse });
 
-              console.log(`[AI RESPONSE]: "${llmResponse}"`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+              const streamSentiment = classifySentiment(llmResponse);
+              console.log(`[AI RESPONSE]: "${llmResponse}" [sentiment: ${streamSentiment}]`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse, sentiment: streamSentiment }));
             } catch (ttsErr) {
               console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
             } finally {
@@ -756,6 +788,119 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
+          }
+        } else if (controlMessage.type === "text_message") {
+          // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
+          if (state !== "listening") return;
+
+          const userMessage = controlMessage.text?.trim();
+          if (!userMessage || userMessage.length === 0) return;
+          if (userMessage.length > 2000) return; // Prevent abuse
+
+          state = "thinking";
+          ws.send(JSON.stringify({ type: "state_thinking" }));
+
+          chatHistory.push({ role: "user", content: userMessage });
+
+          // --- CONTEXT MANAGEMENT (reuse same rolling summary logic) ---
+          const txtNonSystemCount = chatHistory.filter(m => m.role !== "system").length;
+          if (txtNonSystemCount > SUMMARIZE_THRESHOLD) {
+            let txtFirstMsgIdx = chatHistory.findIndex(m => m.role !== "system");
+            if (
+              typeof chatHistory[txtFirstMsgIdx]?.content === "string" &&
+              (chatHistory[txtFirstMsgIdx].content as string).startsWith("[CONVERSATION SO FAR]")
+            ) {
+              txtFirstMsgIdx++;
+            }
+            const txtToCompress = chatHistory.slice(txtFirstMsgIdx, txtFirstMsgIdx + MESSAGES_TO_SUMMARIZE);
+            const txtMessagesText = txtToCompress
+              .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
+              .join("\n");
+            try {
+              const txtSummaryResp = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                  { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
+                  { role: "user", content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${txtMessagesText}\n\nUpdated summary:` },
+                ],
+                max_tokens: 200,
+                temperature: 0.3,
+              });
+              conversationSummary = txtSummaryResp.choices[0]?.message?.content || conversationSummary;
+            } catch (err) {
+              console.error("[Memory:L1] Text chat summary failed:", (err as Error).message);
+            }
+            chatHistory.splice(txtFirstMsgIdx, MESSAGES_TO_SUMMARIZE);
+            const txtSummaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
+            const txtExistingSummaryIdx = chatHistory.findIndex(
+              m => typeof m.content === "string" && (m.content as string).startsWith("[CONVERSATION SO FAR]")
+            );
+            if (txtExistingSummaryIdx >= 0) {
+              chatHistory[txtExistingSummaryIdx] = { role: "system", content: txtSummaryContent };
+            } else {
+              const txtInsertAt = chatHistory.filter(m => m.role === "system").length;
+              chatHistory.splice(txtInsertAt, 0, { role: "system", content: txtSummaryContent });
+            }
+          }
+
+          try {
+            const txtCompletion = await openai.chat.completions.create({
+              model: OPENAI_MODEL,
+              messages: chatHistory,
+              tools: tools,
+              tool_choice: "auto",
+              temperature: 0.85,
+              max_tokens: 300,
+              frequency_penalty: 0.3,
+              presence_penalty: 0.2,
+            });
+
+            const txtInitialMessage = txtCompletion.choices[0]?.message;
+            let txtLlmResponse = "";
+
+            if (txtInitialMessage?.tool_calls) {
+              chatHistory.push(txtInitialMessage);
+              for (const toolCall of txtInitialMessage.tool_calls) {
+                if (toolCall.function.name === "update_viewing_context") {
+                  const args = JSON.parse(toolCall.function.arguments);
+                  viewingContext = args.context;
+                  const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
+                  if (systemMsg) {
+                    let content = systemMsg.content as string;
+                    const contextMarker = "\n\n[CURRENT CONTEXT]:";
+                    if (content.includes(contextMarker)) {
+                      content = content.split(contextMarker)[0];
+                    }
+                    systemMsg.content = content + `${contextMarker} ${viewingContext}`;
+                  }
+                  chatHistory.push({ role: "tool", tool_call_id: toolCall.id, content: `Context updated to: ${viewingContext}` });
+                }
+              }
+              const txtFollowUp = await openai.chat.completions.create({
+                model: OPENAI_MODEL,
+                messages: chatHistory,
+                temperature: 0.85,
+                max_tokens: 300,
+              });
+              txtLlmResponse = txtFollowUp.choices[0]?.message?.content || "";
+            } else {
+              txtLlmResponse = txtInitialMessage?.content || "";
+            }
+
+            chatHistory.push({ role: "assistant", content: txtLlmResponse });
+            const txtSentiment = classifySentiment(txtLlmResponse);
+
+            ws.send(JSON.stringify({
+              type: "text_response",
+              text: txtLlmResponse,
+              sentiment: txtSentiment,
+            }));
+          } catch (err) {
+            console.error("[TextChat] Error:", (err as Error).message);
+            ws.send(JSON.stringify({ type: "error", message: "Failed to get response" }));
+          } finally {
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
           }
         }
       } else if (message instanceof Buffer) {

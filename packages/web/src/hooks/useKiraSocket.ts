@@ -26,6 +26,8 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [micVolume, setMicVolume] = useState(0);
   const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
+  const [sentiment, setSentiment] = useState<string>("neutral");
+  const [chatMessages, setChatMessages] = useState<Array<{ role: string; text: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -764,6 +766,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
             break;
           case "transcript":
             setTranscript({ role: msg.role, text: msg.text });
+            if (msg.sentiment) {
+              setSentiment(msg.sentiment);
+            }
             break;
           case "tts_chunk_starts":
             ttsChunksDone.current = false; // More audio chunks incoming
@@ -771,6 +776,18 @@ export const useKiraSocket = (token: string, guestId: string) => {
           case "tts_chunk_ends":
             // The server is done sending audio for this turn
             ttsChunksDone.current = true; // Visualizer can now self-terminate when queue drains
+            break;
+          case "text_response":
+            setTranscript({ role: "ai", text: msg.text });
+            setChatMessages(prev => [...prev, { role: "ai", text: msg.text }]);
+            if (msg.sentiment) setSentiment(msg.sentiment);
+            // Orb goes to "speaking" briefly to visually acknowledge
+            kiraStateRef.current = "speaking";
+            setKiraState("speaking");
+            setTimeout(() => {
+              kiraStateRef.current = "listening";
+              setKiraState("listening");
+            }, 1500);
             break;
           case "error":
             if (msg.code === "limit_reached") {
@@ -880,6 +897,17 @@ export const useKiraSocket = (token: string, guestId: string) => {
     return buffer;
   };
 
+  /**
+   * Send a text message (text chat mode — skips STT/TTS)
+   */
+  const sendText = useCallback((text: string) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: "text_message", text }));
+      setTranscript({ role: "user", text });
+      setChatMessages(prev => [...prev, { role: "user", text }]);
+    }
+  }, []);
+
   return {
     connect,
     disconnect,
@@ -889,6 +917,9 @@ export const useKiraSocket = (token: string, guestId: string) => {
     micVolume,
     playerVolume,
     transcript,
+    sentiment,
+    chatMessages,
+    sendText,
     error,
     isAudioBlocked,
     resumeAudio,

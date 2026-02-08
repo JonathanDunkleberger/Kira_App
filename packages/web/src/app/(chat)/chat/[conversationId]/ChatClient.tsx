@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
+import TextInput from "@/components/TextInput";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -39,7 +40,10 @@ export default function ChatClient() {
     kiraState, 
     micVolume, 
     playerVolume, 
-    transcript, 
+    transcript,
+    sentiment,
+    chatMessages,
+    sendText,
     error, 
     isAudioBlocked, 
     resumeAudio,
@@ -211,6 +215,7 @@ export default function ChatClient() {
           kiraState={kiraState}
           micVolume={micVolume}
           speakerVolume={playerVolume}
+          sentiment={sentiment}
           size={280}
         />
 
@@ -244,6 +249,33 @@ export default function ChatClient() {
               </div>
             )}
           </div>
+      </div>
+
+      {/* Text Chat Bubbles */}
+      {chatMessages.length > 0 && (
+        <div className="w-full max-w-[400px] max-h-[200px] overflow-y-auto flex flex-col gap-2 px-6 py-3 scrollbar-discreet">
+          {chatMessages.map((msg, i) => (
+            <div
+              key={i}
+              className={`max-w-[80%] px-3.5 py-2 rounded-xl text-sm text-[#C9D1D9] ${
+                msg.role === "user"
+                  ? "self-end bg-[rgba(107,125,179,0.15)]"
+                  : "self-start bg-white/[0.05]"
+              }`}
+            >
+              {msg.text}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Text Input */}
+      <div className="w-full flex justify-center px-6 pb-2">
+        <TextInput
+          onSend={sendText}
+          disabled={socketState !== "connected"}
+          kiraState={kiraState}
+        />
       </div>
 
       {/* Footer Controls */}

@@ -3,8 +3,9 @@
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Moon, Sun, Trash2, CreditCard, LogOut, X, User, FileText, Shield } from "lucide-react";
+import { Moon, Sun, Trash2, CreditCard, LogOut, X, User, FileText, Shield, MessageCircle } from "lucide-react";
 import Link from "next/link";
+import ConversationHistory from "./ConversationHistory";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     // Check local storage or system preference
@@ -214,6 +216,19 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
                   </div>
                 </button>
 
+                {/* Past Conversations */}
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-green-dark dark:group-hover:text-tokyo-accent transition-colors">
+                      <MessageCircle size={20} />
+                    </div>
+                    <span className="font-medium text-gray-700 dark:text-gray-200">Past Conversations</span>
+                  </div>
+                </button>
+
                 {/* Sign Out */}
                 <button
                   onClick={handleSignOut}
@@ -301,6 +316,11 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
           </div>
         </div>
       </div>
+
+      {/* Conversation History Overlay */}
+      {showHistory && (
+        <ConversationHistory onClose={() => setShowHistory(false)} />
+      )}
     </div>
   );
 }

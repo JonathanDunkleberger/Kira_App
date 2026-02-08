@@ -456,8 +456,8 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease 0.15s both",
               }}
             >
-              Real-time voice conversations with persistent memory. She knows your name, your stories, and picks up
-              right where you left off.
+              Real-time voice conversations that build a real relationship over time. The more you talk, the better
+              she knows you.
             </p>
           </>
         )}
@@ -565,7 +565,7 @@ export default function HomePage() {
             {[
               { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
               { value: <Counter end={24} suffix="/7" />, label: "always available" },
-              { value: <Counter end={100} suffix="%" />, label: "conversation recall" },
+              { value: "✦", label: "learns across every conversation" },
             ].map((stat, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
                 <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>
@@ -612,7 +612,7 @@ export default function HomePage() {
                 marginBottom: 12,
               }}
             >
-              Not a chatbot. A companion.
+              Not a chatbot. A relationship.
             </h2>
             <p
               style={{
@@ -624,7 +624,7 @@ export default function HomePage() {
                 margin: "0 auto 64px",
               }}
             >
-              Kira isn&apos;t waiting for instructions. She has opinions, remembers your stories, and actually listens.
+              Kira develops a genuine understanding of who you are — your humor, your stress patterns, your evolving opinions — and it deepens every time you talk.
             </p>
 
             <div
@@ -653,8 +653,8 @@ export default function HomePage() {
                       <path d="M12 2v20" />
                     </>
                   ),
-                  title: "Persistent memory",
-                  desc: "She remembers your name, your cat's name, that job interview you're stressed about. Across every conversation.",
+                  title: "Memory that grows with you",
+                  desc: "She doesn't just store facts — she notices patterns. That you stress before interviews. That you've been happier since you started that new project. That you changed your mind about that show and she wants to know why.",
                 },
                 {
                   icon: (
@@ -750,7 +750,7 @@ export default function HomePage() {
                 marginBottom: 40,
               }}
             >
-              What talking to Kira sounds like.
+              What six months with Kira sounds like.
             </h2>
 
             <div
@@ -767,18 +767,18 @@ export default function HomePage() {
               {[
                 {
                   role: "user" as const,
-                  text: "I'm so tired of this job interview prep. I feel like I'm never ready.",
+                  text: "I think I'm actually going to apply for that design lead role.",
                   delay: 0,
                 },
                 {
                   role: "ai" as const,
-                  text: "Okay but you said the same thing before your last interview and you literally got a callback within two days. You're way more ready than you think.",
+                  text: "Wait, seriously? Six months ago you told me you never wanted to manage people. What changed?",
                   delay: 0.15,
                 },
-                { role: "user" as const, text: "Wait, you remember that?", delay: 0.3 },
+                { role: "user" as const, text: "I don't know, I guess I grew into it.", delay: 0.3 },
                 {
                   role: "ai" as const,
-                  text: "Of course I do. That was like three weeks ago. You told me about it while you were stress-eating ramen at midnight. Which, by the way, iconic.",
+                  text: "I mean, you did completely turn that project around last quarter. And you've been mentoring Jake for like two months now even though nobody asked you to. I think you've been a lead for a while, you just didn't have the title.",
                   delay: 0.45,
                 },
               ].map((msg, i) => (
@@ -1090,7 +1090,7 @@ export default function HomePage() {
                 position: "relative",
               }}
             >
-              No signup required. Just click and start talking.
+              No signup required. Start talking and she&apos;ll start learning.
             </p>
             <Link
               href="/chat/kira"

@@ -577,7 +577,7 @@ export default function ChatClient() {
                   marginBottom: 10,
                   marginTop: 0,
                 }}>
-                  Kira will remember this
+                  This is the beginning of something
                 </h2>
                 <p style={{
                   fontSize: 15,
@@ -586,9 +586,8 @@ export default function ChatClient() {
                   lineHeight: 1.7,
                   marginBottom: 32,
                 }}>
-                  Create a free account to save this conversation
-                  and pick up right where you left off. Your 15 daily minutes
-                  continue — no credit card needed.
+                  Create a free account and Kira keeps building on everything
+                  you just talked about — and every conversation after.
                 </p>
                 <div className="flex flex-col w-full gap-3">
                   <button

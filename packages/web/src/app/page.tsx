@@ -131,6 +131,39 @@ function Counter({ end, suffix = "", duration = 2000 }: { end: number; suffix?: 
   );
 }
 
+/* ─── Icon Badge for feature cards ─── */
+function IconBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        background: "linear-gradient(135deg, rgba(107,125,179,0.12), rgba(107,125,179,0.04))",
+        border: "1px solid rgba(107,125,179,0.15)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 18,
+        flexShrink: 0,
+      }}
+    >
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="rgba(139,157,195,0.7)"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {children}
+      </svg>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 /*  HOME PAGE                                                     */
 /* ═══════════════════════════════════════════════════════════════ */
@@ -532,7 +565,7 @@ export default function HomePage() {
             {[
               { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
               { value: <Counter end={24} suffix="/7" />, label: "always available" },
-              { value: "∞", label: "memory across sessions" },
+              { value: <Counter end={100} suffix="%" />, label: "conversation recall" },
             ].map((stat, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
                 <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>
@@ -603,32 +636,63 @@ export default function HomePage() {
             >
               {[
                 {
-                  icon: "🎙",
+                  icon: (
+                    <>
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                    </>
+                  ),
                   title: "Real-time voice",
                   desc: "Talk naturally. Sub-second responses. No typing, no waiting. Like calling a friend who's always free.",
                 },
                 {
-                  icon: "🧠",
+                  icon: (
+                    <>
+                      <path d="M9.5 2A5.5 5.5 0 0 0 5 5.5a5.5 5.5 0 0 0 .3 1.8A5.5 5.5 0 0 0 3 12a5.5 5.5 0 0 0 3.1 5 5.5 5.5 0 0 0 5.4 4.5c1.6 0 3-.7 4-1.7A5.5 5.5 0 0 0 21 16a5.5 5.5 0 0 0-1.8-4A5.5 5.5 0 0 0 21 8a5.5 5.5 0 0 0-5.5-5.5 5.5 5.5 0 0 0-2 .4A5.5 5.5 0 0 0 9.5 2Z" />
+                      <path d="M12 2v20" />
+                    </>
+                  ),
                   title: "Persistent memory",
                   desc: "She remembers your name, your cat's name, that job interview you're stressed about. Across every conversation.",
                 },
                 {
-                  icon: "🖥",
+                  icon: (
+                    <>
+                      <rect x="2" y="3" width="20" height="14" rx="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </>
+                  ),
                   title: "Screen sharing",
                   desc: "Watch movies together. Debug code together. She sees your screen and reacts in real time.",
                 },
                 {
-                  icon: "💬",
+                  icon: (
+                    <>
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </>
+                  ),
                   title: "Text when you can't talk",
                   desc: "On the train? 2am and your roommate's sleeping? Switch to text seamlessly mid-conversation.",
                 },
                 {
-                  icon: "🎭",
+                  icon: (
+                    <>
+                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
+                      <path d="M19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
+                    </>
+                  ),
                   title: "Real personality",
-                  desc: "Deadpan humor. Strong opinions. Knows when to tease and when to be real. Not a yes-machine.",
+                  desc: "Deadpan humor. Strong opinions. Knows when to tease and when to listen. Not a yes-machine.",
                 },
                 {
-                  icon: "🔒",
+                  icon: (
+                    <>
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      <path d="M9 12l2 2 4-4" />
+                    </>
+                  ),
                   title: "Private by default",
                   desc: "Your conversations stay yours. No training on your data. Delete your account and everything goes with it.",
                 },
@@ -651,8 +715,8 @@ export default function HomePage() {
                     e.currentTarget.style.borderColor = "rgba(255,255,255,0.04)";
                   }}
                 >
-                  <div style={{ fontSize: 24, marginBottom: 14 }}>{feature.icon}</div>
-                  <h3 style={{ fontSize: 16, fontWeight: 500, color: "#C9D1D9", marginBottom: 8 }}>{feature.title}</h3>
+                  <IconBadge>{feature.icon}</IconBadge>
+                  <h3 style={{ fontSize: 16, fontWeight: 500, color: "#C9D1D9", marginBottom: 8, marginTop: 0 }}>{feature.title}</h3>
                   <p style={{ fontSize: 14, fontWeight: 300, color: "rgba(201,209,217,0.5)", lineHeight: 1.6, margin: 0 }}>
                     {feature.desc}
                   </p>
@@ -698,7 +762,6 @@ export default function HomePage() {
                 borderRadius: 16,
                 border: "1px solid rgba(255,255,255,0.04)",
                 padding: "32px 28px",
-                position: "relative",
               }}
             >
               {[
@@ -754,10 +817,6 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
-
-            <p style={{ textAlign: "center", fontSize: 13, fontWeight: 300, color: "rgba(201,209,217,0.25)", marginTop: 20 }}>
-              Actual conversation style. Not a script.
-            </p>
           </section>
 
           {/* ═══════════════════════════════════════════════════════ */}

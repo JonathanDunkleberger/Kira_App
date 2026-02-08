@@ -3,41 +3,17 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { KiraState } from "@/hooks/useKiraSocket";
 
-// ─── Sentiment color palettes ────────────────────────────────────────────────
-// Each sentiment has 4 colors (used as [base-dark, mid, highlight, edge]) + a glow
-const SENTIMENTS: Record<
-  string,
-  { colors: [string, string, string, string]; glow: string }
-> = {
-  neutral: {
-    colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"],
-    glow: "rgba(107,125,179,0.15)",
-  },
-  warm: {
-    colors: ["#8A7030", "#C4A04A", "#E8C86A", "#A08838"],
-    glow: "rgba(196,160,74,0.18)",
-  },
-  cool: {
-    colors: ["#2A5A6A", "#4A8A9A", "#6AAABA", "#3A7080"],
-    glow: "rgba(90,143,160,0.15)",
-  },
-  tender: {
-    colors: ["#6A4A7A", "#9B7AAA", "#BB9ACA", "#7A5A8A"],
-    glow: "rgba(155,122,170,0.15)",
-  },
-  playful: {
-    colors: ["#7A6030", "#B08A5A", "#D0AA7A", "#907040"],
-    glow: "rgba(176,138,90,0.15)",
-  },
+// ─── Theme color palettes ────────────────────────────────────────────────────
+const ORB_COLORS = {
+  dark: { colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string] },
+  light: { colors: ["#8A9BC0", "#A0B0D0", "#B8C8E0", "#95A5C8"] as [string, string, string, string] },
 };
-
-export type Sentiment = keyof typeof SENTIMENTS;
 
 interface KiraOrbProps {
   kiraState: KiraState;
   micVolume: number; // 0-1  (from useKiraSocket)
   speakerVolume: number; // 0-1  (playerVolume from useKiraSocket)
-  sentiment?: Sentiment;
+  theme?: "dark" | "light";
   /** CSS px – defaults to 300 */
   size?: number;
 }
@@ -60,7 +36,7 @@ export default function KiraOrb({
   kiraState,
   micVolume,
   speakerVolume,
-  sentiment = "neutral",
+  theme = "dark",
   size = 300,
 }: KiraOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,10 +47,10 @@ export default function KiraOrb({
 
   // 4 colours, each as [r,g,b], smoothly interpolated every frame
   const currentColorsRef = useRef<RGB[]>(
-    SENTIMENTS.neutral.colors.map(hexToRgb)
+    ORB_COLORS.dark.colors.map(hexToRgb)
   );
   const targetColorsRef = useRef<RGB[]>(
-    SENTIMENTS.neutral.colors.map(hexToRgb)
+    ORB_COLORS.dark.colors.map(hexToRgb)
   );
 
   // Keep refs in sync (synchronous — no React batching delay)
@@ -84,10 +60,10 @@ export default function KiraOrb({
   spkRef.current = speakerVolume;
   stateRef.current = kiraState;
 
-  // Update target colors on sentiment change
+  // Update target colors on theme change
   useEffect(() => {
-    targetColorsRef.current = SENTIMENTS[sentiment].colors.map(hexToRgb);
-  }, [sentiment]);
+    targetColorsRef.current = ORB_COLORS[theme].colors.map(hexToRgb);
+  }, [theme]);
 
   // ─── Render loop (gradient-based, no pixel field) ───────────────────────
   const render = useCallback(() => {
@@ -261,7 +237,10 @@ export default function KiraOrb({
       {/* State indicator */}
       <div
         className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
-        style={{ color: "rgba(139,157,195,0.35)", height: 16 }}
+        style={{
+          color: theme === "dark" ? "rgba(139,157,195,0.35)" : "rgba(100,110,140,0.4)",
+          height: 16,
+        }}
       >
         {kiraState === "listening"
           ? "Listening..."

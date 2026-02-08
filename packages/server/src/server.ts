@@ -11,35 +11,6 @@ import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
 
-// --- SENTIMENT CLASSIFICATION ---
-// Lightweight keyword-based sentiment classifier.
-// Runs on LLM response text — no extra API call needed.
-function classifySentiment(text: string): string {
-  const lower = text.toLowerCase();
-
-  const warmWords = ["love", "amazing", "awesome", "excited", "fantastic", "great", "fun", "haha", "lol", "hell yeah", "oh my god", "no way", "incredible"];
-  const warmCount = warmWords.filter(w => lower.includes(w)).length;
-
-  const coolWords = ["hmm", "interesting", "think about", "wonder", "consider", "philosophical", "perspective", "honestly", "complicated", "nuanced"];
-  const coolCount = coolWords.filter(w => lower.includes(w)).length;
-
-  const tenderWords = ["sorry", "feel", "understand", "care", "miss", "hurt", "tough", "proud of you", "here for you", "that sucks", "hang in there"];
-  const tenderCount = tenderWords.filter(w => lower.includes(w)).length;
-
-  const playfulWords = ["just kidding", "obviously", "excuse me", "rude", "fight me", "smh", "literally", "bestie", "bold", "chaotic", "iconic"];
-  const playfulCount = playfulWords.filter(w => lower.includes(w)).length;
-
-  const counts = { warm: warmCount, cool: coolCount, tender: tenderCount, playful: playfulCount };
-  const max = Math.max(...Object.values(counts));
-
-  if (max === 0) return "neutral";
-  if (counts.warm === max) return "warm";
-  if (counts.cool === max) return "cool";
-  if (counts.tender === max) return "tender";
-  if (counts.playful === max) return "playful";
-  return "neutral";
-}
-
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -640,9 +611,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               llmResponse = initialMessage.content || "";
               chatHistory.push({ role: "assistant", content: llmResponse });
 
-              const sentiment = classifySentiment(llmResponse);
-              console.log(`[AI RESPONSE]: "${llmResponse}" [sentiment: ${sentiment}]`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse, sentiment }));
+              console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
               
               state = "speaking";
               ws.send(JSON.stringify({ type: "state_speaking" }));
@@ -743,9 +713,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               llmResponse = fullResponse;
               chatHistory.push({ role: "assistant", content: llmResponse });
 
-              const streamSentiment = classifySentiment(llmResponse);
-              console.log(`[AI RESPONSE]: "${llmResponse}" [sentiment: ${streamSentiment}]`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse, sentiment: streamSentiment }));
+              console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
             } catch (ttsErr) {
               console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
             } finally {
@@ -888,12 +857,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             }
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
-            const txtSentiment = classifySentiment(txtLlmResponse);
 
             ws.send(JSON.stringify({
               type: "text_response",
               text: txtLlmResponse,
-              sentiment: txtSentiment,
             }));
           } catch (err) {
             console.error("[TextChat] Error:", (err as Error).message);

@@ -33,6 +33,17 @@ export default function ChatClient() {
     }
   }, [userId]);
 
+  // Detect dark / light theme from <html class="dark">
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const html = document.documentElement;
+    const update = () => setTheme(html.classList.contains("dark") ? "dark" : "light");
+    update();
+    const obs = new MutationObserver(update);
+    obs.observe(html, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
   const { 
     connect, 
     disconnect, 
@@ -41,7 +52,6 @@ export default function ChatClient() {
     micVolume, 
     playerVolume, 
     transcript,
-    sentiment,
     sendText,
     error, 
     isAudioBlocked, 
@@ -215,7 +225,7 @@ export default function ChatClient() {
           kiraState={kiraState}
           micVolume={micVolume}
           speakerVolume={playerVolume}
-          sentiment={sentiment}
+          theme={theme}
           size={300}
         />
 
@@ -231,8 +241,8 @@ export default function ChatClient() {
               className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
               style={{
                 color: transcript.role === "ai"
-                  ? "rgba(139,157,195,0.9)"
-                  : "rgba(201,209,217,0.7)",
+                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
+                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(60,60,70,0.6)",
                 fontWeight: transcript.role === "ai" ? 400 : 300,
                 fontStyle: transcript.role === "user" ? "italic" : "normal",
               }}
@@ -255,7 +265,9 @@ export default function ChatClient() {
           className="absolute bottom-0 left-0 right-0 pointer-events-none"
           style={{
             height: 200,
-            background: "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)",
+            background: theme === "dark"
+              ? "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)"
+              : "linear-gradient(to bottom, rgba(245,243,239,0) 0%, rgba(245,243,239,0.4) 25%, rgba(245,243,239,0.75) 45%, rgba(245,243,239,0.92) 60%, rgba(245,243,239,0.98) 75%, #F5F3EF 90%)",
             zIndex: 0,
           }}
         />
@@ -265,6 +277,7 @@ export default function ChatClient() {
           onSend={sendText}
           disabled={socketState !== "connected"}
           kiraState={kiraState}
+          theme={theme}
         />
 
         {/* Voice Controls */}
@@ -274,8 +287,12 @@ export default function ChatClient() {
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
-            background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
-            color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+            background: isScreenSharing
+              ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
+              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+            color: isScreenSharing
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(100,110,140,0.4)",
           }}
         >
           {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
@@ -286,8 +303,12 @@ export default function ChatClient() {
           onClick={toggleMute}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
-            background: isMuted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
-            color: isMuted ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+            background: isMuted
+              ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
+              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+            color: isMuted
+              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(70,80,110,0.85)"
+              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(100,110,140,0.4)",
           }}
         >
           {isMuted ? <MicOff size={18} /> : <Mic size={18} />}

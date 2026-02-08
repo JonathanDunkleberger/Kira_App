@@ -26,7 +26,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
   const [micVolume, setMicVolume] = useState(0);
   const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
-  const [sentiment, setSentiment] = useState<string>("neutral");
 
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
@@ -766,9 +765,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
             break;
           case "transcript":
             setTranscript({ role: msg.role, text: msg.text });
-            if (msg.sentiment) {
-              setSentiment(msg.sentiment);
-            }
             break;
           case "tts_chunk_starts":
             ttsChunksDone.current = false; // More audio chunks incoming
@@ -779,7 +775,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
             break;
           case "text_response":
             setTranscript({ role: "ai", text: msg.text });
-            if (msg.sentiment) setSentiment(msg.sentiment);
             // Orb goes to "speaking" briefly to visually acknowledge
             kiraStateRef.current = "speaking";
             setKiraState("speaking");
@@ -915,7 +910,6 @@ export const useKiraSocket = (token: string, guestId: string) => {
     micVolume,
     playerVolume,
     transcript,
-    sentiment,
     sendText,
     error,
     isAudioBlocked,

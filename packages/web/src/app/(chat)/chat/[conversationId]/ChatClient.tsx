@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
+import KiraOrb from "@/components/KiraOrb";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -70,24 +71,6 @@ export default function ChatClient() {
   }, []);
 
   // --- UI Logic ---
-  // The orb is now a fluid, living object that always moves slightly.
-  // It pulses based on volume (handled by getDynamicStyle).
-
-  const getDynamicStyle = (): React.CSSProperties => {
-    if (kiraState === "listening") {
-      // User speaking: reactive to mic volume (this works great, don't change it)
-      const scale = 1 + micVolume * 0.5;
-      const opacity = 0.8 + micVolume * 0.2;
-      return {
-        transform: `scale(${scale})`,
-        opacity,
-        animation: 'none', // Override any CSS animation when mic-driven
-      };
-    }
-    // For "speaking" and "idle/thinking" states, return empty —
-    // the CSS animation classes handle everything
-    return {};
-  };
 
   const handleEndCall = () => {
     disconnect();
@@ -224,39 +207,15 @@ export default function ChatClient() {
 
       {/* Main Orb */}
       <div className="flex-grow flex flex-col items-center justify-center gap-12 relative w-full max-w-4xl mx-auto">
-        <div
-          className={`w-48 h-48 rounded-full relative overflow-hidden shadow-orb bg-[#FBFBF8] dark:bg-[#1a1b26] dark:shadow-none dark:border dark:border-tokyo-fg/10 isolate transform-gpu [mask-image:radial-gradient(white,black)] [-webkit-mask-image:radial-gradient(white,black)] ${
-            kiraState === "speaking"
-              ? "animate-orb-speaking"
-              : kiraState === "listening"
-                ? "transition-transform duration-75 ease-out"
-                : "animate-orb-idle"
-          }`}
-          style={getDynamicStyle()}
-        >
-           {/* Base Gradient - More Green Presence */}
-           <div className="absolute inset-0 bg-gradient-to-br from-[#D4D7C2] via-[#FBFBF8] to-[#C2C6A3] opacity-50 dark:from-[#24283b] dark:via-[#1a1b26] dark:to-[#414868]" />
-
-           {/* Dark Green Cloud - Stronger opacity */}
-           <div className="absolute -top-[20%] -left-[20%] w-[90%] h-[90%] bg-[#C2C6A3] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow dark:bg-[#7aa2f7] dark:mix-blend-screen dark:opacity-30" />
-           
-           {/* Light Green Cloud - Stronger opacity */}
-           <div className="absolute -bottom-[20%] -right-[20%] w-[90%] h-[90%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-flow [animation-delay:3000ms] dark:bg-[#bb9af7] dark:mix-blend-screen dark:opacity-30" />
-           
-           {/* White Mist - Reduced opacity to let greens show through */}
-           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-[#FBFBF8] rounded-full filter blur-2xl opacity-40 animate-flow [animation-delay:5000ms] dark:bg-[#c0caf5] dark:mix-blend-screen dark:opacity-20" />
-           
-           {/* Floating Highlight - Adds the "cloud" texture */}
-           <div className="absolute top-[10%] right-[30%] w-[50%] h-[50%] bg-[#D4D7C2] rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-flow [animation-delay:7000ms] dark:bg-[#7dcfff] dark:mix-blend-screen dark:opacity-20" />
-        </div>
+        <KiraOrb
+          kiraState={kiraState}
+          micVolume={micVolume}
+          speakerVolume={playerVolume}
+          size={280}
+        />
 
         {/* Live Transcript - Positioned absolutely to avoid layout shift, but constrained */}
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl px-6 text-center pointer-events-none flex items-center justify-center h-full">
-           {/* We use a container that pushes content away from the center orb */}
-           {/* Actually, the user wants it NOT to cover the bubble. 
-               The screenshot shows text ON TOP of the bubble.
-               Let's move it BELOW the bubble.
-           */}
         </div>
       </div>
       

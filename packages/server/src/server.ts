@@ -8,6 +8,8 @@ import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 import { KIRA_SYSTEM_PROMPT } from "./personality.js";
+import { extractAndSaveMemories } from "./memoryExtractor.js";
+import { loadUserMemories } from "./memoryLoader.js";
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
@@ -47,6 +49,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   }, 30000);
 
   let userId: string | null = null;
+  let isGuest = false;
 
   // --- 1. AUTH & USER SETUP ---
   if (!token && !guestId) {
@@ -63,10 +66,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           throw new Error("Unable to resolve user id from token");
         }
         userId = payload.sub;
+        isGuest = false;
         console.log(`[Auth] ✅ Authenticated user: ${userId}`);
         return true;
       } else if (guestId) {
         userId = guestId; // Client already sends "guest_<uuid>"
+        isGuest = true;
         console.log(`[Auth] - Guest user: ${userId}`);
         return true;
       } else {
@@ -122,11 +127,19 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   ];
 
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    {
-      role: "system",
-      content: KIRA_SYSTEM_PROMPT,
-    },
+    { role: "system", content: KIRA_SYSTEM_PROMPT },
   ];
+
+  // --- L1: In-Conversation Memory ---
+  let conversationSummary = "";
+
+  // --- USAGE TRACKING ---
+  const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900");
+  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_SESSION_SECONDS || "36000");
+  let sessionStartTime: number | null = null;
+  let usageCheckInterval: NodeJS.Timeout | null = null;
+  let isProUser = false;
+  let guestUsageSeconds = 0;
 
   // --- Reusable Deepgram initialization ---
   async function initDeepgram() {
@@ -232,6 +245,135 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         console.log(`[WS] Control message: ${controlMessage.type}`);
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
+
+          // --- L2: Load persistent memories for signed-in users ---
+          if (!isGuest && userId) {
+            try {
+              const memoryBlock = await loadUserMemories(prisma, userId);
+              if (memoryBlock) {
+                chatHistory.push({ role: "system", content: memoryBlock });
+                console.log(
+                  `[Memory] Loaded ${memoryBlock.length} chars of persistent memory`
+                );
+              }
+            } catch (err) {
+              console.error(
+                "[Memory] Failed to load memories:",
+                (err as Error).message
+              );
+            }
+          }
+
+          // --- USAGE: Check limits on connect ---
+          if (!isGuest && userId) {
+            try {
+              const dbUser = await prisma.user.findUnique({
+                where: { clerkId: userId },
+                select: {
+                  dailyUsageSeconds: true,
+                  lastUsageDate: true,
+                  stripeSubscriptionId: true,
+                  stripeCurrentPeriodEnd: true,
+                },
+              });
+
+              if (dbUser) {
+                isProUser = !!(
+                  dbUser.stripeSubscriptionId &&
+                  dbUser.stripeCurrentPeriodEnd &&
+                  dbUser.stripeCurrentPeriodEnd.getTime() > Date.now()
+                );
+
+                // Reset daily counter if it's a new day
+                const today = new Date().toDateString();
+                const lastUsage = dbUser.lastUsageDate?.toDateString();
+                let currentUsage = dbUser.dailyUsageSeconds;
+                if (today !== lastUsage) {
+                  currentUsage = 0;
+                  await prisma.user.update({
+                    where: { clerkId: userId },
+                    data: { dailyUsageSeconds: 0, lastUsageDate: new Date() },
+                  });
+                }
+
+                const limit = isProUser
+                  ? PRO_LIMIT_SECONDS
+                  : FREE_LIMIT_SECONDS;
+                if (currentUsage >= limit) {
+                  ws.send(
+                    JSON.stringify({ type: "error", code: "limit_reached" })
+                  );
+                  ws.close(1008, "Usage limit reached");
+                  return;
+                }
+
+                ws.send(
+                  JSON.stringify({
+                    type: "session_config",
+                    isPro: isProUser,
+                    remainingSeconds: limit - currentUsage,
+                  })
+                );
+              }
+            } catch (err) {
+              console.error(
+                "[Usage] Failed to check limits:",
+                (err as Error).message
+              );
+            }
+          }
+
+          // --- USAGE: Start session timer ---
+          sessionStartTime = Date.now();
+          usageCheckInterval = setInterval(async () => {
+            if (!sessionStartTime) return;
+
+            const elapsed = Math.floor(
+              (Date.now() - sessionStartTime) / 1000
+            );
+
+            if (isGuest) {
+              guestUsageSeconds = elapsed;
+              if (guestUsageSeconds >= FREE_LIMIT_SECONDS) {
+                ws.send(
+                  JSON.stringify({ type: "error", code: "limit_reached" })
+                );
+                ws.close(1008, "Guest usage limit reached");
+                return;
+              }
+            } else if (userId) {
+              try {
+                await prisma.user.update({
+                  where: { clerkId: userId },
+                  data: {
+                    dailyUsageSeconds: { increment: 30 },
+                    lastUsageDate: new Date(),
+                  },
+                });
+
+                const dbUser = await prisma.user.findUnique({
+                  where: { clerkId: userId },
+                  select: { dailyUsageSeconds: true },
+                });
+
+                const limit = isProUser
+                  ? PRO_LIMIT_SECONDS
+                  : FREE_LIMIT_SECONDS;
+                if (dbUser && dbUser.dailyUsageSeconds >= limit) {
+                  ws.send(
+                    JSON.stringify({ type: "error", code: "limit_reached" })
+                  );
+                  ws.close(1008, "Usage limit reached");
+                }
+              } catch (err) {
+                console.error(
+                  "[Usage] DB update failed:",
+                  (err as Error).message
+                );
+              }
+            }
+          }, 30000);
+
           sttStreamer = await initDeepgram();
           ws.send(JSON.stringify({ type: "stream_ready" }));
         } else if (controlMessage.type === "eou") {
@@ -315,28 +457,93 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             chatHistory.push({ role: "user", content: userMessage });
           }
 
-          // --- CONTEXT MANAGEMENT (Sliding Window) ---
-          // Keep System Prompt (index 0) + Last 10 messages to stay under TPM limit
-          // Preserves the most recent message containing images so visual context isn't lost
-          const MAX_HISTORY = 10; 
-          if (chatHistory.length > MAX_HISTORY + 1) {
-             // Find the last message with images to preserve
-             let lastImageIdx = -1;
-             for (let i = chatHistory.length - 1; i > 0; i--) {
-               const msg = chatHistory[i];
-               if (Array.isArray(msg.content) && (msg.content as any[]).some((c: any) => c.type === 'image_url')) {
-                 lastImageIdx = i;
-                 break;
-               }
-             }
+          // --- CONTEXT MANAGEMENT (Sliding Window + Rolling Summary / L1) ---
+          const MAX_RECENT_MESSAGES = 10;
+          const SUMMARIZE_THRESHOLD = 14;
+          const MESSAGES_TO_SUMMARIZE = 4;
 
-             const elementsToRemove = chatHistory.length - (MAX_HISTORY + 1);
-             // Don't remove past the latest image message
-             const safeToRemove = lastImageIdx > 0 ? Math.min(elementsToRemove, lastImageIdx - 1) : elementsToRemove;
-             if (safeToRemove > 0) {
-               chatHistory.splice(1, safeToRemove);
-             }
-             console.log(`[Context] Pruned history to last ${chatHistory.length - 1} messages.`);
+          // Count non-system messages
+          const nonSystemCount = chatHistory.filter(m => m.role !== "system").length;
+
+          if (nonSystemCount > SUMMARIZE_THRESHOLD) {
+            // Find first non-system message index
+            let firstMsgIdx = chatHistory.findIndex(m => m.role !== "system");
+
+            // Skip summary message if it exists
+            if (
+              typeof chatHistory[firstMsgIdx]?.content === "string" &&
+              (chatHistory[firstMsgIdx].content as string).startsWith("[CONVERSATION SO FAR]")
+            ) {
+              firstMsgIdx++;
+            }
+
+            // Gather messages to compress
+            const toCompress = chatHistory.slice(firstMsgIdx, firstMsgIdx + MESSAGES_TO_SUMMARIZE);
+            const messagesText = toCompress
+              .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
+              .join("\n");
+
+            // Update rolling summary via cheap LLM call
+            try {
+              const summaryResp = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise.",
+                  },
+                  {
+                    role: "user",
+                    content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${messagesText}\n\nUpdated summary:`,
+                  },
+                ],
+                max_tokens: 200,
+                temperature: 0.3,
+              });
+
+              conversationSummary =
+                summaryResp.choices[0]?.message?.content || conversationSummary;
+              console.log(
+                `[Memory:L1] Updated summary (${conversationSummary.length} chars)`
+              );
+            } catch (err) {
+              console.error(
+                "[Memory:L1] Summary failed:",
+                (err as Error).message
+              );
+            }
+
+            // Remove compressed messages
+            chatHistory.splice(firstMsgIdx, MESSAGES_TO_SUMMARIZE);
+
+            // Insert/update summary message (right after system messages, before conversation)
+            const summaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
+            const existingSummaryIdx = chatHistory.findIndex(
+              m =>
+                typeof m.content === "string" &&
+                (m.content as string).startsWith("[CONVERSATION SO FAR]")
+            );
+
+            if (existingSummaryIdx >= 0) {
+              chatHistory[existingSummaryIdx] = {
+                role: "system",
+                content: summaryContent,
+              };
+            } else {
+              // Insert after all system messages but before first user/assistant message
+              const insertAt = chatHistory.filter(
+                m => m.role === "system"
+              ).length;
+              chatHistory.splice(insertAt, 0, {
+                role: "system",
+                content: summaryContent,
+              });
+            }
+
+            console.log(
+              `[Context] Compressed history. ${chatHistory.length} messages in context.`
+            );
           }
 
           let llmResponse = "";
@@ -551,18 +758,67 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     }
   });
 
-  ws.on("close", (code: number) => {
+  ws.on("close", async (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
     clientDisconnected = true;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
+    if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (sttStreamer) sttStreamer.destroy();
+
+    // --- MEMORY EXTRACTION (signed-in users only) ---
+    if (!isGuest && userId) {
+      try {
+        const userMsgs = chatHistory
+          .filter(m => m.role === "user" || m.role === "assistant")
+          .map(m => ({
+            role: m.role as string,
+            content: typeof m.content === "string"
+              ? m.content
+              : "[media message]",
+          }));
+
+        if (userMsgs.length >= 2) {
+          // 1. Save conversation to DB
+          const conversation = await prisma.conversation.create({
+            data: {
+              userId: userId,
+              messages: {
+                create: userMsgs.map(m => ({
+                  role: m.role,
+                  content: m.content,
+                })),
+              },
+            },
+          });
+          console.log(
+            `[Memory] Saved conversation ${conversation.id} (${userMsgs.length} messages)`
+          );
+
+          // 2. Extract memories
+          await extractAndSaveMemories(
+            openai,
+            prisma,
+            userId,
+            userMsgs,
+            conversationSummary
+          );
+        }
+      } catch (err) {
+        console.error(
+          "[Memory] Post-disconnect save failed:",
+          (err as Error).message
+        );
+      }
+    }
   });
+
   ws.on("error", (err: Error) => {
     console.error("[WS] WebSocket error:", err);
     clientDisconnected = true;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
+    if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (sttStreamer) sttStreamer.destroy();
   });
 });

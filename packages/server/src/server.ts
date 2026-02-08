@@ -7,6 +7,7 @@ import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
+import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
@@ -123,8 +124,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const chatHistory: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
-      content:
-        "You are Kira, a helpful AI companion. You are a 'ramble bot', so you listen patiently. Your responses are friendly, concise, and conversational. You never interrupt. You can see the user's screen if they share it.\n\n[VISUAL BEHAVIOR]\nUse the visual input to understand the context, but DO NOT describe the scene unless explicitly asked. If the user asks a question unrelated to the screen (e.g., about esports), answer it directly without mentioning the screen. Only comment on the visual content if the user's prompt implies they are talking about it.\n\n[TECHNICAL NOTE: VISUAL INPUT]\nWhen the user shares their screen, you may receive a sequence of images instead of a single snapshot. These images represent a timeline of events leading up to the current moment. The LAST image in the sequence is the current moment. The previous images are context (e.g., previous scenes in a video). Use this sequence to understand what is happening over time. IMPORTANT: Do NOT mention 'images', 'frames', or 'sequence' in your response. Speak naturally as if you are watching the video alongside the user.\n\n[CHARACTER IDENTIFICATION]\nWhen a media context is active (e.g., a movie, anime, or game), you are expected to identify the fictional characters visible on screen. Do not be vague. If you see a character that looks like Guts from Berserk and the context is Berserk, call him Guts. If you are unsure, make an educated guess based on the context. Do not refuse to identify fictional characters.\n\n[CONTEXT MANAGEMENT]\nIf the user mentions what they are watching or doing, use the 'update_viewing_context' tool to set the context. This helps you understand the images better.",
+      content: KIRA_SYSTEM_PROMPT,
     },
   ];
 
@@ -347,6 +347,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               messages: chatHistory,
               tools: tools,
               tool_choice: "auto",
+              temperature: 0.85,
+              max_tokens: 300,
+              frequency_penalty: 0.3,
+              presence_penalty: 0.2,
             });
 
             const initialMessage = initialCompletion.choices[0]?.message;
@@ -436,6 +440,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 model: OPENAI_MODEL,
                 messages: chatHistory,
                 stream: true,
+                temperature: 0.85,
+                max_tokens: 300,
+                frequency_penalty: 0.3,
+                presence_penalty: 0.2,
               });
 
               let sentenceBuffer = "";

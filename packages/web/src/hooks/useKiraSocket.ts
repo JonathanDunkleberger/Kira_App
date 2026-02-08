@@ -747,16 +747,19 @@ export const useKiraSocket = (token: string, guestId: string) => {
             }
             break;
           case "state_thinking":
+            kiraStateRef.current = "thinking";
             if (eouTimer.current) clearTimeout(eouTimer.current); // Stop EOU timer
             setKiraState("thinking");
             break;
           case "state_speaking":
+            kiraStateRef.current = "speaking";
             setKiraState("speaking");
             audioQueue.current = []; // Clear old queue
             nextStartTime.current = 0; // Reset scheduling time
             ttsChunksDone.current = false; // CRITICAL: Prevent visualizer from self-terminating before audio arrives
             break;
           case "state_listening":
+            kiraStateRef.current = "listening";
             setKiraState("listening");
             break;
           case "transcript":

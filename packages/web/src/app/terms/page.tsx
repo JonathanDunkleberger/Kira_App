@@ -75,7 +75,7 @@ export default function TermsPage() {
             content: null,
             list: [
               { label: "Free Tier", text: "Limited to approximately 15 minutes of usage per day." },
-              { label: "Pro Subscription", text: "Costs $4.99/month. Grants approximately 4 hours of usage per day." },
+              { label: "Pro Subscription", text: "Costs $9.99/month. Grants approximately 4 hours of usage per day." },
               { label: "Cancellation", text: "You may cancel your subscription at any time via your Profile settings. Access remains through the end of the billing period. No refunds are issued for partial months." },
             ],
           },

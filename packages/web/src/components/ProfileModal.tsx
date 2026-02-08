@@ -4,7 +4,6 @@ import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Trash2, CreditCard, LogOut, X, User, MessageCircle } from "lucide-react";
-import Link from "next/link";
 import ConversationHistory from "./ConversationHistory";
 
 interface ProfileModalProps {
@@ -407,42 +406,6 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
             </button>
           )}
 
-          {/* Legal Links */}
-          <div style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 20,
-            paddingTop: 16,
-            marginTop: 12,
-            borderTop: "1px solid rgba(255,255,255,0.04)",
-          }}>
-            <Link
-              href="/privacy"
-              onClick={onClose}
-              style={{
-                fontSize: 13,
-                color: "rgba(201,209,217,0.25)",
-                textDecoration: "none",
-                fontWeight: 300,
-                transition: "color 0.2s",
-              }}
-            >
-              Privacy
-            </Link>
-            <Link
-              href="/terms"
-              onClick={onClose}
-              style={{
-                fontSize: 13,
-                color: "rgba(201,209,217,0.25)",
-                textDecoration: "none",
-                fontWeight: 300,
-                transition: "color 0.2s",
-              }}
-            >
-              Terms
-            </Link>
-          </div>
         </div>
       </div>
 

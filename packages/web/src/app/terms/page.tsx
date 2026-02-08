@@ -1,33 +1,173 @@
-import React from 'react';
+import React from "react";
+import Link from "next/link";
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-white dark:bg-tokyo-bg text-gray-900 dark:text-tokyo-fg p-8 md:p-16">
-      <div className="max-w-3xl mx-auto prose dark:prose-invert">
-        <h1>Terms of Service for Kira AI</h1>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0D1117",
+        color: "#C9D1D9",
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+        fontWeight: 300,
+        lineHeight: 1.8,
+      }}
+    >
+      {/* Nav */}
+      <nav
+        style={{
+          maxWidth: 640,
+          margin: "0 auto",
+          padding: "32px 24px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Link
+          href="/"
+          style={{
+            fontSize: 15,
+            color: "rgba(139,157,195,0.5)",
+            textDecoration: "none",
+            fontWeight: 400,
+          }}
+        >
+          ← Back
+        </Link>
+      </nav>
 
-        <h2 className="mt-8">1. Acceptance of Terms</h2>
-        <p>By accessing Kira AI, you agree to these Terms. If you do not agree, do not use the service.</p>
+      {/* Content */}
+      <article
+        style={{
+          maxWidth: 640,
+          margin: "0 auto",
+          padding: "48px 24px 80px",
+        }}
+      >
+        <h1
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: 32,
+            fontWeight: 400,
+            color: "#E2E8F0",
+            marginBottom: 48,
+            lineHeight: 1.2,
+          }}
+        >
+          Terms of Service
+        </h1>
 
-        <h2 className="mt-8">2. Description of Service</h2>
-        <p>Kira AI is a prototype conversational AI application. It is provided "as is" and "as available." We make no guarantees regarding uptime, accuracy of AI responses, or latency.</p>
+        {/* Sections */}
+        {[
+          {
+            title: "1. Acceptance of Terms",
+            content:
+              "By accessing Kira AI, you agree to these Terms. If you do not agree, do not use the service.",
+          },
+          {
+            title: "2. Description of Service",
+            content:
+              'Kira AI is a prototype conversational AI application. It is provided "as is" and "as available." We make no guarantees regarding uptime, accuracy of AI responses, or latency.',
+          },
+          {
+            title: "3. Subscriptions and Limits",
+            content: null,
+            list: [
+              { label: "Free Tier", text: "Limited to approximately 15 minutes of usage per day." },
+              { label: "Pro Subscription", text: "Costs $4.99/month. Grants approximately 4 hours of usage per day." },
+              { label: "Cancellation", text: "You may cancel your subscription at any time via your Profile settings. Access remains through the end of the billing period. No refunds are issued for partial months." },
+            ],
+          },
+          {
+            title: "4. User Conduct",
+            content:
+              "You agree not to use the AI to generate illegal, harmful, or abusive content. We reserve the right to terminate accounts that violate this policy without refund.",
+          },
+          {
+            title: "5. Disclaimer of Warranties",
+            content:
+              "This project is in active development. The AI may hallucinate, produce incorrect information, or experience downtime. We are not liable for any damages resulting from the use of this service.",
+          },
+          {
+            title: "6. Changes to Terms",
+            content:
+              "We reserve the right to modify these terms at any time. Continued use constitutes acceptance of the new terms.",
+          },
+        ].map((section, i) => (
+          <div key={i}>
+            {i > 0 && (
+              <div
+                style={{
+                  height: 1,
+                  background: "rgba(255,255,255,0.04)",
+                  margin: "32px 0",
+                }}
+              />
+            )}
+            <h2
+              style={{
+                fontFamily: "'Playfair Display', serif",
+                fontSize: 20,
+                fontWeight: 400,
+                color: "#E2E8F0",
+                marginBottom: 12,
+              }}
+            >
+              {section.title}
+            </h2>
+            {section.content && (
+              <p style={{ color: "rgba(201,209,217,0.6)", margin: "0 0 12px" }}>
+                {section.content}
+              </p>
+            )}
+            {section.list && (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {section.list.map((item, j) => (
+                  <li
+                    key={j}
+                    style={{
+                      color: "rgba(201,209,217,0.6)",
+                      paddingLeft: 16,
+                      position: "relative",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        color: "rgba(139,157,195,0.4)",
+                      }}
+                    >
+                      ·
+                    </span>
+                    <strong style={{ color: "rgba(201,209,217,0.8)", fontWeight: 500 }}>
+                      {item.label}:
+                    </strong>{" "}
+                    {item.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </article>
 
-        <h2 className="mt-8">3. Subscriptions and Limits</h2>
-        <ul>
-          <li><strong>Free Tier:</strong> Limited to approximately 15 minutes of usage per day.</li>
-          <li><strong>Pro Subscription:</strong> Costs $4.99/month. Grants approximately 4 hours of usage per day.</li>
-          <li><strong>Cancellation:</strong> You may cancel your subscription at any time via your Profile settings. Access remains through the end of the billing period. No refunds are issued for partial months.</li>
-        </ul>
-
-        <h2 className="mt-8">4. User Conduct</h2>
-        <p>You agree not to use the AI to generate illegal, harmful, or abusive content. We reserve the right to terminate accounts that violate this policy without refund.</p>
-
-        <h2 className="mt-8">5. Disclaimer of Warranties</h2>
-        <p>This project is in active development. The AI may hallucinate, produce incorrect information, or experience downtime. We are not liable for any damages resulting from the use of this service.</p>
-
-        <h2 className="mt-8">6. Changes to Terms</h2>
-        <p>We reserve the right to modify these terms at any time. Continued use constitutes acceptance of the new terms.</p>
-      </div>
+      {/* Footer */}
+      <footer
+        style={{
+          maxWidth: 640,
+          margin: "0 auto",
+          padding: "24px 24px 48px",
+          borderTop: "1px solid rgba(255,255,255,0.04)",
+          textAlign: "center",
+          fontSize: 13,
+          color: "rgba(201,209,217,0.2)",
+        }}
+      >
+        © {new Date().getFullYear()} Kira AI
+      </footer>
     </div>
   );
 }

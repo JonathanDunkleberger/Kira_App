@@ -2,8 +2,8 @@
 
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Moon, Sun, Trash2, CreditCard, LogOut, X, User, FileText, Shield, MessageCircle } from "lucide-react";
+import { useState } from "react";
+import { Trash2, CreditCard, LogOut, X, User, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import ConversationHistory from "./ConversationHistory";
 
@@ -17,50 +17,9 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
   const { user, isLoaded, isSignedIn } = useUser();
   const { signOut, openSignIn } = useClerk();
   const router = useRouter();
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-
-  useEffect(() => {
-    // Check local storage or system preference
-    const isDark = localStorage.getItem("theme") === "dark" || 
-      (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setIsDarkMode(isDark);
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-
-    // Listen for storage changes to sync across tabs
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "theme") {
-        const newIsDark = e.newValue === "dark";
-        setIsDarkMode(newIsDark);
-        if (newIsDark) {
-          document.documentElement.classList.add("dark");
-        } else {
-          document.documentElement.classList.remove("dark");
-        }
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
-
-  const toggleTheme = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -78,7 +37,6 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
 
   const handleSubscription = async () => {
     try {
-      // 1. Try to open portal
       const portalRes = await fetch("/api/stripe/portal", { method: "POST" });
       
       if (portalRes.ok) {
@@ -87,7 +45,6 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
         return;
       }
 
-      // 2. If portal fails (404), try checkout
       if (portalRes.status === 404) {
         const checkoutRes = await fetch("/api/stripe/checkout", { method: "POST" });
         if (checkoutRes.ok) {
@@ -121,7 +78,6 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
         throw new Error("Failed to delete account");
       }
 
-      // Sign out and redirect
       await signOut();
       router.push("/");
       onClose();
@@ -134,185 +90,358 @@ export default function ProfileModal({ isOpen, onClose, isPro = false }: Profile
   };
 
   if (!isOpen) return null;
+  if (!isLoaded) return null;
 
-  if (!isLoaded) {
-    return null;
-  }
+  const actionBtnStyle: React.CSSProperties = {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 14px",
+    borderRadius: 10,
+    border: "none",
+    background: "rgba(255,255,255,0.02)",
+    color: "rgba(201,209,217,0.7)",
+    fontSize: 14,
+    fontWeight: 400,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    fontFamily: "'DM Sans', sans-serif",
+    textAlign: "left" as const,
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md mx-4 bg-white dark:bg-tokyo-card rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(12px)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        style={{
+          background: "#0D1117",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 16,
+          padding: "32px 28px",
+          width: "100%",
+          maxWidth: 400,
+          fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+          position: "relative",
+        }}
+      >
         {/* Close Button */}
-        <button 
+        <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors z-10"
+          style={{
+            position: "absolute",
+            top: 16,
+            right: 16,
+            background: "none",
+            border: "none",
+            color: "rgba(201,209,217,0.3)",
+            cursor: "pointer",
+            fontSize: 18,
+            padding: 4,
+          }}
         >
-          <X size={24} />
+          <X size={20} />
         </button>
 
-        <div className="p-8">
-          <h2 className="text-2xl font-semibold mb-8 text-gray-900 dark:text-tokyo-fg">Profile</h2>
-
-          {/* User Info */}
-          <div className="flex items-center gap-4 mb-8">
-            {isSignedIn && user ? (
-              <>
-                <img 
-                  src={user.imageUrl} 
-                  alt={user.fullName || "User"} 
-                  className="w-16 h-16 rounded-full border-2 border-kira-accent dark:border-tokyo-accent"
-                />
-                <div>
-                  <h3 className="text-xl font-medium text-gray-900 dark:text-tokyo-fg">{user.fullName}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{user.primaryEmailAddress?.emailAddress}</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                  <User size={32} className="text-gray-400 dark:text-gray-500" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-medium text-gray-900 dark:text-tokyo-fg">Guest User</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Sign in to save your progress</p>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="space-y-3">
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
-                  {isDarkMode ? <Moon size={20} /> : <Sun size={20} />}
-                </div>
-                <span className="font-medium text-gray-700 dark:text-gray-200">Appearance</span>
+        {/* User Info */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28 }}>
+          {isSignedIn && user ? (
+            <>
+              <img
+                src={user.imageUrl}
+                alt={user.fullName || "User"}
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "50%",
+                  border: "1px solid rgba(107,125,179,0.2)",
+                }}
+              />
+              <div>
+                <h3 style={{
+                  fontSize: 20,
+                  fontFamily: "'Playfair Display', serif",
+                  fontWeight: 400,
+                  color: "#E2E8F0",
+                  marginBottom: 4,
+                  marginTop: 0,
+                }}>
+                  {user.fullName}
+                </h3>
+                <p style={{
+                  fontSize: 13,
+                  fontWeight: 300,
+                  color: "rgba(201,209,217,0.4)",
+                  margin: 0,
+                }}>
+                  {user.primaryEmailAddress?.emailAddress}
+                </p>
               </div>
-              <div className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isDarkMode ? "bg-tokyo-accent" : "bg-gray-300"}`}>
-                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isDarkMode ? "translate-x-5" : "translate-x-0"}`} />
+            </>
+          ) : (
+            <>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.04)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <User size={24} style={{ color: "rgba(201,209,217,0.3)" }} />
               </div>
-            </button>
+              <div>
+                <h3 style={{
+                  fontSize: 20,
+                  fontFamily: "'Playfair Display', serif",
+                  fontWeight: 400,
+                  color: "#E2E8F0",
+                  marginBottom: 4,
+                  marginTop: 0,
+                }}>
+                  Guest User
+                </h3>
+                <p style={{
+                  fontSize: 13,
+                  fontWeight: 300,
+                  color: "rgba(201,209,217,0.4)",
+                  margin: 0,
+                }}>
+                  Sign in to save your progress
+                </p>
+              </div>
+            </>
+          )}
+        </div>
 
-            {isSignedIn ? (
-              <>
-                {/* Subscription Management */}
+        {/* Actions */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {isSignedIn ? (
+            <>
+              {/* Subscription */}
+              <div style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "rgba(107,125,179,0.5)",
+                textTransform: "uppercase" as const,
+                letterSpacing: "0.12em",
+                marginBottom: 6,
+                marginTop: 4,
+              }}>
+                Subscription
+              </div>
+
+              {isPro ? (
                 <button
                   onClick={handleSubscription}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
+                  style={actionBtnStyle}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
-                      <CreditCard size={20} />
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-200">
-                      {isPro ? "Manage Subscription" : "Upgrade to Pro"}
-                    </span>
-                  </div>
+                  <CreditCard size={16} style={{ color: "rgba(139,157,195,0.5)" }} />
+                  Manage Subscription
                 </button>
-
-                {/* Past Conversations */}
+              ) : (
                 <button
-                  onClick={() => setShowHistory(true)}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-gray-100 dark:hover:bg-black/30 transition-colors group"
+                  onClick={handleSubscription}
+                  style={{
+                    width: "100%",
+                    padding: "12px 0",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))",
+                    color: "#C9D1D9",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "linear-gradient(135deg, rgba(107,125,179,0.4), rgba(107,125,179,0.25))";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))";
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-gray-600 dark:text-tokyo-fg group-hover:text-kira-accent-dark dark:group-hover:text-tokyo-accent transition-colors">
-                      <MessageCircle size={20} />
-                    </div>
-                    <span className="font-medium text-gray-700 dark:text-gray-200">Past Conversations</span>
-                  </div>
+                  Upgrade to Pro
                 </button>
+              )}
 
-                {/* Sign Out */}
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-red-500 group-hover:text-red-600 transition-colors">
-                      <LogOut size={20} />
-                    </div>
-                    <span className="font-medium text-red-500 group-hover:text-red-600">Sign Out</span>
-                  </div>
-                </button>
+              {/* Account section */}
+              <div style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "rgba(107,125,179,0.5)",
+                textTransform: "uppercase" as const,
+                letterSpacing: "0.12em",
+                marginBottom: 6,
+                marginTop: 16,
+              }}>
+                Account
+              </div>
 
-                {/* Delete Account */}
-                {!showDeleteConfirm ? (
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="w-full flex items-center justify-between p-4 bg-transparent rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg text-gray-400 group-hover:text-red-500 transition-colors">
-                        <Trash2 size={20} />
-                      </div>
-                      <span className="font-medium text-gray-400 group-hover:text-red-500">Delete Account</span>
-                    </div>
-                  </button>
-                ) : (
-                  <div className="w-full p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2">
-                    <p className="text-sm text-red-600 dark:text-red-400 mb-3 font-medium">
-                      Are you sure? This action cannot be undone.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleDeleteAccount}
-                        disabled={isDeleting}
-                        className="flex-1 py-2 px-3 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isDeleting ? "Deleting..." : "Yes, Delete"}
-                      </button>
-                      <button
-                        onClick={() => setShowDeleteConfirm(false)}
-                        disabled={isDeleting}
-                        className="flex-1 py-2 px-3 bg-white dark:bg-transparent border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              /* Sign In */
+              {/* Past Conversations */}
               <button
-                onClick={handleSignIn}
-                className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl hover:bg-kira-accent/10 dark:hover:bg-kira-accent/20 transition-colors group"
+                onClick={() => setShowHistory(true)}
+                style={actionBtnStyle}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
               >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-white dark:bg-tokyo-bg rounded-lg text-kira-accent-dark dark:text-tokyo-accent group-hover:text-kira-accent-dark transition-colors">
-                    <User size={20} />
-                  </div>
-                  <span className="font-medium text-kira-accent-dark dark:text-tokyo-accent">Sign In</span>
-                </div>
+                <MessageCircle size={16} style={{ color: "rgba(139,157,195,0.5)" }} />
+                Past Conversations
               </button>
-            )}
 
-            {/* Legal Links */}
-            <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 gap-3">
-                <Link 
-                  href="/privacy" 
-                  className="flex items-center justify-center gap-2 p-3 rounded-xl bg-gray-50 dark:bg-black/20 hover:bg-gray-100 dark:hover:bg-black/30 transition-colors text-sm font-medium text-gray-600 dark:text-gray-400"
-                  onClick={onClose}
+              {/* Sign Out */}
+              <button
+                onClick={handleSignOut}
+                style={{ ...actionBtnStyle, color: "rgba(201,209,217,0.35)" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+              >
+                <LogOut size={16} style={{ color: "rgba(201,209,217,0.25)" }} />
+                Sign Out
+              </button>
+
+              {/* Delete Account */}
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  style={{ ...actionBtnStyle, color: "rgba(201,209,217,0.25)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
                 >
-                  <Shield size={16} />
-                  Privacy
-                </Link>
-                <Link 
-                  href="/terms" 
-                  className="flex items-center justify-center gap-2 p-3 rounded-xl bg-gray-50 dark:bg-black/20 hover:bg-gray-100 dark:hover:bg-black/30 transition-colors text-sm font-medium text-gray-600 dark:text-gray-400"
-                  onClick={onClose}
-                >
-                  <FileText size={16} />
-                  Terms
-                </Link>
-            </div>
+                  <Trash2 size={16} style={{ color: "rgba(201,209,217,0.2)" }} />
+                  Delete Account
+                </button>
+              ) : (
+                <div style={{
+                  padding: "14px",
+                  background: "rgba(200,55,55,0.08)",
+                  borderRadius: 10,
+                  border: "1px solid rgba(200,55,55,0.15)",
+                }}>
+                  <p style={{
+                    fontSize: 13,
+                    fontWeight: 400,
+                    color: "rgba(255,120,120,0.8)",
+                    marginBottom: 12,
+                    marginTop: 0,
+                  }}>
+                    Are you sure? This action cannot be undone.
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={isDeleting}
+                      style={{
+                        flex: 1,
+                        padding: "8px 0",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "rgba(200,55,55,0.75)",
+                        color: "rgba(255,255,255,0.9)",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: isDeleting ? "not-allowed" : "pointer",
+                        opacity: isDeleting ? 0.5 : 1,
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {isDeleting ? "Deleting..." : "Yes, Delete"}
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={isDeleting}
+                      style={{
+                        flex: 1,
+                        padding: "8px 0",
+                        borderRadius: 8,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "transparent",
+                        color: "rgba(201,209,217,0.6)",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Sign In */
+            <button
+              onClick={handleSignIn}
+              style={{
+                width: "100%",
+                padding: "12px 0",
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))",
+                color: "#C9D1D9",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+                fontFamily: "'DM Sans', sans-serif",
+                transition: "all 0.2s",
+              }}
+            >
+              Sign In
+            </button>
+          )}
+
+          {/* Legal Links */}
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 20,
+            paddingTop: 16,
+            marginTop: 12,
+            borderTop: "1px solid rgba(255,255,255,0.04)",
+          }}>
+            <Link
+              href="/privacy"
+              onClick={onClose}
+              style={{
+                fontSize: 13,
+                color: "rgba(201,209,217,0.25)",
+                textDecoration: "none",
+                fontWeight: 300,
+                transition: "color 0.2s",
+              }}
+            >
+              Privacy
+            </Link>
+            <Link
+              href="/terms"
+              onClick={onClose}
+              style={{
+                fontSize: 13,
+                color: "rgba(201,209,217,0.25)",
+                textDecoration: "none",
+                fontWeight: 300,
+                transition: "color 0.2s",
+              }}
+            >
+              Terms
+            </Link>
           </div>
         </div>
       </div>

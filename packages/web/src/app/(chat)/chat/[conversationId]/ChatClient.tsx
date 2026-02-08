@@ -33,17 +33,6 @@ export default function ChatClient() {
     }
   }, [userId]);
 
-  // Detect dark / light theme from <html class="dark">
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  useEffect(() => {
-    const html = document.documentElement;
-    const update = () => setTheme(html.classList.contains("dark") ? "dark" : "light");
-    update();
-    const obs = new MutationObserver(update);
-    obs.observe(html, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
-
   const { 
     connect, 
     disconnect, 
@@ -121,10 +110,39 @@ export default function ChatClient() {
 
   if (socketState === "connecting") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg text-gray-900 dark:bg-tokyo-bg dark:text-tokyo-fg transition-colors duration-300">
-        <div className="p-12 bg-kira-accent rounded-lg text-xl font-medium text-white animate-pulse dark:bg-tokyo-card dark:text-tokyo-fg">
-          Connecting to Kira...
-        </div>
+      <div style={{
+        minHeight: "100vh",
+        background: "#0D1117",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      }}>
+        <div style={{
+          width: 48,
+          height: 48,
+          borderRadius: "50%",
+          background: "rgba(107,125,179,0.15)",
+          animation: "connectPulse 1.8s ease infinite",
+          marginBottom: 24,
+        }} />
+        <p style={{
+          fontSize: 14,
+          fontWeight: 300,
+          color: "rgba(201,209,217,0.35)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          margin: 0,
+        }}>
+          Connecting...
+        </p>
+        <style>{`
+          @keyframes connectPulse {
+            0%, 100% { opacity: 0.3; transform: scale(0.95); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+          }
+        `}</style>
       </div>
     );
   }
@@ -132,72 +150,119 @@ export default function ChatClient() {
   // Start Screen (Initial State for ALL users)
   if (socketState === "idle") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
+      <div style={{
+        minHeight: "100vh",
+        background: "#0D1117",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+        padding: "24px",
+        textAlign: "center",
+        position: "relative",
+      }}>
+        {/* Subtle ambient glow */}
+        <div style={{
+          position: "absolute",
+          top: "40%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 400,
+          height: 400,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(107,125,179,0.05) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
+
+        {/* Mic icon badge */}
+        <div style={{
+          width: 64,
+          height: 64,
+          borderRadius: 16,
+          background: "linear-gradient(135deg, rgba(107,125,179,0.12), rgba(107,125,179,0.04))",
+          border: "1px solid rgba(107,125,179,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 28,
+          position: "relative",
+        }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(139,157,195,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+        </div>
+
+        <h2 style={{
+          fontSize: 22,
+          fontFamily: "'Playfair Display', serif",
+          fontWeight: 400,
+          color: "#E2E8F0",
+          marginBottom: 10,
+          marginTop: 0,
+          position: "relative",
+        }}>
+          Enable your microphone
+        </h2>
+
+        <p style={{
+          fontSize: 15,
+          fontWeight: 300,
+          color: "rgba(201,209,217,0.45)",
+          lineHeight: 1.6,
+          maxWidth: 340,
+          marginBottom: 32,
+          position: "relative",
+        }}>
+          Kira needs microphone access to hear you.
+          Your audio is never stored or recorded.
+        </p>
+
         <button
           onClick={() => connect()}
-          className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "14px 36px",
+            borderRadius: 12,
+            background: "linear-gradient(135deg, rgba(107,125,179,0.2), rgba(107,125,179,0.08))",
+            border: "1px solid rgba(107,125,179,0.25)",
+            color: "#C9D1D9",
+            fontSize: 15,
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.3s ease",
+            fontFamily: "'DM Sans', sans-serif",
+            boxShadow: "0 0 30px rgba(107,125,179,0.08)",
+            position: "relative",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))";
+            e.currentTarget.style.boxShadow = "0 0 40px rgba(107,125,179,0.15)";
+            e.currentTarget.style.transform = "translateY(-1px)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "linear-gradient(135deg, rgba(107,125,179,0.2), rgba(107,125,179,0.08))";
+            e.currentTarget.style.boxShadow = "0 0 30px rgba(107,125,179,0.08)";
+            e.currentTarget.style.transform = "translateY(0)";
+          }}
         >
-          <div className="absolute inset-0 bg-kira-accent/20 dark:bg-tokyo-accent/20 rounded-[2.5rem] animate-pulse" />
-          
-          <div className="relative z-10 w-24 h-24 bg-kira-accent dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-accent/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-          </div>
-          
-          <div className="relative z-10 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg mb-2">
-              Ready to talk?
-            </h2>
-            <p className="text-gray-500 dark:text-gray-400">
-              Tap to start conversation
-            </p>
-          </div>
+          Allow microphone
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-screen bg-kira-bg dark:bg-tokyo-bg transition-colors duration-300">
+    <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} className="flex flex-col items-center justify-center w-full h-screen">
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
         <Link href="/">
-          <span className="font-semibold text-lg flex items-center gap-2 dark:text-tokyo-fg">
-            {/* Your Logo */}
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="text-black dark:text-tokyo-fg"
-            >
-              <path
-                d="M12 2L2 7L12 12L22 7L12 2Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M2 17L12 22L22 17"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M2 12L12 17L22 12"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <span className="font-medium text-lg flex items-center gap-2" style={{ color: "#C9D1D9" }}>
+            <span style={{ fontSize: 20, opacity: 0.7 }}>✦</span>
             Kira
           </span>
         </Link>
@@ -205,9 +270,12 @@ export default function ChatClient() {
         {/* Profile Link */}
         <button 
           onClick={() => setShowProfileModal(true)}
-          className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+          className="p-2 rounded-full transition-colors"
+          style={{ background: "none", border: "none", cursor: "pointer" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
         >
-            <User size={24} className="text-gray-600 dark:text-tokyo-fg" />
+            <User size={24} style={{ color: "rgba(201,209,217,0.6)" }} />
         </button>
       </div>
 
@@ -225,14 +293,17 @@ export default function ChatClient() {
           kiraState={kiraState}
           micVolume={micVolume}
           speakerVolume={playerVolume}
-          theme={theme}
           size={300}
         />
 
         {/* Transcript — single line, styled by role */}
         <div className="mt-6 min-h-[48px] flex items-center justify-center max-w-[500px] px-6">
           {error && error !== "limit_reached" && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded relative dark:bg-red-900/30 dark:border-red-800 dark:text-red-400">
+            <div className="mb-4 p-3 rounded relative" style={{
+              background: "rgba(200,55,55,0.15)",
+              border: "1px solid rgba(200,55,55,0.3)",
+              color: "rgba(255,120,120,0.9)",
+            }}>
               <span className="block sm:inline">{error}</span>
             </div>
           )}
@@ -241,8 +312,8 @@ export default function ChatClient() {
               className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
               style={{
                 color: transcript.role === "ai"
-                  ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(60,70,100,0.85)"
-                  : theme === "dark" ? "rgba(201,209,217,0.7)" : "rgba(70,70,80,0.55)",
+                  ? "rgba(139,157,195,0.9)"
+                  : "rgba(201,209,217,0.7)",
                 fontWeight: transcript.role === "ai" ? 400 : 300,
                 fontStyle: transcript.role === "user" ? "italic" : "normal",
               }}
@@ -265,9 +336,7 @@ export default function ChatClient() {
           className="absolute bottom-0 left-0 right-0 pointer-events-none"
           style={{
             height: 200,
-            background: theme === "dark"
-              ? "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)"
-              : "linear-gradient(to bottom, rgba(245,243,239,0) 0%, rgba(245,243,239,0.4) 25%, rgba(245,243,239,0.75) 45%, rgba(245,243,239,0.92) 60%, rgba(245,243,239,0.98) 75%, #F5F3EF 90%)",
+            background: "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)",
             zIndex: 0,
           }}
         />
@@ -277,7 +346,6 @@ export default function ChatClient() {
           onSend={sendText}
           disabled={socketState !== "connected"}
           kiraState={kiraState}
-          theme={theme}
         />
 
         {/* Voice Controls */}
@@ -287,12 +355,8 @@ export default function ChatClient() {
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
-            background: isScreenSharing
-              ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
-              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-            color: isScreenSharing
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(75,90,130,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(75,90,130,0.45)",
+            background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+            color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
           }}
         >
           {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
@@ -303,12 +367,8 @@ export default function ChatClient() {
           onClick={toggleMute}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
-            background: isMuted
-              ? theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"
-              : theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-            color: isMuted
-              ? theme === "dark" ? "rgba(139,157,195,0.9)" : "rgba(75,90,130,0.85)"
-              : theme === "dark" ? "rgba(139,157,195,0.45)" : "rgba(75,90,130,0.45)",
+            background: isMuted ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+            color: isMuted ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
           }}
         >
           {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
@@ -319,8 +379,8 @@ export default function ChatClient() {
           onClick={handleEndCall}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
-            background: theme === "dark" ? "rgba(200,55,55,0.75)" : "rgba(200,65,65,0.75)",
-            color: theme === "dark" ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.95)",
+            background: "rgba(200,55,55,0.75)",
+            color: "rgba(255,255,255,0.9)",
           }}
           title="End Call"
         >
@@ -331,13 +391,29 @@ export default function ChatClient() {
 
       {/* Rating Modal */}
       {showRatingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center gap-6 max-w-sm w-full mx-4 animate-in fade-in zoom-in duration-200">
-            <h2 className="text-xl font-semibold text-gray-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(12px)" }}>
+          <div style={{
+            background: "#0D1117",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 16,
+            padding: "32px 28px",
+            maxWidth: 360,
+            width: "100%",
+            fontFamily: "'DM Sans', sans-serif",
+            textAlign: "center",
+          }}>
+            <h2 style={{
+              fontSize: 20,
+              fontFamily: "'Playfair Display', serif",
+              fontWeight: 400,
+              color: "#E2E8F0",
+              marginBottom: 20,
+              marginTop: 0,
+            }}>
               Rate your conversation
             </h2>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-center mb-6">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
@@ -345,14 +421,15 @@ export default function ChatClient() {
                   onMouseLeave={() => setHoverRating(0)}
                   onClick={() => setRating(star)}
                   className="transition-transform hover:scale-110 focus:outline-none p-1"
+                  style={{ background: "none", border: "none", cursor: "pointer" }}
                 >
                   <Star
-                    size={32}
-                    className={`${
-                      star <= (hoverRating || rating)
-                        ? "fill-yellow-400 text-yellow-400"
-                        : "text-gray-300"
-                    } transition-colors duration-150`}
+                    size={28}
+                    className="transition-colors duration-150"
+                    style={{
+                      fill: star <= (hoverRating || rating) ? "#8B9DC3" : "transparent",
+                      color: star <= (hoverRating || rating) ? "#8B9DC3" : "rgba(201,209,217,0.2)",
+                    }}
                   />
                 </button>
               ))}
@@ -362,13 +439,36 @@ export default function ChatClient() {
               <button
                 onClick={handleRate}
                 disabled={rating === 0}
-                className="w-full py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                style={{
+                  width: "100%",
+                  padding: "12px 0",
+                  borderRadius: 10,
+                  border: "none",
+                  background: rating > 0 ? "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))" : "rgba(255,255,255,0.04)",
+                  color: rating > 0 ? "#C9D1D9" : "rgba(201,209,217,0.3)",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: rating > 0 ? "pointer" : "not-allowed",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "all 0.2s",
+                }}
               >
                 Rate it
               </button>
               <button
                 onClick={handleContinue}
-                className="w-full py-3 text-gray-500 hover:text-gray-900 font-medium transition-colors"
+                style={{
+                  width: "100%",
+                  padding: "12px 0",
+                  background: "none",
+                  border: "none",
+                  color: "rgba(201,209,217,0.35)",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "color 0.2s",
+                }}
               >
                 Continue
               </button>
@@ -379,33 +479,84 @@ export default function ChatClient() {
 
       {/* Limit Reached Modal */}
       {error === "limit_reached" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
-          <div className="bg-white dark:bg-tokyo-card p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-6 max-w-md w-full mx-4 animate-in fade-in zoom-in duration-300 border border-gray-200 dark:border-tokyo-fg/10">
-            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500 dark:text-red-400 mb-2">
-              <PhoneOff size={32} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(12px)" }}>
+          <div style={{
+            background: "#0D1117",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 16,
+            padding: "32px 28px",
+            maxWidth: 400,
+            width: "100%",
+            fontFamily: "'DM Sans', sans-serif",
+            textAlign: "center",
+          }}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: 14,
+              background: "rgba(200,55,55,0.12)",
+              border: "1px solid rgba(200,55,55,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 20px",
+            }}>
+              <PhoneOff size={24} style={{ color: "rgba(255,120,120,0.7)" }} />
             </div>
             
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-tokyo-fg">
-                Daily Limit Reached
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                You've used all your free conversation time for today.
-              </p>
-            </div>
+            <h2 style={{
+              fontSize: 22,
+              fontFamily: "'Playfair Display', serif",
+              fontWeight: 400,
+              color: "#E2E8F0",
+              marginBottom: 8,
+              marginTop: 0,
+            }}>
+              Daily Limit Reached
+            </h2>
+            <p style={{
+              fontSize: 15,
+              fontWeight: 300,
+              color: "rgba(201,209,217,0.45)",
+              marginBottom: 28,
+            }}>
+              You&apos;ve used all your free conversation time for today.
+            </p>
 
-            <div className="flex flex-col w-full gap-3 mt-4">
+            <div className="flex flex-col w-full gap-3">
               {!isPro && (
                 <button
                   onClick={handleUpgrade}
-                  className="w-full py-3 bg-kira-accent text-white rounded-lg font-bold hover:bg-kira-accent-dark transition-all hover:scale-[1.02] text-center shadow-lg dark:bg-tokyo-accent dark:text-tokyo-bg"
+                  style={{
+                    width: "100%",
+                    padding: "12px 0",
+                    borderRadius: 10,
+                    border: "none",
+                    background: "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.15))",
+                    color: "#C9D1D9",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: "all 0.2s",
+                  }}
                 >
                   Upgrade to Pro
                 </button>
               )}
               <Link
                 href="/"
-                className="w-full py-3 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-tokyo-fg font-medium transition-colors text-center"
+                style={{
+                  display: "block",
+                  width: "100%",
+                  padding: "12px 0",
+                  color: "rgba(201,209,217,0.35)",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  textAlign: "center",
+                  textDecoration: "none",
+                  transition: "color 0.2s",
+                }}
               >
                 Come back tomorrow
               </Link>
@@ -416,23 +567,46 @@ export default function ChatClient() {
 
       {/* Mobile Audio Unlock Overlay */}
       {isAudioBlocked && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(12px)" }}>
           <button
             onClick={resumeAudio}
-            className="group relative flex flex-col items-center gap-4 p-8 rounded-3xl bg-white dark:bg-tokyo-card shadow-2xl transition-transform hover:scale-105 active:scale-95"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 16,
+              padding: "32px 40px",
+              borderRadius: 16,
+              background: "#0D1117",
+              border: "1px solid rgba(255,255,255,0.06)",
+              cursor: "pointer",
+              fontFamily: "'DM Sans', sans-serif",
+              transition: "transform 0.2s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.02)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
           >
-            <div className="absolute inset-0 bg-kira-accent/20 dark:bg-tokyo-accent/20 rounded-3xl animate-pulse" />
-            <div className="relative z-10 w-20 h-20 bg-kira-accent dark:bg-tokyo-accent rounded-full flex items-center justify-center text-white shadow-lg group-hover:shadow-kira-accent/50 dark:group-hover:shadow-tokyo-accent/50 transition-shadow">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: 14,
+              background: "linear-gradient(135deg, rgba(107,125,179,0.2), rgba(107,125,179,0.08))",
+              border: "1px solid rgba(107,125,179,0.25)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(139,157,195,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
+                <line x1="12" y1="19" x2="12" y2="22" />
               </svg>
             </div>
-            <span className="relative z-10 text-lg font-semibold text-gray-900 dark:text-tokyo-fg">
-              Tap to Start
-            </span>
+            <span style={{
+              fontSize: 16,
+              fontWeight: 500,
+              color: "#C9D1D9",
+            }}>Tap to Start</span>
           </button>
         </div>
       )}

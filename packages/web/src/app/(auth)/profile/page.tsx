@@ -4,43 +4,20 @@ import { useUser, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Moon, Sun, Trash2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
+import { Trash2, CreditCard, LogOut, ArrowLeft } from "lucide-react";
 
 export default function ProfilePage() {
   const { user, isLoaded, isSignedIn } = useUser();
   const { signOut } = useClerk();
   const router = useRouter();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push("/");
     }
   }, [isLoaded, isSignedIn, router]);
-
-  useEffect(() => {
-    // Check local storage or system preference
-    const isDark = localStorage.getItem("theme") === "dark" || 
-      (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setIsDarkMode(isDark);
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -49,7 +26,6 @@ export default function ProfilePage() {
 
   const handleSubscription = async () => {
     try {
-      // 1. Try to open portal
       const portalRes = await fetch("/api/stripe/portal", { method: "POST" });
       
       if (portalRes.ok) {
@@ -58,7 +34,6 @@ export default function ProfilePage() {
         return;
       }
 
-      // 2. If portal fails (404), try checkout
       if (portalRes.status === 404) {
         const checkoutRes = await fetch("/api/stripe/checkout", { method: "POST" });
         if (checkoutRes.ok) {
@@ -74,100 +49,234 @@ export default function ProfilePage() {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    try {
+      setIsDeleting(true);
+      const res = await fetch("/api/user/delete", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete account");
+      await signOut();
+      router.push("/");
+    } catch (error) {
+      console.error("Delete account error:", error);
+      alert("Failed to delete account. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!isLoaded || !user) {
-    return <div className="min-h-screen flex items-center justify-center bg-kira-bg dark:bg-tokyo-bg text-gray-500 dark:text-tokyo-fg">Loading...</div>;
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#0D1117",
+          color: "rgba(201,209,217,0.4)",
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        Loading...
+      </div>
+    );
   }
 
+  const actionBtnStyle: React.CSSProperties = {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    padding: "16px 18px",
+    borderRadius: 12,
+    border: "none",
+    background: "rgba(255,255,255,0.02)",
+    color: "rgba(201,209,217,0.7)",
+    fontSize: 15,
+    fontWeight: 400,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    fontFamily: "'DM Sans', sans-serif",
+    textAlign: "left" as const,
+  };
+
   return (
-    <div className="min-h-screen bg-kira-bg dark:bg-tokyo-bg text-gray-900 dark:text-tokyo-fg transition-colors duration-300">
-      <div className="max-w-2xl mx-auto p-6">
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0D1117",
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      }}
+    >
+      <div style={{ maxWidth: 520, margin: "0 auto", padding: "32px 24px" }}>
         {/* Header */}
-        <div className="flex items-center gap-4 mb-12">
-          <Link href="/" className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 48 }}>
+          <Link
+            href="/"
+            style={{
+              padding: 8,
+              borderRadius: 8,
+              color: "rgba(201,209,217,0.5)",
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
             <ArrowLeft size={24} />
           </Link>
-          <h1 className="text-3xl font-semibold">Profile</h1>
+          <h1
+            style={{
+              fontFamily: "'Playfair Display', serif",
+              fontSize: 28,
+              fontWeight: 400,
+              color: "#E2E8F0",
+              margin: 0,
+            }}
+          >
+            Profile
+          </h1>
         </div>
 
-        {/* User Info */}
-        <div className="bg-white dark:bg-tokyo-card p-8 rounded-3xl shadow-sm mb-8 flex items-center gap-6 transition-colors duration-300">
-          <img 
-            src={user.imageUrl} 
-            alt={user.fullName || "User"} 
-            className="w-20 h-20 rounded-full border-4 border-kira-accent dark:border-tokyo-accent"
+        {/* User Info Card */}
+        <div
+          style={{
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 16,
+            padding: "28px 24px",
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            marginBottom: 32,
+          }}
+        >
+          <img
+            src={user.imageUrl}
+            alt={user.fullName || "User"}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              border: "1px solid rgba(107,125,179,0.2)",
+            }}
           />
           <div>
-            <h2 className="text-2xl font-medium">{user.fullName}</h2>
-            <p className="text-gray-500 dark:text-gray-400">{user.primaryEmailAddress?.emailAddress}</p>
+            <h2
+              style={{
+                fontFamily: "'Playfair Display', serif",
+                fontSize: 22,
+                fontWeight: 400,
+                color: "#E2E8F0",
+                margin: "0 0 4px",
+              }}
+            >
+              {user.fullName}
+            </h2>
+            <p
+              style={{
+                fontSize: 14,
+                fontWeight: 300,
+                color: "rgba(201,209,217,0.4)",
+                margin: 0,
+              }}
+            >
+              {user.primaryEmailAddress?.emailAddress}
+            </p>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="space-y-4">
-          {/* Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-accent dark:group-hover:bg-tokyo-accent transition-colors">
-                {isDarkMode ? <Moon size={24} /> : <Sun size={24} />}
-              </div>
-              <div className="text-left">
-                <h3 className="font-medium text-lg">Appearance</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{isDarkMode ? "Dark Mode" : "Light Mode"}</p>
-              </div>
-            </div>
-            <div className={`w-12 h-6 rounded-full p-1 transition-colors ${isDarkMode ? "bg-tokyo-accent" : "bg-gray-300"}`}>
-              <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isDarkMode ? "translate-x-6" : "translate-x-0"}`} />
-            </div>
-          </button>
-
-          {/* Subscribe */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <button
             onClick={handleSubscription}
-            className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group"
+            style={actionBtnStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
           >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-kira-accent dark:group-hover:bg-tokyo-accent transition-colors">
-                <CreditCard size={24} />
-              </div>
-              <div className="text-left">
-                <h3 className="font-medium text-lg">Subscription</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Manage your Pro plan</p>
-              </div>
-            </div>
+            <CreditCard size={18} style={{ color: "rgba(139,157,195,0.5)" }} />
+            Manage Subscription
           </button>
 
-          {/* Sign Out */}
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group"
+            style={{ ...actionBtnStyle, color: "rgba(201,209,217,0.35)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
           >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-red-100 dark:group-hover:bg-red-900/30 transition-colors text-red-500">
-                <LogOut size={24} />
-              </div>
-              <div className="text-left">
-                <h3 className="font-medium text-lg text-red-500">Sign Out</h3>
-              </div>
-            </div>
+            <LogOut size={18} style={{ color: "rgba(201,209,217,0.25)" }} />
+            Sign Out
           </button>
 
-          {/* Delete Account */}
-          <button
-            className="w-full flex items-center justify-between p-6 bg-white dark:bg-tokyo-card rounded-2xl hover:scale-[1.02] transition-all duration-200 shadow-sm group border border-transparent hover:border-red-500/20"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-gray-100 dark:bg-black/20 rounded-xl group-hover:bg-red-100 dark:group-hover:bg-red-900/30 transition-colors text-red-500">
-                <Trash2 size={24} />
-              </div>
-              <div className="text-left">
-                <h3 className="font-medium text-lg text-red-500">Delete Account</h3>
-                <p className="text-sm text-red-400/60">Permanently remove your data</p>
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{ ...actionBtnStyle, color: "rgba(201,209,217,0.25)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+            >
+              <Trash2 size={18} style={{ color: "rgba(201,209,217,0.2)" }} />
+              Delete Account
+            </button>
+          ) : (
+            <div
+              style={{
+                padding: 16,
+                background: "rgba(200,55,55,0.08)",
+                borderRadius: 12,
+                border: "1px solid rgba(200,55,55,0.15)",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "rgba(255,120,120,0.8)",
+                  marginBottom: 14,
+                  marginTop: 0,
+                }}
+              >
+                Are you sure? This action cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={isDeleting}
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: 8,
+                    border: "none",
+                    background: "rgba(200,55,55,0.75)",
+                    color: "rgba(255,255,255,0.9)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: isDeleting ? "not-allowed" : "pointer",
+                    opacity: isDeleting ? 0.5 : 1,
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
+                  {isDeleting ? "Deleting..." : "Yes, Delete"}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "transparent",
+                    color: "rgba(201,209,217,0.6)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
-          </button>
+          )}
         </div>
       </div>
     </div>

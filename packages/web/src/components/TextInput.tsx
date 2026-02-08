@@ -5,10 +5,9 @@ interface TextInputProps {
   onSend: (text: string) => void;
   disabled: boolean;
   kiraState: string;
-  theme?: "dark" | "light";
 }
 
-export default function TextInput({ onSend, disabled, kiraState, theme = "dark" }: TextInputProps) {
+export default function TextInput({ onSend, disabled, kiraState }: TextInputProps) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,17 +27,12 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
   };
 
   const isActive = focused || !!text;
-  const isDark = theme === "dark";
 
   return (
     <div
       className="flex items-center w-full max-w-[320px] pb-1 transition-all duration-300"
       style={{
-        borderBottom: `1px solid ${
-          isDark
-            ? `rgba(139,157,195,${isActive ? 0.15 : 0.04})`
-            : `rgba(90,100,140,${isActive ? 0.2 : 0.08})`
-        }`,
+        borderBottom: `1px solid rgba(139,157,195,${isActive ? 0.15 : 0.04})`,
       }}
     >
       <input
@@ -51,12 +45,10 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
         onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         disabled={disabled}
-        className={`flex-1 bg-transparent border-none outline-none text-sm font-light tracking-[0.01em] py-2 disabled:opacity-50 ${
-          isDark ? "placeholder:text-[rgba(139,157,195,0.3)]" : "placeholder:text-[rgba(90,100,140,0.35)]"
-        }`}
+        className="flex-1 bg-transparent border-none outline-none text-sm font-light tracking-[0.01em] py-2 disabled:opacity-50 placeholder:text-[rgba(139,157,195,0.3)]"
         style={{
           fontFamily: "inherit",
-          color: isDark ? "rgba(201,209,217,0.7)" : "rgba(50,55,70,0.8)",
+          color: "rgba(201,209,217,0.7)",
         }}
       />
       {text.trim() && (
@@ -65,7 +57,7 @@ export default function TextInput({ onSend, disabled, kiraState, theme = "dark" 
           disabled={disabled}
           className="bg-transparent border-none cursor-pointer px-2 py-1 text-[13px] transition-colors duration-200 disabled:opacity-50"
           style={{
-            color: isDark ? "rgba(139,157,195,0.6)" : "rgba(90,100,140,0.5)",
+            color: "rgba(139,157,195,0.6)",
           }}
         >
           ↵

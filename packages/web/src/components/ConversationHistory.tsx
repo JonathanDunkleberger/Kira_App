@@ -66,7 +66,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
   // Detail view
   if (selectedConvo) {
     return (
-      <div className="fixed inset-0 bg-[#0D1117] dark:bg-tokyo-bg z-[1000] flex flex-col overflow-hidden">
+      <div className="fixed inset-0 bg-[#0D1117] z-[1000] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
           <button
             onClick={() => setSelectedConvo(null)}
@@ -105,7 +105,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
 
   // List view
   return (
-    <div className="fixed inset-0 bg-[#0D1117] dark:bg-tokyo-bg z-[1000] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-[#0D1117] z-[1000] flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
         <span className="text-base font-medium text-[#C9D1D9]">
           Past Conversations

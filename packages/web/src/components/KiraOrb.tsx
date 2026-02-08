@@ -3,17 +3,13 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { KiraState } from "@/hooks/useKiraSocket";
 
-// ─── Theme color palettes ────────────────────────────────────────────────────
-const ORB_COLORS = {
-  dark: { colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string] },
-  light: { colors: ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string] },
-};
+// ─── Orb color palette ───────────────────────────────────────────────────────
+const ORB_COLORS = ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string];
 
 interface KiraOrbProps {
   kiraState: KiraState;
   micVolume: number; // 0-1  (from useKiraSocket)
   speakerVolume: number; // 0-1  (playerVolume from useKiraSocket)
-  theme?: "dark" | "light";
   /** CSS px – defaults to 300 */
   size?: number;
 }
@@ -36,7 +32,6 @@ export default function KiraOrb({
   kiraState,
   micVolume,
   speakerVolume,
-  theme = "dark",
   size = 300,
 }: KiraOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,10 +42,10 @@ export default function KiraOrb({
 
   // 4 colours, each as [r,g,b], smoothly interpolated every frame
   const currentColorsRef = useRef<RGB[]>(
-    ORB_COLORS.dark.colors.map(hexToRgb)
+    ORB_COLORS.map(hexToRgb)
   );
   const targetColorsRef = useRef<RGB[]>(
-    ORB_COLORS.dark.colors.map(hexToRgb)
+    ORB_COLORS.map(hexToRgb)
   );
 
   // Keep refs in sync (synchronous — no React batching delay)
@@ -59,11 +54,6 @@ export default function KiraOrb({
   const spkRef = useRef(speakerVolume);
   spkRef.current = speakerVolume;
   stateRef.current = kiraState;
-
-  // Update target colors on theme change
-  useEffect(() => {
-    targetColorsRef.current = ORB_COLORS[theme].colors.map(hexToRgb);
-  }, [theme]);
 
   // ─── Render loop (gradient-based, no pixel field) ───────────────────────
   const render = useCallback(() => {
@@ -238,7 +228,7 @@ export default function KiraOrb({
       <div
         className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
         style={{
-          color: theme === "dark" ? "rgba(139,157,195,0.35)" : "rgba(90,100,140,0.35)",
+          color: "rgba(139,157,195,0.35)",
           height: 16,
         }}
       >

@@ -19,20 +19,11 @@
   }
 
   .scrollbar-discreet::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.3); /* gray-400 with opacity */
+    background-color: rgba(156, 163, 175, 0.2);
     border-radius: 20px;
   }
 
   .scrollbar-discreet::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(156, 163, 175, 0.5);
-  }
-
-  /* Dark mode */
-  .dark .scrollbar-discreet::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.2);
-  }
-
-  .dark .scrollbar-discreet::-webkit-scrollbar-thumb:hover {
     background-color: rgba(156, 163, 175, 0.4);
   }
 }

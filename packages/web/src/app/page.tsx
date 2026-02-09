@@ -440,9 +440,7 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease both",
               }}
             >
-              An AI companion that
-              <br />
-              actually remembers you.
+              Not an assistant. A presence.
             </h1>
 
             <p
@@ -456,8 +454,8 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease 0.15s both",
               }}
             >
-              Real-time voice conversations that build a real relationship over time. The more you talk, the better
-              she knows you.
+              Experience real-time voice conversations with a companion who has her own mind. No typing, no lag,
+              just connection.
             </p>
           </>
         )}
@@ -504,7 +502,7 @@ export default function HomePage() {
               e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            Talk to Kira{!isSignedIn ? " — free" : ""}
+            Meet Kira{!isSignedIn ? " — Free" : ""}
           </Link>
           {!isSignedIn && (
             <span style={{ fontSize: 12, color: "rgba(201,209,217,0.3)", fontWeight: 300 }}>
@@ -563,25 +561,21 @@ export default function HomePage() {
             }}
           >
             {[
-              { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
-              { value: <Counter end={24} suffix="/7" />, label: "always available" },
-              { value: "✦", label: "learns across every conversation" },
-            ].map((stat, i) => (
+              "Powered by Llama 3",
+              "<300ms Latency",
+              "AES-256 Encryption",
+            ].map((item, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
-                <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>
-                  {stat.value}
-                </div>
                 <div
                   style={{
-                    fontSize: 12,
-                    color: "rgba(201,209,217,0.35)",
-                    marginTop: 4,
-                    fontWeight: 300,
-                    letterSpacing: "0.04em",
+                    fontSize: 13,
+                    color: "rgba(201,209,217,0.4)",
+                    fontWeight: 400,
+                    letterSpacing: "0.06em",
                     textTransform: "uppercase",
                   }}
                 >
-                  {stat.label}
+                  {item}
                 </div>
               </div>
             ))}
@@ -612,7 +606,7 @@ export default function HomePage() {
                 marginBottom: 12,
               }}
             >
-              Not a chatbot. A relationship.
+              Not a chatbot. A presence.
             </h2>
             <p
               style={{
@@ -624,7 +618,7 @@ export default function HomePage() {
                 margin: "0 auto 64px",
               }}
             >
-              Kira develops a genuine understanding of who you are — your humor, your stress patterns, your evolving opinions — and it deepens every time you talk.
+              She&apos;s not here to help you be productive. She&apos;s here because talking to someone real matters.
             </p>
 
             <div
@@ -638,13 +632,12 @@ export default function HomePage() {
                 {
                   icon: (
                     <>
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="22" />
+                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
+                      <path d="M19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
                     </>
                   ),
-                  title: "Real-time voice",
-                  desc: "Talk naturally. Sub-second responses. No typing, no waiting. Like calling a friend who's always free.",
+                  title: "Dynamic Personality",
+                  desc: "She isn't neutral. She has opinions, moods, and a sense of humor that evolves as you talk.",
                 },
                 {
                   icon: (
@@ -653,19 +646,19 @@ export default function HomePage() {
                       <path d="M12 2v20" />
                     </>
                   ),
-                  title: "Memory that grows with you",
-                  desc: "She doesn't just store facts — she notices patterns. That you stress before interviews. That you've been happier since you started that new project. That you changed your mind about that show and she wants to know why.",
+                  title: "Associative Memory",
+                  desc: "She doesn't just store facts; she connects the dots. If you mention your boss, she remembers how you felt about him last week.",
                 },
                 {
                   icon: (
                     <>
-                      <rect x="2" y="3" width="20" height="14" rx="2" />
-                      <line x1="8" y1="21" x2="16" y2="21" />
-                      <line x1="12" y1="17" x2="12" y2="21" />
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
                     </>
                   ),
-                  title: "Screen sharing",
-                  desc: "Watch movies together. Debug code together. She sees your screen and reacts in real time.",
+                  title: "Real-Time Flow",
+                  desc: "Interrupt anytime. The sub-300ms response time means you never have to wait for her to 'think'.",
                 },
                 {
                   icon: (

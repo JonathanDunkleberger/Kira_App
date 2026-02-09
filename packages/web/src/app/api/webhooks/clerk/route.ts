@@ -84,6 +84,9 @@ export async function POST(req: Request) {
         const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
         const bufferRes = await fetch(`${httpUrl}/api/guest-buffer/${encodeURIComponent(guestId)}`, {
           method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${process.env.INTERNAL_API_SECRET}`,
+          },
         });
 
         if (bufferRes.ok) {

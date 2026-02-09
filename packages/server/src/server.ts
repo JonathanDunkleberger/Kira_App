@@ -31,6 +31,12 @@ const server = createServer((req, res) => {
 
   // --- Guest buffer retrieval endpoint (called by Clerk webhook) ---
   if (req.url?.startsWith("/api/guest-buffer/") && req.method === "DELETE") {
+    const authHeader = req.headers.authorization;
+    if (authHeader !== `Bearer ${process.env.INTERNAL_API_SECRET}`) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
     const guestId = decodeURIComponent(req.url.split("/api/guest-buffer/")[1]);
     const buffer = getGuestBuffer(guestId);
     if (buffer) {
@@ -51,7 +57,34 @@ const wss = new WebSocketServer({ server });
 
   console.log("[Server] Starting...");
 
+// --- GUEST USAGE TRACKING (persists across WebSocket reconnections) ---
+const guestUsageMap = new Map<string, { seconds: number; lastDate: string }>();
+
+// Clean up expired entries every hour
+setInterval(() => {
+  const today = new Date().toDateString();
+  for (const [id, data] of guestUsageMap) {
+    if (data.lastDate !== today) {
+      guestUsageMap.delete(id);
+    }
+  }
+}, 60 * 60 * 1000);
+
 wss.on("connection", (ws: any, req: IncomingMessage) => {
+  // --- ORIGIN VALIDATION ---
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    "https://www.xoxokira.com",
+    "https://xoxokira.com",
+    "http://localhost:3000",
+  ];
+
+  if (origin && !allowedOrigins.includes(origin)) {
+    console.warn(`[WS] Rejected connection from origin: ${origin}`);
+    ws.close(1008, "Origin not allowed");
+    return;
+  }
+
   console.log("[WS] New client connecting...");
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
@@ -339,6 +372,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
         if (isFinal) {
           currentTurnTranscript += transcript + " ";
+          // Safety cap: prevent unbounded transcript growth
+          if (currentTurnTranscript.length > 5000) {
+            currentTurnTranscript = currentTurnTranscript.slice(-4000);
+          }
           currentInterimTranscript = ""; // Clear interim since we got a final
         } else {
           currentInterimTranscript = transcript; // Always track latest interim
@@ -522,12 +559,30 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           sessionStartTime = Date.now();
 
           // Send session_config for guests (signed-in users already get it above)
-          if (isGuest) {
+          if (isGuest && userId) {
+            const today = new Date().toDateString();
+            const existing = guestUsageMap.get(userId);
+
+            if (existing && existing.lastDate === today) {
+              // Returning guest — check if they've used their time
+              if (existing.seconds >= FREE_LIMIT_SECONDS) {
+                ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+                ws.close(1008, "Guest usage limit reached");
+                return;
+              }
+              // Resume tracking from where they left off
+              guestUsageSeconds = existing.seconds;
+            } else {
+              // New day or first visit — start fresh
+              guestUsageMap.set(userId, { seconds: 0, lastDate: today });
+              guestUsageSeconds = 0;
+            }
+
             ws.send(
               JSON.stringify({
                 type: "session_config",
                 isPro: false,
-                remainingSeconds: FREE_LIMIT_SECONDS,
+                remainingSeconds: FREE_LIMIT_SECONDS - guestUsageSeconds,
               })
             );
           }
@@ -541,6 +596,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
             if (isGuest) {
               guestUsageSeconds = elapsed;
+              // Persist to server-side map so usage survives reconnections
+              guestUsageMap.set(userId!, {
+                seconds: guestUsageSeconds,
+                lastDate: new Date().toDateString(),
+              });
               if (guestUsageSeconds >= FREE_LIMIT_SECONDS) {
                 ws.send(
                   JSON.stringify({ type: "error", code: "limit_reached" })
@@ -1097,6 +1157,26 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
     if (sttStreamer) sttStreamer.destroy();
+
+    // --- USAGE: Flush remaining seconds on disconnect ---
+    if (!isGuest && userId && sessionStartTime) {
+      const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const alreadyCounted = Math.floor(finalElapsed / 30) * 30; // What intervals already counted
+      const remainder = finalElapsed - alreadyCounted;
+      if (remainder > 0) {
+        try {
+          await prisma.user.update({
+            where: { clerkId: userId },
+            data: {
+              dailyUsageSeconds: { increment: remainder },
+              lastUsageDate: new Date(),
+            },
+          });
+        } catch (err) {
+          console.error("[Usage] Final flush failed:", (err as Error).message);
+        }
+      }
+    }
 
     // --- GUEST MEMORY BUFFER (save for potential account creation) ---
     if (isGuest && userId) {

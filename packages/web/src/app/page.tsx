@@ -561,22 +561,28 @@ export default function HomePage() {
             }}
           >
             {[
-              "Powered by Llama 3",
-              "<300ms Latency",
-              "AES-256 Encryption",
-            ].map((item, i) => (
+              { value: "Powered by Llama 3", label: "" },
+              { value: "<300ms", label: "latency" },
+              { value: <Counter end={7} />, label: "dimensions of memory" },
+            ].map((stat, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "rgba(201,209,217,0.4)",
-                    fontWeight: 400,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {item}
+                <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>
+                  {stat.value}
                 </div>
+                {stat.label && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "rgba(201,209,217,0.35)",
+                      marginTop: 4,
+                      fontWeight: 300,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {stat.label}
+                  </div>
+                )}
               </div>
             ))}
           </section>

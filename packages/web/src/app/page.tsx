@@ -563,7 +563,7 @@ export default function HomePage() {
             {[
               { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
               { value: <Counter end={24} suffix="/7" />, label: "always available" },
-              { value: "0", label: "conversations forgotten" },
+              { value: <Counter end={100} suffix="%" />, label: "conversations remembered" },
             ].map((stat, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
                 <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>

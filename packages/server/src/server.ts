@@ -185,8 +185,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- SILENCE-INITIATED TURNS ---
   let silenceTimer: NodeJS.Timeout | null = null;
-  const SILENCE_THRESHOLD_MS = 15000; // 15 seconds of quiet before Kira might speak
+  const SILENCE_THRESHOLD_MS = 25000; // 25 seconds of quiet before Kira might speak
   let turnCount = 0; // Track conversation depth for silence behavior
+  let silenceInitiatedLast = false; // Prevents monologue loops — Kira gets ONE unprompted turn
 
   function resetSilenceTimer() {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -196,6 +197,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
     silenceTimer = setTimeout(async () => {
       if (state !== "listening" || clientDisconnected) return;
+      if (silenceInitiatedLast) return; // Already spoke unprompted, wait for user
+      silenceInitiatedLast = true;
       state = "thinking"; // Lock state IMMEDIATELY to prevent race condition
       if (silenceTimer) clearTimeout(silenceTimer); // Clear self
 
@@ -267,9 +270,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           transcriptClearedAt = Date.now();
           state = "listening";
           ws.send(JSON.stringify({ type: "state_listening" }));
-
-          // Reset the silence timer for another potential initiation
-          resetSilenceTimer();
+          // Do NOT reset silence timer here — Kira gets ONE unprompted turn.
+          // Only the user speaking again (eou/text_message) resets it.
         }
 
       } catch (err) {
@@ -686,6 +688,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           lastEouTime = now; // Record this EOU time for debouncing
           turnCount++;
+          silenceInitiatedLast = false; // User spoke, allow future silence initiation
           resetSilenceTimer();
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
@@ -1137,6 +1140,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
             turnCount++;
+            silenceInitiatedLast = false; // User spoke, allow future silence initiation
             resetSilenceTimer();
           }
         }

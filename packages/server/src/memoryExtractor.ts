@@ -131,6 +131,43 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
       if (!validCategories.includes(fact.category)) continue;
       if (!fact.content || fact.content.trim().length === 0) continue;
 
+      if (fact.is_update) {
+        // Delete older facts in the same category that this fact supersedes.
+        // Simple heuristic: if the new fact mentions the same key nouns as an
+        // existing fact in the same category, the old one is stale.
+        // For v1, just delete all facts in the same category that share any
+        // 4+ letter word with the new fact. This is rough but prevents
+        // contradictions like "hates his job" + "loves his new job" coexisting.
+        const keywords = fact.content
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w: string) => w.length >= 4)
+          .map((w: string) => w.replace(/[^a-z]/g, ""));
+
+        if (keywords.length > 0) {
+          const existing = await prisma.memoryFact.findMany({
+            where: { userId, category: fact.category },
+          });
+
+          for (const old of existing) {
+            const oldWords = old.content
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((w: string) => w.length >= 4)
+              .map((w: string) => w.replace(/[^a-z]/g, ""));
+            const overlap = keywords.filter((k: string) => oldWords.includes(k));
+
+            // If 2+ keywords overlap, this is likely an update to the same topic
+            if (overlap.length >= 2) {
+              await prisma.memoryFact.delete({ where: { id: old.id } });
+              console.log(
+                `[Memory] Replaced stale fact: "${old.content}" → "${fact.content}"`
+              );
+            }
+          }
+        }
+      }
+
       await prisma.memoryFact.create({
         data: {
           userId,

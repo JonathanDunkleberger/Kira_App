@@ -13,7 +13,7 @@ const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each fra
 const MIN_SPEECH_FRAMES_FOR_EOU = 50; // Must have ~50 speech frames to prevent junk utterances
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
-export const useKiraSocket = (token: string, guestId: string) => {
+export const useKiraSocket = (token: string, guestId: string, voicePreference: string = "anime") => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
   const [kiraState, setKiraState] = useState<KiraState>("listening");
   const kiraStateRef = useRef<KiraState>("listening"); // Ref to track state in callbacks
@@ -712,10 +712,11 @@ export const useKiraSocket = (token: string, guestId: string) => {
 
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = token ? `token=${token}` : `guestId=${guestId}`;
+    const voiceParam = `&voice=${voicePreference}`;
 
     setSocketState("connecting");
     isServerReady.current = false;
-    ws.current = new WebSocket(`${wsUrl}?${authParam}`);
+    ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     ws.current.onopen = () => {

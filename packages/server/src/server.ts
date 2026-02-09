@@ -7,6 +7,7 @@ import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
+import { ElevenLabsTTSStreamer } from "./ElevenLabsTTSStreamer.js";
 import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
@@ -89,6 +90,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
+  const voicePreference = url.searchParams.get("voice") || "anime";
+  const useElevenLabs = voicePreference === "natural";
 
   // --- KEEP-ALIVE HEARTBEAT ---
   // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
@@ -254,7 +257,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
             await new Promise<void>((resolve) => {
-              const tts = new AzureTTSStreamer();
+              const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
@@ -323,7 +326,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
         await new Promise<void>((resolve) => {
-          const tts = new AzureTTSStreamer();
+          const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
@@ -894,7 +897,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
                   await new Promise<void>((resolve) => {
-                    const tts = new AzureTTSStreamer();
+                    const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
@@ -952,7 +955,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
-                  const tts = new AzureTTSStreamer();
+                  const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {

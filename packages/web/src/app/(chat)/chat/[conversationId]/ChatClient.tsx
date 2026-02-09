@@ -9,6 +9,8 @@ import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock } from "lucide-re
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";
+import { getOrCreateGuestId } from "@/lib/guestId";
+import { getVoicePreference, setVoicePreference, VoicePreference } from "@/lib/voicePreference";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -21,17 +23,14 @@ export default function ChatClient() {
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [guestId, setGuestId] = useState("");
+  const [voicePreference, setVoicePref] = useState<VoicePreference>("anime");
 
-  // Create a stable guest ID if the user is not logged in
+  // Load guest ID and voice preference from localStorage
   useEffect(() => {
     if (!userId) {
-      let id = localStorage.getItem("kira-guest-id");
-      if (!id) {
-        id = `guest_${crypto.randomUUID()}`;
-        localStorage.setItem("kira-guest-id", id);
-      }
-      setGuestId(id);
+      setGuestId(getOrCreateGuestId());
     }
+    setVoicePref(getVoicePreference());
   }, [userId]);
 
   const { 
@@ -55,7 +54,8 @@ export default function ChatClient() {
     remainingSeconds
   } = useKiraSocket(
     token || "",
-    guestId
+    guestId,
+    voicePreference
   );
   // Removed hasStarted state to allow auto-start
 
@@ -316,6 +316,38 @@ export default function ChatClient() {
               {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")}
             </span>
           )}
+          {/* Voice selector */}
+          <div style={{
+            display: "flex",
+            borderRadius: 8,
+            overflow: "hidden",
+            border: "1px solid rgba(201,209,217,0.12)",
+          }}>
+            {(["anime", "natural"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => {
+                  setVoicePref(v);
+                  setVoicePreference(v);
+                }}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  fontWeight: voicePreference === v ? 500 : 300,
+                  fontFamily: "'DM Sans', sans-serif",
+                  background: voicePreference === v ? "rgba(107,125,179,0.25)" : "transparent",
+                  color: voicePreference === v ? "#C9D1D9" : "rgba(201,209,217,0.4)",
+                  border: "none",
+                  cursor: "pointer",
+                  letterSpacing: "0.04em",
+                  textTransform: "capitalize",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           {/* Profile icon */}
           <button 
             onClick={() => setShowProfileModal(true)}

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";
@@ -377,21 +377,21 @@ export default function ChatClient() {
         {/* Time Remaining Indicator — visible under 5 minutes for free users */}
         {!isPro && localRemaining !== null && localRemaining <= 300 && localRemaining > 0 && (
           <div
-            className="flex items-center gap-1.5 relative z-[1]"
             style={{
-              opacity: localRemaining <= 120 ? 0.4 : 0.2,
-              transition: "opacity 0.8s ease",
+              position: "fixed",
+              top: 16,
+              right: 16,
               fontSize: 12,
-              fontWeight: 400,
-              color: "rgba(201,209,217,0.6)",
+              fontWeight: 300,
               fontFamily: "'DM Sans', sans-serif",
-              letterSpacing: "0.02em",
+              color: `rgba(201,209,217,${localRemaining <= 120 ? 0.5 : 0.25})`,
+              letterSpacing: "0.06em",
+              transition: "opacity 1s ease",
+              pointerEvents: "none",
+              zIndex: 50,
             }}
           >
-            <Clock size={12} style={{ opacity: 0.7 }} />
-            <span>
-              {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")} remaining
-            </span>
+            {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")}
           </div>
         )}
 

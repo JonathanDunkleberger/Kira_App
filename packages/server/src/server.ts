@@ -195,8 +195,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (turnCount < 2) return;
 
     silenceTimer = setTimeout(async () => {
-      if (state !== "listening") return; // Don't interrupt herself
-      if (clientDisconnected) return;
+      if (state !== "listening" || clientDisconnected) return;
+      state = "thinking"; // Lock state IMMEDIATELY to prevent race condition
+      if (silenceTimer) clearTimeout(silenceTimer); // Clear self
 
       console.log("[Silence] User has been quiet. Checking if Kira has something to say.");
 
@@ -284,6 +285,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   // --- Reusable LLM → TTS pipeline ---
   async function runKiraTurn() {
     let llmResponse = "";
+    if (silenceTimer) clearTimeout(silenceTimer);
     state = "speaking";
     ws.send(JSON.stringify({ type: "state_speaking" }));
     ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -335,6 +337,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       transcriptClearedAt = Date.now();
       state = "listening";
       ws.send(JSON.stringify({ type: "state_listening" }));
+      resetSilenceTimer();
     }
   }
 
@@ -671,8 +674,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
             state = "listening"; // Reset state — don't get stuck in "thinking"
 
-            if (consecutiveEmptyEOUs >= 2) {
-              console.log("[EOU] Multiple empty EOUs detected — Deepgram likely dead. Triggering reconnect.");
+            if (consecutiveEmptyEOUs >= 4 &&
+                (Date.now() - lastTranscriptReceivedAt > 30000)) {
+              // Only reconnect if 4+ empty EOUs AND no real transcript in 30+ seconds.
+              // Prevents false positives during intentional user silence.
+              console.log("[EOU] Deepgram appears dead (4+ empty EOUs, 30s+ silent). Reconnecting.");
               await reconnectDeepgram();
             }
             return;
@@ -861,6 +867,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
               
+              if (silenceTimer) clearTimeout(silenceTimer);
               state = "speaking";
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -910,6 +917,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             // update_viewing_context), we need a fresh completion that incorporates the tool
             // results. Tools are omitted here to prevent infinite chaining. Adds ~1-2s latency
             // on tool-call turns only (which are infrequent).
+            if (silenceTimer) clearTimeout(silenceTimer);
             state = "speaking";
             ws.send(JSON.stringify({ type: "state_speaking" }));
             ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -1020,6 +1028,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         } else if (controlMessage.type === "text_message") {
           // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
           if (state !== "listening") return;
+          if (silenceTimer) clearTimeout(silenceTimer);
 
           const userMessage = controlMessage.text?.trim();
           if (!userMessage || userMessage.length === 0) return;

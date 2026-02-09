@@ -622,7 +622,7 @@ export default function HomePage() {
                 margin: "0 auto 64px",
               }}
             >
-              You&apos;re watching Garden of Words at 1am and you want to talk about the animation without pausing. You say it out loud. She responds — and she already knows you love Makoto Shinkai from a conversation two weeks ago. That&apos;s the experience we built for.
+              Kira isn&apos;t performing helpfulness. She&apos;s opinionated, emotionally aware, and she builds a real understanding of who you are over time.
             </p>
 
             <div
@@ -636,12 +636,13 @@ export default function HomePage() {
                 {
                   icon: (
                     <>
-                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
-                      <path d="M19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
                     </>
                   ),
-                  title: "Dynamic Personality",
-                  desc: "She isn't neutral. She has opinions, moods, and a sense of humor that evolves as you talk.",
+                  title: "Real-Time Voice",
+                  desc: "Not a chatbox. A voice call. Interrupt, pause, think out loud — she follows your rhythm, not a turn-taking queue.",
                 },
                 {
                   icon: (
@@ -651,18 +652,46 @@ export default function HomePage() {
                     </>
                   ),
                   title: "Associative Memory",
-                  desc: "She doesn't just store facts; she connects the dots. If you mention your boss, she remembers how you felt about him last week.",
+                  desc: "She doesn\u2019t just store facts \u2014 she connects the dots. Mention your boss and she remembers how you felt about him last week.",
                 },
                 {
                   icon: (
                     <>
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="22" />
+                      <rect x="2" y="3" width="20" height="14" rx="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
                     </>
                   ),
-                  title: "Real-Time Flow",
-                  desc: "Interrupt anytime. The sub-300ms response time means you never have to wait for her to 'think'.",
+                  title: "Sees Your Screen",
+                  desc: "Share your screen and she watches alongside you. She\u2019ll react to what\u2019s happening without you having to describe it.",
+                },
+                {
+                  icon: (
+                    <>
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </>
+                  ),
+                  title: "Text When You Can\u2019t Talk",
+                  desc: "At work? Roommate sleeping? Switch to text and the conversation keeps going. Same personality, same memory.",
+                },
+                {
+                  icon: (
+                    <>
+                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
+                      <path d="M19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
+                    </>
+                  ),
+                  title: "Dynamic Personality",
+                  desc: "She isn\u2019t neutral. She has opinions, moods, and a sense of humor. She\u2019ll tease you, disagree with you, and know when to just listen.",
+                },
+                {
+                  icon: (
+                    <>
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </>
+                  ),
+                  title: "Private by Default",
+                  desc: "Guest conversations are never stored. Signed-in memory is yours alone. No training on your data, no sharing, no ads.",
                 },
               ].map((feature, i) => (
                 <div

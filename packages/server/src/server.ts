@@ -150,6 +150,161 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   // --- L1: In-Conversation Memory ---
   let conversationSummary = "";
 
+  // --- SILENCE-INITIATED TURNS ---
+  let silenceTimer: NodeJS.Timeout | null = null;
+  const SILENCE_THRESHOLD_MS = 15000; // 15 seconds of quiet before Kira might speak
+  let turnCount = 0; // Track conversation depth for silence behavior
+
+  function resetSilenceTimer() {
+    if (silenceTimer) clearTimeout(silenceTimer);
+
+    // Don't initiate during first 2 turns (let the user settle in)
+    if (turnCount < 2) return;
+
+    silenceTimer = setTimeout(async () => {
+      if (state !== "listening") return; // Don't interrupt herself
+      if (clientDisconnected) return;
+
+      console.log("[Silence] User has been quiet. Checking if Kira has something to say.");
+
+      // Inject a one-time nudge (removed after the turn)
+      const nudge: OpenAI.Chat.ChatCompletionMessageParam = {
+        role: "system",
+        content: `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.]`
+      };
+
+      chatHistory.push(nudge);
+
+      try {
+        // Quick check: does the model have something to say?
+        const checkResponse = await openai.chat.completions.create({
+          model: OPENAI_MODEL,
+          messages: chatHistory,
+          temperature: 0.9, // Slightly higher for more creative initiation
+          max_tokens: 300,
+          frequency_penalty: 0.3,
+          presence_penalty: 0.3, // Higher to encourage novel topics
+        });
+
+        const responseText = checkResponse.choices[0]?.message?.content?.trim() || "";
+
+        // Remove the nudge from history regardless of outcome
+        const nudgeIdx = chatHistory.indexOf(nudge);
+        if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
+
+        // If model returned silence marker or empty, don't speak
+        if (!responseText || responseText === "[SILENCE]" || responseText.length < 3) {
+          console.log("[Silence] Kira has nothing to say. Staying quiet.");
+          return;
+        }
+
+        // She has something to say — run the TTS pipeline
+        chatHistory.push({ role: "assistant", content: responseText });
+        console.log(`[Silence] Kira initiates: "${responseText}"`);
+        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
+
+        state = "speaking";
+        ws.send(JSON.stringify({ type: "state_speaking" }));
+        ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+        await new Promise(resolve => setImmediate(resolve));
+
+        try {
+          const sentences = responseText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [responseText];
+          for (const sentence of sentences) {
+            const trimmed = sentence.trim();
+            if (trimmed.length === 0) continue;
+            await new Promise<void>((resolve) => {
+              const tts = new AzureTTSStreamer();
+              tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+              tts.on("tts_complete", () => resolve());
+              tts.on("error", (err: Error) => {
+                console.error("[TTS] Sentence error:", err);
+                resolve();
+              });
+              tts.synthesize(trimmed);
+            });
+          }
+        } catch (ttsErr) {
+          console.error("[TTS] Silence turn TTS error:", ttsErr);
+        } finally {
+          ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+          currentTurnTranscript = "";
+          currentInterimTranscript = "";
+          transcriptClearedAt = Date.now();
+          state = "listening";
+          ws.send(JSON.stringify({ type: "state_listening" }));
+
+          // Reset the silence timer for another potential initiation
+          resetSilenceTimer();
+        }
+
+      } catch (err) {
+        console.error("[Silence] LLM call failed:", (err as Error).message);
+        // Remove nudge on error too
+        const nudgeIdx = chatHistory.indexOf(nudge);
+        if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
+      }
+
+    }, SILENCE_THRESHOLD_MS);
+  }
+
+  // --- Reusable LLM → TTS pipeline ---
+  async function runKiraTurn() {
+    let llmResponse = "";
+    state = "speaking";
+    ws.send(JSON.stringify({ type: "state_speaking" }));
+    ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+    await new Promise(resolve => setImmediate(resolve));
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: chatHistory,
+        temperature: 0.85,
+        max_tokens: 300,
+        frequency_penalty: 0.3,
+        presence_penalty: 0.2,
+      });
+
+      llmResponse = completion.choices[0]?.message?.content || "";
+
+      if (llmResponse.trim().length === 0) {
+        // Model had nothing to say — return silently
+        return;
+      }
+
+      chatHistory.push({ role: "assistant", content: llmResponse });
+
+      console.log(`[AI RESPONSE]: "${llmResponse}"`);
+      ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+
+      const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
+      for (const sentence of sentences) {
+        const trimmed = sentence.trim();
+        if (trimmed.length === 0) continue;
+        await new Promise<void>((resolve) => {
+          const tts = new AzureTTSStreamer();
+          tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+          tts.on("tts_complete", () => resolve());
+          tts.on("error", (err: Error) => {
+            console.error("[TTS] Sentence error:", err);
+            resolve();
+          });
+          tts.synthesize(trimmed);
+        });
+      }
+    } catch (err) {
+      console.error("[Pipeline] Error in runKiraTurn:", (err as Error).message);
+    } finally {
+      ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+      currentTurnTranscript = "";
+      currentInterimTranscript = "";
+      transcriptClearedAt = Date.now();
+      state = "listening";
+      ws.send(JSON.stringify({ type: "state_listening" }));
+    }
+  }
+
   // --- CONTEXT MANAGEMENT CONSTANTS ---
   const MAX_RECENT_MESSAGES = 10;
   const SUMMARIZE_THRESHOLD = 14;
@@ -442,6 +597,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // CRITICAL: Lock state IMMEDIATELY to prevent audio from leaking into next turn
           state = "thinking";
+          if (silenceTimer) clearTimeout(silenceTimer);
 
           // If no final transcript, immediately use interim (no waiting needed)
           if (currentTurnTranscript.trim().length === 0 && currentInterimTranscript.trim().length > 0) {
@@ -463,6 +619,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
 
           lastEouTime = now; // Record this EOU time for debouncing
+          turnCount++;
+          resetSilenceTimer();
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
           currentInterimTranscript = ""; // Reset interim too
@@ -680,6 +838,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 state = "listening";
                 ws.send(JSON.stringify({ type: "state_listening" }));
                 console.log("[STATE] Back to listening, transcripts cleared.");
+                resetSilenceTimer();
               }
               
               // Skip the streaming path below
@@ -764,6 +923,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               state = "listening";
               ws.send(JSON.stringify({ type: "state_listening" }));
               console.log("[STATE] Back to listening, transcripts cleared.");
+              resetSilenceTimer();
             }
 
           } catch (err) {
@@ -907,6 +1067,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           } finally {
             state = "listening";
             ws.send(JSON.stringify({ type: "state_listening" }));
+            turnCount++;
+            resetSilenceTimer();
           }
         }
       } else if (message instanceof Buffer) {
@@ -933,6 +1095,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
+    if (silenceTimer) clearTimeout(silenceTimer);
     if (sttStreamer) sttStreamer.destroy();
 
     // --- GUEST MEMORY BUFFER (save for potential account creation) ---
@@ -1011,6 +1174,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
+    if (silenceTimer) clearTimeout(silenceTimer);
     if (sttStreamer) sttStreamer.destroy();
   });
 });

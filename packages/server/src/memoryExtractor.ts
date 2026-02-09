@@ -131,6 +131,39 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
       if (!validCategories.includes(fact.category)) continue;
       if (!fact.content || fact.content.trim().length === 0) continue;
 
+      if (fact.is_update) {
+        // Delete older facts in the same category that this fact supersedes.
+        // Heuristic: if the new fact shares 2+ significant words (4+ chars) with
+        // an existing fact in the same category, the old one is stale.
+        const keywords = fact.content
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w: string) => w.length >= 4)
+          .map((w: string) => w.replace(/[^a-z]/g, ""));
+
+        if (keywords.length > 0) {
+          const existing = await prisma.memoryFact.findMany({
+            where: { userId, category: fact.category },
+          });
+
+          for (const old of existing) {
+            const oldWords = old.content
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((w: string) => w.length >= 4)
+              .map((w: string) => w.replace(/[^a-z]/g, ""));
+            const overlap = keywords.filter((k: string) => oldWords.includes(k));
+
+            if (overlap.length >= 2) {
+              await prisma.memoryFact.delete({ where: { id: old.id } });
+              console.log(
+                `[Memory] Replaced stale fact: "${old.content}" → "${fact.content}"`
+              );
+            }
+          }
+        }
+      }
+
       await prisma.memoryFact.create({
         data: {
           userId,

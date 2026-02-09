@@ -46,7 +46,15 @@ export async function loadUserMemories(
     memoryBlock += `${label}: ${facts.join(". ")}.\n`;
   }
 
-  memoryBlock += `\nUse these memories NATURALLY. Do not list them. Do not say "I remember that..." unless it fits naturally. Weave them into conversation as a real friend would — casually referencing things you know, asking follow-up questions about ongoing situations, building on shared experiences. If a memory feels stale or no longer relevant, do not force it.`;
+  memoryBlock += `\nYou KNOW this person. These aren't facts you looked up — they're things you remember because you were there. Use them the way a real friend does:
+
+- Reference things casually, not formally. ("How's Milo?" not "I recall you have a cat named Milo.")
+- Bring things up YOURSELF. Don't wait for them to mention it. ("Did you ever hear back about that interview?")
+- Notice patterns and changes. If old memories conflict with what they're saying now, point it out with curiosity, not judgment. ("Wait, you used to hate that — what changed?")
+- Connect dots between different things they've told you. ("You know, between the new job and the thing with your sister, it sounds like this whole year has been about you figuring out what you actually want.")
+- Some memories are more important than others. The ones with high emotional weight are things that really matter to them. Treat those with care.
+- Do NOT list or recite memories. Do NOT say "I remember that" or "You mentioned before." Just know it, the way you know things about someone you're close to.
+- If you have a [CONVERSATION SO FAR] summary from earlier in THIS conversation, treat that as continuous memory — you were there for all of it.`;
 
   return memoryBlock;
 }

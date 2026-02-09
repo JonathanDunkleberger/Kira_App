@@ -9,8 +9,10 @@ import { EventEmitter } from "events";
 import WebSocket from "ws";
 
 const ELEVEN_LABS_API_KEY = process.env.ELEVEN_LABS_API_KEY!;
-const VOICE_ID = "BZgkqPqms7Kj9ulSkVzn";
-const MODEL_ID = "eleven_turbo_v2_5"; // Low-latency model
+const VOICE_ID = process.env.ELEVEN_LABS_VOICE_ID || "BZgkqPqms7Kj9ulSkVzn";
+const MODEL_ID = process.env.ELEVEN_LABS_MODEL || "eleven_turbo_v2_5";
+const STABILITY = parseFloat(process.env.ELEVEN_LABS_STABILITY || "0.5");
+const SIMILARITY_BOOST = parseFloat(process.env.ELEVEN_LABS_SIMILARITY_BOOST || "0.75");
 
 export class ElevenLabsTTSStreamer extends EventEmitter {
   async synthesize(text: string): Promise<void> {
@@ -37,8 +39,8 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
         socket.send(JSON.stringify({
           text: " ",
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
+            stability: STABILITY,
+            similarity_boost: SIMILARITY_BOOST,
             use_speaker_boost: true,
           },
           generation_config: {

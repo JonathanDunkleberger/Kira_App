@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";

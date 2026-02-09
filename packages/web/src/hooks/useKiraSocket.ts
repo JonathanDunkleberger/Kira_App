@@ -713,6 +713,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = token ? `token=${token}` : `guestId=${guestId}`;
     const voiceParam = `&voice=${voicePreference}`;
+    console.log(`[WS] Connecting with voice: ${voicePreference}, URL: ${wsUrl}?${authParam}${voiceParam}`);
 
     setSocketState("connecting");
     isServerReady.current = false;

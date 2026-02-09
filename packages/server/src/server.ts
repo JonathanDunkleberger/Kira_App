@@ -19,6 +19,7 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+console.log(`[Config] ElevenLabs API key: ${process.env.ELEVEN_LABS_API_KEY ? "SET" : "MISSING"}`);
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -92,6 +93,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const guestId = url.searchParams.get("guestId");
   const voicePreference = url.searchParams.get("voice") || "anime";
   const useElevenLabs = voicePreference === "natural";
+  console.log(`[Voice] Preference: "${voicePreference}", useElevenLabs: ${useElevenLabs}`);
 
   // --- KEEP-ALIVE HEARTBEAT ---
   // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
@@ -257,6 +259,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
             await new Promise<void>((resolve) => {
+              console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (silence turn)`);
               const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
@@ -326,6 +329,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
         await new Promise<void>((resolve) => {
+          console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (runKiraTurn)`);
           const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
@@ -897,6 +901,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
                   await new Promise<void>((resolve) => {
+                    console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (EOU response)`);
                     const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
@@ -955,6 +960,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
+                  console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (streaming)`);
                   const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());

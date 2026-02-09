@@ -35,6 +35,7 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
       };
 
       socket.on("open", () => {
+        console.log(`[ElevenLabs] WebSocket connected. Voice: ${VOICE_ID}, Model: ${MODEL_ID}`);
         // Send initial config with voice settings
         socket.send(JSON.stringify({
           text: " ",

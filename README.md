@@ -1,6 +1,6 @@
 # ✨ Kira AI — Voice-First AI Media Companion
 
-![Kira AI Banner](./packages/docs/KIRA2%20Demo.png)
+![Kira AI Banner](./packages/docs/KIRA3.0.png)
 
 **An AI you talk to while watching, gaming, or reading — hands free, in real time.**
 

@@ -230,7 +230,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
 
         // If model returned silence marker or empty, don't speak
-        if (!responseText || responseText === "[SILENCE]" || responseText.length < 3) {
+        if (!responseText || 
+            responseText.toLowerCase().includes("silence") || 
+            responseText.startsWith("[") ||
+            responseText.length < 5) {
           console.log("[Silence] Kira has nothing to say. Staying quiet.");
           return;
         }

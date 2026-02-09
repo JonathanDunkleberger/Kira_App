@@ -300,16 +300,33 @@ export default function ChatClient() {
           </span>
         </Link>
         
-        {/* Profile Link */}
-        <button 
-          onClick={() => setShowProfileModal(true)}
-          className="p-2 rounded-full transition-colors"
-          style={{ background: "none", border: "none", cursor: "pointer" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-        >
-            <User size={24} style={{ color: "rgba(201,209,217,0.6)" }} />
-        </button>
+        {/* Profile Link + Timer */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Timer — only shows under 5 min remaining for free users */}
+          {!isPro && localRemaining !== null && localRemaining <= 300 && localRemaining > 0 && (
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 300,
+                fontFamily: "'DM Sans', sans-serif",
+                color: `rgba(201,209,217,${localRemaining <= 120 ? 0.5 : 0.25})`,
+                letterSpacing: "0.06em",
+              }}
+            >
+              {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")}
+            </span>
+          )}
+          {/* Profile icon */}
+          <button 
+            onClick={() => setShowProfileModal(true)}
+            className="p-2 rounded-full transition-colors"
+            style={{ background: "none", border: "none", cursor: "pointer" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+          >
+              <User size={24} style={{ color: "rgba(201,209,217,0.6)" }} />
+          </button>
+        </div>
       </div>
 
       {/* Profile Modal */}
@@ -373,27 +390,6 @@ export default function ChatClient() {
             zIndex: 0,
           }}
         />
-
-        {/* Time Remaining Indicator — visible under 5 minutes for free users */}
-        {!isPro && localRemaining !== null && localRemaining <= 300 && localRemaining > 0 && (
-          <div
-            style={{
-              position: "fixed",
-              top: 16,
-              right: 16,
-              fontSize: 12,
-              fontWeight: 300,
-              fontFamily: "'DM Sans', sans-serif",
-              color: `rgba(201,209,217,${localRemaining <= 120 ? 0.5 : 0.25})`,
-              letterSpacing: "0.06em",
-              transition: "opacity 1s ease",
-              pointerEvents: "none",
-              zIndex: 50,
-            }}
-          >
-            {Math.floor(localRemaining / 60)}:{String(localRemaining % 60).padStart(2, "0")}
-          </div>
-        )}
 
         {/* Text Input */}
         <TextInput

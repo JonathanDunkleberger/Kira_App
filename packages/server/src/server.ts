@@ -358,6 +358,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let usageCheckInterval: NodeJS.Timeout | null = null;
   let isProUser = false;
   let guestUsageSeconds = 0;
+  let guestUsageBase = 0; // Accumulated seconds from previous sessions today
 
   // --- Reusable Deepgram initialization ---
   async function initDeepgram() {
@@ -580,10 +581,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               }
               // Resume tracking from where they left off
               guestUsageSeconds = existing.seconds;
+              guestUsageBase = existing.seconds;
             } else {
               // New day or first visit — start fresh
               guestUsageMap.set(userId, { seconds: 0, lastDate: today });
               guestUsageSeconds = 0;
+              guestUsageBase = 0;
             }
 
             ws.send(
@@ -603,7 +606,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             );
 
             if (isGuest) {
-              guestUsageSeconds = elapsed;
+              guestUsageSeconds = guestUsageBase + elapsed;
               // Persist to server-side map so usage survives reconnections
               guestUsageMap.set(userId!, {
                 seconds: guestUsageSeconds,
@@ -1175,7 +1178,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (sttStreamer) sttStreamer.destroy();
 
     // --- USAGE: Flush remaining seconds on disconnect ---
-    if (!isGuest && userId && sessionStartTime) {
+    if (isGuest && userId && sessionStartTime) {
+      const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      guestUsageMap.set(userId, {
+        seconds: guestUsageBase + finalElapsed,
+        lastDate: new Date().toDateString(),
+      });
+    } else if (!isGuest && userId && sessionStartTime) {
       const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
       const alreadyCounted = Math.floor(finalElapsed / 30) * 30; // What intervals already counted
       const remainder = finalElapsed - alreadyCounted;

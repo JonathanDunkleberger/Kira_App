@@ -561,28 +561,26 @@ export default function HomePage() {
             }}
           >
             {[
-              { value: "Powered by Llama 3", label: "" },
-              { value: "<300ms", label: "latency" },
+              { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
+              { value: <Counter end={24} suffix="/7" />, label: "always available" },
               { value: <Counter end={7} />, label: "dimensions of memory" },
             ].map((stat, i) => (
               <div key={i} style={{ textAlign: "center", minWidth: 120 }}>
                 <div style={{ fontSize: 28, fontWeight: 500, color: "#8B9DC3", fontFamily: "'DM Sans', sans-serif" }}>
                   {stat.value}
                 </div>
-                {stat.label && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "rgba(201,209,217,0.35)",
-                      marginTop: 4,
-                      fontWeight: 300,
-                      letterSpacing: "0.04em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {stat.label}
-                  </div>
-                )}
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "rgba(201,209,217,0.35)",
+                    marginTop: 4,
+                    fontWeight: 300,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {stat.label}
+                </div>
               </div>
             ))}
           </section>
@@ -612,7 +610,7 @@ export default function HomePage() {
                 marginBottom: 12,
               }}
             >
-              Not a chatbot. A presence.
+              She has her own mind.
             </h2>
             <p
               style={{
@@ -624,7 +622,7 @@ export default function HomePage() {
                 margin: "0 auto 64px",
               }}
             >
-              She&apos;s not here to help you be productive. She&apos;s here because talking to someone real matters.
+              Kira isn&apos;t performing helpfulness. She&apos;s opinionated, emotionally aware, and she builds a real understanding of who you are over time.
             </p>
 
             <div

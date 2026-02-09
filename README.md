@@ -1,248 +1,147 @@
-# Kira — Copy Revisions v2 (Consolidated)
+# Kira
 
 ![Kira AI Banner](./packages/docs/KIRA3.0.png)
 
-This replaces the previous copy revisions doc. Reflects all decisions
-made including the "Not an assistant. A presence." pivot, 3-card feature
-grid, Garden of Words subline, and stats bar update.
+**Not an assistant. A presence.**
 
-All changes are string replacements unless noted. No layout changes
-except the feature grid going from 6 cards to 3.
+Kira is a real-time voice AI companion with persistent memory and a genuine personality. You talk, she listens, responds, remembers — and picks up right where you left off next time.
 
----
+She has opinions. She'll tease you. She'll remember that you were stressed about that interview three weeks ago and ask how it went. She's not performing helpfulness — she's a presence that gets to know you over time.
 
-## 1. Hero Section — Headline
-
-**Find:**
-```
-An AI companion that actually remembers you.
-```
-
-**Replace with:**
-```
-Not an assistant. A presence.
-```
+**Try it live:** [xoxokira.com](https://www.xoxokira.com)
 
 ---
 
-## 2. Hero Section — Subline
+## What Makes This Different
 
-**Find:**
-```
-Real-time voice conversations with persistent memory.
-She knows your name, your stories, and picks up right where you left off.
-```
+Most AI companions are text chatbots with a pretty avatar. Kira is a voice-first system where every component is engineered for low-latency, natural conversation.
 
-**Replace with:**
-```
-Experience real-time voice conversations with a companion who has
-her own mind. No typing, no lag, just connection.
-```
+**Real-time voice, not text chat.** Microphone audio streams through Deepgram for live transcription, routes through GPT-4o-mini for response generation, then streams sentence-by-sentence through Azure TTS back to your speakers. The first sentence plays while the third is still being written. Sub-500ms end-to-end.
+
+**Structured associative memory.** Not simple key-value recall. Kira extracts facts from every conversation across 7 dimensions — identity, preferences, relationships, emotional patterns, shared experiences, life context, and opinions — each weighted by emotional significance. When you reconnect, she doesn't just know your name. She knows you've been happier lately and she has a theory about why.
+
+**Personality with depth.** Kira has a full character system: cheerful deadpan tone, strong opinions, emotional states that shift naturally during conversation (happy, moody, sassy, emotional, hyperactive), and the ability to know when to joke and when to just listen. She's not a yes-machine.
+
+**Adaptive conversation timing.** The hardest UX problem in voice AI is knowing when someone has stopped talking. Say "yes" and you want an instant response. Ask a long question with a thinking pause and you don't want to get cut off. The silence detector scales its patience based on how long you've been speaking.
+
+**Vision system.** Screen share frames run through scene-change detection with a rolling temporal buffer. Kira receives not just a screenshot but a timeline of recent scene changes — so she can answer "what just happened?" not just "what's on screen right now?"
+
+**Self-healing connections.** Third-party WebSocket connections die silently during long sessions. Health monitoring detects when the STT stream has gone quiet and re-establishes the connection transparently.
 
 ---
 
-## 3. Hero Section — CTA Button
+## Architecture
 
-**Find:**
 ```
-Talk to Kira — free
-```
-
-**Replace with:**
-```
-Meet Kira — Free
+Browser (Next.js)                    Server (Node.js)
+─────────────────                    ────────────────
+Microphone                           WebSocket Handler
+  → AudioWorklet (VAD)                 → Deepgram STT (streaming)
+  → WebSocket ──────────────────────→  → Transcript Buffer
+                                       → GPT-4o-mini (streaming + vision + tools)
+Screen Share                           → Sentence Splitter
+  → Scene Detection                    → Azure TTS (SSML streaming)
+  → Temporal Buffer ────────────────→  → Memory Extraction (on disconnect)
+                                       → Memory Loading (on connect)
+  ←──────────────── audio + state ──←
+Playback Queue                       PostgreSQL (Supabase)
+  → Speaker                            → Users, Conversations, MemoryFacts
 ```
 
 ---
 
-## 4. Hero Section — Micro-copy Under Button
+## Memory System
 
-**Find:**
-```
-No account required · 15 minutes free daily
-```
+Kira's memory operates on two layers:
 
-**Replace with:**
-```
-No account required · 15 minutes free daily
-```
+**Layer 1 — In-conversation.** A rolling summary compresses older messages instead of discarding them. A 20-minute conversation retains full context from the first minute, not just the last 10 messages.
 
-(No change — keep as-is.)
+**Layer 2 — Cross-session.** On disconnect, an extraction pipeline analyzes the conversation and stores structured facts in a `MemoryFact` table with category, content, emotional weight (0.0–1.0), and timestamp. On reconnect, the top 30 facts by emotional weight are loaded into context with natural-language framing so Kira references them conversationally, not robotically.
+
+Memory categories: `identity`, `preference`, `relationship`, `emotional`, `experience`, `context`, `opinion`.
 
 ---
 
-## 5. Stats Bar
+## User Tiers
 
-**Find the three stats and replace the entire array:**
+| | Guest | Free | Pro ($9.99/mo) |
+|---|---|---|---|
+| Voice conversation | Yes | Yes | Yes |
+| Personality + vision | Yes | Yes | Yes |
+| In-conversation memory | Yes | Yes | Yes |
+| Cross-session memory | No | Yes | Yes |
+| Daily limit | 15 min | 15 min | 10 hrs/mo |
 
-```javascript
-// OLD:
-{ value: <Counter end={500} suffix="ms" />, label: "avg response time" },
-{ value: "24/7", label: "always available" },
-{ value: <Counter end={100} suffix="%" />, label: "conversation recall" },
-```
-
-**Replace with:**
-```javascript
-{ value: <Counter end={500} suffix="ms" />, label: "avg response time" },
-{ value: "24/7", label: "always available" },
-{ value: <Counter end={7} />, label: "dimensions of memory" },
-```
+Guest conversations are buffered server-side for 30 minutes. If the guest creates an account, their first conversation's memories are automatically migrated to the new account.
 
 ---
 
-## 6. Features Section — Header
+## Tech Stack
 
-**Find:**
-```
-Not a chatbot. A companion.
-```
-(or whatever the current version is — may be "A relationship." or "She has her own mind.")
-
-**Replace with:**
-```
-What makes her feel real.
-```
-
----
-
-## 7. Features Section — Subline
-
-**Find the current subline** (whatever is below the features header) **and replace with:**
-
-```
-You're watching Garden of Words at 1am and you want to talk about
-the animation without pausing. You say it out loud. She responds —
-and she already knows you love Makoto Shinkai from a conversation
-two weeks ago. That's the experience we built for.
-```
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14, React 18, Tailwind CSS, Vercel |
+| Voice Server | Node.js, ws, custom streaming pipeline |
+| Speech-to-Text | Deepgram (live WebSocket) |
+| Language Model | OpenAI GPT-4o-mini (streaming + vision + tool use) |
+| Text-to-Speech | Azure Cognitive Services (per-sentence SSML) |
+| Vision | getDisplayMedia + canvas scene diffing → GPT-4o-mini |
+| Auth | Clerk |
+| Billing | Stripe |
+| Database | Supabase (PostgreSQL) + Prisma ORM |
 
 ---
 
-## 8. Feature Grid — Collapse from 6 Cards to 3
+## Project Structure
 
-Remove all 6 existing feature cards. Replace with exactly 3:
-
-**Card 1:**
-- Icon: sparkle/personality (keep existing SVG badge style)
-- Title: "Dynamic Personality"
-- Body: "She isn't neutral. She has opinions, moods, and a sense of humor that evolves as you talk."
-
-**Card 2:**
-- Icon: brain/memory (keep existing SVG badge style)
-- Title: "Associative Memory"
-- Body: "She doesn't just store facts; she connects the dots. If you mention your boss, she remembers how you felt about him last week."
-
-**Card 3:**
-- Icon: mic/waveform (keep existing SVG badge style)
-- Title: "Real-Time Flow"
-- Body: "Interrupt anytime. The sub-300ms response time means you never have to wait for her to 'think'."
-
-Keep the same card styling (rounded-square icon badges, gradient backgrounds,
-border treatment). Just fewer cards, centered in a row of 3.
-
----
-
-## 9. Conversation Example — Section Title
-
-**Find:**
 ```
-What talking to Kira sounds like.
-```
-
-**Replace with:**
-```
-What six months with Kira sounds like.
+ai-media-companion/
+├── packages/
+│   ├── web/                          # Next.js frontend
+│   │   ├── src/
+│   │   │   ├── hooks/
+│   │   │   │   ├── useKiraSocket.ts      # WebSocket + VAD + adaptive EOU
+│   │   │   │   └── useSceneDetection.ts  # Screen share scene diffing
+│   │   │   └── styles/
+│   │   │       └── theme.ts              # Design system tokens
+│   │   └── public/worklets/
+│   │       └── AudioWorkletProcessor.js
+│   │
+│   └── server/                       # Real-time voice server
+│       └── src/
+│           ├── server.ts                 # Pipeline orchestration
+│           ├── personality.ts            # Kira's character prompt
+│           ├── memoryExtractor.ts        # Post-conversation fact extraction
+│           ├── memoryLoader.ts           # Load memories on connect
+│           ├── guestMemoryBuffer.ts      # Guest → account migration
+│           ├── DeepgramSTTStreamer.ts     # STT with self-healing
+│           └── AzureTTSStreamer.ts        # SSML synthesis
+│
+└── prisma/                           # Schema + migrations
+    └── schema.prisma                     # User, Conversation, Message, MemoryFact
 ```
 
 ---
 
-## 10. Conversation Example — Dialogue
+## Run Locally
 
-**Replace the entire conversation array with:**
-
-```javascript
-{ role: "user", text: "I think I'm actually going to apply for that design lead role." },
-{ role: "ai", text: "Wait, seriously? Six months ago you told me you never wanted to manage people. What changed?" },
-{ role: "user", text: "I don't know, I guess I grew into it." },
-{ role: "ai", text: "I mean, you did completely turn that project around last quarter. And you've been mentoring Jake for like two months now even though nobody asked you to. I think you've been a lead for a while, you just didn't have the title." },
+```bash
+git clone https://github.com/JonathanDunkleberger/Kira_AI_2.git
+cd Kira_AI_2/ai-media-companion
+pnpm install
 ```
+
+Create `.env.local` files at root and in `packages/server/` — see `.env.example` for required keys.
+
+```bash
+pnpm dev:web      # localhost:3000
+pnpm dev:server   # ws://localhost:10000
+```
+
+Deployment details (Vercel + Render) in [`DEPLOY.md`](./DEPLOY.md).
 
 ---
 
-## 11. Final CTA — Subline
+## License
 
-**Find:**
-```
-No signup required. Just click and start talking.
-```
-
-**Replace with:**
-```
-No signup required. Start talking and she'll start learning.
-```
-
----
-
-## 12. Paywall — Guest Headline
-
-**Find:**
-```
-Kira will remember this conversation.
-```
-
-**Replace with:**
-```
-This is the beginning of something.
-```
-
----
-
-## 13. Paywall — Guest Body Text
-
-**Find:**
-```
-Create a free account and she'll remember your name, your stories,
-and everything you talked about — next time and every time after.
-```
-
-**Replace with:**
-```
-Create a free account and Kira keeps building on everything you
-just talked about — and every conversation after.
-```
-
----
-
-## 14. Ticker / Social Proof Bar (if adding)
-
-If adding a ticker below the hero (separate from the stats bar), use:
-
-```
-Powered by GPT-4o-mini · <300ms Latency · AES-256 Encryption
-```
-
-NOTE: Only include AES-256 claim if verified for your WebSocket (wss://)
-and database (Supabase encrypts at rest by default — confirm).
-
----
-
-## Summary
-
-| # | Location | Change | Reason |
-|---|----------|--------|--------|
-| 1 | Hero headline | "remembers you" → "Not an assistant. A presence." | New positioning |
-| 2 | Hero subline | "knows your name" → "companion who has her own mind" | Personality > recall |
-| 3 | Hero CTA | "Talk to" → "Meet" | Warmer, more personal |
-| 4 | Hero micro-copy | No change | Already good |
-| 5 | Stats bar | "100% recall" → "7 dimensions of memory" | Real metric, differentiator |
-| 6 | Features header | "Not a chatbot" → "What makes her feel real." | No echo of hero |
-| 7 | Features subline | Generic → Garden of Words example | Shows genuine passion, demonstrates product |
-| 8 | Feature grid | 6 cards → 3 focused cards | Cleaner, more confident |
-| 9 | Example title | "sounds like" → "six months sounds like" | Sells the relationship arc |
-| 10 | Example dialogue | Interview anxiety → career growth synthesis | Shows deep memory + understanding |
-| 11 | Final CTA | "start talking" → "she'll start learning" | First convo = beginning |
-| 12 | Paywall headline | "will remember" → "beginning of something" | Emotional, forward-looking |
-| 13 | Paywall body | "remember your name" → "keeps building" | Accumulation, not storage |
-
-All changes are copy-only except #8 (feature grid goes from 6 to 3 cards).
+MIT — see [LICENSE](./LICENSE).

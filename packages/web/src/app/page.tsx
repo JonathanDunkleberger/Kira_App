@@ -610,7 +610,7 @@ export default function HomePage() {
                 marginBottom: 12,
               }}
             >
-              She has her own mind.
+              What makes her feel real.
             </h2>
             <p
               style={{
@@ -622,7 +622,7 @@ export default function HomePage() {
                 margin: "0 auto 64px",
               }}
             >
-              Kira isn&apos;t performing helpfulness. She&apos;s opinionated, emotionally aware, and she builds a real understanding of who you are over time.
+              You&apos;re watching Garden of Words at 1am and you want to talk about the animation without pausing. You say it out loud. She responds — and she already knows you love Makoto Shinkai from a conversation two weeks ago. That&apos;s the experience we built for.
             </p>
 
             <div
@@ -663,35 +663,6 @@ export default function HomePage() {
                   ),
                   title: "Real-Time Flow",
                   desc: "Interrupt anytime. The sub-300ms response time means you never have to wait for her to 'think'.",
-                },
-                {
-                  icon: (
-                    <>
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                    </>
-                  ),
-                  title: "Text when you can't talk",
-                  desc: "On the train? 2am and your roommate's sleeping? Switch to text seamlessly mid-conversation.",
-                },
-                {
-                  icon: (
-                    <>
-                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
-                      <path d="M19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
-                    </>
-                  ),
-                  title: "Real personality",
-                  desc: "Deadpan humor. Strong opinions. Knows when to tease and when to listen. Not a yes-machine.",
-                },
-                {
-                  icon: (
-                    <>
-                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                      <path d="M9 12l2 2 4-4" />
-                    </>
-                  ),
-                  title: "Private by default",
-                  desc: "Your conversations stay yours. No training on your data. Delete your account and everything goes with it.",
                 },
               ].map((feature, i) => (
                 <div

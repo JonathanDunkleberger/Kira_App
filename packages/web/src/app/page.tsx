@@ -502,7 +502,7 @@ export default function HomePage() {
               e.currentTarget.style.transform = "translateY(0)";
             }}
           >
-            Meet Kira{!isSignedIn ? " — Free" : ""}
+            {isSignedIn ? "Talk to Kira" : "Meet Kira — Free"}
           </Link>
           {!isSignedIn && (
             <span style={{ fontSize: 12, color: "rgba(201,209,217,0.3)", fontWeight: 300 }}>

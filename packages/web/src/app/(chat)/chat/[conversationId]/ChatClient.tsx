@@ -2,7 +2,7 @@
 
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useEffect, useRef, useState } from "react";
-import { useKiraSocket, KiraState } from "@/hooks/useKiraSocket";
+import { useKiraSocket } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock } from "lucide-react";
@@ -375,10 +375,18 @@ export default function ChatClient() {
       <div className="flex-grow flex flex-col items-center justify-center w-full max-w-4xl mx-auto" style={{ paddingBottom: 100 }}>
         {/* Orb */}
         <KiraOrb
-          kiraState={kiraState}
+          state={
+            kiraState === "speaking"
+              ? "kiraSpeaking"
+              : kiraState === "thinking"
+                ? "thinking"
+                : micVolume > 0.02
+                  ? "userSpeaking"
+                  : "idle"
+          }
           micVolume={micVolume}
-          speakerVolume={playerVolume}
-          size={300}
+          size="lg"
+          showLabel
         />
 
         {/* Transcript — single line, styled by role */}

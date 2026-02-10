@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { KiraState } from "@/hooks/useKiraSocket";
 
 // ─── Orb color palette (matches KIRA_THEME accent family) ────────────────────
 const ORB_COLOR_LIGHT = "#A3B8D8"; // lighter tint
@@ -9,43 +8,42 @@ const ORB_COLOR_BASE = "#6B7DB3";  // primary accent
 const ORB_COLOR_DARK = "#4A5A8A";  // darker shade
 const ORB_RGB = "107,125,179";     // base as RGB for rgba()
 
-interface KiraOrbProps {
-  kiraState: KiraState;
-  micVolume: number;      // 0-1  (from useKiraSocket)
-  speakerVolume: number;  // 0-1  (playerVolume from useKiraSocket)
-  /** CSS px – defaults to 300 (container). Orb = 200px desktop, 150px mobile. */
-  size?: number;
+// ─── Size presets ────────────────────────────────────────────────────────────
+const SIZES = {
+  sm:  { orb: 120, ring: 156, glow: 132, highlight: 108, container: 180 },
+  md:  { orb: 150, ring: 195, glow: 165, highlight: 135, container: 225 },
+  lg:  { orb: 200, ring: 260, glow: 220, highlight: 180, container: 300 },
+} as const;
+
+export type OrbSize = keyof typeof SIZES;
+
+export interface KiraOrbProps {
+  /** Visual state — defaults to "idle" (gentle breathing). */
+  state?: "idle" | "userSpeaking" | "kiraSpeaking" | "thinking";
+  /** Mic volume 0-1, only used when state is "userSpeaking". */
+  micVolume?: number;
+  /** Size preset — sm (mobile), md (landing / hero), lg (chat page desktop). */
+  size?: OrbSize;
+  /** Whether to show the state-indicator label below the orb. */
+  showLabel?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function KiraOrb({
-  kiraState,
-  micVolume,
-  // speakerVolume is not used — Kira-speaking state uses sonar rings instead
+  state = "idle",
+  micVolume = 0,
+  size = "lg",
+  showLabel = false,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
   const [rings, setRings] = useState<number[]>([]);
-  const [isMobile, setIsMobile] = useState(false);
 
-  // ─── Responsive sizing ──────────────────────────────────────────────
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 640px)");
-    setIsMobile(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
+  const { orb: orbSize, ring: outerRingSize, glow: glowSize, highlight: highlightSize, container: containerSize } = SIZES[size];
 
-  const orbSize = isMobile ? 150 : 200;
-  const outerRingSize = isMobile ? 195 : 260;
-  const glowSize = isMobile ? 165 : 220;
-  const highlightSize = isMobile ? 135 : 180;
-  const containerSize = isMobile ? 225 : 300;
-
-  const isKiraSpeaking = kiraState === "speaking";
-  const isUserSpeaking = kiraState === "listening" && micVolume > 0.02;
-  const isIdle = kiraState === "listening" && micVolume <= 0.02;
-  const isThinking = kiraState === "thinking";
+  const isKiraSpeaking = state === "kiraSpeaking";
+  const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
+  const isIdle = state === "idle" || (state === "userSpeaking" && micVolume <= 0.02);
+  const isThinking = state === "thinking";
 
   // ─── User-speaking: drive orb scale from micVolume via ref ───────────
   useEffect(() => {
@@ -89,7 +87,6 @@ export default function KiraOrb({
 
   return (
     <div className="relative flex flex-col items-center">
-      {/* Sizing container — keeps layout consistent with old 300px canvas */}
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
@@ -139,7 +136,6 @@ export default function KiraOrb({
             boxShadow: `0 4px 30px rgba(${ORB_RGB}, 0.25)`,
             animation: "kira-breathe 4s ease-in-out infinite",
             willChange: "transform",
-            // Thinking state: slightly dimmer
             filter: isThinking ? "brightness(0.85) saturate(0.9)" : "brightness(1)",
             transition: "filter 0.5s ease",
           }}
@@ -157,20 +153,22 @@ export default function KiraOrb({
         />
       </div>
 
-      {/* State indicator */}
-      <div
-        className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
-        style={{
-          color: "rgba(139,157,195,0.35)",
-          height: 16,
-        }}
-      >
-        {kiraState === "listening"
-          ? "Listening..."
-          : kiraState === "thinking"
-            ? "Thinking..."
-            : ""}
-      </div>
+      {/* State indicator — only shown when showLabel is true */}
+      {showLabel && (
+        <div
+          className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"
+          style={{
+            color: "rgba(139,157,195,0.35)",
+            height: 16,
+          }}
+        >
+          {state === "idle" || state === "userSpeaking"
+            ? "Listening..."
+            : state === "thinking"
+              ? "Thinking..."
+              : ""}
+        </div>
+      )}
     </div>
   );
 }

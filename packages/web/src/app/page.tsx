@@ -8,93 +8,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProfileModal from "@/components/ProfileModal";
 import { KiraLogo } from "@/components/KiraLogo";
-
-/* ─── Mini Orb (simplified canvas for hero) ─── */
-function MiniOrb({ size = 180 }: { size?: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>(0);
-  const timeRef = useRef(0);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    ctx.scale(dpr, dpr);
-    const cx = size / 2,
-      cy = size / 2,
-      baseRadius = size * 0.32;
-    const cc = [
-      [74, 90, 138],
-      [107, 125, 179],
-      [139, 157, 195],
-      [90, 106, 154],
-    ];
-
-    const render = () => {
-      timeRef.current += 0.016;
-      const t = timeRef.current;
-      const breathe = 0.98 + Math.sin(t * 1.2) * 0.02;
-      const radius = baseRadius * breathe;
-      ctx.clearRect(0, 0, size, size);
-
-      const glow = ctx.createRadialGradient(cx, cy, radius * 0.7, cx, cy, radius * 2);
-      glow.addColorStop(0, "rgba(107,125,179,0.06)");
-      glow.addColorStop(1, "transparent");
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, size, size);
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.clip();
-
-      const base = ctx.createRadialGradient(cx - radius * 0.15, cy - radius * 0.15, 0, cx, cy, radius);
-      base.addColorStop(0, `rgb(${cc[0].join(",")})`);
-      base.addColorStop(1, `rgb(${cc[3].join(",")})`);
-      ctx.fillStyle = base;
-      ctx.fillRect(0, 0, size, size);
-
-      const spots = [
-        { phase: 0, speed: 0.06, oR: 20, sz: 50, ci: 1, ym: 0.7 },
-        { phase: 2.4, speed: 0.04, oR: 25, sz: 45, ci: 2, ym: 0.9 },
-        { phase: 4.8, speed: 0.07, oR: 15, sz: 55, ci: 1, ym: 0.6 },
-      ];
-      for (const s of spots) {
-        const sp = s.phase + t * s.speed;
-        const sx = cx + Math.cos(sp) * s.oR;
-        const sy = cy + Math.sin(sp * s.ym) * s.oR;
-        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, s.sz);
-        const sc = cc[s.ci];
-        sg.addColorStop(0, `rgba(${sc[0]},${sc[1]},${sc[2]},0.4)`);
-        sg.addColorStop(0.5, `rgba(${sc[0]},${sc[1]},${sc[2]},0.1)`);
-        sg.addColorStop(1, "transparent");
-        ctx.globalCompositeOperation = "screen";
-        ctx.fillStyle = sg;
-        ctx.fillRect(0, 0, size, size);
-      }
-
-      ctx.globalCompositeOperation = "screen";
-      const hl = ctx.createRadialGradient(
-        cx - radius * 0.25, cy - radius * 0.3, 0,
-        cx - radius * 0.25, cy - radius * 0.3, radius * 0.5
-      );
-      hl.addColorStop(0, "rgba(255,255,255,0.04)");
-      hl.addColorStop(1, "transparent");
-      ctx.fillStyle = hl;
-      ctx.fillRect(0, 0, size, size);
-      ctx.restore();
-
-      animRef.current = requestAnimationFrame(render);
-    };
-    render();
-    return () => cancelAnimationFrame(animRef.current);
-  }, [size]);
-
-  return <canvas ref={canvasRef} style={{ width: size, height: size }} />;
-}
+import KiraOrb from "@/components/KiraOrb";
 
 /* ─── Animated Counter ─── */
 function Counter({ end, suffix = "", duration = 2000 }: { end: number; suffix?: string; duration?: number }) {
@@ -410,7 +324,7 @@ export default function HomePage() {
         />
 
         <div style={{ position: "relative", marginBottom: 40 }}>
-          <MiniOrb size={180} />
+          <KiraOrb size="md" />
         </div>
 
         {isSignedIn ? (

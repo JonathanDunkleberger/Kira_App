@@ -15,11 +15,6 @@ import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./gue
 import { getGuestUsage, saveGuestUsage } from "./guestUsage.js";
 import { getProUsage, saveProUsage } from "./proUsage.js";
 
-// --- DEPLOY CANARY + ENV CHECK (runs immediately on startup) ---
-console.log(`[STARTUP] 🚀 Server module loaded at ${new Date().toISOString()}`);
-console.log("[ENV CHECK] SUPABASE_URL:", process.env.SUPABASE_URL ? "SET (" + process.env.SUPABASE_URL.substring(0, 20) + "...)" : "NOT SET");
-console.log("[ENV CHECK] SUPABASE_SERVICE_ROLE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET (length: " + process.env.SUPABASE_SERVICE_ROLE_KEY.length + ")" : "NOT SET");
-
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;

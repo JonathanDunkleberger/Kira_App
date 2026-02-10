@@ -7,7 +7,7 @@ function getSupabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    console.error("[GuestUsage] ❌ No Supabase client — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set");
+    console.error("[GuestUsage] ❌ SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set");
     return null;
   }
   _supabase = createClient(url, key);
@@ -18,22 +18,18 @@ function getSupabase(): SupabaseClient | null {
 async function testSupabaseConnection() {
   try {
     const supabase = getSupabase();
-    if (!supabase) {
-      console.error("[GuestUsage] ❌ No Supabase client — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set");
-      return;
-    }
-    const { data, error } = await supabase.from("guest_usage").select("guest_id").limit(1);
+    if (!supabase) return;
+    const { error } = await supabase.from("guest_usage").select("guest_id").limit(1);
     if (error) {
-      console.error("[GuestUsage] ❌ Supabase connection FAILED:", error.message, error);
+      console.error("[GuestUsage] ❌ Supabase connection FAILED:", error.message);
     } else {
-      console.log("[GuestUsage] ✅ Supabase connection OK, guest_usage table accessible");
+      console.log("[GuestUsage] ✅ Supabase connection OK");
     }
   } catch (err) {
     console.error("[GuestUsage] ❌ Supabase test exception:", err);
   }
 }
 
-// Run on module load
 testSupabaseConnection();
 
 function getToday(): string {
@@ -45,7 +41,7 @@ function getToday(): string {
  */
 export async function getGuestUsage(guestId: string): Promise<number> {
   const supabase = getSupabase();
-  if (!supabase) return 0; // DB not configured — fail open
+  if (!supabase) return 0;
   const today = getToday();
   try {
     const { data, error } = await supabase
@@ -53,8 +49,6 @@ export async function getGuestUsage(guestId: string): Promise<number> {
       .select("seconds, date")
       .eq("guest_id", guestId)
       .single();
-
-    console.log(`[GuestUsage] READ for ${guestId}: data=${JSON.stringify(data)}, error=${error?.message || "none"}`);
 
     if (error || !data) return 0;
     if (data.date !== today) return 0;
@@ -70,7 +64,7 @@ export async function getGuestUsage(guestId: string): Promise<number> {
  */
 export async function saveGuestUsage(guestId: string, seconds: number): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return; // DB not configured — silently skip
+  if (!supabase) return;
   const today = getToday();
   try {
     const { data: existing, error: readErr } = await supabase
@@ -79,15 +73,13 @@ export async function saveGuestUsage(guestId: string, seconds: number): Promise<
       .eq("guest_id", guestId)
       .single();
 
-    console.log(`[GuestUsage] WRITE lookup for ${guestId}: existing=${JSON.stringify(existing)}, error=${readErr?.message || "none"}`);
-
-    if (!existing) {
+    if (!existing || readErr) {
       const { error: insertErr } = await supabase.from("guest_usage").insert({
         guest_id: guestId,
         seconds,
         date: today,
       });
-      console.log(`[GuestUsage] INSERT for ${guestId}: seconds=${seconds}, date=${today}, error=${insertErr?.message || "none"}`);
+      if (insertErr) console.error("[GuestUsage] ❌ Insert failed for", guestId, ":", insertErr.message);
       return;
     }
 
@@ -96,7 +88,7 @@ export async function saveGuestUsage(guestId: string, seconds: number): Promise<
         .from("guest_usage")
         .update({ seconds, date: today, updated_at: new Date().toISOString() })
         .eq("guest_id", guestId);
-      console.log(`[GuestUsage] UPDATE (new day) for ${guestId}: seconds=${seconds}, date=${today}, error=${updateErr?.message || "none"}`);
+      if (updateErr) console.error("[GuestUsage] ❌ Update (new day) failed for", guestId, ":", updateErr.message);
       return;
     }
 
@@ -106,7 +98,7 @@ export async function saveGuestUsage(guestId: string, seconds: number): Promise<
         .from("guest_usage")
         .update({ seconds, updated_at: new Date().toISOString() })
         .eq("guest_id", guestId);
-      console.log(`[GuestUsage] UPDATE for ${guestId}: seconds=${seconds}, error=${updateErr?.message || "none"}`);
+      if (updateErr) console.error("[GuestUsage] ❌ Update failed for", guestId, ":", updateErr.message);
     }
   } catch (err) {
     console.error("[GuestUsage] ❌ Write exception for", guestId, ":", err);

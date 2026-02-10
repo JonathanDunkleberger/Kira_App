@@ -13,6 +13,7 @@ import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
 import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./guestMemoryBuffer.js";
 import { getGuestUsage, saveGuestUsage } from "./guestUsage.js";
+import { getProUsage, saveProUsage } from "./proUsage.js";
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
@@ -363,12 +364,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- USAGE TRACKING ---
   const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
-  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "36000"); // 10 hrs/month
+  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "360000"); // 100 hrs/month
   let sessionStartTime: number | null = null;
   let usageCheckInterval: NodeJS.Timeout | null = null;
   let isProUser = false;
   let guestUsageSeconds = 0;
   let guestUsageBase = 0; // Accumulated seconds from previous sessions today
+  let proUsageSeconds = 0;
+  let proUsageBase = 0; // Accumulated seconds from previous sessions this month
   let wasBlockedImmediately = false; // True if connection was blocked on connect (limit already hit)
 
   // --- Reusable Deepgram initialization ---
@@ -518,54 +521,50 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   dbUser.stripeCurrentPeriodEnd.getTime() > Date.now()
                 );
 
-                // Reset counter based on tier:
-                // - Free: resets daily (15 min/day)
-                // - Pro:  resets each billing period (10 hrs/month)
-                let currentUsage = dbUser.dailyUsageSeconds;
-                let shouldReset = false;
+                if (isProUser) {
+                  // Pro users: monthly usage tracked in Supabase (resets per calendar month)
+                  const storedSeconds = await getProUsage(userId);
+                  if (storedSeconds >= PRO_LIMIT_SECONDS) {
+                    console.log(`[USAGE] Pro user ${userId} blocked — ${storedSeconds}s >= ${PRO_LIMIT_SECONDS}s`);
+                    wasBlockedImmediately = true;
+                    ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
+                    ws.close(1008, "Pro usage limit reached");
+                    return;
+                  }
+                  proUsageSeconds = storedSeconds;
+                  proUsageBase = storedSeconds;
+                  console.log(`[USAGE] Pro user ${userId} allowed — resuming at ${storedSeconds}s / ${PRO_LIMIT_SECONDS}s`);
 
-                if (isProUser && dbUser.stripeCurrentPeriodEnd) {
-                  // Pro resets when a new billing period starts.
-                  // Billing period start ≈ periodEnd minus ~30 days.
-                  // If lastUsageDate is before the current period started,
-                  // the counter belongs to a previous cycle.
-                  const periodEnd = dbUser.stripeCurrentPeriodEnd.getTime();
-                  const approxPeriodStart = periodEnd - 30 * 24 * 60 * 60 * 1000;
-                  const lastUsageMs = dbUser.lastUsageDate?.getTime() || 0;
-                  shouldReset = lastUsageMs < approxPeriodStart;
+                  ws.send(JSON.stringify({
+                    type: "session_config",
+                    isPro: true,
+                    remainingSeconds: PRO_LIMIT_SECONDS - storedSeconds,
+                  }));
                 } else {
-                  // Free users reset daily
+                  // Free signed-in users: daily usage tracked in Prisma
+                  let currentUsage = dbUser.dailyUsageSeconds;
                   const today = new Date().toDateString();
                   const lastUsage = dbUser.lastUsageDate?.toDateString();
-                  shouldReset = today !== lastUsage;
-                }
+                  if (today !== lastUsage) {
+                    currentUsage = 0;
+                    await prisma.user.update({
+                      where: { clerkId: userId },
+                      data: { dailyUsageSeconds: 0, lastUsageDate: new Date() },
+                    });
+                  }
 
-                if (shouldReset) {
-                  currentUsage = 0;
-                  await prisma.user.update({
-                    where: { clerkId: userId },
-                    data: { dailyUsageSeconds: 0, lastUsageDate: new Date() },
-                  });
-                }
+                  if (currentUsage >= FREE_LIMIT_SECONDS) {
+                    ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+                    ws.close(1008, "Usage limit reached");
+                    return;
+                  }
 
-                const limit = isProUser
-                  ? PRO_LIMIT_SECONDS
-                  : FREE_LIMIT_SECONDS;
-                if (currentUsage >= limit) {
-                  ws.send(
-                    JSON.stringify({ type: "error", code: "limit_reached" })
-                  );
-                  ws.close(1008, "Usage limit reached");
-                  return;
-                }
-
-                ws.send(
-                  JSON.stringify({
+                  ws.send(JSON.stringify({
                     type: "session_config",
-                    isPro: isProUser,
-                    remainingSeconds: limit - currentUsage,
-                  })
-                );
+                    isPro: false,
+                    remainingSeconds: FREE_LIMIT_SECONDS - currentUsage,
+                  }));
+                }
               }
             } catch (err) {
               console.error(
@@ -626,34 +625,39 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 return;
               }
             } else if (userId) {
-              try {
-                await prisma.user.update({
-                  where: { clerkId: userId },
-                  data: {
-                    dailyUsageSeconds: { increment: 30 },
-                    lastUsageDate: new Date(),
-                  },
-                });
+              if (isProUser) {
+                // Pro users: monthly usage tracked in Supabase
+                proUsageSeconds = proUsageBase + elapsed;
+                await saveProUsage(userId, proUsageSeconds);
+                console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_LIMIT_SECONDS}s`);
 
-                const dbUser = await prisma.user.findUnique({
-                  where: { clerkId: userId },
-                  select: { dailyUsageSeconds: true },
-                });
-
-                const limit = isProUser
-                  ? PRO_LIMIT_SECONDS
-                  : FREE_LIMIT_SECONDS;
-                if (dbUser && dbUser.dailyUsageSeconds >= limit) {
-                  ws.send(
-                    JSON.stringify({ type: "error", code: "limit_reached" })
-                  );
-                  ws.close(1008, "Usage limit reached");
+                if (proUsageSeconds >= PRO_LIMIT_SECONDS) {
+                  ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
+                  ws.close(1008, "Pro usage limit reached");
                 }
-              } catch (err) {
-                console.error(
-                  "[Usage] DB update failed:",
-                  (err as Error).message
-                );
+              } else {
+                // Free signed-in users: daily usage tracked in Prisma
+                try {
+                  await prisma.user.update({
+                    where: { clerkId: userId },
+                    data: {
+                      dailyUsageSeconds: { increment: 30 },
+                      lastUsageDate: new Date(),
+                    },
+                  });
+
+                  const dbUser = await prisma.user.findUnique({
+                    where: { clerkId: userId },
+                    select: { dailyUsageSeconds: true },
+                  });
+
+                  if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS) {
+                    ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+                    ws.close(1008, "Usage limit reached");
+                  }
+                } catch (err) {
+                  console.error("[Usage] DB update failed:", (err as Error).message);
+                }
               }
             }
           }, 30000);
@@ -1199,23 +1203,34 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
         // saveGuestUsage has the "never decrease" guard built in
         await saveGuestUsage(userId, finalTotal);
-        console.log(`[USAGE] Flushed ${userId}: ${finalTotal}s`);
+        console.log(`[USAGE] Flushed guest ${userId}: ${finalTotal}s`);
       }
     } else if (!isGuest && userId && sessionStartTime) {
-      const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      const alreadyCounted = Math.floor(finalElapsed / 30) * 30; // What intervals already counted
-      const remainder = finalElapsed - alreadyCounted;
-      if (remainder > 0) {
-        try {
-          await prisma.user.update({
-            where: { clerkId: userId },
-            data: {
-              dailyUsageSeconds: { increment: remainder },
-              lastUsageDate: new Date(),
-            },
-          });
-        } catch (err) {
-          console.error("[Usage] Final flush failed:", (err as Error).message);
+      if (wasBlockedImmediately) {
+        console.log(`[USAGE] Skipping flush — connection was blocked on connect`);
+      } else if (isProUser) {
+        // Pro users: flush to Supabase
+        const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const finalTotal = proUsageBase + finalElapsed;
+        await saveProUsage(userId, finalTotal);
+        console.log(`[USAGE] Flushed Pro ${userId}: ${finalTotal}s`);
+      } else {
+        // Free signed-in users: flush remainder to Prisma
+        const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const alreadyCounted = Math.floor(finalElapsed / 30) * 30;
+        const remainder = finalElapsed - alreadyCounted;
+        if (remainder > 0) {
+          try {
+            await prisma.user.update({
+              where: { clerkId: userId },
+              data: {
+                dailyUsageSeconds: { increment: remainder },
+                lastUsageDate: new Date(),
+              },
+            });
+          } catch (err) {
+            console.error("[Usage] Final flush failed:", (err as Error).message);
+          }
         }
       }
     }

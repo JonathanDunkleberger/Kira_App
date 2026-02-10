@@ -562,7 +562,7 @@ export default function ChatClient() {
         </div>
       )}
 
-      {/* Limit Reached — Paywall Overlay */}
+      {/* Limit Reached — Paywall Overlay (Free users & Guests) */}
       {error === "limit_reached" && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
@@ -677,7 +677,7 @@ export default function ChatClient() {
                   lineHeight: 1.7,
                   marginBottom: 32,
                 }}>
-                  Upgrade to Pro for 10 hours of conversation time per month,
+                  Upgrade to Pro for unlimited conversations,
                   priority responses, and persistent memory across sessions.
                 </p>
                 <div className="flex flex-col w-full gap-3">
@@ -719,6 +719,94 @@ export default function ChatClient() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Pro Limit Reached — Warm Full-Screen Overlay (no upsell) */}
+      {error === "limit_reached_pro" && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{
+            background: "rgba(13,17,23,0.85)",
+            backdropFilter: "blur(20px)",
+            animation: "paywallFadeIn 0.6s ease both",
+          }}
+        >
+          <div style={{
+            background: "linear-gradient(135deg, rgba(20,25,35,0.95), rgba(13,17,23,0.98))",
+            border: "1px solid rgba(107,125,179,0.12)",
+            borderRadius: 20,
+            padding: "40px 32px",
+            maxWidth: 420,
+            width: "100%",
+            fontFamily: "'DM Sans', sans-serif",
+            textAlign: "center",
+            boxShadow: "0 0 80px rgba(107,125,179,0.06)",
+          }}>
+            <div style={{
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              background: "linear-gradient(135deg, rgba(107,125,179,0.15), rgba(107,125,179,0.05))",
+              border: "1px solid rgba(107,125,179,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 24px",
+            }}>
+              <Clock size={28} style={{ color: "rgba(139,157,195,0.7)" }} />
+            </div>
+
+            <h2 style={{
+              fontSize: 24,
+              fontFamily: "'Playfair Display', serif",
+              fontWeight: 400,
+              color: "#E2E8F0",
+              marginBottom: 10,
+              marginTop: 0,
+            }}>
+              You&apos;ve had quite the month
+            </h2>
+            <p style={{
+              fontSize: 15,
+              fontWeight: 300,
+              color: "rgba(201,209,217,0.5)",
+              lineHeight: 1.7,
+              marginBottom: 8,
+            }}>
+              You&apos;ve reached your monthly conversation limit.
+              Your conversations and memories are safe — Kira will be
+              ready to pick up right where you left off.
+            </p>
+            <p style={{
+              fontSize: 13,
+              fontWeight: 300,
+              color: "rgba(201,209,217,0.3)",
+              marginBottom: 32,
+            }}>
+              Resets on the 1st of next month
+            </p>
+            <Link
+              href="/"
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "14px 0",
+                borderRadius: 12,
+                border: "1px solid rgba(107,125,179,0.15)",
+                background: "rgba(107,125,179,0.08)",
+                color: "rgba(201,209,217,0.6)",
+                fontSize: 15,
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                fontFamily: "'DM Sans', sans-serif",
+                transition: "all 0.3s ease",
+              }}
+            >
+              Back to home
+            </Link>
           </div>
         </div>
       )}

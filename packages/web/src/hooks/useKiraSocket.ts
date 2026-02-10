@@ -791,8 +791,13 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
             break;
           case "error":
             if (msg.code === "limit_reached") {
-              console.warn("[WS] Daily limit reached.");
-              setError("limit_reached"); // Special error code for UI
+              if (msg.tier === "pro") {
+                console.warn("[WS] Pro monthly limit reached.");
+                setError("limit_reached_pro");
+              } else {
+                console.warn("[WS] Daily limit reached.");
+                setError("limit_reached");
+              }
             } else {
               console.error("[WS] Server error:", msg.message);
               setError(msg.message);
@@ -815,7 +820,8 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       setSocketState("closed");
       
       if (event.code === 1008) {
-        setError("limit_reached");
+        // Don't overwrite a more specific error (e.g. "limit_reached_pro")
+        setError((prev) => prev?.startsWith("limit_reached") ? prev : "limit_reached");
       }
 
       stopAudioPipeline();

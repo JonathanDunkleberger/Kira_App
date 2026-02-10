@@ -75,22 +75,26 @@ export default function TermsPage() {
             content: null,
             list: [
               { label: "Free Tier", text: "Limited to approximately 15 minutes of usage per day." },
-              { label: "Pro Subscription", text: "Costs $9.99/month. Grants approximately 4 hours of usage per day." },
+              { label: "Pro Subscription", text: "Costs $9.99/month. Grants unlimited conversations subject to our Fair Use Policy (see below)." },
               { label: "Cancellation", text: "You may cancel your subscription at any time via your Profile settings. Access remains through the end of the billing period. No refunds are issued for partial months." },
             ],
           },
           {
-            title: "4. User Conduct",
+            title: "4. Fair Use Policy",
+            content: "Pro subscriptions are marketed as \"unlimited\" and are intended for generous personal use. To ensure a quality experience for all users, Pro accounts are subject to a soft monthly cap of approximately 100 hours of conversation time per calendar month. If you reach this limit, access will resume on the 1st of the following month. This cap is well beyond what the vast majority of users will ever approach. We reserve the right to adjust fair-use thresholds as the service evolves.",
+          },
+          {
+            title: "5. User Conduct",
             content:
               "You agree not to use the AI to generate illegal, harmful, or abusive content. We reserve the right to terminate accounts that violate this policy without refund.",
           },
           {
-            title: "5. Disclaimer of Warranties",
+            title: "6. Disclaimer of Warranties",
             content:
               "This project is in active development. The AI may hallucinate, produce incorrect information, or experience downtime. We are not liable for any damages resulting from the use of this service.",
           },
           {
-            title: "6. Changes to Terms",
+            title: "7. Changes to Terms",
             content:
               "We reserve the right to modify these terms at any time. Continued use constitutes acceptance of the new terms.",
           },

@@ -854,7 +854,7 @@ export default function HomePage() {
                 margin: "0 auto 48px",
               }}
             >
-              Try Kira for free, every day. Upgrade when you want more time.
+              Try Kira for free, every day. Upgrade for unlimited conversations.
             </p>
 
             <div
@@ -1001,7 +1001,7 @@ export default function HomePage() {
                     gap: 10,
                   }}
                 >
-                  {["10 hours per month", "Everything in Free", "Priority response speed", "Extended memory depth"].map(
+                  {["Unlimited conversations", "Everything in Free", "Priority response speed", "Extended memory depth"].map(
                     (item, i) => (
                       <li
                         key={i}

@@ -92,7 +92,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
   const voicePreference = url.searchParams.get("voice") || "natural";
-  const useElevenLabs = voicePreference === "natural";
+  let useElevenLabs = voicePreference === "natural";
   console.log(`[Voice] Preference: "${voicePreference}", useElevenLabs: ${useElevenLabs}`);
 
   // --- KEEP-ALIVE HEARTBEAT ---
@@ -1043,6 +1043,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
           }
+        } else if (controlMessage.type === "voice_change") {
+          const newVoice = controlMessage.voice;
+          useElevenLabs = newVoice === "natural";
+          console.log(`[Voice] Switched mid-conversation to ${useElevenLabs ? "ElevenLabs" : "Azure"}`);
         } else if (controlMessage.type === "text_message") {
           // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
           if (state !== "listening") return;

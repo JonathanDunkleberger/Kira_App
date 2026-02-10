@@ -42,7 +42,8 @@ export default function ChatClient() {
     playerVolume, 
     transcript,
     sendText,
-    error, 
+    error,
+    sendVoiceChange,
     isAudioBlocked, 
     resumeAudio,
     isMuted,
@@ -329,6 +330,7 @@ export default function ChatClient() {
                 onClick={() => {
                   setVoicePref(v);
                   setVoicePreference(v);
+                  sendVoiceChange(v);
                 }}
                 style={{
                   padding: "4px 10px",

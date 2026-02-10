@@ -907,6 +907,13 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     }
   }, []);
 
+  const sendVoiceChange = useCallback((voice: string) => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: "voice_change", voice }));
+      console.log(`[WS] Sent voice_change: ${voice}`);
+    }
+  }, []);
+
   return {
     connect,
     disconnect,
@@ -917,6 +924,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     playerVolume,
     transcript,
     sendText,
+    sendVoiceChange,
     error,
     isAudioBlocked,
     resumeAudio,

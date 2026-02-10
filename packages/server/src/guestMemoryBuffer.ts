@@ -1,6 +1,7 @@
 /**
  * In-memory buffer for guest conversations.
- * When a guest disconnects, their conversation is buffered here for 30 minutes.
+ * When a guest disconnects, their conversation is buffered here for 24 hours.
+ * If they reconnect, recent history is loaded for continuity.
  * If they sign up within that window, the conversation is migrated to their new account.
  */
 
@@ -13,7 +14,7 @@ interface GuestConversationBuffer {
 // Simple in-memory map with TTL
 const guestBuffers = new Map<string, GuestConversationBuffer>();
 
-const BUFFER_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const BUFFER_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Clean up expired buffers every 5 minutes
 setInterval(() => {

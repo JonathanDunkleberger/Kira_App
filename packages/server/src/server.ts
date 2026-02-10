@@ -746,6 +746,30 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           sttStreamer = await initDeepgram();
           isAcceptingAudio = true;
+
+          // --- GUEST CONVERSATION CONTINUITY: Load previous session ---
+          if (isGuest && userId) {
+            const previousBuffer = getGuestBuffer(userId);
+            if (previousBuffer && previousBuffer.messages.length > 0) {
+              // Load the last 10 messages for context (don't overwhelm the context window)
+              const recentHistory = previousBuffer.messages.slice(-10);
+              // Add a summary marker so Kira knows this is prior context
+              chatHistory.push({
+                role: "system",
+                content: `[PREVIOUS SESSION CONTEXT] This guest has talked to you before. Here is a summary of your last conversation:\n${previousBuffer.summary || "(No summary available)"}`,
+              });
+              for (const msg of recentHistory) {
+                chatHistory.push({
+                  role: msg.role as "user" | "assistant",
+                  content: msg.content,
+                });
+              }
+              console.log(
+                `[Memory] Loaded ${recentHistory.length} messages from previous guest session for ${userId}`
+              );
+            }
+          }
+
           ws.send(JSON.stringify({ type: "stream_ready" }));
 
           // --- KIRA OPENER: She speaks first ---

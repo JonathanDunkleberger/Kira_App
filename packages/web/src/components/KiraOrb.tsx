@@ -1,229 +1,162 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KiraState } from "@/hooks/useKiraSocket";
 
-// ─── Orb color palette ───────────────────────────────────────────────────────
-const ORB_COLORS = ["#4A5A8A", "#6B7DB3", "#8B9DC3", "#5A6A9A"] as [string, string, string, string];
+// ─── Orb color palette (matches KIRA_THEME accent family) ────────────────────
+const ORB_COLOR_LIGHT = "#A3B8D8"; // lighter tint
+const ORB_COLOR_BASE = "#6B7DB3";  // primary accent
+const ORB_COLOR_DARK = "#4A5A8A";  // darker shade
+const ORB_RGB = "107,125,179";     // base as RGB for rgba()
 
 interface KiraOrbProps {
   kiraState: KiraState;
-  micVolume: number; // 0-1  (from useKiraSocket)
-  speakerVolume: number; // 0-1  (playerVolume from useKiraSocket)
-  /** CSS px – defaults to 300 */
+  micVolume: number;      // 0-1  (from useKiraSocket)
+  speakerVolume: number;  // 0-1  (playerVolume from useKiraSocket)
+  /** CSS px – defaults to 300 (container). Orb = 200px desktop, 150px mobile. */
   size?: number;
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-type RGB = [number, number, number];
-
-function hexToRgb(hex: string): RGB {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
-}
-
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function KiraOrb({
   kiraState,
   micVolume,
-  speakerVolume,
-  size = 300,
+  // speakerVolume is not used — Kira-speaking state uses sonar rings instead
 }: KiraOrbProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>(0);
-  const timeRef = useRef(0);
-  const volumeRef = useRef(0);
-  const stateRef = useRef<KiraState>("listening");
+  const orbRef = useRef<HTMLDivElement>(null);
+  const [rings, setRings] = useState<number[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // 4 colours, each as [r,g,b], smoothly interpolated every frame
-  const currentColorsRef = useRef<RGB[]>(
-    ORB_COLORS.map(hexToRgb)
-  );
-  const targetColorsRef = useRef<RGB[]>(
-    ORB_COLORS.map(hexToRgb)
-  );
-
-  // Keep refs in sync (synchronous — no React batching delay)
-  const micRef = useRef(micVolume);
-  micRef.current = micVolume;
-  const spkRef = useRef(speakerVolume);
-  spkRef.current = speakerVolume;
-  stateRef.current = kiraState;
-
-  // ─── Render loop (gradient-based, no pixel field) ───────────────────────
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    timeRef.current += 0.016;
-    const t = timeRef.current;
-
-    // Read live values from refs
-    const state = stateRef.current;
-    const mic = micRef.current;
-    const spk = spkRef.current;
-
-    // Smooth volume
-    let targetVol = 0;
-    if (state === "listening") targetVol = mic;
-    else if (state === "speaking") targetVol = spk;
-    else targetVol = 0; // thinking
-    volumeRef.current = lerp(volumeRef.current, targetVol, 0.04);
-    const vol = volumeRef.current;
-
-    // Smooth color transitions (per-channel lerp)
-    const cc = currentColorsRef.current;
-    const tc = targetColorsRef.current;
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 3; j++) {
-        cc[i][j] = lerp(cc[i][j], tc[i][j], 0.008);
-      }
-    }
-
-    // ── State behaviours ──
-    let breatheScale = 1;
-    let internalSpeed = 1;
-    let glowIntensity = 0.3;
-
-    if (state === "thinking") {
-      breatheScale = 0.97 + Math.sin(t * 0.8) * 0.03;
-      internalSpeed = 0.12;
-      glowIntensity = 0.15 + Math.sin(t * 0.8) * 0.08;
-    } else if (state === "speaking") {
-      breatheScale = 1.0 + vol * 0.1;
-      internalSpeed = 0.2 + vol * 0.4;
-      glowIntensity = 0.3 + vol * 0.25;
-    } else {
-      // listening
-      breatheScale = 0.98 + Math.sin(t * 1.2) * 0.02 + vol * 0.06;
-      internalSpeed = 0.15 + vol * 0.3;
-      glowIntensity = 0.2 + vol * 0.15;
-    }
-
-    const s = size; // logical size
-    const cx = s / 2;
-    const cy = s / 2;
-    const baseRadius = s * 0.317; // ~95px at size 300
-    const radius = baseRadius * breatheScale;
-
-    ctx.clearRect(0, 0, s, s);
-
-    // ── Outer glow ──
-    const glowGrad = ctx.createRadialGradient(
-      cx, cy, radius * 0.7,
-      cx, cy, radius * 2.0
-    );
-    const gc = cc[1];
-    glowGrad.addColorStop(0, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.1})`);
-    glowGrad.addColorStop(0.4, `rgba(${gc[0]},${gc[1]},${gc[2]},${glowIntensity * 0.03})`);
-    glowGrad.addColorStop(1, "transparent");
-    ctx.fillStyle = glowGrad;
-    ctx.fillRect(0, 0, s, s);
-
-    // ── Clipping circle ──
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.clip();
-
-    // ── Base fill — smooth radial ──
-    const baseFill = ctx.createRadialGradient(cx - radius * 0.15, cy - radius * 0.15, 0, cx, cy, radius);
-    baseFill.addColorStop(0, `rgb(${cc[0][0]},${cc[0][1]},${cc[0][2]})`);
-    baseFill.addColorStop(0.7, `rgb(${Math.round((cc[0][0]+cc[3][0])/2)},${Math.round((cc[0][1]+cc[3][1])/2)},${Math.round((cc[0][2]+cc[3][2])/2)})`);
-    baseFill.addColorStop(1, `rgb(${cc[3][0]},${cc[3][1]},${cc[3][2]})`);
-    ctx.fillStyle = baseFill;
-    ctx.fillRect(0, 0, s, s);
-
-    // ── Slow internal flow — drifting light spots ──
-    const spots = [
-      { phase: 0, speed: 0.08, orbitR: 30, sz: 75, colorIdx: 1, yMult: 0.7 },
-      { phase: 2.4, speed: 0.06, orbitR: 35, sz: 65, colorIdx: 2, yMult: 0.9 },
-      { phase: 4.8, speed: 0.1, orbitR: 25, sz: 85, colorIdx: 1, yMult: 0.6 },
-      { phase: 1.2, speed: 0.07, orbitR: 40, sz: 55, colorIdx: 2, yMult: 0.8 },
-      { phase: 3.6, speed: 0.05, orbitR: 20, sz: 70, colorIdx: 1, yMult: 1.0 },
-    ];
-
-    for (const spot of spots) {
-      const sp = spot.phase + t * spot.speed * internalSpeed;
-      const sx = cx + Math.cos(sp) * spot.orbitR * (1 + vol * 0.15);
-      const sy = cy + Math.sin(sp * spot.yMult) * spot.orbitR * (1 + vol * 0.15);
-      const sr = spot.sz * (1 + vol * 0.12);
-
-      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-      const sc = cc[spot.colorIdx];
-      sg.addColorStop(0, `rgba(${sc[0]},${sc[1]},${sc[2]},0.45)`);
-      sg.addColorStop(0.4, `rgba(${sc[0]},${sc[1]},${sc[2]},0.15)`);
-      sg.addColorStop(0.7, `rgba(${sc[0]},${sc[1]},${sc[2]},0.04)`);
-      sg.addColorStop(1, `rgba(${sc[0]},${sc[1]},${sc[2]},0)`);
-
-      ctx.globalCompositeOperation = "screen";
-      ctx.fillStyle = sg;
-      ctx.fillRect(0, 0, s, s);
-    }
-
-    // ── Specular highlight — very subtle ──
-    ctx.globalCompositeOperation = "screen";
-    const hlX = cx - radius * 0.25;
-    const hlY = cy - radius * 0.3;
-    const highlight = ctx.createRadialGradient(hlX, hlY, 0, hlX, hlY, radius * 0.5);
-    highlight.addColorStop(0, `rgba(255,255,255,${0.04 + vol * 0.03})`);
-    highlight.addColorStop(0.4, "rgba(255,255,255,0.015)");
-    highlight.addColorStop(1, "transparent");
-    ctx.fillStyle = highlight;
-    ctx.fillRect(0, 0, s, s);
-
-    // ── Soft rim ──
-    ctx.globalCompositeOperation = "source-over";
-    const rim = ctx.createRadialGradient(cx, cy, radius * 0.88, cx, cy, radius);
-    rim.addColorStop(0, "transparent");
-    rim.addColorStop(0.6, "transparent");
-    rim.addColorStop(1, `rgba(${cc[2][0]},${cc[2][1]},${cc[2][2]},${0.08 + vol * 0.06})`);
-    ctx.fillStyle = rim;
-    ctx.fillRect(0, 0, s, s);
-
-    ctx.restore();
-
-    animRef.current = requestAnimationFrame(render);
-  }, [size]);
-
-  // ─── Canvas setup + start loop ──────────────────────────────────────────
+  // ─── Responsive sizing ──────────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const mq = window.matchMedia("(max-width: 640px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.scale(dpr, dpr);
+  const orbSize = isMobile ? 150 : 200;
+  const outerRingSize = isMobile ? 195 : 260;
+  const glowSize = isMobile ? 165 : 220;
+  const highlightSize = isMobile ? 135 : 180;
+  const containerSize = isMobile ? 225 : 300;
 
-    animRef.current = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [render, size]);
+  const isKiraSpeaking = kiraState === "speaking";
+  const isUserSpeaking = kiraState === "listening" && micVolume > 0.02;
+  const isIdle = kiraState === "listening" && micVolume <= 0.02;
+  const isThinking = kiraState === "thinking";
+
+  // ─── User-speaking: drive orb scale from micVolume via ref ───────────
+  useEffect(() => {
+    if (!orbRef.current) return;
+    if (isUserSpeaking) {
+      const scale = 1 + Math.min(micVolume, 1) * 0.08;
+      orbRef.current.style.transform = `scale(${scale})`;
+      orbRef.current.style.transition = "transform 0.1s ease-out";
+      orbRef.current.style.animation = "none";
+    } else if (isIdle || isThinking) {
+      orbRef.current.style.transform = "";
+      orbRef.current.style.transition = "";
+      orbRef.current.style.animation = "kira-breathe 4s ease-in-out infinite";
+    } else if (isKiraSpeaking) {
+      orbRef.current.style.transform = "scale(1)";
+      orbRef.current.style.transition = "transform 0.3s ease-out";
+      orbRef.current.style.animation = "none";
+    }
+  }, [isUserSpeaking, isIdle, isThinking, isKiraSpeaking, micVolume]);
+
+  // ─── Sonar rings while Kira speaks ──────────────────────────────────
+  useEffect(() => {
+    if (isKiraSpeaking) {
+      const interval = setInterval(() => {
+        setRings((prev) => [...prev.slice(-3), Date.now()]); // max 4 rings
+      }, 800);
+      return () => clearInterval(interval);
+    } else {
+      setRings([]);
+    }
+  }, [isKiraSpeaking]);
+
+  // Clean up expired rings (after animation ends — 2s)
+  useEffect(() => {
+    if (rings.length === 0) return;
+    const timeout = setTimeout(() => {
+      setRings((prev) => prev.filter((id) => Date.now() - id < 2000));
+    }, 2100);
+    return () => clearTimeout(timeout);
+  }, [rings]);
 
   return (
     <div className="relative flex flex-col items-center">
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: size,
-          height: size,
-          transition: "filter 1s ease",
-          filter:
-            kiraState === "thinking"
-              ? "brightness(0.82) saturate(0.85)"
-              : kiraState === "speaking"
-                ? "brightness(1.08)"
-                : "brightness(1.0)",
-        }}
-      />
+      {/* Sizing container — keeps layout consistent with old 300px canvas */}
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: containerSize, height: containerSize }}
+      >
+        {/* Outer decorative ring — always visible */}
+        <div
+          className="absolute rounded-full"
+          style={{
+            width: outerRingSize,
+            height: outerRingSize,
+            border: `1px solid rgba(${ORB_RGB}, 0.12)`,
+          }}
+        />
+
+        {/* Sonar rings — only when Kira speaks */}
+        {rings.map((id) => (
+          <div
+            key={id}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              width: orbSize,
+              height: orbSize,
+              border: `1.5px solid rgba(${ORB_RGB}, 0.3)`,
+              animation: "kira-sonar 2s ease-out forwards",
+            }}
+          />
+        ))}
+
+        {/* Inner glow / ambient shadow behind orb */}
+        <div
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: glowSize,
+            height: glowSize,
+            background: `radial-gradient(circle, rgba(${ORB_RGB}, 0.15), transparent 70%)`,
+          }}
+        />
+
+        {/* ─── Main orb ─── */}
+        <div
+          ref={orbRef}
+          className="rounded-full"
+          style={{
+            width: orbSize,
+            height: orbSize,
+            background: `radial-gradient(circle at 38% 38%, ${ORB_COLOR_LIGHT}, ${ORB_COLOR_BASE} 60%, ${ORB_COLOR_DARK})`,
+            boxShadow: `0 4px 30px rgba(${ORB_RGB}, 0.25)`,
+            animation: "kira-breathe 4s ease-in-out infinite",
+            willChange: "transform",
+            // Thinking state: slightly dimmer
+            filter: isThinking ? "brightness(0.85) saturate(0.9)" : "brightness(1)",
+            transition: "filter 0.5s ease",
+          }}
+        />
+
+        {/* Specular highlight — gives soft 3D depth */}
+        <div
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: highlightSize,
+            height: highlightSize,
+            background:
+              "radial-gradient(circle at 32% 32%, rgba(255,255,255,0.22), transparent 60%)",
+          }}
+        />
+      </div>
+
       {/* State indicator */}
       <div
         className="mt-2 text-[11px] tracking-[0.2em] uppercase font-light transition-colors duration-500"

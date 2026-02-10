@@ -15,6 +15,11 @@ import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./gue
 import { getGuestUsage, saveGuestUsage } from "./guestUsage.js";
 import { getProUsage, saveProUsage } from "./proUsage.js";
 
+// --- DEPLOY CANARY + ENV CHECK (runs immediately on startup) ---
+console.log(`[STARTUP] 🚀 Server module loaded at ${new Date().toISOString()}`);
+console.log("[ENV CHECK] SUPABASE_URL:", process.env.SUPABASE_URL ? "SET (" + process.env.SUPABASE_URL.substring(0, 20) + "...)" : "NOT SET");
+console.log("[ENV CHECK] SUPABASE_SERVICE_ROLE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "SET (length: " + process.env.SUPABASE_SERVICE_ROLE_KEY.length + ")" : "NOT SET");
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -364,7 +369,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- USAGE TRACKING ---
   const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
-  const PRO_LIMIT_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "360000"); // 100 hrs/month
+  const PRO_MONTHLY_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "360000"); // 100 hrs/month
   let sessionStartTime: number | null = null;
   let usageCheckInterval: NodeJS.Timeout | null = null;
   let isProUser = false;
@@ -524,8 +529,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 if (isProUser) {
                   // Pro users: monthly usage tracked in Supabase (resets per calendar month)
                   const storedSeconds = await getProUsage(userId);
-                  if (storedSeconds >= PRO_LIMIT_SECONDS) {
-                    console.log(`[USAGE] Pro user ${userId} blocked — ${storedSeconds}s >= ${PRO_LIMIT_SECONDS}s`);
+                  if (storedSeconds >= PRO_MONTHLY_SECONDS) {
+                    console.log(`[USAGE] Pro user ${userId} blocked — ${storedSeconds}s >= ${PRO_MONTHLY_SECONDS}s`);
                     wasBlockedImmediately = true;
                     ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
                     ws.close(1008, "Pro usage limit reached");
@@ -533,12 +538,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   }
                   proUsageSeconds = storedSeconds;
                   proUsageBase = storedSeconds;
-                  console.log(`[USAGE] Pro user ${userId} allowed — resuming at ${storedSeconds}s / ${PRO_LIMIT_SECONDS}s`);
+                  console.log(`[USAGE] Pro user ${userId} allowed — resuming at ${storedSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
 
                   ws.send(JSON.stringify({
                     type: "session_config",
                     isPro: true,
-                    remainingSeconds: PRO_LIMIT_SECONDS - storedSeconds,
+                    remainingSeconds: PRO_MONTHLY_SECONDS - storedSeconds,
                   }));
                 } else {
                   // Free signed-in users: daily usage tracked in Prisma
@@ -629,9 +634,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 // Pro users: monthly usage tracked in Supabase
                 proUsageSeconds = proUsageBase + elapsed;
                 await saveProUsage(userId, proUsageSeconds);
-                console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_LIMIT_SECONDS}s`);
+                console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
 
-                if (proUsageSeconds >= PRO_LIMIT_SECONDS) {
+                if (proUsageSeconds >= PRO_MONTHLY_SECONDS) {
                   ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
                   ws.close(1008, "Pro usage limit reached");
                 }

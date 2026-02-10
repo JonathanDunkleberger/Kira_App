@@ -13,17 +13,13 @@ import { PassThrough } from "stream";
 
 const AZURE_SPEECH_KEY = process.env.AZURE_SPEECH_KEY!;
 const AZURE_SPEECH_REGION = process.env.AZURE_SPEECH_REGION!;
-const AZURE_TTS_VOICE = process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural";
-const AZURE_TTS_RATE = process.env.AZURE_TTS_RATE || "+25.00%";
-const AZURE_TTS_PITCH = process.env.AZURE_TTS_PITCH || "+25.00%";
 
-const speechConfig = SpeechConfig.fromSubscription(
-  AZURE_SPEECH_KEY,
-  AZURE_SPEECH_REGION
-);
-// We request raw 16kHz PCM to feed directly to the LINEAR16 WebSocket pipeline.
-speechConfig.speechSynthesisOutputFormat =
-  SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm;
+export interface AzureVoiceConfig {
+  voiceName: string;
+  style?: string;
+  rate?: string;
+  pitch?: string;
+}
 
 class NodePushAudioStream extends PushAudioOutputStreamCallback {
   constructor(private readonly stream: PassThrough) {
@@ -41,12 +37,35 @@ class NodePushAudioStream extends PushAudioOutputStreamCallback {
   }
 }
 
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export class AzureTTSStreamer extends EventEmitter {
   private synthesizer: SpeechSynthesizer;
   private audioStream: PassThrough;
+  private voiceConfig: AzureVoiceConfig;
 
-  constructor() {
+  constructor(config?: AzureVoiceConfig) {
     super();
+    this.voiceConfig = config || {
+      voiceName: process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural",
+      rate: process.env.AZURE_TTS_RATE || "+25.00%",
+      pitch: process.env.AZURE_TTS_PITCH || "+25.00%",
+    };
+
+    const speechConfig = SpeechConfig.fromSubscription(
+      AZURE_SPEECH_KEY,
+      AZURE_SPEECH_REGION
+    );
+    speechConfig.speechSynthesisOutputFormat =
+      SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm;
+
     this.audioStream = new PassThrough();
     const pushStream = PushAudioOutputStream.create(
       new NodePushAudioStream(this.audioStream)
@@ -60,9 +79,7 @@ export class AzureTTSStreamer extends EventEmitter {
 
   public stop() {
     try {
-      // Close the synthesizer to stop generation
       this.synthesizer.close();
-      // Destroy the stream to stop emitting data events
       this.audioStream.destroy();
       console.log("[AzureTTS] Stopped synthesis.");
     } catch (e) {
@@ -70,24 +87,24 @@ export class AzureTTSStreamer extends EventEmitter {
     }
   }
 
-  private escapeXml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   private buildSsml(text: string): string {
-    return `
-      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-        <voice name="${AZURE_TTS_VOICE}">
-          <prosody rate="${AZURE_TTS_RATE}" pitch="${AZURE_TTS_PITCH}">
-            ${this.escapeXml(text)}
-          </prosody>
-        </voice>
-      </speak>
-    `;
+    const escaped = escapeXml(text);
+    const { voiceName, style, rate, pitch } = this.voiceConfig;
+
+    // If a speaking style is requested, wrap in express-as
+    let innerContent = escaped;
+    if (style) {
+      innerContent = `<mstts:express-as style="${style}">${escaped}</mstts:express-as>`;
+    }
+
+    // If rate/pitch are set, wrap in prosody
+    if (rate || pitch) {
+      const rateAttr = rate ? ` rate="${rate}"` : "";
+      const pitchAttr = pitch ? ` pitch="${pitch}"` : "";
+      innerContent = `<prosody${rateAttr}${pitchAttr}>${innerContent}</prosody>`;
+    }
+
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="${voiceName}">${innerContent}</voice></speak>`;
   }
 
   public synthesize(text: string) {

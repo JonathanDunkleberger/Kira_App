@@ -7,7 +7,7 @@ import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
-import { ElevenLabsTTSStreamer } from "./ElevenLabsTTSStreamer.js";
+import type { AzureVoiceConfig } from "./AzureTTSStreamer.js";
 import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
@@ -20,7 +20,6 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-console.log(`[Config] ElevenLabs API key: ${process.env.ELEVEN_LABS_API_KEY ? "SET" : "MISSING"}`);
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -80,8 +79,22 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
   const voicePreference = url.searchParams.get("voice") || "natural";
-  let useElevenLabs = voicePreference === "natural";
-  console.log(`[Voice] Preference: "${voicePreference}", useElevenLabs: ${useElevenLabs}`);
+
+  // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
+  const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
+    anime: {
+      voiceName: process.env.AZURE_VOICE_ANIME || "en-US-AvaMultilingualNeural",
+      style: process.env.AZURE_VOICE_ANIME_STYLE || undefined,
+      rate: process.env.AZURE_TTS_RATE || "+25%",
+      pitch: process.env.AZURE_TTS_PITCH || "+25%",
+    },
+    natural: {
+      voiceName: process.env.AZURE_VOICE_NATURAL || "en-US-JennyNeural",
+      style: process.env.AZURE_VOICE_NATURAL_STYLE || "chat",
+    },
+  };
+  let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.natural;
+  console.log(`[Voice] Preference: "${voicePreference}", voice: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
 
   // --- KEEP-ALIVE HEARTBEAT ---
   // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
@@ -247,8 +260,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
             await new Promise<void>((resolve) => {
-              console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
-              const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+              console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
+              const tts = new AzureTTSStreamer(currentVoiceConfig);
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
@@ -317,8 +330,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
         await new Promise<void>((resolve) => {
-          console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
-          const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+          console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
+          const tts = new AzureTTSStreamer(currentVoiceConfig);
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
@@ -885,8 +898,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
                   await new Promise<void>((resolve) => {
-                    console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
-                    const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+                    console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
+                    const tts = new AzureTTSStreamer(currentVoiceConfig);
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
@@ -944,8 +957,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
-                  console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
-                  const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+                  console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
+                  const tts = new AzureTTSStreamer(currentVoiceConfig);
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {
@@ -1028,9 +1041,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             lastImageTimestamp = Date.now();
           }
         } else if (controlMessage.type === "voice_change") {
-          const newVoice = controlMessage.voice;
-          useElevenLabs = newVoice === "natural";
-          console.log(`[Voice] Switched mid-conversation to ${useElevenLabs ? "ElevenLabs" : "Azure"}`);
+          const newVoice = controlMessage.voice as "anime" | "natural";
+          currentVoiceConfig = VOICE_CONFIGS[newVoice] || VOICE_CONFIGS.natural;
+          console.log(`[Voice] Switched to: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
         } else if (controlMessage.type === "text_message") {
           // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
           if (state !== "listening") return;

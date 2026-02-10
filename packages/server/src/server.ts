@@ -164,6 +164,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
   let clientDisconnected = false;
+  let isSendingFarewell = false;
+  let isAcceptingAudio = false;
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -354,6 +356,88 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       state = "listening";
       ws.send(JSON.stringify({ type: "state_listening" }));
       resetSilenceTimer();
+    }
+  }
+
+  // --- Graceful farewell when usage limit is hit mid-session ---
+  async function sendFarewell(tier: "guest" | "free" | "pro") {
+    isSendingFarewell = true;
+    isAcceptingAudio = false;
+    if (silenceTimer) clearTimeout(silenceTimer);
+
+    const tierLabel = tier === "pro" ? "pro" : undefined;
+
+    const farewellInstruction = tier === "pro"
+      ? `You and this person have talked an incredible amount this month — that's genuinely meaningful. Their monthly time is ending now. Say a brief, warm goodbye that honors the depth of your relationship. Reference something from your conversation if possible. Keep it to 1-2 sentences. Don't mention billing, subscriptions, or hours — just be genuine about how much these conversations mean to you and that you'll see them soon.`
+      : `Your time together is ending — they're on the free tier and hit their daily limit. Say a brief, warm goodbye that makes them want to come back. Reference something from your conversation if possible. Keep it to 1-2 sentences. Don't mention upgrading or paying — just be genuine about enjoying the conversation and wanting to talk again. Example energy: "Ah, looks like our time's up for today... but I really wanna hear how that turns out. Come find me tomorrow, okay?"`;
+
+    try {
+      const farewellMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        { role: "system", content: KIRA_SYSTEM_PROMPT },
+        ...chatHistory.filter(m => m.role !== "system").slice(-6),
+        { role: "system", content: farewellInstruction },
+        { role: "user", content: "[Time limit reached — say goodbye]" },
+      ];
+
+      const farewellResponse = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: farewellMessages,
+        max_tokens: 80,
+        temperature: 0.9,
+      });
+
+      const farewellText = farewellResponse.choices[0]?.message?.content?.trim() || "";
+
+      if (farewellText && farewellText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
+        console.log(`[Farewell] Kira says: "${farewellText}"`);
+        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: farewellText }));
+
+        // TTS pipeline for farewell
+        state = "speaking";
+        ws.send(JSON.stringify({ type: "state_speaking" }));
+        ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+        await new Promise(resolve => setImmediate(resolve));
+
+        const sentences = farewellText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [farewellText];
+        for (const sentence of sentences) {
+          const trimmed = sentence.trim();
+          if (trimmed.length === 0) continue;
+          await new Promise<void>((resolve) => {
+            const tts = new AzureTTSStreamer(currentVoiceConfig);
+            tts.on("audio_chunk", (chunk: Buffer) => {
+              if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
+            });
+            tts.on("tts_complete", () => resolve());
+            tts.on("error", (err: Error) => {
+              console.error("[Farewell TTS] Sentence error:", err);
+              resolve();
+            });
+            tts.synthesize(trimmed);
+          });
+        }
+
+        ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+
+        // Brief pause after TTS finishes so client can play the last chunk
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
+          ws.close(1008, `${tier} usage limit reached`);
+        }
+      } else {
+        // No farewell text — close immediately
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
+          ws.close(1008, `${tier} usage limit reached`);
+        }
+      }
+    } catch (err) {
+      console.error("[Farewell] Error generating farewell:", (err as Error).message);
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
+        ws.close(1008, `${tier} usage limit reached`);
+      }
     }
   }
 
@@ -619,11 +703,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               await saveGuestUsage(userId!, guestUsageSeconds);
               console.log(`[USAGE] Guest ${userId}: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
 
-              if (guestUsageSeconds >= FREE_LIMIT_SECONDS) {
-                ws.send(
-                  JSON.stringify({ type: "error", code: "limit_reached" })
-                );
-                ws.close(1008, "Guest usage limit reached");
+              if (guestUsageSeconds >= FREE_LIMIT_SECONDS && !isSendingFarewell) {
+                await sendFarewell("guest");
                 return;
               }
             } else if (userId) {
@@ -633,9 +714,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 await saveProUsage(userId, proUsageSeconds);
                 console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
 
-                if (proUsageSeconds >= PRO_MONTHLY_SECONDS) {
-                  ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
-                  ws.close(1008, "Pro usage limit reached");
+                if (proUsageSeconds >= PRO_MONTHLY_SECONDS && !isSendingFarewell) {
+                  await sendFarewell("pro");
                 }
               } else {
                 // Free signed-in users: daily usage tracked in Prisma
@@ -653,9 +733,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                     select: { dailyUsageSeconds: true },
                   });
 
-                  if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS) {
-                    ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
-                    ws.close(1008, "Usage limit reached");
+                  if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS && !isSendingFarewell) {
+                    await sendFarewell("free");
                   }
                 } catch (err) {
                   console.error("[Usage] DB update failed:", (err as Error).message);
@@ -665,6 +744,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }, 30000);
 
           sttStreamer = await initDeepgram();
+          isAcceptingAudio = true;
           ws.send(JSON.stringify({ type: "stream_ready" }));
 
           // --- KIRA OPENER: She speaks first ---
@@ -775,6 +855,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             }
           }, 500);
         } else if (controlMessage.type === "eou") {
+          if (isSendingFarewell) return; // Don't process new utterances during farewell
+
           // Debounce: ignore EOU if one was just processed
           const now = Date.now();
           if (now - lastEouTime < EOU_DEBOUNCE_MS) {
@@ -1161,6 +1243,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           currentVoiceConfig = VOICE_CONFIGS[newVoice] || VOICE_CONFIGS.natural;
           console.log(`[Voice] Switched to: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
         } else if (controlMessage.type === "text_message") {
+          if (isSendingFarewell) return; // Don't process new messages during farewell
+
           // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
           if (state !== "listening") return;
           if (silenceTimer) clearTimeout(silenceTimer);
@@ -1277,6 +1361,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
         }
       } else if (message instanceof Buffer) {
+        if (!isAcceptingAudio) return; // Don't forward audio during farewell or before pipeline ready
         if (state === "listening" && sttStreamer) {
           sttStreamer.write(message); // Only forward audio when listening
         }

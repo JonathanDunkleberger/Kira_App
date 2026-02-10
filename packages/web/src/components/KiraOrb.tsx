@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 // ─── Orb color palette ───────────────────────────────────────────────────────
-// Almost-flat blue with minimal depth: center is barely lighter than edges.
-const ORB_COLOR_CENTER = "#7B8FBF"; // very slightly lighter blue
-const ORB_COLOR_EDGE   = "#6B7DB3"; // base accent (only ~12% darker)
-const ORB_RGB = "107,125,179";      // base as RGB for rgba()
+const ORB_COLOR_CENTER = "#7B8FBF";
+const ORB_COLOR_EDGE   = "#6B7DB3";
+const ORB_RGB = "107,125,179";
 
-// ─── Size presets (lg reduced 25% from 200→150) ─────────────────────────────
+// ─── Size presets ────────────────────────────────────────────────────────────
 const SIZES = {
   sm:  { orb:  90, glow: 100, container: 140 },
   md:  { orb: 130, glow: 145, container: 195 },
@@ -20,8 +19,10 @@ export type OrbSize = keyof typeof SIZES;
 export interface KiraOrbProps {
   /** Visual state — defaults to "idle" (gentle breathing). */
   state?: "idle" | "userSpeaking" | "kiraSpeaking" | "thinking";
-  /** Mic volume 0-1, only used when state is "userSpeaking". */
+  /** Mic volume 0-1, drives orb pulse when user speaks. */
   micVolume?: number;
+  /** Playback volume 0-1, drives orb pulse when Kira speaks. */
+  playerVolume?: number;
   /** Size preset — sm (mobile), md (landing / hero), lg (chat page desktop). */
   size?: OrbSize;
   /** Whether to show the state-indicator label below the orb. */
@@ -32,47 +33,79 @@ export interface KiraOrbProps {
 export default function KiraOrb({
   state = "idle",
   micVolume = 0,
+  playerVolume = 0,
   size = "lg",
   showLabel = false,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
   const [rings, setRings] = useState<number[]>([]);
   const lastRingTime = useRef(0);
+  const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
 
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
-  const isIdle = state === "idle" || (state === "userSpeaking" && micVolume <= 0.02);
+  const isActive = isUserSpeaking || isKiraSpeaking;
   const isThinking = state === "thinking";
 
-  // ─── User-speaking: drive orb scale from micVolume via ref ───────────
+  // ─── Audio-driven pulsing (rAF loop for both directions) ─────────────
+  // Refs so the rAF closure always sees latest values without re-starting
+  const micRef = useRef(micVolume);
+  const playerRef = useRef(playerVolume);
+  const kiraSpeakingRef = useRef(isKiraSpeaking);
+  const userSpeakingRef = useRef(isUserSpeaking);
+  micRef.current = micVolume;
+  playerRef.current = playerVolume;
+  kiraSpeakingRef.current = isKiraSpeaking;
+  userSpeakingRef.current = isUserSpeaking;
+
   useEffect(() => {
-    if (!orbRef.current) return;
-    if (isUserSpeaking) {
-      const scale = 1 + Math.min(micVolume, 1) * 0.08;
-      orbRef.current.style.transform = `scale(${scale})`;
-      orbRef.current.style.transition = "transform 0.1s ease-out";
-      orbRef.current.style.animation = "none";
-    } else if (isIdle || isThinking) {
-      orbRef.current.style.transform = "";
-      orbRef.current.style.transition = "";
-      orbRef.current.style.animation = "kira-breathe 7s ease-in-out infinite";
-    } else if (isKiraSpeaking) {
-      orbRef.current.style.transform = "scale(1)";
-      orbRef.current.style.transition = "transform 0.3s ease-out";
-      orbRef.current.style.animation = "none";
+    const orb = orbRef.current;
+    if (!orb) return;
+
+    if (isActive) {
+      // Kill CSS breathing — JS drives transform now
+      orb.style.animation = "none";
+
+      const tick = () => {
+        let scale = 1;
+        if (kiraSpeakingRef.current) {
+          // Kira speaking — pulse with TTS playback amplitude
+          scale = 1 + Math.min(playerRef.current, 1) * 0.15;
+        } else if (userSpeakingRef.current) {
+          // User speaking — pulse with mic amplitude
+          scale = 1 + Math.min(micRef.current, 1) * 0.15;
+        }
+        orb.style.transition = "transform 0.05s ease-out";
+        orb.style.transform = `scale(${scale})`;
+        animFrame.current = requestAnimationFrame(tick);
+      };
+      tick();
+
+      return () => cancelAnimationFrame(animFrame.current);
+    } else {
+      // Ease back to idle, then hand off to CSS breathing
+      orb.style.transition = "transform 0.5s ease-out";
+      orb.style.transform = "scale(1)";
+      // After the ease-back finishes, re-enable CSS breathing
+      const timer = setTimeout(() => {
+        if (orbRef.current) {
+          orbRef.current.style.transition = "";
+          orbRef.current.style.transform = "";
+          orbRef.current.style.animation = "kira-breathe 4.5s ease-in-out infinite";
+        }
+      }, 520);
+      return () => clearTimeout(timer);
     }
-  }, [isUserSpeaking, isIdle, isThinking, isKiraSpeaking, micVolume]);
+  }, [isActive]);
 
   // ─── Sonar rings: one when speech starts, then every 2.5s ───────────
   useEffect(() => {
     if (isKiraSpeaking) {
-      // Spawn one ring immediately when speech starts
       setRings((prev) => [...prev.slice(-2), Date.now()]);
       lastRingTime.current = Date.now();
 
-      // Then one more ring every 2.5s while still speaking
       const interval = setInterval(() => {
         const now = Date.now();
         if (now - lastRingTime.current >= 2500) {
@@ -83,14 +116,13 @@ export default function KiraOrb({
 
       return () => clearInterval(interval);
     }
-    // Don't clear rings immediately — let existing ones finish their animation
   }, [isKiraSpeaking]);
 
   // ─── Clean up finished rings (match 1.2s animation duration) ────────
   useEffect(() => {
     if (rings.length > 0) {
       const timeout = setTimeout(() => {
-        setRings((prev) => prev.slice(1)); // remove oldest ring
+        setRings((prev) => prev.slice(1));
       }, 1200);
       return () => clearTimeout(timeout);
     }
@@ -134,13 +166,11 @@ export default function KiraOrb({
             width: orbSize,
             height: orbSize,
             background: [
-              // Subtle highlight — barely-there top-left warmth
               `radial-gradient(circle at 42% 38%, rgba(255,255,255,0.08) 0%, transparent 50%)`,
-              // Near-flat base gradient — only ~12% darker at edges
               `radial-gradient(circle at 50% 50%, ${ORB_COLOR_CENTER} 0%, ${ORB_COLOR_EDGE} 100%)`,
             ].join(", "),
             boxShadow: `0 4px 24px rgba(${ORB_RGB}, 0.20)`,
-            animation: "kira-breathe 7s ease-in-out infinite",
+            animation: "kira-breathe 4.5s ease-in-out infinite",
             willChange: "transform",
             filter: isThinking ? "brightness(0.85) saturate(0.9)" : "brightness(1)",
             transition: "filter 0.5s ease",

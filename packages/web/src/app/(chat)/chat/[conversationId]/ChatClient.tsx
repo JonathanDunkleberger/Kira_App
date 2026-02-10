@@ -385,6 +385,7 @@ export default function ChatClient() {
                   : "idle"
           }
           micVolume={micVolume}
+          playerVolume={playerVolume}
           size="lg"
           showLabel
         />

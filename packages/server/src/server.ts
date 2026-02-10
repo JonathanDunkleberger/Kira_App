@@ -166,6 +166,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let clientDisconnected = false;
   let isSendingFarewell = false;
   let isAcceptingAudio = false;
+  let lastSceneReactionTime = 0;
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -1237,6 +1238,109 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
+          }
+        } else if (controlMessage.type === "scene_update" && controlMessage.images && Array.isArray(controlMessage.images)) {
+          // --- WATCH-TOGETHER: Occasional scene reactions ---
+          const now = Date.now();
+          const SCENE_REACTION_COOLDOWN = 45000; // Max once per 45 seconds
+          const SCENE_REACTION_CHANCE = 0.3;      // 30% chance to react
+
+          if (
+            viewingContext &&
+            state === "listening" &&
+            !isSendingFarewell &&
+            now - lastSceneReactionTime > SCENE_REACTION_COOLDOWN &&
+            Math.random() < SCENE_REACTION_CHANCE
+          ) {
+            lastSceneReactionTime = now;
+            console.log(`[Scene] Evaluating scene reaction (watching: ${viewingContext})`);
+
+            const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = controlMessage.images.map((img: string) => ({
+              type: "image_url" as const,
+              image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
+            }));
+            imageContent.push({
+              type: "text" as const,
+              text: "[Screen changed — react if something interesting happened, or say nothing]",
+            });
+
+            const sceneMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+              {
+                role: "system",
+                content: `${KIRA_SYSTEM_PROMPT}\n\nYou're watching ${viewingContext} together with the user. You just noticed something change on screen. Give a brief, natural reaction — like a friend sitting next to someone watching. This should be SHORT: a gasp, a laugh, a quick comment, 1 sentence MAX. Examples of good reactions: "Oh no...", "Wait, is that—", "Ha! I love this part.", "Whoa.", "Okay that was intense." Don't narrate or describe what you see. Just react emotionally. If the moment isn't noteworthy, respond with exactly "[SKIP]" and nothing else.`,
+              },
+              ...chatHistory.filter(m => m.role !== "system").slice(-4),
+              { role: "user", content: imageContent },
+            ];
+
+            // Fire-and-forget — don't block the message loop
+            (async () => {
+              try {
+                const reaction = await openai.chat.completions.create({
+                  model: OPENAI_MODEL,
+                  messages: sceneMessages,
+                  max_tokens: 30,
+                  temperature: 1.0,
+                });
+
+                const reactionText = reaction.choices[0]?.message?.content?.trim() || "";
+
+                // Only speak if there's real content and we're still in a valid state
+                if (
+                  !reactionText ||
+                  reactionText.length < 2 ||
+                  reactionText.includes("[SKIP]") ||
+                  reactionText === '""' ||
+                  reactionText === "''" ||
+                  state !== "listening" ||
+                  clientDisconnected ||
+                  isSendingFarewell
+                ) {
+                  console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
+                  return;
+                }
+
+                console.log(`[Scene] Kira reacts: "${reactionText}"`);
+                chatHistory.push({ role: "assistant", content: reactionText });
+                ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
+
+                // TTS pipeline for scene reaction
+                state = "speaking";
+                ws.send(JSON.stringify({ type: "state_speaking" }));
+                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                await new Promise(resolve => setImmediate(resolve));
+
+                const sentences = reactionText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [reactionText];
+                for (const sentence of sentences) {
+                  const trimmed = sentence.trim();
+                  if (trimmed.length === 0) continue;
+                  await new Promise<void>((resolve) => {
+                    const tts = new AzureTTSStreamer(currentVoiceConfig);
+                    tts.on("audio_chunk", (chunk: Buffer) => {
+                      if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
+                    });
+                    tts.on("tts_complete", () => resolve());
+                    tts.on("error", (err: Error) => {
+                      console.error("[Scene TTS] Error:", err);
+                      resolve();
+                    });
+                    tts.synthesize(trimmed);
+                  });
+                }
+
+                ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                state = "listening";
+                ws.send(JSON.stringify({ type: "state_listening" }));
+                resetSilenceTimer();
+              } catch (err) {
+                console.error("[Scene] Reaction error:", (err as Error).message);
+                // Ensure state is restored on error
+                if (state === "speaking") {
+                  state = "listening";
+                  try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
+                }
+              }
+            })();
           }
         } else if (controlMessage.type === "voice_change") {
           const newVoice = controlMessage.voice as "anime" | "natural";

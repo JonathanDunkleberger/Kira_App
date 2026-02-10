@@ -5,6 +5,7 @@ interface UseSceneDetectionProps {
   enabled: boolean;
   checkInterval?: number; // ms, default 2000
   threshold?: number; // percentage 0-100, default 15
+  onSceneChange?: (frames: string[]) => void; // Called when a significant scene change is detected
 }
 
 export const useSceneDetection = ({
@@ -12,12 +13,16 @@ export const useSceneDetection = ({
   enabled,
   checkInterval = 2000,
   threshold = 15,
+  onSceneChange,
 }: UseSceneDetectionProps) => {
+  const onSceneChangeRef = useRef(onSceneChange);
+  useEffect(() => { onSceneChangeRef.current = onSceneChange; }, [onSceneChange]);
   const [sceneBuffer, setSceneBuffer] = useState<string[]>([]);
   const lastFrameData = useRef<Uint8ClampedArray | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fullCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sceneChangeDetected = useRef(false);
 
   // Reset buffer when disabled
   useEffect(() => {
@@ -26,6 +31,14 @@ export const useSceneDetection = ({
       lastFrameData.current = null;
     }
   }, [enabled]);
+
+  // Fire onSceneChange callback when buffer updates from a scene change
+  useEffect(() => {
+    if (sceneChangeDetected.current && sceneBuffer.length > 0 && onSceneChangeRef.current) {
+      sceneChangeDetected.current = false;
+      onSceneChangeRef.current(sceneBuffer.slice(-2));
+    }
+  }, [sceneBuffer]);
 
   useEffect(() => {
     if (!enabled || !videoRef.current) {
@@ -71,6 +84,7 @@ export const useSceneDetection = ({
           // Significant change detected! Capture full res frame.
           // console.log(`[SceneDetection] Change detected: ${changePercentage.toFixed(2)}%`);
           captureFullResFrame(video);
+          sceneChangeDetected.current = true;
         }
       } else {
         // First run, just capture to start the buffer

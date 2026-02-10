@@ -49,11 +49,31 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const isScreenSharingRef = useRef(false); // Ref to track screen share state in callbacks
 
   // --- Scene Detection ---
+  const lastSceneUpdateSent = useRef(0);
+  const SCENE_UPDATE_COOLDOWN = 30000; // Don't send scene updates more than once per 30 seconds
+
+  const handleSceneChange = useCallback((frames: string[]) => {
+    const now = Date.now();
+    if (
+      now - lastSceneUpdateSent.current > SCENE_UPDATE_COOLDOWN &&
+      ws.current?.readyState === WebSocket.OPEN &&
+      isScreenSharingRef.current &&
+      kiraStateRef.current === "listening"
+    ) {
+      lastSceneUpdateSent.current = now;
+      ws.current.send(JSON.stringify({
+        type: "scene_update",
+        images: frames,
+      }));
+    }
+  }, []);
+
   const sceneBuffer = useSceneDetection({
     videoRef,
     enabled: isScreenSharing,
     checkInterval: 2000,
-    threshold: 15
+    threshold: 15,
+    onSceneChange: handleSceneChange,
   });
   const sceneBufferRef = useRef<string[]>([]);
 

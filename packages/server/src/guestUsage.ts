@@ -1,9 +1,18 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabase: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient | null {
+  if (_supabase) return _supabase;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    console.warn("[GuestUsage] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — guest usage tracking disabled");
+    return null;
+  }
+  _supabase = createClient(url, key);
+  return _supabase;
+}
 
 function getToday(): string {
   return new Date().toISOString().split("T")[0];
@@ -13,6 +22,8 @@ function getToday(): string {
  * Get current usage for a guest. Returns 0 if no record or different day.
  */
 export async function getGuestUsage(guestId: string): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0; // DB not configured — fail open
   const today = getToday();
   try {
     const { data, error } = await supabase
@@ -34,6 +45,8 @@ export async function getGuestUsage(guestId: string): Promise<number> {
  * Save usage for a guest. Only increases stored seconds, never decreases.
  */
 export async function saveGuestUsage(guestId: string, seconds: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return; // DB not configured — silently skip
   const today = getToday();
   try {
     const { data: existing } = await supabase

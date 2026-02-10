@@ -579,9 +579,24 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const today = new Date().toDateString();
             const existing = guestUsageMap.get(userId);
 
+            console.log(`[USAGE CHECK] Guest: ${userId}`);
+            console.log(`[USAGE CHECK] Map has entry: ${!!existing}`);
+            console.log(`[USAGE CHECK] Entry data: ${JSON.stringify(existing)}`);
+            console.log(`[USAGE CHECK] Today (toDateString): ${today}`);
+            console.log(`[USAGE CHECK] FREE_LIMIT_SECONDS: ${FREE_LIMIT_SECONDS}`);
+            if (existing) {
+              console.log(`[USAGE CHECK] Same day: ${existing.lastDate === today}`);
+              console.log(`[USAGE CHECK] Stored lastDate: "${existing.lastDate}"`);
+              console.log(`[USAGE CHECK] Seconds used: ${existing.seconds}`);
+              console.log(`[USAGE CHECK] Over limit: ${existing.seconds >= FREE_LIMIT_SECONDS}`);
+            }
+            console.log(`[USAGE CHECK] Full guestUsageMap size: ${guestUsageMap.size}`);
+            console.log(`[USAGE CHECK] All entries: ${JSON.stringify([...guestUsageMap.entries()])}`);
+
             if (existing && existing.lastDate === today) {
               // Returning guest — check if they've used their time
               if (existing.seconds >= FREE_LIMIT_SECONDS) {
+                console.log(`[USAGE DECISION] Guest: ${userId} — BLOCKING, sending limit_reached (${existing.seconds}s >= ${FREE_LIMIT_SECONDS}s)`);
                 ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
                 ws.close(1008, "Guest usage limit reached");
                 return;
@@ -589,8 +604,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               // Resume tracking from where they left off
               guestUsageSeconds = existing.seconds;
               guestUsageBase = existing.seconds;
+              console.log(`[USAGE DECISION] Guest: ${userId} — ALLOWING connection (resuming at ${existing.seconds}s)`);
             } else {
               // New day or first visit — start fresh
+              console.log(`[USAGE DECISION] Guest: ${userId} — ALLOWING connection (fresh start, existing=${!!existing}, lastDate="${existing?.lastDate}", today="${today}")`);
               guestUsageMap.set(userId, { seconds: 0, lastDate: today });
               guestUsageSeconds = 0;
               guestUsageBase = 0;
@@ -619,7 +636,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 seconds: guestUsageSeconds,
                 lastDate: new Date().toDateString(),
               });
+              console.log(`[USAGE INCREMENT] Guest: ${userId}, elapsed=${elapsed}s, base=${guestUsageBase}s, total now: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
+              console.log(`[USAGE INCREMENT] Map updated: ${JSON.stringify(guestUsageMap.get(userId!))}`);
               if (guestUsageSeconds >= FREE_LIMIT_SECONDS) {
+                console.log(`[USAGE DECISION] Guest: ${userId} — BLOCKING mid-session, sending limit_reached (${guestUsageSeconds}s >= ${FREE_LIMIT_SECONDS}s)`);
                 ws.send(
                   JSON.stringify({ type: "error", code: "limit_reached" })
                 );
@@ -1192,11 +1212,16 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
     // --- USAGE: Flush remaining seconds on disconnect ---
     if (isGuest && userId && sessionStartTime) {
+      console.log(`[USAGE FLUSH] Guest: ${userId}, flushing final seconds`);
+      console.log(`[USAGE FLUSH] Seconds before flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
       const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const flushedTotal = guestUsageBase + finalElapsed;
       guestUsageMap.set(userId, {
-        seconds: guestUsageBase + finalElapsed,
+        seconds: flushedTotal,
         lastDate: new Date().toDateString(),
       });
+      console.log(`[USAGE FLUSH] finalElapsed=${finalElapsed}s, base=${guestUsageBase}s, flushedTotal=${flushedTotal}s`);
+      console.log(`[USAGE FLUSH] Seconds after flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
     } else if (!isGuest && userId && sessionStartTime) {
       const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
       const alreadyCounted = Math.floor(finalElapsed / 30) * 30; // What intervals already counted

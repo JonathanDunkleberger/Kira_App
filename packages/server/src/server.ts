@@ -91,7 +91,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
-  const voicePreference = url.searchParams.get("voice") || "anime";
+  const voicePreference = url.searchParams.get("voice") || "natural";
   const useElevenLabs = voicePreference === "natural";
   console.log(`[Voice] Preference: "${voicePreference}", useElevenLabs: ${useElevenLabs}`);
 
@@ -259,8 +259,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
             await new Promise<void>((resolve) => {
-              console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
-              const tts = new AzureTTSStreamer();
+              console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
+              const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
@@ -329,8 +329,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
         await new Promise<void>((resolve) => {
-          console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
-          const tts = new AzureTTSStreamer();
+          console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
+          const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
@@ -901,8 +901,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
                   await new Promise<void>((resolve) => {
-                    console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
-                    const tts = new AzureTTSStreamer();
+                    console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
+                    const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
@@ -960,8 +960,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
-                  console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
-                  const tts = new AzureTTSStreamer();
+                  console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance`);
+                  const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {

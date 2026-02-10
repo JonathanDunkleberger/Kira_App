@@ -6,7 +6,7 @@ const VOICE_ID = process.env.ELEVEN_LABS_VOICE_ID || "m3yAHyFEFKtbCIM5n7GF";
 const MODEL_ID = process.env.ELEVEN_LABS_MODEL || "eleven_turbo_v2_5";
 
 export class ElevenLabsTTSStreamer extends EventEmitter {
-  private ws: WebSocket | null = null;
+  private ws: any = null;
 
   async synthesize(text: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -51,12 +51,14 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
         }
       };
 
+      let sock: any;
       try {
-        this.ws = new WebSocket(url, {
+        sock = new WebSocket(url, {
           headers: {
             "xi-api-key": ELEVEN_LABS_API_KEY,
           },
         });
+        this.ws = sock;
       } catch (err) {
         console.error("[ElevenLabs] Failed to create WebSocket:", (err as Error).message);
         clearTimeout(safetyTimeout);
@@ -65,7 +67,7 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
         return;
       }
 
-      this.ws.on("open", () => {
+      sock.on("open", () => {
         console.log("[ElevenLabs] WebSocket connected.");
 
         // Send BOS (beginning of stream) with voice settings
@@ -81,7 +83,7 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
           },
         });
         console.log(`[ElevenLabs] Sending BOS: ${bosMessage}`);
-        this.ws!.send(bosMessage);
+        sock.send(bosMessage);
 
         // Send the actual text
         const textMessage = JSON.stringify({
@@ -89,15 +91,15 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
           flush: true,
         });
         console.log(`[ElevenLabs] Sending text: ${textMessage}`);
-        this.ws!.send(textMessage);
+        sock.send(textMessage);
 
         // Send EOS (end of stream)
         const eosMessage = JSON.stringify({ text: "" });
         console.log("[ElevenLabs] Sending EOS");
-        this.ws!.send(eosMessage);
+        sock.send(eosMessage);
       });
 
-      this.ws.on("message", (data: Buffer | string) => {
+      sock.on("message", (data: Buffer | string) => {
         try {
           const str = typeof data === "string" ? data : data.toString("utf-8");
           const msg = JSON.parse(str);
@@ -139,13 +141,13 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
         }
       });
 
-      this.ws.on("error", (err) => {
-        console.error("[ElevenLabs] WebSocket error:", (err as Error).message);
+      sock.on("error", (err: Error) => {
+        console.error("[ElevenLabs] WebSocket error:", err.message);
         this.emit("error", err);
         finish();
       });
 
-      this.ws.on("close", (code: number, reason: Buffer) => {
+      sock.on("close", (code: number, reason: Buffer) => {
         console.log(`[ElevenLabs] WebSocket closed — code: ${code}, reason: ${reason?.toString() || "none"}`);
         finish();
       });
@@ -155,7 +157,7 @@ export class ElevenLabsTTSStreamer extends EventEmitter {
   private cleanup() {
     if (this.ws) {
       try {
-        if (this.ws.readyState === WebSocket.OPEN) {
+        if (this.ws.readyState === 1 /* OPEN */) {
           this.ws.close();
         }
       } catch (e) { /* ignore */ }

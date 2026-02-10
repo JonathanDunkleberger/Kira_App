@@ -91,8 +91,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     natural: {
       voiceName: process.env.AZURE_VOICE_NATURAL || "en-US-JennyNeural",
       style: process.env.AZURE_VOICE_NATURAL_STYLE || "chat",
-      rate: undefined,   // natural speed
-      pitch: undefined,  // natural pitch
+      rate: process.env.AZURE_VOICE_NATURAL_RATE || undefined,
+      pitch: process.env.AZURE_VOICE_NATURAL_PITCH || undefined,
     },
   };
   let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.natural;

@@ -12,6 +12,7 @@ import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
 import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./guestMemoryBuffer.js";
+import { getGuestUsage, saveGuestUsage } from "./guestUsage.js";
 
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
@@ -58,19 +59,6 @@ const server = createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
   console.log("[Server] Starting...");
-
-// --- GUEST USAGE TRACKING (persists across WebSocket reconnections) ---
-const guestUsageMap = new Map<string, { seconds: number; lastDate: string }>();
-
-// Clean up expired entries every hour
-setInterval(() => {
-  const today = new Date().toDateString();
-  for (const [id, data] of guestUsageMap) {
-    if (data.lastDate !== today) {
-      guestUsageMap.delete(id);
-    }
-  }
-}, 60 * 60 * 1000);
 
 wss.on("connection", (ws: any, req: IncomingMessage) => {
   // --- ORIGIN VALIDATION ---
@@ -577,43 +565,20 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // Send session_config for guests (signed-in users already get it above)
           if (isGuest && userId) {
-            const today = new Date().toDateString();
-            const existing = guestUsageMap.get(userId);
+            const storedSeconds = await getGuestUsage(userId);
 
-            console.log(`[USAGE CHECK] Guest: ${userId}`);
-            console.log(`[USAGE CHECK] Map has entry: ${!!existing}`);
-            console.log(`[USAGE CHECK] Entry data: ${JSON.stringify(existing)}`);
-            console.log(`[USAGE CHECK] Today (toDateString): ${today}`);
-            console.log(`[USAGE CHECK] FREE_LIMIT_SECONDS: ${FREE_LIMIT_SECONDS}`);
-            if (existing) {
-              console.log(`[USAGE CHECK] Same day: ${existing.lastDate === today}`);
-              console.log(`[USAGE CHECK] Stored lastDate: "${existing.lastDate}"`);
-              console.log(`[USAGE CHECK] Seconds used: ${existing.seconds}`);
-              console.log(`[USAGE CHECK] Over limit: ${existing.seconds >= FREE_LIMIT_SECONDS}`);
+            if (storedSeconds >= FREE_LIMIT_SECONDS) {
+              console.log(`[USAGE] Guest ${userId} blocked — ${storedSeconds}s >= ${FREE_LIMIT_SECONDS}s`);
+              wasBlockedImmediately = true;
+              ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+              ws.close(1008, "Guest usage limit reached");
+              return;
             }
-            console.log(`[USAGE CHECK] Full guestUsageMap size: ${guestUsageMap.size}`);
-            console.log(`[USAGE CHECK] All entries: ${JSON.stringify([...guestUsageMap.entries()])}`);
 
-            if (existing && existing.lastDate === today) {
-              // Returning guest — check if they've used their time
-              if (existing.seconds >= FREE_LIMIT_SECONDS) {
-                console.log(`[USAGE DECISION] Guest: ${userId} — BLOCKING, sending limit_reached (${existing.seconds}s >= ${FREE_LIMIT_SECONDS}s)`);
-                wasBlockedImmediately = true;
-                ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
-                ws.close(1008, "Guest usage limit reached");
-                return;
-              }
-              // Resume tracking from where they left off
-              guestUsageSeconds = existing.seconds;
-              guestUsageBase = existing.seconds;
-              console.log(`[USAGE DECISION] Guest: ${userId} — ALLOWING connection (resuming at ${existing.seconds}s)`);
-            } else {
-              // New day or first visit — start fresh
-              console.log(`[USAGE DECISION] Guest: ${userId} — ALLOWING connection (fresh start, existing=${!!existing}, lastDate="${existing?.lastDate}", today="${today}")`);
-              guestUsageMap.set(userId, { seconds: 0, lastDate: today });
-              guestUsageSeconds = 0;
-              guestUsageBase = 0;
-            }
+            // Resume tracking from where they left off
+            guestUsageSeconds = storedSeconds;
+            guestUsageBase = storedSeconds;
+            console.log(`[USAGE] Guest ${userId} allowed — resuming at ${storedSeconds}s`);
 
             ws.send(
               JSON.stringify({
@@ -633,15 +598,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
             if (isGuest) {
               guestUsageSeconds = guestUsageBase + elapsed;
-              // Persist to server-side map so usage survives reconnections
-              guestUsageMap.set(userId!, {
-                seconds: guestUsageSeconds,
-                lastDate: new Date().toDateString(),
-              });
-              console.log(`[USAGE INCREMENT] Guest: ${userId}, elapsed=${elapsed}s, base=${guestUsageBase}s, total now: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
-              console.log(`[USAGE INCREMENT] Map updated: ${JSON.stringify(guestUsageMap.get(userId!))}`);
+
+              // Persist to database so usage survives restarts/deploys
+              await saveGuestUsage(userId!, guestUsageSeconds);
+              console.log(`[USAGE] Guest ${userId}: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
+
               if (guestUsageSeconds >= FREE_LIMIT_SECONDS) {
-                console.log(`[USAGE DECISION] Guest: ${userId} — BLOCKING mid-session, sending limit_reached (${guestUsageSeconds}s >= ${FREE_LIMIT_SECONDS}s)`);
                 ws.send(
                   JSON.stringify({ type: "error", code: "limit_reached" })
                 );
@@ -1214,30 +1176,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
     // --- USAGE: Flush remaining seconds on disconnect ---
     if (isGuest && userId) {
-      // SAFEGUARD 1: Skip flush entirely for blocked connections
       if (wasBlockedImmediately) {
-        console.log(`[USAGE FLUSH] Skipping — connection was blocked on connect (guest: ${userId})`);
+        console.log(`[USAGE] Skipping flush — connection was blocked on connect`);
       } else if (sessionStartTime) {
-        console.log(`[USAGE FLUSH] Guest: ${userId}, flushing final seconds`);
-        const existingEntry = guestUsageMap.get(userId);
-        const existingSeconds = existingEntry?.seconds ?? 0;
-        console.log(`[USAGE FLUSH] Seconds before flush: ${JSON.stringify(existingEntry)}`);
         const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-        const flushedTotal = guestUsageBase + finalElapsed;
+        const finalTotal = guestUsageBase + finalElapsed;
 
-        // SAFEGUARD 2: Never decrease stored seconds (only go up, except daily reset)
-        if (flushedTotal > existingSeconds) {
-          guestUsageMap.set(userId, {
-            seconds: flushedTotal,
-            lastDate: new Date().toDateString(),
-          });
-          console.log(`[USAGE FLUSH] Updated: ${existingSeconds}s → ${flushedTotal}s`);
-        } else {
-          console.log(`[USAGE FLUSH] Skipped write: stored=${existingSeconds}s, flush would be=${flushedTotal}s (not overwriting)`);
-        }
-        console.log(`[USAGE FLUSH] Seconds after flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
-      } else {
-        console.log(`[USAGE FLUSH] Skipping — no sessionStartTime (guest: ${userId})`);
+        // saveGuestUsage has the "never decrease" guard built in
+        await saveGuestUsage(userId, finalTotal);
+        console.log(`[USAGE] Flushed ${userId}: ${finalTotal}s`);
       }
     } else if (!isGuest && userId && sessionStartTime) {
       const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);

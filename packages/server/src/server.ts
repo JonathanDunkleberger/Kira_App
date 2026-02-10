@@ -259,8 +259,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
             await new Promise<void>((resolve) => {
-              console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (silence turn)`);
-              const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+              console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
+              const tts = new AzureTTSStreamer();
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
@@ -329,8 +329,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
         await new Promise<void>((resolve) => {
-          console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (runKiraTurn)`);
-          const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+          console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
+          const tts = new AzureTTSStreamer();
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
@@ -901,8 +901,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
                   await new Promise<void>((resolve) => {
-                    console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (EOU response)`);
-                    const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+                    console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
+                    const tts = new AzureTTSStreamer();
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
@@ -960,8 +960,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const speakSentence = async (text: string) => {
                 await new Promise<void>((resolve) => {
-                  console.log(`[TTS] Creating ${useElevenLabs ? "ElevenLabs" : "Azure"} TTS instance (streaming)`);
-                  const tts = useElevenLabs ? new ElevenLabsTTSStreamer() : new AzureTTSStreamer();
+                  console.log("[TTS] Creating Azure TTS instance (hardcoded test)");
+                  const tts = new AzureTTSStreamer();
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {

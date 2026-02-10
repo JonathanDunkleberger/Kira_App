@@ -91,17 +91,19 @@ export class AzureTTSStreamer extends EventEmitter {
     const escaped = escapeXml(text);
     const { voiceName, style, rate, pitch } = this.voiceConfig;
 
-    // If a speaking style is requested, wrap in express-as
+    // Build from inside out: text → prosody → express-as
     let innerContent = escaped;
-    if (style) {
-      innerContent = `<mstts:express-as style="${style}">${escaped}</mstts:express-as>`;
-    }
 
-    // If rate/pitch are set, wrap in prosody
+    // If rate/pitch are set, wrap in prosody (innermost)
     if (rate || pitch) {
       const rateAttr = rate ? ` rate="${rate}"` : "";
       const pitchAttr = pitch ? ` pitch="${pitch}"` : "";
       innerContent = `<prosody${rateAttr}${pitchAttr}>${innerContent}</prosody>`;
+    }
+
+    // If a speaking style is requested, wrap in express-as (outermost)
+    if (style) {
+      innerContent = `<mstts:express-as style="${style}">${innerContent}</mstts:express-as>`;
     }
 
     return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="${voiceName}">${innerContent}</voice></speak>`;

@@ -83,7 +83,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
   const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
     anime: {
-      voiceName: process.env.AZURE_VOICE_ANIME || "en-US-AvaMultilingualNeural",
+      voiceName: process.env.AZURE_VOICE_ANIME || process.env.AZURE_TTS_VOICE || "en-US-AshleyNeural",
       style: process.env.AZURE_VOICE_ANIME_STYLE || undefined,
       rate: process.env.AZURE_TTS_RATE || "+25%",
       pitch: process.env.AZURE_TTS_PITCH || "+25%",
@@ -91,6 +91,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     natural: {
       voiceName: process.env.AZURE_VOICE_NATURAL || "en-US-JennyNeural",
       style: process.env.AZURE_VOICE_NATURAL_STYLE || "chat",
+      rate: undefined,   // natural speed
+      pitch: undefined,  // natural pitch
     },
   };
   let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.natural;

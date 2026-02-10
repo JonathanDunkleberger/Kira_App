@@ -1,6 +1,6 @@
 # Kira
 
-![Kira AI Banner](./packages/docs/KIRA3.0.png)
+![Kira AI](./packages/docs/KIRA10.png)
 
 **Not an assistant. A presence.**
 
@@ -70,7 +70,7 @@ Memory categories: `identity`, `preference`, `relationship`, `emotional`, `exper
 | Personality + vision | Yes | Yes | Yes |
 | In-conversation memory | Yes | Yes | Yes |
 | Cross-session memory | No | Yes | Yes |
-| Daily limit | 15 min | 15 min | 10 hrs/mo |
+| Daily limit | 15 min | 15 min | Unlimited |
 
 Guest conversations are buffered server-side for 30 minutes. If the guest creates an account, their first conversation's memories are automatically migrated to the new account.
 

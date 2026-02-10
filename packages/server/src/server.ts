@@ -366,6 +366,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let isProUser = false;
   let guestUsageSeconds = 0;
   let guestUsageBase = 0; // Accumulated seconds from previous sessions today
+  let wasBlockedImmediately = false; // True if connection was blocked on connect (limit already hit)
 
   // --- Reusable Deepgram initialization ---
   async function initDeepgram() {
@@ -597,6 +598,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               // Returning guest — check if they've used their time
               if (existing.seconds >= FREE_LIMIT_SECONDS) {
                 console.log(`[USAGE DECISION] Guest: ${userId} — BLOCKING, sending limit_reached (${existing.seconds}s >= ${FREE_LIMIT_SECONDS}s)`);
+                wasBlockedImmediately = true;
                 ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
                 ws.close(1008, "Guest usage limit reached");
                 return;
@@ -1211,17 +1213,32 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (sttStreamer) sttStreamer.destroy();
 
     // --- USAGE: Flush remaining seconds on disconnect ---
-    if (isGuest && userId && sessionStartTime) {
-      console.log(`[USAGE FLUSH] Guest: ${userId}, flushing final seconds`);
-      console.log(`[USAGE FLUSH] Seconds before flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
-      const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      const flushedTotal = guestUsageBase + finalElapsed;
-      guestUsageMap.set(userId, {
-        seconds: flushedTotal,
-        lastDate: new Date().toDateString(),
-      });
-      console.log(`[USAGE FLUSH] finalElapsed=${finalElapsed}s, base=${guestUsageBase}s, flushedTotal=${flushedTotal}s`);
-      console.log(`[USAGE FLUSH] Seconds after flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
+    if (isGuest && userId) {
+      // SAFEGUARD 1: Skip flush entirely for blocked connections
+      if (wasBlockedImmediately) {
+        console.log(`[USAGE FLUSH] Skipping — connection was blocked on connect (guest: ${userId})`);
+      } else if (sessionStartTime) {
+        console.log(`[USAGE FLUSH] Guest: ${userId}, flushing final seconds`);
+        const existingEntry = guestUsageMap.get(userId);
+        const existingSeconds = existingEntry?.seconds ?? 0;
+        console.log(`[USAGE FLUSH] Seconds before flush: ${JSON.stringify(existingEntry)}`);
+        const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const flushedTotal = guestUsageBase + finalElapsed;
+
+        // SAFEGUARD 2: Never decrease stored seconds (only go up, except daily reset)
+        if (flushedTotal > existingSeconds) {
+          guestUsageMap.set(userId, {
+            seconds: flushedTotal,
+            lastDate: new Date().toDateString(),
+          });
+          console.log(`[USAGE FLUSH] Updated: ${existingSeconds}s → ${flushedTotal}s`);
+        } else {
+          console.log(`[USAGE FLUSH] Skipped write: stored=${existingSeconds}s, flush would be=${flushedTotal}s (not overwriting)`);
+        }
+        console.log(`[USAGE FLUSH] Seconds after flush: ${JSON.stringify(guestUsageMap.get(userId))}`);
+      } else {
+        console.log(`[USAGE FLUSH] Skipping — no sessionStartTime (guest: ${userId})`);
+      }
     } else if (!isGuest && userId && sessionStartTime) {
       const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
       const alreadyCounted = Math.floor(finalElapsed / 30) * 30; // What intervals already counted

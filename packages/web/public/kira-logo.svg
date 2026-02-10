@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
   <defs>
-    <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#6B7DB3"/>
-      <stop offset="50%" stop-color="#A8B8D0"/>
+    <linearGradient id="xo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#A8B8D0"/>
       <stop offset="100%" stop-color="#6B7DB3"/>
     </linearGradient>
   </defs>
-  <path d="M 8 30 Q 15 30, 18 22 Q 21 14, 24 30 Q 27 46, 30 30 Q 33 14, 36 30 Q 39 46, 42 22 Q 45 14, 52 30" stroke="url(#pulse)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <rect x="12" y="10" width="17" height="85" rx="8" transform="rotate(-38 50 50)" fill="url(#xo)"/>
+  <rect x="12" y="10" width="17" height="85" rx="8" transform="rotate(38 50 50)" fill="url(#xo)"/>
+  <circle cx="62" cy="50" r="24" stroke="url(#xo)" stroke-width="14" fill="none"/>
 </svg>

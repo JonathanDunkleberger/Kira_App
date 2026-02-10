@@ -7,6 +7,7 @@ import { Zap, User } from "lucide-react";
 import { useSubscription } from "@/hooks/use-subscription";
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProfileModal from "@/components/ProfileModal";
+import { KiraLogo } from "@/components/KiraLogo";
 
 /* ─── Mini Orb (simplified canvas for hero) ─── */
 function MiniOrb({ size = 180 }: { size?: number }) {
@@ -272,16 +273,7 @@ export default function HomePage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <svg width="22" height="16" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="navPulse" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#6B7DB3"/>
-                <stop offset="50%" stopColor="#A8B8D0"/>
-                <stop offset="100%" stopColor="#6B7DB3"/>
-              </linearGradient>
-            </defs>
-            <path d="M 1 10 Q 4 10, 5.5 7 Q 7 4, 8.5 10 Q 10 16, 11.5 10 Q 13 4, 14.5 10 Q 16 16, 17.5 7 Q 19 4, 22 10" stroke="url(#navPulse)" strokeWidth="2" strokeLinecap="round" fill="none"/>
-          </svg>
+          <KiraLogo size={24} id="navXO" />
           <span style={{ fontSize: 17, fontWeight: 500, letterSpacing: "0.04em", color: "#C9D1D9" }}>
             Kira
           </span>

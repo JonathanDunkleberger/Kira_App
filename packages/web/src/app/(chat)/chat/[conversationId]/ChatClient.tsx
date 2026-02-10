@@ -11,6 +11,7 @@ import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";
 import { getOrCreateGuestId } from "@/lib/guestId";
 import { getVoicePreference, setVoicePreference, VoicePreference } from "@/lib/voicePreference";
+import { KiraLogo } from "@/components/KiraLogo";
 
 export default function ChatClient() {
   const router = useRouter();
@@ -296,16 +297,7 @@ export default function ChatClient() {
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
         <Link href="/">
           <span className="font-medium text-lg flex items-center gap-2" style={{ color: "#C9D1D9" }}>
-            <svg width="22" height="16" viewBox="0 0 28 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="chatPulse" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#6B7DB3"/>
-                  <stop offset="50%" stopColor="#A8B8D0"/>
-                  <stop offset="100%" stopColor="#6B7DB3"/>
-                </linearGradient>
-              </defs>
-              <path d="M 1 10 Q 4 10, 5.5 7 Q 7 4, 8.5 10 Q 10 16, 11.5 10 Q 13 4, 14.5 10 Q 16 16, 17.5 7 Q 19 4, 22 10" stroke="url(#chatPulse)" strokeWidth="2" strokeLinecap="round" fill="none"/>
-            </svg>
+            <KiraLogo size={24} id="chatXO" />
             Kira
           </span>
         </Link>

@@ -3,8 +3,15 @@ import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 
 export const metadata: Metadata = {
-  title: "Kira AI",
-  description: "Your AI media companion",
+  title: "Kira",
+  description: "Not an assistant. A presence.",
+  icons: {
+    icon: [
+      { url: "/kira-favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "32x32" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({

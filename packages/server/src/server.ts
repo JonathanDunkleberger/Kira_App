@@ -12,7 +12,7 @@ import { KIRA_SYSTEM_PROMPT } from "./personality.js";
 import { extractAndSaveMemories } from "./memoryExtractor.js";
 import { loadUserMemories } from "./memoryLoader.js";
 import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./guestMemoryBuffer.js";
-import { getGuestUsage, saveGuestUsage } from "./guestUsage.js";
+import { getGuestUsage, getGuestUsageInfo, saveGuestUsage } from "./guestUsage.js";
 import { getProUsage, saveProUsage } from "./proUsage.js";
 
 // --- CONFIGURATION ---
@@ -578,11 +578,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           sessionStartTime = Date.now();
 
           // Send session_config for guests (signed-in users already get it above)
+          let isReturningGuest = false;
           if (isGuest && userId) {
-            const storedSeconds = await getGuestUsage(userId);
+            const usageInfo = await getGuestUsageInfo(userId);
 
-            if (storedSeconds >= FREE_LIMIT_SECONDS) {
-              console.log(`[USAGE] Guest ${userId} blocked — ${storedSeconds}s >= ${FREE_LIMIT_SECONDS}s`);
+            if (usageInfo.seconds >= FREE_LIMIT_SECONDS) {
+              console.log(`[USAGE] Guest ${userId} blocked — ${usageInfo.seconds}s >= ${FREE_LIMIT_SECONDS}s`);
               wasBlockedImmediately = true;
               ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
               ws.close(1008, "Guest usage limit reached");
@@ -590,9 +591,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             }
 
             // Resume tracking from where they left off
-            guestUsageSeconds = storedSeconds;
-            guestUsageBase = storedSeconds;
-            console.log(`[USAGE] Guest ${userId} allowed — resuming at ${storedSeconds}s`);
+            isReturningGuest = usageInfo.isReturning;
+            guestUsageSeconds = usageInfo.seconds;
+            guestUsageBase = usageInfo.seconds;
+            console.log(`[USAGE] Guest ${userId} allowed — resuming at ${usageInfo.seconds}s (returning: ${isReturningGuest})`);
 
             ws.send(
               JSON.stringify({
@@ -664,6 +666,114 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           sttStreamer = await initDeepgram();
           ws.send(JSON.stringify({ type: "stream_ready" }));
+
+          // --- KIRA OPENER: She speaks first ---
+          setTimeout(async () => {
+            if (clientDisconnected || state !== "listening") return;
+
+            // Determine user type for contextual greeting
+            let userType: "new_guest" | "returning_guest" | "pro_user" | "free_user";
+            if (isGuest) {
+              userType = isReturningGuest ? "returning_guest" : "new_guest";
+            } else if (isProUser) {
+              userType = "pro_user";
+            } else {
+              userType = "free_user";
+            }
+
+            // Check if memories were loaded (indicates an established relationship)
+            const hasMemories = chatHistory.some(
+              (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU KNOW ABOUT THIS USER]")
+            );
+
+            let openerInstruction: string;
+            switch (userType) {
+              case "new_guest":
+                openerInstruction = `[This user just connected for the very first time. They have never talked to you before. Say something warm and casual to kick off the conversation — like you're meeting someone cool for the first time. Be brief (1-2 sentences). Introduce yourself naturally. Don't be formal or robotic. Examples of the vibe: "Hey! I'm Kira. So... what's your deal?" or "Hi! I'm Kira — I've been waiting for someone interesting to talk to." Make it YOUR version — don't copy these examples word for word. Be spontaneous.]`;
+                break;
+              case "returning_guest":
+                openerInstruction = `[This user has talked to you before, but they're still a guest (not signed in). You don't have specific memories of them, but you know this isn't their first time. Greet them like you vaguely recognize them — casual and warm. Be brief (1-2 sentences). Something like the vibe of "Hey, you're back!" without being over-the-top. Don't ask them to sign up or mention accounts. Just be happy to see them.]`;
+                break;
+              case "pro_user":
+                if (hasMemories) {
+                  openerInstruction = `[This is a Pro subscriber you know well. Your memories about them are loaded in the conversation. Greet them like a close friend — reference something from your memories if you can, or bring up something you've been "thinking about." Be natural, warm, brief (1-2 sentences). This is someone you have real history with. Skip introductions. You know each other.]`;
+                } else {
+                  openerInstruction = `[This is a Pro subscriber but you don't have specific memories loaded yet. Greet them warmly like a friend you're excited to talk to again. Be brief (1-2 sentences). Don't mention subscriptions or Pro status.]`;
+                }
+                break;
+              case "free_user":
+                if (hasMemories) {
+                  openerInstruction = `[This is a signed-in user you know. Your memories about them are loaded in the conversation. Greet them like a friend — reference something from your memories naturally if it fits, or just say hi like you're picking up where you left off. Be brief (1-2 sentences).]`;
+                } else {
+                  openerInstruction = `[This is a signed-in user, but you don't have specific memories of them. They might be relatively new. Greet them casually and warmly. Be brief (1-2 sentences). Be yourself — curious and open.]`;
+                }
+                break;
+            }
+
+            console.log(`[Opener] User type: ${userType}, hasMemories: ${hasMemories}`);
+
+            try {
+              state = "thinking";
+              ws.send(JSON.stringify({ type: "state_thinking" }));
+
+              const openerMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+                ...chatHistory,
+                { role: "system", content: openerInstruction },
+                { role: "user", content: "[User just connected — say hi]" },
+              ];
+
+              const completion = await openai.chat.completions.create({
+                model: OPENAI_MODEL,
+                messages: openerMessages,
+                temperature: 0.9,
+                max_tokens: 100,
+                frequency_penalty: 0.3,
+                presence_penalty: 0.3,
+              });
+
+              const openerText = completion.choices[0]?.message?.content?.trim() || "";
+              if (!openerText || openerText.length < 3 || clientDisconnected) return;
+
+              // Add to chat history (NOT the instruction — just the greeting)
+              chatHistory.push({ role: "assistant", content: openerText });
+              console.log(`[Opener] Kira says: "${openerText}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
+
+              // --- TTS pipeline for opener ---
+              state = "speaking";
+              ws.send(JSON.stringify({ type: "state_speaking" }));
+              ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+              await new Promise(resolve => setImmediate(resolve));
+
+              const sentences = openerText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [openerText];
+              for (const sentence of sentences) {
+                const trimmed = sentence.trim();
+                if (trimmed.length === 0) continue;
+                await new Promise<void>((resolve) => {
+                  const tts = new AzureTTSStreamer(currentVoiceConfig);
+                  tts.on("audio_chunk", (chunk: Buffer) => {
+                    if (!clientDisconnected) ws.send(chunk);
+                  });
+                  tts.on("tts_complete", () => resolve());
+                  tts.on("error", (err: Error) => {
+                    console.error("[Opener TTS] Sentence error:", err);
+                    resolve();
+                  });
+                  tts.synthesize(trimmed);
+                });
+              }
+
+              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+              state = "listening";
+              ws.send(JSON.stringify({ type: "state_listening" }));
+              turnCount++; // Count the opener as a turn
+              resetSilenceTimer();
+            } catch (err) {
+              console.error("[Opener] Error:", (err as Error).message);
+              state = "listening";
+              ws.send(JSON.stringify({ type: "state_listening" }));
+            }
+          }, 500);
         } else if (controlMessage.type === "eou") {
           // Debounce: ignore EOU if one was just processed
           const now = Date.now();

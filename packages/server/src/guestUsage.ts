@@ -40,8 +40,17 @@ function getToday(): string {
  * Get current usage for a guest. Returns 0 if no record or different day.
  */
 export async function getGuestUsage(guestId: string): Promise<number> {
+  const info = await getGuestUsageInfo(guestId);
+  return info.seconds;
+}
+
+/**
+ * Get usage info for a guest, including whether they are a returning visitor.
+ * isReturning = true if a record exists in Supabase at all (even from a prior day).
+ */
+export async function getGuestUsageInfo(guestId: string): Promise<{ seconds: number; isReturning: boolean }> {
   const supabase = getSupabase();
-  if (!supabase) return 0;
+  if (!supabase) return { seconds: 0, isReturning: false };
   const today = getToday();
   try {
     const { data, error } = await supabase
@@ -50,12 +59,12 @@ export async function getGuestUsage(guestId: string): Promise<number> {
       .eq("guest_id", guestId)
       .single();
 
-    if (error || !data) return 0;
-    if (data.date !== today) return 0;
-    return data.seconds;
+    if (error || !data) return { seconds: 0, isReturning: false };
+    if (data.date !== today) return { seconds: 0, isReturning: true };
+    return { seconds: data.seconds, isReturning: true };
   } catch (err) {
     console.error("[GuestUsage] ❌ Read exception for", guestId, ":", err);
-    return 0;
+    return { seconds: 0, isReturning: false };
   }
 }
 

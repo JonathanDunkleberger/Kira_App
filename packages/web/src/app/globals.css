@@ -43,10 +43,12 @@
 @keyframes kira-sonar {
   0% {
     transform: scale(1);
-    opacity: 0.3;
+    opacity: 0.25;
+    border-width: 2px;
   }
   100% {
-    transform: scale(1.5);
+    transform: scale(1.15);
     opacity: 0;
+    border-width: 1px;
   }
 }

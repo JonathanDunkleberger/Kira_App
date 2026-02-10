@@ -2,17 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// ─── Orb color palette (matches KIRA_THEME accent family) ────────────────────
-const ORB_COLOR_LIGHT = "#A3B8D8"; // lighter tint
-const ORB_COLOR_BASE = "#6B7DB3";  // primary accent
-const ORB_COLOR_DARK = "#4A5A8A";  // darker shade
-const ORB_RGB = "107,125,179";     // base as RGB for rgba()
+// ─── Orb color palette ───────────────────────────────────────────────────────
+// Almost-flat blue with minimal depth: center is barely lighter than edges.
+const ORB_COLOR_CENTER = "#7B8FBF"; // very slightly lighter blue
+const ORB_COLOR_EDGE   = "#6B7DB3"; // base accent (only ~12% darker)
+const ORB_RGB = "107,125,179";      // base as RGB for rgba()
 
-// ─── Size presets ────────────────────────────────────────────────────────────
+// ─── Size presets (lg reduced 25% from 200→150) ─────────────────────────────
 const SIZES = {
-  sm:  { orb: 120, ring: 156, glow: 132, highlight: 108, container: 180 },
-  md:  { orb: 150, ring: 195, glow: 165, highlight: 135, container: 225 },
-  lg:  { orb: 200, ring: 260, glow: 220, highlight: 180, container: 300 },
+  sm:  { orb:  90, glow: 100, container: 140 },
+  md:  { orb: 130, glow: 145, container: 195 },
+  lg:  { orb: 150, glow: 165, container: 225 },
 } as const;
 
 export type OrbSize = keyof typeof SIZES;
@@ -37,8 +37,9 @@ export default function KiraOrb({
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
   const [rings, setRings] = useState<number[]>([]);
+  const lastRingTime = useRef(0);
 
-  const { orb: orbSize, ring: outerRingSize, glow: glowSize, highlight: highlightSize, container: containerSize } = SIZES[size];
+  const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
 
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
@@ -56,7 +57,7 @@ export default function KiraOrb({
     } else if (isIdle || isThinking) {
       orbRef.current.style.transform = "";
       orbRef.current.style.transition = "";
-      orbRef.current.style.animation = "kira-breathe 4s ease-in-out infinite";
+      orbRef.current.style.animation = "kira-breathe 7s ease-in-out infinite";
     } else if (isKiraSpeaking) {
       orbRef.current.style.transform = "scale(1)";
       orbRef.current.style.transition = "transform 0.3s ease-out";
@@ -64,25 +65,35 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, isIdle, isThinking, isKiraSpeaking, micVolume]);
 
-  // ─── Sonar rings while Kira speaks ──────────────────────────────────
+  // ─── Sonar rings: one when speech starts, then every 2.5s ───────────
   useEffect(() => {
     if (isKiraSpeaking) {
+      // Spawn one ring immediately when speech starts
+      setRings((prev) => [...prev.slice(-2), Date.now()]);
+      lastRingTime.current = Date.now();
+
+      // Then one more ring every 2.5s while still speaking
       const interval = setInterval(() => {
-        setRings((prev) => [...prev.slice(-3), Date.now()]); // max 4 rings
-      }, 800);
+        const now = Date.now();
+        if (now - lastRingTime.current >= 2500) {
+          setRings((prev) => [...prev.slice(-2), Date.now()]);
+          lastRingTime.current = now;
+        }
+      }, 2500);
+
       return () => clearInterval(interval);
-    } else {
-      setRings([]);
     }
+    // Don't clear rings immediately — let existing ones finish their animation
   }, [isKiraSpeaking]);
 
-  // Clean up expired rings (after animation ends — 2s)
+  // ─── Clean up finished rings (match 1.2s animation duration) ────────
   useEffect(() => {
-    if (rings.length === 0) return;
-    const timeout = setTimeout(() => {
-      setRings((prev) => prev.filter((id) => Date.now() - id < 2000));
-    }, 2100);
-    return () => clearTimeout(timeout);
+    if (rings.length > 0) {
+      const timeout = setTimeout(() => {
+        setRings((prev) => prev.slice(1)); // remove oldest ring
+      }, 1200);
+      return () => clearTimeout(timeout);
+    }
   }, [rings]);
 
   return (
@@ -91,16 +102,6 @@ export default function KiraOrb({
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Outer decorative ring — always visible */}
-        <div
-          className="absolute rounded-full"
-          style={{
-            width: outerRingSize,
-            height: outerRingSize,
-            border: `1px solid rgba(${ORB_RGB}, 0.12)`,
-          }}
-        />
-
         {/* Sonar rings — only when Kira speaks */}
         {rings.map((id) => (
           <div
@@ -109,19 +110,19 @@ export default function KiraOrb({
             style={{
               width: orbSize,
               height: orbSize,
-              border: `1.5px solid rgba(${ORB_RGB}, 0.3)`,
-              animation: "kira-sonar 2s ease-out forwards",
+              border: `1.5px solid rgba(${ORB_RGB}, 0.25)`,
+              animation: "kira-sonar 1.2s ease-out forwards",
             }}
           />
         ))}
 
-        {/* Inner glow / ambient shadow behind orb */}
+        {/* Subtle ambient glow behind orb */}
         <div
           className="absolute rounded-full pointer-events-none"
           style={{
             width: glowSize,
             height: glowSize,
-            background: `radial-gradient(circle, rgba(${ORB_RGB}, 0.15), transparent 70%)`,
+            background: `radial-gradient(circle, rgba(${ORB_RGB}, 0.10), transparent 70%)`,
           }}
         />
 
@@ -132,23 +133,17 @@ export default function KiraOrb({
           style={{
             width: orbSize,
             height: orbSize,
-            background: `radial-gradient(circle at 38% 38%, ${ORB_COLOR_LIGHT}, ${ORB_COLOR_BASE} 60%, ${ORB_COLOR_DARK})`,
-            boxShadow: `0 4px 30px rgba(${ORB_RGB}, 0.25)`,
-            animation: "kira-breathe 4s ease-in-out infinite",
+            background: [
+              // Subtle highlight — barely-there top-left warmth
+              `radial-gradient(circle at 42% 38%, rgba(255,255,255,0.08) 0%, transparent 50%)`,
+              // Near-flat base gradient — only ~12% darker at edges
+              `radial-gradient(circle at 50% 50%, ${ORB_COLOR_CENTER} 0%, ${ORB_COLOR_EDGE} 100%)`,
+            ].join(", "),
+            boxShadow: `0 4px 24px rgba(${ORB_RGB}, 0.20)`,
+            animation: "kira-breathe 7s ease-in-out infinite",
             willChange: "transform",
             filter: isThinking ? "brightness(0.85) saturate(0.9)" : "brightness(1)",
             transition: "filter 0.5s ease",
-          }}
-        />
-
-        {/* Specular highlight — gives soft 3D depth */}
-        <div
-          className="absolute rounded-full pointer-events-none"
-          style={{
-            width: highlightSize,
-            height: highlightSize,
-            background:
-              "radial-gradient(circle at 32% 32%, rgba(255,255,255,0.22), transparent 60%)",
           }}
         />
       </div>

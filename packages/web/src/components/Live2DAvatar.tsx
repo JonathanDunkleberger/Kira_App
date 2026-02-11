@@ -67,7 +67,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         appRef.current = app;
 
         const model = await Live2DModel.from(
-          "/models/kira/suki%E9%85%B1.model3.json",
+          "/worklets/models/Kira/suki%E9%85%B1.model3.json",
           { autoInteract: false }
         );
 

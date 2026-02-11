@@ -226,7 +226,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastKiraSpokeTimestamp = 0;
   let lastUserSpokeTimestamp = 0;
   let lastVisionReactionTimestamp = 0;
-  const VISION_REACTION_COOLDOWN = 180000; // 3 minutes minimum between unprompted reactions
+  function getVisionReactionCooldown() {
+    // Random cooldown between 90-150 seconds to feel natural
+    return 90000 + Math.random() * 60000;
+  }
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -274,8 +277,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       // --- Vision-aware silence behavior ---
       if (visionActive) {
         const timeSinceLastReaction = Date.now() - lastVisionReactionTimestamp;
+        const cooldown = getVisionReactionCooldown();
+        console.log(`[Vision] Reaction check — timeSinceLastReaction: ${Math.round(timeSinceLastReaction / 1000)}s, cooldown: ${Math.round(cooldown / 1000)}s, lastReactionTimestamp: ${lastVisionReactionTimestamp}`);
 
-        if (timeSinceLastReaction < VISION_REACTION_COOLDOWN) {
+        if (timeSinceLastReaction < cooldown) {
           console.log("[Silence] Vision active — reaction cooldown not met. Staying quiet.");
           // Re-arm the silence timer so we check again later
           silenceInitiatedLast = false;
@@ -1561,22 +1566,31 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
              console.log(`[Vision] Received ${controlMessage.images.length} images. Updating buffer.`);
              latestImages = controlMessage.images;
              lastImageTimestamp = Date.now();
-             visionActive = true;
+             if (!visionActive) {
+               visionActive = true;
+               lastVisionReactionTimestamp = Date.now();
+               console.log("[Vision] Screen share started. Setting initial reaction cooldown.");
+             }
              lastVisionTimestamp = Date.now();
-             if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
           } else if (controlMessage.image) {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
-            visionActive = true;
+            if (!visionActive) {
+              visionActive = true;
+              lastVisionReactionTimestamp = Date.now();
+              console.log("[Vision] Screen share started. Setting initial reaction cooldown.");
+            }
             lastVisionTimestamp = Date.now();
-            if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
           }
         } else if (controlMessage.type === "scene_update" && controlMessage.images && Array.isArray(controlMessage.images)) {
           // Scene updates also confirm vision is active
-          visionActive = true;
+          if (!visionActive) {
+            visionActive = true;
+            lastVisionReactionTimestamp = Date.now();
+            console.log("[Vision] Screen share started via scene_update. Setting initial reaction cooldown.");
+          }
           lastVisionTimestamp = Date.now();
-          if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
 
           // --- WATCH-TOGETHER: Occasional scene reactions ---
           const now = Date.now();

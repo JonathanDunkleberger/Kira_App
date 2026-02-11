@@ -93,20 +93,39 @@ export default function KiraOrb({
 
   return (
     <div className="relative flex flex-col items-center">
+      {/* Sonar keyframe — scoped here to avoid CSS conflicts */}
+      <style>{`
+        @keyframes sonar-ping {
+          0% {
+            transform: scale(1);
+            opacity: 0.5;
+          }
+          100% {
+            transform: scale(1.5);
+            opacity: 0;
+          }
+        }
+      `}</style>
+
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — pure CSS loop, only when Kira speaks */}
+        {/* Sonar ring — pure CSS infinite loop, only when Kira speaks */}
         {isKiraSpeaking && (
           <div
-            className="absolute rounded-full pointer-events-none"
             style={{
+              position: 'absolute',
               width: orbSize,
               height: orbSize,
+              borderRadius: '50%',
               border: '2.5px solid rgba(170, 190, 230, 0.6)',
-              boxShadow: '0 0 8px rgba(170, 190, 230, 0.3)',
-              animation: 'sonar-ping 1.8s ease-out infinite',
+              boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
+              animationName: 'sonar-ping',
+              animationDuration: '2.2s',
+              animationTimingFunction: 'ease-out',
+              animationIterationCount: 'infinite',
+              pointerEvents: 'none',
             }}
           />
         )}

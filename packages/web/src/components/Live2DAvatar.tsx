@@ -77,7 +77,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
 
         app.stage.addChild(model as any);
 
-        // Zoom in to show knees-up framing (upper body focus)
+        // Framing: show head to mid-thigh, centered with breathing room
         const dpr = window.devicePixelRatio || 2;
         const containerWidth = app.renderer.width / dpr;
         const containerHeight = app.renderer.height / dpr;
@@ -85,11 +85,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         const scale = Math.min(
           containerWidth / model.width,
           containerHeight / model.height
-        ) * 1.4;
+        ) * 1.0;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        model.y = containerHeight * 0.35;
-        model.anchor.set(0.5, 0.3);
+        model.y = containerHeight * 0.45;
+        model.anchor.set(0.5, 0.35);
 
         // Eye tracking — eyes follow the cursor
         app.stage.interactive = true;
@@ -136,7 +136,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
           modelRef.current.x = w / 2;
-          modelRef.current.y = h * 0.35;
+          modelRef.current.y = h * 0.45;
         }
       }
     };
@@ -239,9 +239,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
       style={{
         width: "100%",
         height: "100%",
-        position: "absolute",
-        top: 0,
-        left: 0,
+        maxWidth: "600px",
+        maxHeight: "80vh",
+        margin: "0 auto",
+        position: "relative",
         pointerEvents: "auto",
       }}
     />

@@ -433,16 +433,6 @@ export default function ChatClient() {
       <div
         className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
       >
-        {/* Ultra-smooth gradient fade */}
-        <div
-          className="absolute bottom-0 left-0 right-0 pointer-events-none"
-          style={{
-            height: 200,
-            background: "linear-gradient(to bottom, rgba(13,17,23,0) 0%, rgba(13,17,23,0.4) 25%, rgba(13,17,23,0.75) 45%, rgba(13,17,23,0.92) 60%, rgba(13,17,23,0.98) 75%, #0D1117 90%)",
-            zIndex: 0,
-          }}
-        />
-
         {/* Text Input */}
         <TextInput
           onSend={sendText}

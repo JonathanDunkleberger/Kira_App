@@ -88,7 +88,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         ) * 0.9;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        model.y = containerHeight * 0.5;
+        model.y = containerHeight * 0.52;
         model.anchor.set(0.5, 0.5);
 
         // Eye tracking — eyes follow the cursor
@@ -136,7 +136,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
           modelRef.current.x = w / 2;
-          modelRef.current.y = h * 0.5;
+          modelRef.current.y = h * 0.52;
         }
       }
     };

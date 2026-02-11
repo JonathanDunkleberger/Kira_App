@@ -76,10 +76,12 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
 
       const vol = smoothedVolume.current;
 
-      // Shadow ring: scale 1.05–1.3, opacity 0.5–1.0 with volume
+      // Shadow ring: fully volume-driven — disappears completely during silence/pauses
       if (shadowRef.current) {
         const shadowScale = 1.05 + vol * 0.25;
-        const shadowOpacity = 0.5 + vol * 0.5;
+        // Opacity ramps from 0→1 with volume; cuts to 0 below threshold so
+        // mid-speech pauses look identical to end-of-turn silence.
+        const shadowOpacity = vol < 0.03 ? 0 : Math.min(1, vol * 2.5);
         shadowRef.current.style.transform = `scale(${shadowScale})`;
         shadowRef.current.style.opacity = `${shadowOpacity}`;
         // Border gets slightly thicker on louder moments

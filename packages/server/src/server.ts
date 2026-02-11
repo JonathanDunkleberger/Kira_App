@@ -225,6 +225,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastVisionTimestamp = 0;
   let lastKiraSpokeTimestamp = 0;
   let lastUserSpokeTimestamp = 0;
+  let lastVisionReactionTimestamp = 0;
+  const VISION_REACTION_COOLDOWN = 180000; // 3 minutes minimum between unprompted reactions
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -271,14 +273,113 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
       // --- Vision-aware silence behavior ---
       if (visionActive) {
-        const timeSinceKiraSpoke = Date.now() - lastKiraSpokeTimestamp;
-        const timeSinceUserSpoke = Date.now() - lastUserSpokeTimestamp;
+        const timeSinceLastReaction = Date.now() - lastVisionReactionTimestamp;
 
-        // During screen share, only trigger if 5+ min since Kira spoke AND 3+ min since user spoke
-        if (timeSinceKiraSpoke < 300000 || timeSinceUserSpoke < 180000) {
-          console.log("[Silence] Vision active — suppressing silence check.");
+        if (timeSinceLastReaction < VISION_REACTION_COOLDOWN) {
+          console.log("[Silence] Vision active — reaction cooldown not met. Staying quiet.");
+          // Re-arm the silence timer so we check again later
+          silenceInitiatedLast = false;
+          resetSilenceTimer();
           return;
         }
+
+        if (!latestImages || latestImages.length === 0) {
+          console.log("[Silence] Vision active — no images available for reaction.");
+          silenceInitiatedLast = false;
+          resetSilenceTimer();
+          return;
+        }
+
+        console.log("[Vision] Cooldown met. Checking if Kira wants to react...");
+        state = "thinking";
+        if (silenceTimer) clearTimeout(silenceTimer);
+
+        // Build image content for the micro-reaction
+        const reactionImageContent: OpenAI.Chat.ChatCompletionContentPart[] = latestImages.map((img) => ({
+          type: "image_url" as const,
+          image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
+        }));
+        reactionImageContent.push({
+          type: "text" as const,
+          text: "(screen share — checking for reaction)",
+        });
+
+        const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+          {
+            role: "system",
+            content: KIRA_SYSTEM_PROMPT + (visionActive ? VISION_CONTEXT_PROMPT : '') + `\n\n[MICRO-REACTION CHECK]\nYou are watching something with the user and it's been a few minutes of quiet. Look at what's currently on screen. If something genuinely interesting, emotional, funny, or exciting is happening RIGHT NOW in this moment, give a very brief reaction (1-8 words max). Examples: "Oh wow." / "No way!" / "This scene though..." / "Haha" / "Oof, that hurts."\n\nIf the scene is calm, transitional, or nothing particularly stands out, respond with exactly [SILENT] — it's better to say nothing than to force a reaction.\n\nDo NOT describe what you see. Do NOT ask the user a question. Just react naturally or stay silent.`,
+          },
+          ...chatHistory.filter(m => m.role !== "system").slice(-4),
+          { role: "user", content: reactionImageContent },
+        ];
+
+        try {
+          const reactionResponse = await openai.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: reactionMessages,
+            max_tokens: 30,
+            temperature: 0.9,
+          });
+
+          const reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
+
+          // Reset cooldown regardless of outcome
+          lastVisionReactionTimestamp = Date.now();
+
+          if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length > 80 || reaction.length < 2) {
+            console.log(`[Vision] Kira decided to stay silent. ("${reaction}")`);
+            state = "listening";
+            silenceInitiatedLast = false;
+            resetSilenceTimer();
+            return;
+          }
+
+          console.log(`[Vision] Kira reacts: "${reaction}"`);
+          chatHistory.push({ role: "assistant", content: reaction });
+          lastKiraSpokeTimestamp = Date.now();
+          ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reaction }));
+
+          // TTS pipeline
+          state = "speaking";
+          ws.send(JSON.stringify({ type: "state_speaking" }));
+          ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+          await new Promise(resolve => setImmediate(resolve));
+
+          try {
+            const sentences = reaction.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [reaction];
+            for (const sentence of sentences) {
+              const trimmed = sentence.trim();
+              if (trimmed.length === 0) continue;
+              await new Promise<void>((resolve) => {
+                const tts = new AzureTTSStreamer(currentVoiceConfig);
+                tts.on("audio_chunk", (chunk: Buffer) => {
+                  if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
+                });
+                tts.on("tts_complete", () => resolve());
+                tts.on("error", (err: Error) => {
+                  console.error("[TTS] Vision reaction error:", err);
+                  resolve();
+                });
+                tts.synthesize(trimmed);
+              });
+            }
+          } catch (ttsErr) {
+            console.error("[TTS] Vision reaction TTS error:", ttsErr);
+          } finally {
+            ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+            state = "listening";
+            ws.send(JSON.stringify({ type: "state_listening" }));
+            silenceInitiatedLast = false;
+            resetSilenceTimer();
+          }
+        } catch (err) {
+          console.error("[Vision] Micro-reaction error:", (err as Error).message);
+          state = "listening";
+          silenceInitiatedLast = false;
+          resetSilenceTimer();
+        }
+
+        return; // Don't fall through to normal silence checker
       }
 
       silenceInitiatedLast = true;
@@ -327,6 +428,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         chatHistory.push({ role: "assistant", content: responseText });
         console.log(`[Silence] Kira initiates: "${responseText}"`);
         lastKiraSpokeTimestamp = Date.now();
+        if (visionActive) lastVisionReactionTimestamp = Date.now();
         ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
 
         state = "speaking";
@@ -405,6 +507,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
       console.log(`[AI RESPONSE]: "${llmResponse}"`);
       lastKiraSpokeTimestamp = Date.now();
+      if (visionActive) lastVisionReactionTimestamp = Date.now();
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
       const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
@@ -1289,6 +1392,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
               lastKiraSpokeTimestamp = Date.now();
+              if (visionActive) lastVisionReactionTimestamp = Date.now();
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
               
               if (silenceTimer) clearTimeout(silenceTimer);
@@ -1416,6 +1520,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
               lastKiraSpokeTimestamp = Date.now();
+              if (visionActive) lastVisionReactionTimestamp = Date.now();
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
             } catch (ttsErr) {
               console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
@@ -1458,17 +1563,20 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
              lastImageTimestamp = Date.now();
              visionActive = true;
              lastVisionTimestamp = Date.now();
+             if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
           } else if (controlMessage.image) {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
             visionActive = true;
             lastVisionTimestamp = Date.now();
+            if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
           }
         } else if (controlMessage.type === "scene_update" && controlMessage.images && Array.isArray(controlMessage.images)) {
           // Scene updates also confirm vision is active
           visionActive = true;
           lastVisionTimestamp = Date.now();
+          if (!lastVisionReactionTimestamp) lastVisionReactionTimestamp = Date.now();
 
           // --- WATCH-TOGETHER: Occasional scene reactions ---
           const now = Date.now();
@@ -1533,6 +1641,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
+                if (visionActive) lastVisionReactionTimestamp = Date.now();
                 ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
 
                 // TTS pipeline for scene reaction

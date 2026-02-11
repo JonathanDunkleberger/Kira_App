@@ -240,7 +240,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         width: "100%",
         height: "100%",
         maxWidth: "600px",
-        maxHeight: "80vh",
+        maxHeight: "85vh",
         margin: "0 auto",
         position: "relative",
         pointerEvents: "auto",

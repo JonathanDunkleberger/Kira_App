@@ -388,6 +388,7 @@ export default function ChatClient() {
           playerVolume={playerVolume}
           size="lg"
           showLabel
+          enableBreathing={false}
         />
 
         {/* Transcript — single line, styled by role */}

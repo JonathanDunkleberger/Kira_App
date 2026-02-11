@@ -27,6 +27,8 @@ export interface KiraOrbProps {
   size?: OrbSize;
   /** Whether to show the state-indicator label below the orb. */
   showLabel?: boolean;
+  /** Enable idle breathing animation. true for landing page, false for chat page. */
+  enableBreathing?: boolean;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ export default function KiraOrb({
   playerVolume = 0,
   size = "lg",
   showLabel = false,
+  enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
   const [rings, setRings] = useState<number[]>([]);
@@ -47,7 +50,6 @@ export default function KiraOrb({
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
   const isActive = isUserSpeaking || isKiraSpeaking;
-  const isThinking = state === "thinking";
 
   // ─── Audio-driven pulsing (rAF loop for both directions) ─────────────
   // Refs so the rAF closure always sees latest values without re-starting
@@ -85,20 +87,25 @@ export default function KiraOrb({
 
       return () => cancelAnimationFrame(animFrame.current);
     } else {
-      // Ease back to idle, then hand off to CSS breathing
+      // Ease back to idle
       orb.style.transition = "transform 0.5s ease-out";
       orb.style.transform = "scale(1)";
-      // After the ease-back finishes, re-enable CSS breathing
-      const timer = setTimeout(() => {
-        if (orbRef.current) {
-          orbRef.current.style.transition = "";
-          orbRef.current.style.transform = "";
-          orbRef.current.style.animation = "kira-breathe 4.5s ease-in-out infinite";
-        }
-      }, 520);
-      return () => clearTimeout(timer);
+      if (enableBreathing) {
+        // After the ease-back finishes, re-enable CSS breathing (landing page)
+        const timer = setTimeout(() => {
+          if (orbRef.current) {
+            orbRef.current.style.transition = "";
+            orbRef.current.style.transform = "";
+            orbRef.current.style.animation = "kira-breathe 4.5s ease-in-out infinite";
+          }
+        }, 520);
+        return () => clearTimeout(timer);
+      } else {
+        // Chat page: stay perfectly still at scale(1), no breathing
+        orb.style.animation = "none";
+      }
     }
-  }, [isActive]);
+  }, [isActive, enableBreathing]);
 
   // ─── Sonar rings: one when speech starts, then every 2.5s ───────────
   useEffect(() => {
@@ -170,10 +177,8 @@ export default function KiraOrb({
               `radial-gradient(circle at 50% 50%, ${ORB_COLOR_CENTER} 0%, ${ORB_COLOR_EDGE} 100%)`,
             ].join(", "),
             boxShadow: `0 4px 24px rgba(${ORB_RGB}, 0.20)`,
-            animation: "kira-breathe 4.5s ease-in-out infinite",
+            animation: enableBreathing ? "kira-breathe 4.5s ease-in-out infinite" : "none",
             willChange: "transform",
-            filter: isThinking ? "brightness(0.85) saturate(0.9)" : "brightness(1)",
-            transition: "filter 0.5s ease",
           }}
         />
       </div>

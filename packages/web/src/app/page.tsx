@@ -324,7 +324,7 @@ export default function HomePage() {
         />
 
         <div style={{ position: "relative", marginBottom: 40 }}>
-          <KiraOrb size="md" />
+          <KiraOrb size="md" enableBreathing />
         </div>
 
         {isSignedIn ? (

@@ -91,6 +91,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
 
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
+  const playbackGain = useRef<GainNode | null>(null);
   const playbackAnalyser = useRef<AnalyserNode | null>(null);
   const playbackAnimationFrame = useRef<number | null>(null);
 
@@ -200,7 +201,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
         nextStartTime.current = 0;
     }
 
-    // 4. Stop visualizer
+    // 4. Stop visualizer and decay volume
     if (playbackAnimationFrame.current) {
         cancelAnimationFrame(playbackAnimationFrame.current);
         playbackAnimationFrame.current = null;
@@ -223,10 +224,24 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       playbackContext.current.state === "closed"
     ) {
       playbackContext.current = new AudioContext({ sampleRate: 16000 });
-      playbackAnalyser.current = null; // Reset analyser if context is recreated
+      // Reset persistent nodes when context is recreated
+      playbackGain.current = null;
+      playbackAnalyser.current = null;
     }
     if (playbackContext.current.state === "suspended") {
       await playbackContext.current.resume();
+    }
+
+    // Build persistent audio chain once: GainNode → Analyser → Destination
+    // Every new source just connects to the GainNode, so the analyser
+    // sees ALL audio across all TTS chunks continuously.
+    if (!playbackGain.current) {
+      playbackGain.current = playbackContext.current.createGain();
+      playbackAnalyser.current = playbackContext.current.createAnalyser();
+      playbackAnalyser.current.fftSize = 256;
+      playbackAnalyser.current.smoothingTimeConstant = 0.7;
+      playbackGain.current.connect(playbackAnalyser.current);
+      playbackAnalyser.current.connect(playbackContext.current.destination);
     }
 
     while (audioQueue.current.length > 0) {
@@ -240,19 +255,10 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
           wavBuffer
         );
 
-        // 2. Create a source node
+        // 2. Create a source node and route through persistent gain
         const source = playbackContext.current.createBufferSource();
         source.buffer = audioBuffer;
-
-        // Create Analyser for visualization if needed
-        if (!playbackAnalyser.current) {
-          playbackAnalyser.current = playbackContext.current.createAnalyser();
-          playbackAnalyser.current.fftSize = 256;
-          playbackAnalyser.current.connect(playbackContext.current.destination);
-        }
-        // Connect source -> analyser -> destination
-        // Note: We already connected analyser -> destination above, so just source -> analyser
-        source.connect(playbackAnalyser.current);
+        source.connect(playbackGain.current!);
 
         // 3. Schedule playback
         const currentTime = playbackContext.current.currentTime;

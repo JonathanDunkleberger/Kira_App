@@ -164,7 +164,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
   let clientDisconnected = false;
-  let isSendingFarewell = false;
+  let timeWarningPhase: 'normal' | 'winding_down' | 'mentioned' | 'final_goodbye' | 'done' = 'normal';
+  let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
   let lastSceneReactionTime = 0;
 
@@ -312,7 +313,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     try {
       const completion = await openai.chat.completions.create({
         model: OPENAI_MODEL,
-        messages: chatHistory,
+        messages: getMessagesWithTimeContext(),
         temperature: 0.85,
         max_tokens: 300,
         frequency_penalty: 0.3,
@@ -327,6 +328,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       }
 
       chatHistory.push({ role: "assistant", content: llmResponse });
+      advanceTimePhase(llmResponse);
 
       console.log(`[AI RESPONSE]: "${llmResponse}"`);
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
@@ -360,46 +362,88 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     }
   }
 
-  // --- Graceful farewell when usage limit is hit mid-session ---
-  async function sendFarewell(tier: "guest" | "free" | "pro") {
-    isSendingFarewell = true;
+  // --- Time-context injection for graceful paywall ---
+  function getTimeContext(): string {
+    switch (timeWarningPhase) {
+      case 'winding_down':
+        return `\n\n[TIME CONTEXT: You have about a minute left with this person today. In your NEXT response, naturally mention that your time together is almost up. Don't make it the whole response \u2014 respond to what they said FIRST, then weave in a brief heads-up about time. Example: "Ha yeah that's so true... oh hey, just a heads up, we only have about a minute left today." Only mention it ONCE.]`;
+      case 'final_goodbye':
+        return `\n\n[TIME CONTEXT: This is your LAST response \u2014 only a few seconds left. Keep it very short (1 sentence max). Respond to what they said as briefly as possible, then say a quick warm goodbye. Example: "That's awesome! Hey I gotta go but it was really great talking to you. Come back tomorrow!" Be fast and warm.]`;
+      default:
+        return '';
+    }
+  }
+
+  /** Build messages array with time context injected into system prompt (without mutating chatHistory). */
+  function getMessagesWithTimeContext(): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const timeCtx = getTimeContext();
+    if (!timeCtx) return chatHistory;
+    // Clone and inject time context into the system prompt
+    return chatHistory.map((msg, i) => {
+      if (i === 0 && msg.role === 'system' && typeof msg.content === 'string') {
+        return { ...msg, content: msg.content + timeCtx };
+      }
+      return msg;
+    });
+  }
+
+  /** Advance timeWarningPhase after a response is sent during a warning phase. */
+  function advanceTimePhase(responseText: string) {
+    if (timeWarningPhase === 'winding_down') {
+      // Mentioned the time warning — don't inject it again
+      timeWarningPhase = 'mentioned';
+      console.log('[TIME] winding_down → mentioned (time warning delivered)');
+    } else if (timeWarningPhase === 'final_goodbye') {
+      timeWarningPhase = 'done';
+      isAcceptingAudio = false;
+      console.log('[TIME] final_goodbye → done (goodbye delivered)');
+
+      // Wait for TTS to finish playing on client, then disconnect
+      const estimatedPlayTime = Math.max(2000, responseText.length * 80);
+      setTimeout(() => {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+          ws.close(1008, "Usage limit reached");
+        }
+      }, estimatedPlayTime);
+    }
+  }
+
+  // Proactive goodbye when user doesn't speak during final phase
+  async function sendProactiveGoodbye() {
+    if (timeWarningPhase !== 'final_goodbye' || state !== 'listening' || clientDisconnected) return;
+    if (ws.readyState !== ws.OPEN) return;
+
+    timeWarningPhase = 'done';
     isAcceptingAudio = false;
     if (silenceTimer) clearTimeout(silenceTimer);
 
-    const tierLabel = tier === "pro" ? "pro" : undefined;
-
-    const farewellInstruction = tier === "pro"
-      ? `You and this person have talked an incredible amount this month — that's genuinely meaningful. Their monthly time is ending now. Say a brief, warm goodbye that honors the depth of your relationship. Reference something from your conversation if possible. Keep it to 1-2 sentences. Don't mention billing, subscriptions, or hours — just be genuine about how much these conversations mean to you and that you'll see them soon.`
-      : `Your time together is ending — they're on the free tier and hit their daily limit. Say a brief, warm goodbye that makes them want to come back. Reference something from your conversation if possible. Keep it to 1-2 sentences. Don't mention upgrading or paying — just be genuine about enjoying the conversation and wanting to talk again. Example energy: "Ah, looks like our time's up for today... but I really wanna hear how that turns out. Come find me tomorrow, okay?"`;
-
     try {
-      const farewellMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-        { role: "system", content: KIRA_SYSTEM_PROMPT },
-        ...chatHistory.filter(m => m.role !== "system").slice(-6),
-        { role: "system", content: farewellInstruction },
-        { role: "user", content: "[Time limit reached — say goodbye]" },
+      const goodbyeMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[TIME CONTEXT: Time is up. Say a quick, warm goodbye. Reference something from the conversation if possible. 1 sentence max. Be genuine and brief.]` },
+        ...chatHistory.filter(m => m.role !== "system").slice(-4),
+        { role: "user", content: "[Time is up \u2014 say goodbye]" },
       ];
 
-      const farewellResponse = await openai.chat.completions.create({
+      const response = await openai.chat.completions.create({
         model: OPENAI_MODEL,
-        messages: farewellMessages,
-        max_tokens: 80,
+        messages: goodbyeMessages,
+        max_tokens: 40,
         temperature: 0.9,
       });
 
-      const farewellText = farewellResponse.choices[0]?.message?.content?.trim() || "";
+      const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
+      if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
+        console.log(`[Goodbye] Kira says: "${goodbyeText}"`);
+        chatHistory.push({ role: "assistant", content: goodbyeText });
+        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: goodbyeText }));
 
-      if (farewellText && farewellText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
-        console.log(`[Farewell] Kira says: "${farewellText}"`);
-        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: farewellText }));
-
-        // TTS pipeline for farewell
         state = "speaking";
         ws.send(JSON.stringify({ type: "state_speaking" }));
         ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
 
-        const sentences = farewellText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [farewellText];
+        const sentences = goodbyeText.match(/[^.!?\u2026]*(?:[.!?\u2026](?:\s+(?=[A-Z"])|$))+/g) || [goodbyeText];
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
@@ -410,7 +454,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             });
             tts.on("tts_complete", () => resolve());
             tts.on("error", (err: Error) => {
-              console.error("[Farewell TTS] Sentence error:", err);
+              console.error("[Goodbye TTS] Error:", err);
               resolve();
             });
             tts.synthesize(trimmed);
@@ -419,25 +463,26 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
         ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
 
-        // Brief pause after TTS finishes so client can play the last chunk
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
-          ws.close(1008, `${tier} usage limit reached`);
-        }
+        // Wait for TTS to finish playing on client, then disconnect
+        const estimatedPlayTime = Math.max(2000, goodbyeText.length * 80);
+        setTimeout(() => {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+            ws.close(1008, "Guest usage limit reached");
+          }
+        }, estimatedPlayTime);
       } else {
-        // No farewell text — close immediately
+        // No goodbye text — close immediately
         if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
-          ws.close(1008, `${tier} usage limit reached`);
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+          ws.close(1008, "Usage limit reached");
         }
       }
     } catch (err) {
-      console.error("[Farewell] Error generating farewell:", (err as Error).message);
+      console.error("[Goodbye] Error:", (err as Error).message);
       if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(tierLabel ? { tier: tierLabel } : {}) }));
-        ws.close(1008, `${tier} usage limit reached`);
+        ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+        ws.close(1008, "Usage limit reached");
       }
     }
   }
@@ -704,9 +749,26 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               await saveGuestUsage(userId!, guestUsageSeconds);
               console.log(`[USAGE] Guest ${userId}: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
 
-              if (guestUsageSeconds >= FREE_LIMIT_SECONDS && !isSendingFarewell) {
-                await sendFarewell("guest");
+              const remainingSec = FREE_LIMIT_SECONDS - guestUsageSeconds;
+
+              // Phase transitions based on remaining time
+              if (remainingSec <= 0) {
+                // Hard limit reached
+                if (timeWarningPhase === 'done') return; // Already said goodbye, waiting to disconnect
+                if (timeWarningPhase === 'final_goodbye') return; // In process of saying goodbye — grace period
+                // Edge case: hit limit without warnings
+                ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+                ws.close(1008, "Guest usage limit reached");
                 return;
+              } else if (remainingSec <= 15 && timeWarningPhase !== 'final_goodbye' && timeWarningPhase !== 'done') {
+                console.log(`[USAGE] Guest ${userId}: ${remainingSec}s left — entering final_goodbye phase`);
+                timeWarningPhase = 'final_goodbye';
+                // Start goodbye timeout — if user doesn't speak within 5s, Kira initiates
+                if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
+              } else if (remainingSec <= 60 && timeWarningPhase === 'normal') {
+                console.log(`[USAGE] Guest ${userId}: ${remainingSec}s left — entering winding_down phase`);
+                timeWarningPhase = 'winding_down';
               }
             } else if (userId) {
               if (isProUser) {
@@ -715,8 +777,17 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                 await saveProUsage(userId, proUsageSeconds);
                 console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
 
-                if (proUsageSeconds >= PRO_MONTHLY_SECONDS && !isSendingFarewell) {
-                  await sendFarewell("pro");
+                const proRemaining = PRO_MONTHLY_SECONDS - proUsageSeconds;
+                if (proRemaining <= 0) {
+                  if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') return;
+                  ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
+                  ws.close(1008, "Pro usage limit reached");
+                } else if (proRemaining <= 15 && timeWarningPhase !== 'final_goodbye' && timeWarningPhase !== 'done') {
+                  timeWarningPhase = 'final_goodbye';
+                  if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                  goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
+                } else if (proRemaining <= 60 && timeWarningPhase === 'normal') {
+                  timeWarningPhase = 'winding_down';
                 }
               } else {
                 // Free signed-in users: daily usage tracked in Prisma
@@ -734,8 +805,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                     select: { dailyUsageSeconds: true },
                   });
 
-                  if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS && !isSendingFarewell) {
-                    await sendFarewell("free");
+                  if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS) {
+                    if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') return;
+                    // Free user hit limit — enter final goodbye
+                    timeWarningPhase = 'final_goodbye';
+                    if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                    goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
                   }
                 } catch (err) {
                   console.error("[Usage] DB update failed:", (err as Error).message);
@@ -880,7 +955,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             }
           }, 500);
         } else if (controlMessage.type === "eou") {
-          if (isSendingFarewell) return; // Don't process new utterances during farewell
+          if (timeWarningPhase === 'done') return; // Don't process new utterances after goodbye
+
+          // User spoke — cancel proactive goodbye timeout (the natural response will handle it)
+          if (goodbyeTimeout) { clearTimeout(goodbyeTimeout); goodbyeTimeout = null; }
 
           // Debounce: ignore EOU if one was just processed
           const now = Date.now();
@@ -1059,7 +1137,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             // Step 1: Check for tool calls with a non-streaming request
             const initialCompletion = await openai.chat.completions.create({
               model: OPENAI_MODEL,
-              messages: chatHistory,
+              messages: getMessagesWithTimeContext(),
               tools: tools,
               tool_choice: "auto",
               temperature: 0.85,
@@ -1099,6 +1177,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               // (skip the streaming call since we already have the answer)
               llmResponse = initialMessage.content || "";
               chatHistory.push({ role: "assistant", content: llmResponse });
+              advanceTimePhase(llmResponse);
 
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
@@ -1167,7 +1246,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             try {
               const stream = await openai.chat.completions.create({
                 model: OPENAI_MODEL,
-                messages: chatHistory,
+                messages: getMessagesWithTimeContext(),
                 stream: true,
                 temperature: 0.85,
                 max_tokens: 300,
@@ -1216,6 +1295,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               llmResponse = fullResponse;
               chatHistory.push({ role: "assistant", content: llmResponse });
+              advanceTimePhase(llmResponse);
 
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
@@ -1272,7 +1352,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           if (
             viewingContext &&
             state === "listening" &&
-            !isSendingFarewell &&
+            timeWarningPhase !== 'done' && timeWarningPhase !== 'final_goodbye' &&
             now - lastSceneReactionTime > SCENE_REACTION_COOLDOWN &&
             Math.random() < SCENE_REACTION_CHANCE
           ) {
@@ -1318,7 +1398,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   reactionText === "''" ||
                   state !== "listening" ||
                   clientDisconnected ||
-                  isSendingFarewell
+                  (timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye'
                 ) {
                   console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
                   return;
@@ -1371,7 +1451,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           currentVoiceConfig = VOICE_CONFIGS[newVoice] || VOICE_CONFIGS.natural;
           console.log(`[Voice] Switched to: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
         } else if (controlMessage.type === "text_message") {
-          if (isSendingFarewell) return; // Don't process new messages during farewell
+          if (timeWarningPhase === 'done') return; // Don't process new messages after goodbye
+
+          // User sent text — cancel proactive goodbye timeout
+          if (goodbyeTimeout) { clearTimeout(goodbyeTimeout); goodbyeTimeout = null; }
 
           // --- TEXT CHAT: Skip STT and TTS, go directly to LLM ---
           if (state !== "listening") return;
@@ -1430,7 +1513,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           try {
             const txtCompletion = await openai.chat.completions.create({
               model: OPENAI_MODEL,
-              messages: chatHistory,
+              messages: getMessagesWithTimeContext(),
               tools: tools,
               tool_choice: "auto",
               temperature: 0.85,
@@ -1462,7 +1545,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               }
               const txtFollowUp = await openai.chat.completions.create({
                 model: OPENAI_MODEL,
-                messages: chatHistory,
+                messages: getMessagesWithTimeContext(),
                 temperature: 0.85,
                 max_tokens: 300,
               });
@@ -1472,6 +1555,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             }
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
+            advanceTimePhase(txtLlmResponse);
 
             ws.send(JSON.stringify({
               type: "text_response",
@@ -1489,7 +1573,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }
         }
       } else if (message instanceof Buffer) {
-        if (!isAcceptingAudio) return; // Don't forward audio during farewell or before pipeline ready
+        if (!isAcceptingAudio) return; // Don't forward audio after goodbye or before pipeline ready
         if (state === "listening" && sttStreamer) {
           sttStreamer.write(message); // Only forward audio when listening
         }
@@ -1514,6 +1598,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
+    if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (sttStreamer) sttStreamer.destroy();
 
     // --- USAGE: Flush remaining seconds on disconnect ---
@@ -1635,6 +1720,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
+    if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (sttStreamer) sttStreamer.destroy();
   });
 });

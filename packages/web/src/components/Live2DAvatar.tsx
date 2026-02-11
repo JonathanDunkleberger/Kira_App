@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // pixi-live2d-display requires PIXI on window before import.
 // Dynamic import is handled below to avoid SSR issues.
@@ -36,6 +36,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
   const animFrameRef = useRef<number>(0);
   const prevEmotionRef = useRef<string | null>(null);
   const initializedRef = useRef(false);
+  const [modelReady, setModelReady] = useState(false);
 
   // Initialize PixiJS app + load model (runs once on mount)
   useEffect(() => {
@@ -118,6 +119,16 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         } catch (err2) {
           console.warn("[Live2D] Could not patch watermark hide:", err2);
         }
+
+        // Wait 2 frames for the watermark parameter to take effect before showing
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!destroyed) {
+              setModelReady(true);
+              console.log("[Live2D] Model ready — revealing");
+            }
+          });
+        });
       } catch (err) {
         console.error("[Live2D] Failed to load model:", err);
       }
@@ -155,59 +166,57 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
     };
   }, []);
 
-  // Lip sync with smoothing and decay
+  // Lip sync with instant open + rapid multiplicative decay
   useEffect(() => {
     const model = modelRef.current;
 
     if (!isSpeaking || !analyserNode || !model) {
-      // Smoothly close mouth when not speaking
+      // Close mouth when not speaking
       try {
         model?.internalModel?.coreModel?.setParameterValueById("ParamMouthOpenY", 0);
-        model?.internalModel?.coreModel?.setParameterValueById("ParamMouthForm", 0.2);
+        model?.internalModel?.coreModel?.setParameterValueById("ParamMouthForm", 0.15);
       } catch {}
       cancelAnimationFrame(animFrameRef.current);
       return;
     }
 
     const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-    let currentMouthValue = 0;
+    let smoothedVolume = 0;
 
     function animateMouth() {
       if (!modelRef.current || !analyserNode) return;
 
       analyserNode.getByteFrequencyData(dataArray);
 
-      // Focus on voice frequency range (85-500Hz typically for speech)
-      // With fftSize=256 at 16kHz, each bin ≈ 62.5Hz
-      // Bins 0-7 cover roughly 0-500Hz which captures speech fundamentals
+      // Sample speech frequency bins (roughly 100-1000Hz range)
+      // Skip bin 0 (DC offset), bins 1-5 carry most speech energy
       let sum = 0;
-      const speechBins = Math.min(8, dataArray.length);
-      for (let i = 0; i < speechBins; i++) sum += dataArray[i];
-      const volume = sum / speechBins;
+      const startBin = 1;
+      const endBin = Math.min(6, dataArray.length);
+      for (let i = startBin; i < endBin; i++) sum += dataArray[i];
+      const rawVolume = sum / (endBin - startBin);
 
-      // Target mouth value based on volume
-      const targetMouth = Math.min(volume / 50, 1.0);
+      // Normalize to 0-1 range
+      const normalizedVolume = Math.min(rawVolume / 80, 1.0);
 
-      // Smooth interpolation — opens fast, closes faster
-      // This creates natural-looking syllable movement
-      if (targetMouth > currentMouthValue) {
-        // Opening: fast response (80% toward target per frame)
-        currentMouthValue += (targetMouth - currentMouthValue) * 0.8;
+      // Two-speed: instant open, rapid multiplicative close
+      if (normalizedVolume > smoothedVolume) {
+        smoothedVolume = normalizedVolume; // Instant open — no smoothing up
       } else {
-        // Closing: even faster decay (85% toward target per frame)
-        // This is key — mouth snaps shut between syllables
-        currentMouthValue += (targetMouth - currentMouthValue) * 0.85;
+        smoothedVolume *= 0.6; // Rapid decay — drops to near-zero in ~3-4 frames
       }
 
-      // Minimum threshold — below this, mouth is fully closed
-      if (currentMouthValue < 0.05) currentMouthValue = 0;
+      // Hard cutoff for near-silence
+      if (smoothedVolume < 0.03) smoothedVolume = 0;
+
+      // Square root curve — makes quiet speech more visible
+      const mouthOpen = Math.sqrt(smoothedVolume);
 
       try {
         const core = modelRef.current.internalModel?.coreModel;
         if (core) {
-          core.setParameterValueById("ParamMouthOpenY", currentMouthValue);
-          // Slight smile that increases when talking
-          core.setParameterValueById("ParamMouthForm", 0.2 + currentMouthValue * 0.15);
+          core.setParameterValueById("ParamMouthOpenY", mouthOpen);
+          core.setParameterValueById("ParamMouthForm", 0.15 + mouthOpen * 0.2);
         }
       } catch {}
 
@@ -234,17 +243,69 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
   }, [emotion]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        maxWidth: "600px",
-        maxHeight: "85vh",
-        margin: "0 auto",
-        position: "relative",
-        pointerEvents: "auto",
-      }}
-    />
+    <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative" }}>
+      {/* XO loading spinner — blue highlight snakes through grey letters */}
+      {!modelReady && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: "2.5rem",
+              fontWeight: 800,
+              letterSpacing: "0.15em",
+              fontFamily: "'Inter', sans-serif",
+              color: "#555",
+              position: "relative",
+              overflow: "hidden",
+              display: "inline-block",
+            }}
+          >
+            <span style={{ position: "relative", zIndex: 1 }}>xo</span>
+            <span
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                background: "linear-gradient(90deg, transparent 0%, #60a5fa 40%, #60a5fa 60%, transparent 100%)",
+                backgroundSize: "200% 100%",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+                animation: "xoShimmer 1.2s ease-in-out infinite",
+                zIndex: 2,
+              }}
+            >
+              xo
+            </span>
+          </span>
+          <style>{`
+            @keyframes xoShimmer {
+              0% { background-position: 200% 0; }
+              100% { background-position: -200% 0; }
+            }
+          `}</style>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          pointerEvents: "auto",
+          opacity: modelReady ? 1 : 0,
+          transition: "opacity 0.3s ease-in",
+        }}
+      />
+    </div>
   );
 }

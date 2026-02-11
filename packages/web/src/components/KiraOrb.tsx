@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 // ─── Orb color palette ───────────────────────────────────────────────────────
 const ORB_COLOR_CENTER = "#7B8FBF";
@@ -38,7 +38,6 @@ export default function KiraOrb({
   enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
-  const [ringKey, setRingKey] = useState<number | null>(null);
   const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
@@ -92,42 +91,22 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, enableBreathing]);
 
-  // ─── Sonar ring: ONE ring at a time, spawns every 1.8s ──────────────
-  useEffect(() => {
-    if (isKiraSpeaking) {
-      // Start first ring immediately
-      setRingKey(Date.now());
-
-      // New ring every 1.8s (slightly longer than 1.6s animation = clean pulse-pause-pulse)
-      const interval = setInterval(() => {
-        setRingKey(Date.now());
-      }, 1800);
-
-      return () => clearInterval(interval);
-    } else {
-      // Let current ring finish its animation, then clear
-      const timer = setTimeout(() => setRingKey(null), 1600);
-      return () => clearTimeout(timer);
-    }
-  }, [isKiraSpeaking]);
-
   return (
     <div className="relative flex flex-col items-center">
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — single ring, only when Kira speaks */}
-        {ringKey && (
+        {/* Sonar ring — pure CSS loop, only when Kira speaks */}
+        {isKiraSpeaking && (
           <div
-            key={ringKey}
             className="absolute rounded-full pointer-events-none"
             style={{
               width: orbSize,
               height: orbSize,
               border: '2.5px solid rgba(170, 190, 230, 0.6)',
               boxShadow: '0 0 8px rgba(170, 190, 230, 0.3)',
-              animation: 'sonar-ping 1.6s ease-out forwards',
+              animation: 'sonar-ping 1.8s ease-out infinite',
             }}
           />
         )}

@@ -94,6 +94,20 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
 
         modelRef.current = model;
         console.log("[Live2D] Model loaded successfully");
+
+        // Hide the built-in watermark overlay
+        try {
+          model.expression("水印");
+          console.log("[Live2D] Watermark hidden");
+        } catch {
+          // Fallback: set the parameter directly
+          try {
+            (model.internalModel.coreModel as any).setParameterValueById("Param155", 1);
+            console.log("[Live2D] Watermark hidden via parameter");
+          } catch (err2) {
+            console.warn("[Live2D] Could not hide watermark:", err2);
+          }
+        }
       } catch (err) {
         console.error("[Live2D] Failed to load model:", err);
       }

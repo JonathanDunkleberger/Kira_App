@@ -210,6 +210,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       playbackGain.current = playbackContext.current.createGain();
       playbackAnalyser.current = playbackContext.current.createAnalyser();
       playbackAnalyser.current.fftSize = 256;
+      playbackAnalyser.current.smoothingTimeConstant = 0.3; // Low smoothing = responsive to syllables (default 0.8 too sluggish)
       playbackGain.current.connect(playbackAnalyser.current);
       playbackAnalyser.current.connect(playbackContext.current.destination);
     }

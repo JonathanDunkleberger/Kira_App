@@ -61,6 +61,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         const app = new PIXI.Application({
           backgroundAlpha: 0,
           resizeTo: containerRef.current,
+          resolution: window.devicePixelRatio || 2,
+          autoDensity: true,
           antialias: true,
         });
         containerRef.current.appendChild(app.view as unknown as HTMLCanvasElement);
@@ -75,15 +77,19 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
 
         app.stage.addChild(model as any);
 
-        // Scale to fit container
+        // Zoom in to show knees-up framing (upper body focus)
+        const dpr = window.devicePixelRatio || 2;
+        const containerWidth = app.renderer.width / dpr;
+        const containerHeight = app.renderer.height / dpr;
+
         const scale = Math.min(
-          app.renderer.width / model.width,
-          app.renderer.height / model.height
-        ) * 0.85;
+          containerWidth / model.width,
+          containerHeight / model.height
+        ) * 1.4;
         model.scale.set(scale);
-        model.x = app.renderer.width / 2;
-        model.y = app.renderer.height * 0.55;
-        model.anchor.set(0.5, 0.5);
+        model.x = containerWidth / 2;
+        model.y = containerHeight * 0.35;
+        model.anchor.set(0.5, 0.3);
 
         // Eye tracking — eyes follow the cursor
         app.stage.interactive = true;
@@ -126,8 +132,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         );
         // Re-center model on resize
         if (modelRef.current) {
-          modelRef.current.x = containerRef.current.clientWidth / 2;
-          modelRef.current.y = containerRef.current.clientHeight * 0.55;
+          const dpr = window.devicePixelRatio || 2;
+          const w = appRef.current.renderer.width / dpr;
+          const h = appRef.current.renderer.height / dpr;
+          modelRef.current.x = w / 2;
+          modelRef.current.y = h * 0.35;
         }
       }
     };
@@ -146,40 +155,59 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
     };
   }, []);
 
-  // Lip sync: drive ParamMouthOpenY from audio analyser
+  // Lip sync with smoothing and decay
   useEffect(() => {
     const model = modelRef.current;
 
     if (!isSpeaking || !analyserNode || !model) {
-      // Close mouth when not speaking
+      // Smoothly close mouth when not speaking
       try {
         model?.internalModel?.coreModel?.setParameterValueById("ParamMouthOpenY", 0);
+        model?.internalModel?.coreModel?.setParameterValueById("ParamMouthForm", 0.2);
       } catch {}
       cancelAnimationFrame(animFrameRef.current);
       return;
     }
 
     const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+    let currentMouthValue = 0;
 
     function animateMouth() {
       if (!modelRef.current || !analyserNode) return;
 
       analyserNode.getByteFrequencyData(dataArray);
 
-      // Calculate average volume from frequency data
+      // Focus on voice frequency range (85-500Hz typically for speech)
+      // With fftSize=256 at 16kHz, each bin ≈ 62.5Hz
+      // Bins 0-7 cover roughly 0-500Hz which captures speech fundamentals
       let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-      const volume = sum / dataArray.length;
+      const speechBins = Math.min(8, dataArray.length);
+      for (let i = 0; i < speechBins; i++) sum += dataArray[i];
+      const volume = sum / speechBins;
 
-      // Map volume to mouth open (0.0 - 1.0)
-      const mouthValue = Math.min(volume / 35, 1.0);
+      // Target mouth value based on volume
+      const targetMouth = Math.min(volume / 50, 1.0);
+
+      // Smooth interpolation — opens fast, closes faster
+      // This creates natural-looking syllable movement
+      if (targetMouth > currentMouthValue) {
+        // Opening: fast response (80% toward target per frame)
+        currentMouthValue += (targetMouth - currentMouthValue) * 0.8;
+      } else {
+        // Closing: even faster decay (85% toward target per frame)
+        // This is key — mouth snaps shut between syllables
+        currentMouthValue += (targetMouth - currentMouthValue) * 0.85;
+      }
+
+      // Minimum threshold — below this, mouth is fully closed
+      if (currentMouthValue < 0.05) currentMouthValue = 0;
 
       try {
         const core = modelRef.current.internalModel?.coreModel;
         if (core) {
-          core.setParameterValueById("ParamMouthOpenY", mouthValue);
-          // Add slight smile when speaking
-          core.setParameterValueById("ParamMouthForm", 0.3 + mouthValue * 0.2);
+          core.setParameterValueById("ParamMouthOpenY", currentMouthValue);
+          // Slight smile that increases when talking
+          core.setParameterValueById("ParamMouthForm", 0.2 + currentMouthValue * 0.15);
         }
       } catch {}
 

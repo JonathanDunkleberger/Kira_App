@@ -1002,6 +1002,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
           // Final check: if still empty, nothing was actually said
           if (currentTurnTranscript.trim().length === 0) {
+            // If vision is active, silently ignore empty EOUs (likely screen share noise)
+            if (latestImages && latestImages.length > 0) {
+              console.log("[EOU] Ignoring empty EOU during vision session (likely screen share noise).");
+              state = "listening";
+              return;
+            }
+
             consecutiveEmptyEOUs++;
             console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
             state = "listening"; // Reset state — don't get stuck in "thinking"

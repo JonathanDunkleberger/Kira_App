@@ -10,7 +10,7 @@ export type KiraState = "listening" | "thinking" | "speaking";
 const EOU_TIMEOUT_MIN = 500;   // 500ms silence for short utterances ("yes", "no", "hi")
 const EOU_TIMEOUT_MAX = 1500;  // 1500ms silence for long multi-part questions
 const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each frame ≈ 2.67ms at 48kHz)
-const MIN_SPEECH_FRAMES_FOR_EOU = 50; // Must have ~50 speech frames to prevent junk utterances
+const MIN_SPEECH_FRAMES_FOR_EOU = 200; // Must have ~200 speech frames (~1-2s real speech) to prevent noise-triggered EOUs
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
 export const useKiraSocket = (token: string, guestId: string, voicePreference: string = "anime") => {
@@ -589,7 +589,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
                 // Cooldown prevents re-triggering from micro-dips in natural speech
-                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current) {
+                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current && totalSpeechFrames.current >= 100) {
                     const now = Date.now();
                     if (now - lastSnapshotTime.current > SNAPSHOT_COOLDOWN_MS) {
                         lastSnapshotTime.current = now;

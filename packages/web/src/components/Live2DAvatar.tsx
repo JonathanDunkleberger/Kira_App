@@ -95,18 +95,22 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         modelRef.current = model;
         console.log("[Live2D] Model loaded successfully");
 
-        // Hide the built-in watermark overlay
+        // Hide the built-in watermark overlay.
+        // Live2D resets parameters every frame, so we must override
+        // Param155 on every tick. The original update method is patched
+        // to force the watermark parameter after each internal update.
         try {
-          model.expression("水印");
-          console.log("[Live2D] Watermark hidden");
-        } catch {
-          // Fallback: set the parameter directly
-          try {
-            (model.internalModel.coreModel as any).setParameterValueById("Param155", 1);
-            console.log("[Live2D] Watermark hidden via parameter");
-          } catch (err2) {
-            console.warn("[Live2D] Could not hide watermark:", err2);
-          }
+          const internalModel = model.internalModel;
+          const origUpdate = internalModel.update.bind(internalModel);
+          internalModel.update = function (dt: number, now: number) {
+            origUpdate(dt, now);
+            try {
+              (internalModel.coreModel as any).setParameterValueById("Param155", 1);
+            } catch {}
+          };
+          console.log("[Live2D] Watermark hide patch applied (Param155=1 per frame)");
+        } catch (err2) {
+          console.warn("[Live2D] Could not patch watermark hide:", err2);
         }
       } catch (err) {
         console.error("[Live2D] Failed to load model:", err);

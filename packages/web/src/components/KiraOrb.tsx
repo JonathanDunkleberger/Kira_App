@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ─── Orb color palette ───────────────────────────────────────────────────────
 const ORB_COLOR_CENTER = "#7B8FBF";
@@ -44,6 +44,42 @@ export default function KiraOrb({
 
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
+
+  // ─── Debounced sonar ring: bridges gaps between TTS sentences ────────
+  const [showRing, setShowRing] = useState(false);
+  const hideRingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isKiraSpeaking) {
+      // Cancel any pending hide — new sentence started
+      if (hideRingTimeout.current) {
+        clearTimeout(hideRingTimeout.current);
+        hideRingTimeout.current = null;
+      }
+      setShowRing(true);
+    } else {
+      // Delay hiding by 1.5s to bridge inter-sentence gaps (~100-500ms)
+      // Only truly hides when Kira is done speaking entirely
+      hideRingTimeout.current = setTimeout(() => {
+        setShowRing(false);
+      }, 1500);
+    }
+
+    return () => {
+      if (hideRingTimeout.current) {
+        clearTimeout(hideRingTimeout.current);
+      }
+    };
+  }, [isKiraSpeaking]);
+
+  // ─── Debug logs (remove after verification) ─────────────────────────
+  useEffect(() => {
+    console.log('[Orb] kiraState changed to:', state, 'at', Date.now());
+  }, [state]);
+
+  useEffect(() => {
+    console.log('[Orb] showRing:', showRing);
+  }, [showRing]);
 
   // ─── Refs so the rAF closure always sees latest values ───────────────
   const micRef = useRef(micVolume);
@@ -97,8 +133,8 @@ export default function KiraOrb({
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — CSS class drives animation, immune to re-render restarts */}
-        {isKiraSpeaking && (
+        {/* Sonar ring — debounced to stay mounted across inter-sentence gaps */}
+        {showRing && (
           <div
             className="sonar-ring"
             style={{

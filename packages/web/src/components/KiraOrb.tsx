@@ -93,27 +93,6 @@ export default function KiraOrb({
 
   return (
     <div className="relative flex flex-col items-center">
-      {/* Sonar keyframe + class — CSS class prevents re-render animation restart */}
-      <style>{`
-        @keyframes sonar-ping {
-          0% {
-            transform: scale(1);
-            opacity: 0.5;
-          }
-          100% {
-            transform: scale(1.5);
-            opacity: 0;
-          }
-        }
-        .sonar-ring {
-          animation-name: sonar-ping;
-          animation-duration: 2.2s;
-          animation-timing-function: ease-out;
-          animation-iteration-count: infinite;
-          pointer-events: none;
-        }
-      `}</style>
-
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}

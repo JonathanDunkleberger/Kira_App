@@ -1037,12 +1037,6 @@ export default function HomePage() {
             >
               Talk to Kira
             </Link>
-            <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginTop: 24, textAlign: "center" }}>
-              By using our services, you agree to Kira&apos;s{' '}
-              <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
-              {' '}and{' '}
-              <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
-            </p>
           </section>
         </>
       )}
@@ -1054,48 +1048,20 @@ export default function HomePage() {
         style={{
           padding: "32px 24px",
           borderTop: "1px solid rgba(255,255,255,0.03)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
           maxWidth: 900,
           margin: "0 auto",
-          flexWrap: "wrap",
-          gap: 16,
+          textAlign: "center",
         }}
       >
+        <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginBottom: 12 }}>
+          By using our services, you agree to Kira&apos;s{' '}
+          <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
+          {' '}and{' '}
+          <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
+        </p>
         <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
           © {new Date().getFullYear()} Kira AI
         </span>
-        <div style={{ display: "flex", gap: 20 }}>
-          <Link
-            href="/privacy"
-            style={{
-              fontSize: 13,
-              color: "rgba(201,209,217,0.25)",
-              textDecoration: "none",
-              fontWeight: 300,
-              transition: "color 0.2s",
-            }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "rgba(201,209,217,0.5)")}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "rgba(201,209,217,0.25)")}
-          >
-            Privacy
-          </Link>
-          <Link
-            href="/terms"
-            style={{
-              fontSize: 13,
-              color: "rgba(201,209,217,0.25)",
-              textDecoration: "none",
-              fontWeight: 300,
-              transition: "color 0.2s",
-            }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "rgba(201,209,217,0.5)")}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "rgba(201,209,217,0.25)")}
-          >
-            Terms
-          </Link>
-        </div>
       </footer>
 
       {/* Keyframe animations */}

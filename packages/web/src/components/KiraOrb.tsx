@@ -85,7 +85,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
       // Spawn a sonar ring when volume crosses threshold
       // Minimum 600ms between rings so they don't stack up
       const now = Date.now();
-      if (vol > 0.3 && now - lastRingTime.current > 600) {
+      if (vol > 0.45 && now - lastRingTime.current > 1800) {
         lastRingTime.current = now;
         spawnSonarRing();
       }
@@ -108,7 +108,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
       border-radius: 50%;
       border: 2px solid rgba(170, 190, 230, 0.45);
       box-shadow: 0 0 6px rgba(170, 190, 230, 0.2);
-      animation: sonar-expand 1.4s ease-out forwards;
+      animation: sonar-expand 1.8s ease-out forwards;
       pointer-events: none;
       top: 50%;
       left: 50%;
@@ -121,7 +121,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
     // Remove after animation completes
     setTimeout(() => {
       ring.remove();
-    }, 1400);
+    }, 1800);
   };
 
   return (

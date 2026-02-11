@@ -21,7 +21,7 @@ export interface KiraOrbProps {
   state?: "idle" | "userSpeaking" | "kiraSpeaking" | "thinking";
   /** Mic volume 0-1, drives orb pulse when user speaks. */
   micVolume?: number;
-  /** Kira audio volume 0-1, drives orb + halo pulse when Kira speaks. */
+  /** Kira audio volume 0-1, drives shadow ring + sonar spawning when Kira speaks. */
   kiraVolume?: number;
   /** Size preset — sm (mobile), md (landing / hero), lg (chat page desktop). */
   size?: OrbSize;
@@ -31,53 +31,126 @@ export interface KiraOrbProps {
   enableBreathing?: boolean;
 }
 
-// ─── Isolated sonar ring — React.memo walls off micVolume 60fps re-renders ──
-const SonarRing = React.memo(({ kiraState, orbSize }: { kiraState: string; orbSize: number }) => {
-  const ringRef = useRef<HTMLDivElement>(null);
-  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+// ─── Audio-driven ring: shadow ring + sonar spawning ─────────────────────────
+interface AudioDrivenRingProps {
+  isActive: boolean;
+  volumeRef: React.RefObject<number>;
+  orbSize: number;
+}
+
+const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, orbSize }) => {
+  const shadowRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const animFrameRef = useRef<number>(0);
+  const lastRingTime = useRef(0);
+  const smoothedVolume = useRef(0);
 
   useEffect(() => {
-    const isSpeaking = kiraState === 'kiraSpeaking';
-
-    if (isSpeaking) {
-      if (hideTimeout.current) {
-        clearTimeout(hideTimeout.current);
-        hideTimeout.current = null;
+    if (!isActive) {
+      // Reset when not speaking
+      if (shadowRef.current) {
+        shadowRef.current.style.transform = 'scale(1)';
+        shadowRef.current.style.opacity = '0';
       }
-      if (ringRef.current) {
-        ringRef.current.style.visibility = 'visible';
-      }
-    } else {
-      hideTimeout.current = setTimeout(() => {
-        if (ringRef.current) {
-          ringRef.current.style.visibility = 'hidden';
-        }
-      }, 100);
+      smoothedVolume.current = 0;
+      cancelAnimationFrame(animFrameRef.current);
+      return;
     }
 
-    return () => {
-      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    // Show shadow ring
+    if (shadowRef.current) {
+      shadowRef.current.style.opacity = '1';
+    }
+
+    const animate = () => {
+      const rawVol = volumeRef.current || 0;
+
+      // Smooth the volume to avoid jitter (fast attack, slow release)
+      const attack = 0.3;
+      const release = 0.08;
+      if (rawVol > smoothedVolume.current) {
+        smoothedVolume.current += (rawVol - smoothedVolume.current) * attack;
+      } else {
+        smoothedVolume.current += (rawVol - smoothedVolume.current) * release;
+      }
+
+      const vol = smoothedVolume.current;
+
+      // Shadow ring scales 1.0 to 1.2 with volume
+      if (shadowRef.current) {
+        const shadowScale = 1.0 + vol * 0.2;
+        shadowRef.current.style.transform = `scale(${shadowScale})`;
+      }
+
+      // Spawn a sonar ring when volume crosses threshold
+      // Minimum 600ms between rings so they don't stack up
+      const now = Date.now();
+      if (vol > 0.3 && now - lastRingTime.current > 600) {
+        lastRingTime.current = now;
+        spawnSonarRing();
+      }
+
+      animFrameRef.current = requestAnimationFrame(animate);
     };
-  }, [kiraState]);
+
+    animate();
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, [isActive, orbSize]);
+
+  const spawnSonarRing = () => {
+    if (!containerRef.current) return;
+
+    const ring = document.createElement('div');
+    ring.style.cssText = `
+      position: absolute;
+      width: ${orbSize}px;
+      height: ${orbSize}px;
+      border-radius: 50%;
+      border: 2px solid rgba(170, 190, 230, 0.45);
+      box-shadow: 0 0 6px rgba(170, 190, 230, 0.2);
+      animation: sonar-expand 1.4s ease-out forwards;
+      pointer-events: none;
+      top: 50%;
+      left: 50%;
+      margin-top: -${orbSize / 2}px;
+      margin-left: -${orbSize / 2}px;
+    `;
+
+    containerRef.current.appendChild(ring);
+
+    // Remove after animation completes
+    setTimeout(() => {
+      ring.remove();
+    }, 1400);
+  };
 
   return (
     <div
-      ref={ringRef}
-      className="sonar-ring"
+      ref={containerRef}
       style={{
         position: 'absolute',
-        width: orbSize,
-        height: orbSize,
-        borderRadius: '50%',
-        border: '2.5px solid rgba(170, 190, 230, 0.6)',
-        boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
-        visibility: 'hidden',
+        width: `${orbSize}px`,
+        height: `${orbSize}px`,
+        pointerEvents: 'none',
       }}
-    />
+    >
+      {/* Shadow ring — crisp lighter shade, NOT blurry */}
+      <div
+        ref={shadowRef}
+        style={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          borderRadius: '50%',
+          background: `radial-gradient(circle, transparent 72%, rgba(160, 185, 225, 0.35) 78%, rgba(160, 185, 225, 0.15) 88%, transparent 95%)`,
+          transform: 'scale(1)',
+          opacity: 0,
+          transition: 'opacity 0.2s ease',
+        }}
+      />
+    </div>
   );
-});
-
-SonarRing.displayName = 'SonarRing';
+};
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function KiraOrb({
@@ -89,7 +162,6 @@ export default function KiraOrb({
   enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
-  const haloRef = useRef<HTMLDivElement>(null);
   const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
@@ -99,11 +171,11 @@ export default function KiraOrb({
 
   // ─── Refs so rAF closures always see latest values ───────────────────
   const micRef = useRef(micVolume);
-  const kiraVolRef = useRef(kiraVolume);
+  const kiraVolumeRef = useRef(kiraVolume);
   micRef.current = micVolume;
-  kiraVolRef.current = kiraVolume;
+  kiraVolumeRef.current = kiraVolume || 0;
 
-  // ─── Orb scale: user speech OR Kira speech (rAF loop) ───────────────
+  // ─── Orb scale: user speech (rAF loop), static during Kira speech ───
   useEffect(() => {
     const orb = orbRef.current;
     if (!orb) return;
@@ -119,15 +191,10 @@ export default function KiraOrb({
       tick();
       return () => cancelAnimationFrame(animFrame.current);
     } else if (isKiraSpeaking) {
+      // Orb is static during Kira speech — shadow ring handles the animation
       orb.style.animation = "none";
-      const tick = () => {
-        const scale = 1 + kiraVolRef.current * 0.08; // Subtle — half of user speech
-        orb.style.transition = "transform 0.05s ease-out";
-        orb.style.transform = `scale(${scale})`;
-        animFrame.current = requestAnimationFrame(tick);
-      };
-      tick();
-      return () => cancelAnimationFrame(animFrame.current);
+      orb.style.transition = "transform 0.3s ease-out";
+      orb.style.transform = "scale(1)";
     } else {
       orb.style.transition = "transform 0.5s ease-out";
       orb.style.transform = "scale(1)";
@@ -146,75 +213,20 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, isKiraSpeaking, enableBreathing]);
 
-  // ─── Halo: visibility toggle with debounce (matches sonar pattern) ──
-  const haloHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const halo = haloRef.current;
-    if (!halo) return;
-
-    if (isKiraSpeaking) {
-      if (haloHideTimeout.current) {
-        clearTimeout(haloHideTimeout.current);
-        haloHideTimeout.current = null;
-      }
-      halo.style.visibility = 'visible';
-    } else {
-      haloHideTimeout.current = setTimeout(() => {
-        if (haloRef.current) {
-          haloRef.current.style.visibility = 'hidden';
-          haloRef.current.style.transform = 'scale(1.1)';
-        }
-      }, 200);
-    }
-    return () => {
-      if (haloHideTimeout.current) clearTimeout(haloHideTimeout.current);
-    };
-  }, [isKiraSpeaking]);
-
-  // ─── Halo: rAF pulse driven by Kira audio amplitude ─────────────────
-  useEffect(() => {
-    if (!isKiraSpeaking) return;
-
-    let frame: number;
-    const animate = () => {
-      if (haloRef.current) {
-        const vol = kiraVolRef.current;
-        // Scale varies 1.1 → 1.3 based on volume — creates natural variation
-        const haloScale = 1.1 + vol * 0.2;
-        haloRef.current.style.transform = `scale(${haloScale})`;
-      }
-      frame = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => cancelAnimationFrame(frame);
-  }, [isKiraSpeaking]);
-
   return (
     <div className="relative flex flex-col items-center">
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* 1. Sonar ring — outermost, expands beyond everything */}
-        <SonarRing kiraState={state} orbSize={orbSize} />
-
-        {/* 2. Pulsing halo — Sesame-style glow ring around the orb */}
-        <div
-          ref={haloRef}
-          style={{
-            position: 'absolute',
-            width: `${orbSize}px`,
-            height: `${orbSize}px`,
-            borderRadius: '50%',
-            background: `radial-gradient(circle, transparent 45%, rgba(${ORB_RGB}, 0.35) 65%, transparent 80%)`,
-            filter: 'blur(6px)',
-            transform: 'scale(1.1)',
-            visibility: 'hidden',
-            pointerEvents: 'none',
-          }}
+        {/* 1. Audio-driven ring — shadow ring + spawned sonar rings */}
+        <AudioDrivenRing
+          isActive={isKiraSpeaking}
+          volumeRef={kiraVolumeRef}
+          orbSize={orbSize}
         />
 
-        {/* 3. Subtle ambient glow behind orb */}
+        {/* 2. Subtle ambient glow behind orb */}
         <div
           className="absolute rounded-full pointer-events-none"
           style={{
@@ -224,7 +236,7 @@ export default function KiraOrb({
           }}
         />
 
-        {/* ─── Main orb ─── */}
+        {/* 3. Main orb — static during speech, breathing when idle */}
         <div
           ref={orbRef}
           className="rounded-full"

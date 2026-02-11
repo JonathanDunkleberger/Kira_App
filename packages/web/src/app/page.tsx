@@ -424,12 +424,6 @@ export default function HomePage() {
               No account required · 15 minutes free daily
             </span>
           )}
-          <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginTop: 8, textAlign: "center" }}>
-            By using our services, you agree to Kira&apos;s{' '}
-            <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
-            {' '}and{' '}
-            <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
-          </p>
         </div>
 
         {/* Scroll indicator */}
@@ -1043,6 +1037,12 @@ export default function HomePage() {
             >
               Talk to Kira
             </Link>
+            <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginTop: 24, textAlign: "center" }}>
+              By using our services, you agree to Kira&apos;s{' '}
+              <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
+              {' '}and{' '}
+              <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
+            </p>
           </section>
         </>
       )}

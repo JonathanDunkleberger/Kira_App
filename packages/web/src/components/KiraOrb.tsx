@@ -145,8 +145,10 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
         ref={shadowRef}
         style={{
           position: 'absolute',
-          width: '100%',
-          height: '100%',
+          width: '125%',
+          height: '125%',
+          top: '-12.5%',
+          left: '-12.5%',
           borderRadius: '50%',
           background: 'transparent',
           border: '12px solid rgba(140, 170, 210, 0.3)',

@@ -370,53 +370,59 @@ export default function ChatClient() {
         isPro={isPro}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-grow flex flex-col items-center justify-center w-full max-w-4xl mx-auto" style={{ paddingBottom: 100 }}>
-        {/* Orb */}
-        <KiraOrb
-          state={
-            kiraState === "speaking"
-              ? "kiraSpeaking"
-              : kiraState === "thinking"
-                ? "thinking"
-                : micVolume > 0.02
-                  ? "userSpeaking"
-                  : "idle"
-          }
-          micVolume={micVolume}
-          size="lg"
-          showLabel
-          enableBreathing={false}
-        />
+      {/* Main Content Area — orb anchored at center, transcript below it */}
+      <div className="flex-grow relative w-full max-w-4xl mx-auto">
+        {/* Orb — absolutely centered, not affected by transcript content */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 100 }}>
+          <div className="pointer-events-auto">
+            <KiraOrb
+              state={
+                kiraState === "speaking"
+                  ? "kiraSpeaking"
+                  : kiraState === "thinking"
+                    ? "thinking"
+                    : micVolume > 0.02
+                      ? "userSpeaking"
+                      : "idle"
+              }
+              micVolume={micVolume}
+              size="lg"
+              showLabel
+              enableBreathing={false}
+            />
+          </div>
+        </div>
 
-        {/* Transcript — single line, styled by role */}
-        <div className="mt-6 min-h-[48px] flex items-center justify-center max-w-[500px] px-6">
-          {error && error !== "limit_reached" && (
-            <div className="mb-4 p-3 rounded relative" style={{
-              background: "rgba(200,55,55,0.15)",
-              border: "1px solid rgba(200,55,55,0.3)",
-              color: "rgba(255,120,120,0.9)",
-            }}>
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-          {transcript ? (
-            <p
-              className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
-              style={{
-                color: transcript.role === "ai"
-                  ? "rgba(139,157,195,0.9)"
-                  : "rgba(201,209,217,0.7)",
-                fontWeight: transcript.role === "ai" ? 400 : 300,
-                fontStyle: transcript.role === "user" ? "italic" : "normal",
-              }}
-            >
-              {transcript.text}
-              {transcript.role === "user" && kiraState === "listening" && (
-                <span className="animate-pulse">|</span>
-              )}
-            </p>
-          ) : null}
+        {/* Transcript — absolutely positioned below orb center, doesn't push orb */}
+        <div className="absolute inset-x-0 flex justify-center" style={{ top: 'calc(50% + 80px)' }}>
+          <div className="min-h-[48px] flex items-center justify-center max-w-[500px] px-6">
+            {error && error !== "limit_reached" && (
+              <div className="mb-4 p-3 rounded relative" style={{
+                background: "rgba(200,55,55,0.15)",
+                border: "1px solid rgba(200,55,55,0.3)",
+                color: "rgba(255,120,120,0.9)",
+              }}>
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
+            {transcript ? (
+              <p
+                className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
+                style={{
+                  color: transcript.role === "ai"
+                    ? "rgba(139,157,195,0.9)"
+                    : "rgba(201,209,217,0.7)",
+                  fontWeight: transcript.role === "ai" ? 400 : 300,
+                  fontStyle: transcript.role === "user" ? "italic" : "normal",
+                }}
+              >
+                {transcript.text}
+                {transcript.role === "user" && kiraState === "listening" && (
+                  <span className="animate-pulse">|</span>
+                )}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
 

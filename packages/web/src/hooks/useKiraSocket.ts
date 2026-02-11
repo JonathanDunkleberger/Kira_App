@@ -33,6 +33,8 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const [isPro, setIsPro] = useState(false);
   const isProRef = useRef(false); // Ref mirror of isPro for use in onclose callback
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const audioPlayingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
 
@@ -145,6 +147,13 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
 
     // 4. Reset for next turn
     ttsChunksDone.current = true;
+
+    // 5. Audio is no longer playing
+    if (audioPlayingTimeout.current) {
+      clearTimeout(audioPlayingTimeout.current);
+      audioPlayingTimeout.current = null;
+    }
+    setIsAudioPlaying(false);
   }, []);
 
   /**
@@ -201,11 +210,28 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
         source.start(nextStartTime.current);
         nextStartTime.current += audioBuffer.duration;
 
+        // Signal that audio is actively playing
+        if (audioPlayingTimeout.current) {
+          clearTimeout(audioPlayingTimeout.current);
+          audioPlayingTimeout.current = null;
+        }
+        setIsAudioPlaying(true);
+
         // Keep track of the source so we can stop it later
         scheduledSources.current.push(source);
         source.onended = () => {
           // Remove from list when done to keep memory clean
           scheduledSources.current = scheduledSources.current.filter(s => s !== source);
+
+          // When last source finishes and no more chunks coming, debounce isAudioPlaying off
+          if (scheduledSources.current.length === 0 && audioQueue.current.length === 0) {
+            audioPlayingTimeout.current = setTimeout(() => {
+              // Double-check nothing new arrived in the gap
+              if (scheduledSources.current.length === 0 && audioQueue.current.length === 0) {
+                setIsAudioPlaying(false);
+              }
+            }, 300);
+          }
         };
 
         // Keep track of the last source if we need to stop it manually later
@@ -898,6 +924,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     startScreenShare,
     stopScreenShare,
     isPro,
-    remainingSeconds
+    remainingSeconds,
+    isAudioPlaying
   };
 };

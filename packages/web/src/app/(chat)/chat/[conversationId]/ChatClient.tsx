@@ -52,7 +52,8 @@ export default function ChatClient() {
     startScreenShare,
     stopScreenShare,
     isPro,
-    remainingSeconds
+    remainingSeconds,
+    isAudioPlaying
   } = useKiraSocket(
     token || "",
     guestId,
@@ -377,7 +378,7 @@ export default function ChatClient() {
           <div className="pointer-events-auto">
             <KiraOrb
               state={
-                kiraState === "speaking"
+                isAudioPlaying
                   ? "kiraSpeaking"
                   : kiraState === "thinking"
                     ? "thinking"

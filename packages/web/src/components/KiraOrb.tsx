@@ -34,11 +34,6 @@ const SonarRing = React.memo(({ kiraState, orbSize }: { kiraState: string; orbSi
   const ringRef = useRef<HTMLDivElement>(null);
   const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debug render counter (remove after verification)
-  const renderCount = useRef(0);
-  renderCount.current++;
-  console.log('[SonarRing] render #' + renderCount.current + ', kiraState: ' + kiraState);
-
   useEffect(() => {
     const isSpeaking = kiraState === 'kiraSpeaking';
 

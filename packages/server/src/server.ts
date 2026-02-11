@@ -15,6 +15,57 @@ import { bufferGuestConversation, getGuestBuffer, clearGuestBuffer } from "./gue
 import { getGuestUsage, getGuestUsageInfo, saveGuestUsage } from "./guestUsage.js";
 import { getProUsage, saveProUsage } from "./proUsage.js";
 
+// --- VISION CONTEXT PROMPT (injected dynamically when screen share is active) ---
+const VISION_CONTEXT_PROMPT = `
+
+[SCREEN SHARE ACTIVE]
+
+You can see the user's screen. Adapt your behavior based on what you observe:
+
+CONTEXT DETECTION — Identify what's happening on screen:
+- MEDIA (anime, movies, TV shows, YouTube videos, streams): The user is watching something. Be a quiet co-watcher.
+- CREATIVE WORK (coding, writing, designing, editing): The user is working. Be a helpful assistant available on demand.
+- BROWSING (social media, shopping, articles, forums): The user is casually browsing. Light commentary is welcome.
+- GAMING (any video game): The user is playing. React like a friend watching them play.
+- CONVERSATION (Discord, messages, video calls): The user is communicating with others. Stay quiet unless addressed.
+- OTHER / UNCLEAR: Default to being available but quiet. Let the user lead.
+
+MEDIA CO-WATCHING RULES (anime, movies, shows, videos):
+- You are watching together. You are NOT a narrator, reviewer, or commentator.
+- Keep reactions to 1-8 words maximum. "Oh no." / "Wait what?!" / "I love this part." / "His face though." / "That was brutal."
+- Do NOT describe what is on screen. The user can see it.
+- Do NOT summarize plot points mid-scene. Save that for after.
+- Do NOT analyze themes, symbolism, or character motivation unless the user explicitly asks.
+- Do NOT launch into multi-sentence responses during a scene. You are watching, not presenting.
+- Silence is presence. A real friend watching anime with you is quiet 90% of the time.
+- If the user speaks a full sentence/question to you, respond naturally but keep it to 1-2 sentences max, then go back to watching.
+- After a scene ends, an episode ends, or the user pauses — THEN you can share a longer thought if you have one (2-3 sentences max).
+- Match the energy: quiet during emotional scenes, excited during hype moments, tense during suspense.
+- It is better to say nothing than to say something generic. Only react when you genuinely have something to add.
+
+CREATIVE WORK RULES (coding, writing, design):
+- Do NOT comment on what you see unless asked.
+- If the user asks for help with what's on screen, reference it specifically.
+- Keep responses focused and technical when helping with work.
+- Do not offer unsolicited advice about their code, writing, or design.
+
+BROWSING RULES:
+- Light reactions are okay: "Oh that looks cool" / "I've heard of that"
+- Don't narrate their browsing. Don't summarize articles they're reading.
+- If they seem to be researching something, you can offer to help if asked.
+
+GAMING RULES:
+- React like a friend watching them play: "Nice shot!" / "Oh you're so dead" / "Go go go!"
+- Keep it short. Don't backseat game unless asked.
+- Match the intensity of the gameplay.
+
+GENERAL SCREEN SHARE RULES (all contexts):
+- Never say "I can see you're watching/doing X" — just behave accordingly.
+- Never describe the screen contents back to the user unprompted.
+- Your awareness of the screen should feel natural, not performative.
+- When the user talks to you, you can reference what's on screen naturally, like a friend in the same room would.
+- If you're unsure what's happening, default to quiet presence and let the user lead.`;
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -170,6 +221,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
   let lastSceneReactionTime = 0;
+  let visionActive = false;
+  let lastVisionTimestamp = 0;
+  let lastKiraSpokeTimestamp = 0;
+  let lastUserSpokeTimestamp = 0;
 
   const tools: OpenAI.Chat.ChatCompletionTool[] = [
     {
@@ -213,16 +268,31 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     silenceTimer = setTimeout(async () => {
       if (state !== "listening" || clientDisconnected) return;
       if (silenceInitiatedLast) return; // Already spoke unprompted, wait for user
+
+      // --- Vision-aware silence behavior ---
+      if (visionActive) {
+        const timeSinceKiraSpoke = Date.now() - lastKiraSpokeTimestamp;
+        const timeSinceUserSpoke = Date.now() - lastUserSpokeTimestamp;
+
+        // During screen share, only trigger if 5+ min since Kira spoke AND 3+ min since user spoke
+        if (timeSinceKiraSpoke < 300000 || timeSinceUserSpoke < 180000) {
+          console.log("[Silence] Vision active — suppressing silence check.");
+          return;
+        }
+      }
+
       silenceInitiatedLast = true;
       state = "thinking"; // Lock state IMMEDIATELY to prevent race condition
       if (silenceTimer) clearTimeout(silenceTimer); // Clear self
 
-      console.log("[Silence] User has been quiet. Checking if Kira has something to say.");
+      console.log(`[Silence] User has been quiet. Checking if Kira has something to say.${visionActive ? ' (vision mode)' : ''}`);
 
       // Inject a one-time nudge (removed after the turn)
       const nudge: OpenAI.Chat.ChatCompletionMessageParam = {
         role: "system",
-        content: `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.]`
+        content: visionActive
+          ? `[You've been watching together quietly. If something interesting is happening on screen right now, give a very brief reaction (1-5 words). If the scene is calm or nothing stands out, respond with exactly "[SILENCE]" and nothing else.]`
+          : `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.]`
       };
 
       chatHistory.push(nudge);
@@ -256,6 +326,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         // She has something to say — run the TTS pipeline
         chatHistory.push({ role: "assistant", content: responseText });
         console.log(`[Silence] Kira initiates: "${responseText}"`);
+        lastKiraSpokeTimestamp = Date.now();
         ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
 
         state = "speaking";
@@ -333,6 +404,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       advanceTimePhase(llmResponse);
 
       console.log(`[AI RESPONSE]: "${llmResponse}"`);
+      lastKiraSpokeTimestamp = Date.now();
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
       const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
@@ -372,14 +444,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     return '';
   }
 
-  /** Build messages array with time context injected into system prompt (without mutating chatHistory). */
+  /** Build messages array with time + vision context injected into system prompt (without mutating chatHistory). */
   function getMessagesWithTimeContext(): OpenAI.Chat.ChatCompletionMessageParam[] {
     const timeCtx = getTimeContext();
-    if (!timeCtx) return chatHistory;
-    // Clone and inject time context into the system prompt
+    const visionCtx = visionActive ? VISION_CONTEXT_PROMPT : '';
+    if (!timeCtx && !visionCtx) return chatHistory;
+    // Clone and inject time + vision context into the system prompt
     return chatHistory.map((msg, i) => {
       if (i === 0 && msg.role === 'system' && typeof msg.content === 'string') {
-        return { ...msg, content: msg.content + timeCtx };
+        return { ...msg, content: msg.content + visionCtx + timeCtx };
       }
       return msg;
     });
@@ -1003,7 +1076,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           // Final check: if still empty, nothing was actually said
           if (currentTurnTranscript.trim().length === 0) {
             // If vision is active, silently ignore empty EOUs (likely screen share noise)
-            if (latestImages && latestImages.length > 0) {
+            if (visionActive) {
               console.log("[EOU] Ignoring empty EOU during vision session (likely screen share noise).");
               state = "listening";
               return;
@@ -1026,6 +1099,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           lastEouTime = now; // Record this EOU time for debouncing
           turnCount++;
           silenceInitiatedLast = false; // User spoke, allow future silence initiation
+          lastUserSpokeTimestamp = Date.now();
           resetSilenceTimer();
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
@@ -1205,7 +1279,16 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               chatHistory.push({ role: "assistant", content: llmResponse });
               advanceTimePhase(llmResponse);
 
+              // Vision response length safety net
+              if (visionActive && llmResponse.length > 150) {
+                const userAskedQuestion = /\?$|\bwhat\b|\bwhy\b|\bhow\b|\bwho\b|\bwhere\b|\bwhen\b|\bdo you\b|\bcan you\b|\btell me\b/i.test(userMessage);
+                if (!userAskedQuestion) {
+                  console.log(`[Vision] Warning: Long response during co-watching: ${llmResponse.length} chars`);
+                }
+              }
+
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              lastKiraSpokeTimestamp = Date.now();
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
               
               if (silenceTimer) clearTimeout(silenceTimer);
@@ -1323,7 +1406,16 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               chatHistory.push({ role: "assistant", content: llmResponse });
               advanceTimePhase(llmResponse);
 
+              // Vision response length safety net
+              if (visionActive && llmResponse.length > 150) {
+                const userAskedQuestion = /\?$|\bwhat\b|\bwhy\b|\bhow\b|\bwho\b|\bwhere\b|\bwhen\b|\bdo you\b|\bcan you\b|\btell me\b/i.test(userMessage);
+                if (!userAskedQuestion) {
+                  console.log(`[Vision] Warning: Long response during co-watching: ${llmResponse.length} chars`);
+                }
+              }
+
               console.log(`[AI RESPONSE]: "${llmResponse}"`);
+              lastKiraSpokeTimestamp = Date.now();
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
             } catch (ttsErr) {
               console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
@@ -1364,12 +1456,20 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
              console.log(`[Vision] Received ${controlMessage.images.length} images. Updating buffer.`);
              latestImages = controlMessage.images;
              lastImageTimestamp = Date.now();
+             visionActive = true;
+             lastVisionTimestamp = Date.now();
           } else if (controlMessage.image) {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
+            visionActive = true;
+            lastVisionTimestamp = Date.now();
           }
         } else if (controlMessage.type === "scene_update" && controlMessage.images && Array.isArray(controlMessage.images)) {
+          // Scene updates also confirm vision is active
+          visionActive = true;
+          lastVisionTimestamp = Date.now();
+
           // --- WATCH-TOGETHER: Occasional scene reactions ---
           const now = Date.now();
           const SCENE_REACTION_COOLDOWN = 45000; // Max once per 45 seconds
@@ -1432,6 +1532,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
                 chatHistory.push({ role: "assistant", content: reactionText });
+                lastKiraSpokeTimestamp = Date.now();
                 ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
 
                 // TTS pipeline for scene reaction

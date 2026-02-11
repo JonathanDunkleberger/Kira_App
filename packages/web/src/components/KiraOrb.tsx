@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 // ─── Orb color palette ───────────────────────────────────────────────────────
 const ORB_COLOR_CENTER = "#7B8FBF";
@@ -29,6 +29,59 @@ export interface KiraOrbProps {
   enableBreathing?: boolean;
 }
 
+// ─── Isolated sonar ring — React.memo walls off micVolume 60fps re-renders ──
+const SonarRing = React.memo(({ kiraState, orbSize }: { kiraState: string; orbSize: number }) => {
+  const ringRef = useRef<HTMLDivElement>(null);
+  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debug render counter (remove after verification)
+  const renderCount = useRef(0);
+  renderCount.current++;
+  console.log('[SonarRing] render #' + renderCount.current + ', kiraState: ' + kiraState);
+
+  useEffect(() => {
+    const isSpeaking = kiraState === 'kiraSpeaking';
+
+    if (isSpeaking) {
+      if (hideTimeout.current) {
+        clearTimeout(hideTimeout.current);
+        hideTimeout.current = null;
+      }
+      if (ringRef.current) {
+        ringRef.current.style.visibility = 'visible';
+      }
+    } else {
+      hideTimeout.current = setTimeout(() => {
+        if (ringRef.current) {
+          ringRef.current.style.visibility = 'hidden';
+        }
+      }, 1500);
+    }
+
+    return () => {
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    };
+  }, [kiraState]);
+
+  return (
+    <div
+      ref={ringRef}
+      className="sonar-ring"
+      style={{
+        position: 'absolute',
+        width: orbSize,
+        height: orbSize,
+        borderRadius: '50%',
+        border: '2.5px solid rgba(170, 190, 230, 0.6)',
+        boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
+        visibility: 'hidden',
+      }}
+    />
+  );
+});
+
+SonarRing.displayName = 'SonarRing';
+
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function KiraOrb({
   state = "idle",
@@ -42,43 +95,11 @@ export default function KiraOrb({
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
 
-  const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
-
-  // ─── Sonar ring: ref-based, bypasses React rendering entirely ────────
-  const ringRef = useRef<HTMLDivElement>(null);
-  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (isKiraSpeaking) {
-      // Cancel any pending hide — new sentence started
-      if (hideTimeout.current) {
-        clearTimeout(hideTimeout.current);
-        hideTimeout.current = null;
-      }
-      // Show ring immediately — direct DOM mutation, no React re-render
-      if (ringRef.current) {
-        ringRef.current.style.opacity = '1';
-      }
-    } else {
-      // Hide after 1.5s delay — bridges inter-sentence gaps (~100-500ms)
-      hideTimeout.current = setTimeout(() => {
-        if (ringRef.current) {
-          ringRef.current.style.opacity = '0';
-        }
-      }, 1500);
-    }
-
-    return () => {
-      if (hideTimeout.current) clearTimeout(hideTimeout.current);
-    };
-  }, [isKiraSpeaking]);
 
   // ─── Refs so the rAF closure always sees latest values ───────────────
   const micRef = useRef(micVolume);
-  const userSpeakingRef = useRef(isUserSpeaking);
   micRef.current = micVolume;
-  userSpeakingRef.current = isUserSpeaking;
 
   // ─── User-speech-driven orb scale (rAF loop) ────────────────────────
   useEffect(() => {
@@ -120,42 +141,15 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, enableBreathing]);
 
-  // ─── Memoized ring styles — prevents re-render from recreating objects ──
-  const ringWrapperStyle = useMemo(() => ({
-    position: 'absolute' as const,
-    width: orbSize,
-    height: orbSize,
-    opacity: 0,
-    transition: 'opacity 0.3s ease',
-    pointerEvents: 'none' as const,
-  }), [orbSize]);
-
-  const ringInnerStyle = useMemo(() => ({
-    width: '100%' as const,
-    height: '100%' as const,
-    borderRadius: '50%',
-    border: '2.5px solid rgba(170, 190, 230, 0.6)',
-    boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
-  }), []);
-
   return (
     <div className="relative flex flex-col items-center">
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — ref controls wrapper opacity via direct DOM mutation.
-             Inner div runs sonar-ping animation forever, untouched by React.
-             No state, no conditional rendering, no re-render restarts. */}
-        <div
-          ref={ringRef}
-          style={ringWrapperStyle}
-        >
-          <div
-            className="sonar-ring"
-            style={ringInnerStyle}
-          />
-        </div>
+        {/* Sonar ring — isolated React.memo component, immune to 60fps micVolume re-renders.
+             Uses visibility: hidden/visible which never restarts CSS animations. */}
+        <SonarRing kiraState={state} orbSize={orbSize} />
 
         {/* Subtle ambient glow behind orb */}
         <div

@@ -133,20 +133,30 @@ export default function KiraOrb({
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — debounced to stay mounted across inter-sentence gaps */}
-        {showRing && (
+        {/* Sonar ring wrapper — always mounted, visibility via opacity only.
+             Inner div animates forever; outer div fades in/out without
+             unmounting, so the CSS animation never restarts. */}
+        <div
+          style={{
+            position: 'absolute',
+            width: orbSize,
+            height: orbSize,
+            opacity: showRing ? 1 : 0,
+            transition: 'opacity 0.3s ease',
+            pointerEvents: 'none',
+          }}
+        >
           <div
             className="sonar-ring"
             style={{
-              position: 'absolute',
-              width: orbSize,
-              height: orbSize,
+              width: '100%',
+              height: '100%',
               borderRadius: '50%',
               border: '2.5px solid rgba(170, 190, 230, 0.6)',
               boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
             }}
           />
-        )}
+        </div>
 
         {/* Subtle ambient glow behind orb */}
         <div

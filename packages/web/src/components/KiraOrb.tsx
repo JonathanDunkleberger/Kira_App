@@ -52,7 +52,7 @@ const SonarRing = React.memo(({ kiraState, orbSize }: { kiraState: string; orbSi
         if (ringRef.current) {
           ringRef.current.style.visibility = 'hidden';
         }
-      }, 1500);
+      }, 200);
     }
 
     return () => {

@@ -65,9 +65,9 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
     const animate = () => {
       const rawVol = volumeRef.current || 0;
 
-      // Smooth the volume to avoid jitter (fast attack, slow release)
-      const attack = 0.3;
-      const release = 0.08;
+      // Smooth the volume to avoid jitter (fast attack, moderate release)
+      const attack = 0.4;
+      const release = 0.12;
       if (rawVol > smoothedVolume.current) {
         smoothedVolume.current += (rawVol - smoothedVolume.current) * attack;
       } else {
@@ -76,16 +76,17 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
 
       const vol = smoothedVolume.current;
 
-      // Shadow ring scales 1.0 to 1.2 with volume
+      // Shadow ring: scale 1.05–1.3, opacity 0.5–1.0 with volume
       if (shadowRef.current) {
-        const shadowScale = 1.0 + vol * 0.2;
+        const shadowScale = 1.05 + vol * 0.25;
+        const shadowOpacity = 0.5 + vol * 0.5;
         shadowRef.current.style.transform = `scale(${shadowScale})`;
+        shadowRef.current.style.opacity = `${shadowOpacity}`;
       }
 
-      // Spawn a sonar ring when volume crosses threshold
-      // Minimum 600ms between rings so they don't stack up
+      // Spawn a sonar ring on vocal peaks, moderate gap
       const now = Date.now();
-      if (vol > 0.45 && now - lastRingTime.current > 1800) {
+      if (vol > 0.35 && now - lastRingTime.current > 1200) {
         lastRingTime.current = now;
         spawnSonarRing();
       }
@@ -134,7 +135,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
         pointerEvents: 'none',
       }}
     >
-      {/* Shadow ring — crisp lighter shade, NOT blurry */}
+      {/* Shadow ring — crisp lighter band around the orb */}
       <div
         ref={shadowRef}
         style={{
@@ -142,10 +143,17 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
           width: '100%',
           height: '100%',
           borderRadius: '50%',
-          background: `radial-gradient(circle, transparent 72%, rgba(160, 185, 225, 0.35) 78%, rgba(160, 185, 225, 0.15) 88%, transparent 95%)`,
+          background: `radial-gradient(circle,
+            transparent 64%,
+            rgba(155, 180, 220, 0.4) 70%,
+            rgba(155, 180, 220, 0.3) 80%,
+            rgba(155, 180, 220, 0.1) 90%,
+            transparent 96%
+          )`,
           transform: 'scale(1)',
           opacity: 0,
           transition: 'opacity 0.2s ease',
+          pointerEvents: 'none',
         }}
       />
     </div>

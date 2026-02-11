@@ -31,6 +31,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const [isMuted, setIsMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isPro, setIsPro] = useState(false);
+  const isProRef = useRef(false); // Ref mirror of isPro for use in onclose callback
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
@@ -691,6 +692,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
           case "session_config":
             console.log("[WS] Received session config:", msg);
             setIsPro(msg.isPro);
+            isProRef.current = msg.isPro;
             if (msg.remainingSeconds !== undefined) {
               setRemainingSeconds(msg.remainingSeconds);
             }
@@ -774,7 +776,11 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       
       if (event.code === 1008) {
         // Don't overwrite a more specific error (e.g. "limit_reached_pro")
-        setError((prev) => prev?.startsWith("limit_reached") ? prev : "limit_reached");
+        // If user is Pro, always use "limit_reached_pro" — never show the free-tier paywall
+        setError((prev) => {
+          if (prev?.startsWith("limit_reached")) return prev;
+          return isProRef.current ? "limit_reached_pro" : "limit_reached";
+        });
       }
 
       stopAudioPipeline();

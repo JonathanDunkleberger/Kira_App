@@ -576,8 +576,8 @@ export default function ChatClient() {
         </div>
       )}
 
-      {/* Limit Reached — Paywall Overlay (Free users & Guests) */}
-      {error === "limit_reached" && (
+      {/* Limit Reached — Paywall Overlay (Free users & Guests only, never Pro) */}
+      {error === "limit_reached" && !isPro && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{

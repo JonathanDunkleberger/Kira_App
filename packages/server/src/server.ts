@@ -394,7 +394,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       const estimatedPlayTime = Math.max(2000, responseText.length * 80);
       setTimeout(() => {
         if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(isProUser ? { tier: "pro" } : {}) }));
           ws.close(1008, "Usage limit reached");
         }
       }, estimatedPlayTime);
@@ -459,21 +459,21 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         const estimatedPlayTime = Math.max(2000, goodbyeText.length * 80);
         setTimeout(() => {
           if (ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
-            ws.close(1008, "Guest usage limit reached");
+            ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(isProUser ? { tier: "pro" } : {}) }));
+            ws.close(1008, "Usage limit reached");
           }
         }, estimatedPlayTime);
       } else {
         // No goodbye text — close immediately
         if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+          ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(isProUser ? { tier: "pro" } : {}) }));
           ws.close(1008, "Usage limit reached");
         }
       }
     } catch (err) {
       console.error("[Goodbye] Error:", (err as Error).message);
       if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
+        ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(isProUser ? { tier: "pro" } : {}) }));
         ws.close(1008, "Usage limit reached");
       }
     }

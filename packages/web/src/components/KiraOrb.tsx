@@ -38,7 +38,7 @@ export default function KiraOrb({
   enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
-  const [rings, setRings] = useState<number[]>([]);
+  const [ringKey, setRingKey] = useState<number | null>(null);
   const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
@@ -92,25 +92,22 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, enableBreathing]);
 
-  // ─── Sonar rings: spawn when Kira speaks ─────────────────────────────
+  // ─── Sonar ring: ONE ring at a time, spawns every 1.8s ──────────────
   useEffect(() => {
     if (isKiraSpeaking) {
-      // First ring immediately
-      setRings([Date.now()]);
+      // Start first ring immediately
+      setRingKey(Date.now());
 
-      // Additional rings every 2 seconds
+      // New ring every 1.8s (slightly longer than 1.6s animation = clean pulse-pause-pulse)
       const interval = setInterval(() => {
-        setRings(prev => {
-          const now = Date.now();
-          // Keep only rings from the last 1.5 seconds (animation duration)
-          const active = prev.filter(t => now - t < 1500);
-          return [...active, now];
-        });
-      }, 2000);
+        setRingKey(Date.now());
+      }, 1800);
 
       return () => clearInterval(interval);
     } else {
-      // Let existing rings finish their animation — they age out naturally
+      // Let current ring finish its animation, then clear
+      const timer = setTimeout(() => setRingKey(null), 1600);
+      return () => clearTimeout(timer);
     }
   }, [isKiraSpeaking]);
 
@@ -120,19 +117,20 @@ export default function KiraOrb({
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar rings — only when Kira speaks */}
-        {rings.map((timestamp) => (
+        {/* Sonar ring — single ring, only when Kira speaks */}
+        {ringKey && (
           <div
-            key={timestamp}
+            key={ringKey}
             className="absolute rounded-full pointer-events-none"
             style={{
               width: orbSize,
               height: orbSize,
-              border: `1.5px solid rgba(${ORB_RGB}, 0.3)`,
-              animation: "sonar-ping 1.5s ease-out forwards",
+              border: '2.5px solid rgba(170, 190, 230, 0.6)',
+              boxShadow: '0 0 8px rgba(170, 190, 230, 0.3)',
+              animation: 'sonar-ping 1.6s ease-out forwards',
             }}
           />
-        ))}
+        )}
 
         {/* Subtle ambient glow behind orb */}
         <div

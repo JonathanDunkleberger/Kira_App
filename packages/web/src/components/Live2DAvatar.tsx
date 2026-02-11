@@ -85,11 +85,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
         const scale = Math.min(
           containerWidth / model.width,
           containerHeight / model.height
-        ) * 1.0;
+        ) * 1.25;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        model.y = containerHeight * 0.45;
-        model.anchor.set(0.5, 0.35);
+        model.y = containerHeight * 0.30;
+        model.anchor.set(0.5, 0.25);
 
         // Eye tracking — eyes follow the cursor
         app.stage.interactive = true;
@@ -136,7 +136,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
           modelRef.current.x = w / 2;
-          modelRef.current.y = h * 0.45;
+          modelRef.current.y = h * 0.30;
         }
       }
     };

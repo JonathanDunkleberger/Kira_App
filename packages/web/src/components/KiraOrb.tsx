@@ -21,8 +21,6 @@ export interface KiraOrbProps {
   state?: "idle" | "userSpeaking" | "kiraSpeaking" | "thinking";
   /** Mic volume 0-1, drives orb pulse when user speaks. */
   micVolume?: number;
-  /** Playback volume 0-1, drives orb pulse when Kira speaks. */
-  playerVolume?: number;
   /** Size preset — sm (mobile), md (landing / hero), lg (chat page desktop). */
   size?: OrbSize;
   /** Whether to show the state-indicator label below the orb. */
@@ -35,50 +33,37 @@ export interface KiraOrbProps {
 export default function KiraOrb({
   state = "idle",
   micVolume = 0,
-  playerVolume = 0,
   size = "lg",
   showLabel = false,
   enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
   const [rings, setRings] = useState<number[]>([]);
-  const lastRingTime = useRef(0);
   const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
 
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
-  const isActive = isUserSpeaking || isKiraSpeaking;
 
-  // ─── Audio-driven pulsing (rAF loop for both directions) ─────────────
-  // Refs so the rAF closure always sees latest values without re-starting
+  // ─── Refs so the rAF closure always sees latest values ───────────────
   const micRef = useRef(micVolume);
-  const playerRef = useRef(playerVolume);
-  const kiraSpeakingRef = useRef(isKiraSpeaking);
   const userSpeakingRef = useRef(isUserSpeaking);
   micRef.current = micVolume;
-  playerRef.current = playerVolume;
-  kiraSpeakingRef.current = isKiraSpeaking;
   userSpeakingRef.current = isUserSpeaking;
 
+  // ─── User-speech-driven orb scale (rAF loop) ────────────────────────
   useEffect(() => {
     const orb = orbRef.current;
     if (!orb) return;
 
-    if (isActive) {
+    if (isUserSpeaking) {
       // Kill CSS breathing — JS drives transform now
       orb.style.animation = "none";
 
       const tick = () => {
-        let scale = 1;
-        if (kiraSpeakingRef.current) {
-          // Kira speaking — pulse with TTS playback amplitude
-          scale = 1 + Math.min(playerRef.current, 1) * 0.15;
-        } else if (userSpeakingRef.current) {
-          // User speaking — pulse with mic amplitude
-          scale = 1 + Math.min(micRef.current, 1) * 0.15;
-        }
+        // Orb only moves when USER speaks
+        const scale = 1 + Math.min(micRef.current, 1) * 0.15;
         orb.style.transition = "transform 0.05s ease-out";
         orb.style.transform = `scale(${scale})`;
         animFrame.current = requestAnimationFrame(tick);
@@ -105,35 +90,29 @@ export default function KiraOrb({
         orb.style.animation = "none";
       }
     }
-  }, [isActive, enableBreathing]);
+  }, [isUserSpeaking, enableBreathing]);
 
-  // ─── Sonar rings: one when speech starts, then every 2.5s ───────────
+  // ─── Sonar rings: spawn when Kira speaks ─────────────────────────────
   useEffect(() => {
     if (isKiraSpeaking) {
-      setRings((prev) => [...prev.slice(-2), Date.now()]);
-      lastRingTime.current = Date.now();
+      // First ring immediately
+      setRings([Date.now()]);
 
+      // Additional rings every 2 seconds
       const interval = setInterval(() => {
-        const now = Date.now();
-        if (now - lastRingTime.current >= 2500) {
-          setRings((prev) => [...prev.slice(-2), Date.now()]);
-          lastRingTime.current = now;
-        }
-      }, 2500);
+        setRings(prev => {
+          const now = Date.now();
+          // Keep only rings from the last 1.5 seconds (animation duration)
+          const active = prev.filter(t => now - t < 1500);
+          return [...active, now];
+        });
+      }, 2000);
 
       return () => clearInterval(interval);
+    } else {
+      // Let existing rings finish their animation — they age out naturally
     }
   }, [isKiraSpeaking]);
-
-  // ─── Clean up finished rings (match 1.2s animation duration) ────────
-  useEffect(() => {
-    if (rings.length > 0) {
-      const timeout = setTimeout(() => {
-        setRings((prev) => prev.slice(1));
-      }, 1200);
-      return () => clearTimeout(timeout);
-    }
-  }, [rings]);
 
   return (
     <div className="relative flex flex-col items-center">
@@ -142,15 +121,15 @@ export default function KiraOrb({
         style={{ width: containerSize, height: containerSize }}
       >
         {/* Sonar rings — only when Kira speaks */}
-        {rings.map((id) => (
+        {rings.map((timestamp) => (
           <div
-            key={id}
+            key={timestamp}
             className="absolute rounded-full pointer-events-none"
             style={{
               width: orbSize,
               height: orbSize,
-              border: `1.5px solid rgba(${ORB_RGB}, 0.25)`,
-              animation: "kira-sonar 1.2s ease-out forwards",
+              border: `1.5px solid rgba(${ORB_RGB}, 0.3)`,
+              animation: "sonar-ping 1.5s ease-out forwards",
             }}
           />
         ))}

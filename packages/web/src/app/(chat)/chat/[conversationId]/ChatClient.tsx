@@ -40,7 +40,6 @@ export default function ChatClient() {
     socketState, 
     kiraState, 
     micVolume, 
-    playerVolume, 
     transcript,
     sendText,
     error,
@@ -385,7 +384,6 @@ export default function ChatClient() {
                   : "idle"
           }
           micVolume={micVolume}
-          playerVolume={playerVolume}
           size="lg"
           showLabel
           enableBreathing={false}

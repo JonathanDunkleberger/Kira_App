@@ -24,7 +24,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   }, [kiraState]);
 
   const [micVolume, setMicVolume] = useState(0);
-  const [playerVolume, setPlayerVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -92,8 +91,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
   const playbackGain = useRef<GainNode | null>(null);
-  const playbackAnalyser = useRef<AnalyserNode | null>(null);
-  const playbackAnimationFrame = useRef<number | null>(null);
 
   // --- "Ramble Bot" EOU Timer ---
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
@@ -121,70 +118,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   };
 
   /**
-   * Visualizer loop — runs continuously while Kira is speaking.
-   * Lifecycle is managed by a useEffect tied to kiraState, NOT self-termination.
-   * This ensures the analyser is read across ALL TTS sentences without gaps.
-   */
-  const startVisualizer = useCallback(() => {
-    if (playbackAnimationFrame.current) return; // Already running
-
-    const updateVolume = () => {
-      if (!playbackAnalyser.current || !playbackContext.current) {
-        // No analyser yet — keep polling until audio chain is built
-        playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
-        return;
-      }
-
-      const dataArray = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
-      playbackAnalyser.current.getByteFrequencyData(dataArray);
-      
-      // Calculate average volume
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-      }
-      const average = sum / dataArray.length;
-      // Normalize to 0-1 range (approximate)
-      const rawVolume = Math.min(1, average / 128);
-      
-      // Asymmetric smoothing: fast attack for responsive peaks, slow decay for smooth fade
-      setPlayerVolume((prev) => {
-          if (rawVolume > prev) {
-            // Fast attack — orb responds quickly to audio
-            return prev * 0.6 + rawVolume * 0.4;
-          } else {
-            // Slow decay — orb fades gracefully between chunks
-            return prev * 0.95 + rawVolume * 0.05;
-          }
-      });
-      
-      playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
-    };
-    updateVolume();
-  }, []);
-
-  /**
-   * Stop the visualizer loop and reset volume to 0.
-   */
-  const stopVisualizer = useCallback(() => {
-    if (playbackAnimationFrame.current) {
-      cancelAnimationFrame(playbackAnimationFrame.current);
-      playbackAnimationFrame.current = null;
-    }
-    setPlayerVolume(0);
-  }, []);
-
-  // Visualizer lifecycle: start when speaking, stop when not.
-  // This replaces the old self-terminating approach that could miss sentences.
-  useEffect(() => {
-    if (kiraState === "speaking") {
-      startVisualizer();
-    } else {
-      stopVisualizer();
-    }
-  }, [kiraState, startVisualizer, stopVisualizer]);
-
-  /**
    * Stops current audio playback and clears the queue.
    */
   const stopAudioPlayback = useCallback(() => {
@@ -209,10 +142,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
         nextStartTime.current = 0;
     }
 
-    // 4. Stop visualizer and decay volume
-    stopVisualizer();
-    ttsChunksDone.current = true; // Reset for next turn
-  }, [stopVisualizer]);
+    // 4. Reset for next turn
+    ttsChunksDone.current = true;
+  }, []);
 
   /**
    * Processes the audio queue and schedules chunks to play back-to-back.
@@ -228,24 +160,18 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       playbackContext.current.state === "closed"
     ) {
       playbackContext.current = new AudioContext({ sampleRate: 16000 });
-      // Reset persistent nodes when context is recreated
+      // Reset persistent gain node when context is recreated
       playbackGain.current = null;
-      playbackAnalyser.current = null;
     }
     if (playbackContext.current.state === "suspended") {
       await playbackContext.current.resume();
     }
 
-    // Build persistent audio chain once: GainNode → Analyser → Destination
-    // Every new source just connects to the GainNode, so the analyser
-    // sees ALL audio across all TTS chunks continuously.
+    // Build persistent audio chain once: GainNode → Destination
+    // Every new source just connects to the GainNode.
     if (!playbackGain.current) {
       playbackGain.current = playbackContext.current.createGain();
-      playbackAnalyser.current = playbackContext.current.createAnalyser();
-      playbackAnalyser.current.fftSize = 256;
-      playbackAnalyser.current.smoothingTimeConstant = 0.7;
-      playbackGain.current.connect(playbackAnalyser.current);
-      playbackAnalyser.current.connect(playbackContext.current.destination);
+      playbackGain.current.connect(playbackContext.current.destination);
     }
 
     while (audioQueue.current.length > 0) {
@@ -308,7 +234,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     audioContext.current = null;
     playbackContext.current = null;
     playbackGain.current = null;
-    playbackAnalyser.current = null; // Ensure nodes are cleared so they're recreated with new context
 
     console.log("[Audio] 🛑 Audio pipeline stopped.");
   }, []);
@@ -955,7 +880,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     socketState,
     kiraState,
     micVolume,
-    playerVolume,
     transcript,
     sendText,
     sendVoiceChange,

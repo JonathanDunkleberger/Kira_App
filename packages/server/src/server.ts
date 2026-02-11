@@ -164,7 +164,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
   let clientDisconnected = false;
-  let timeWarningPhase: 'normal' | 'winding_down' | 'mentioned' | 'final_goodbye' | 'done' = 'normal';
+  let timeWarningPhase: 'normal' | 'final_goodbye' | 'done' = 'normal';
   let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
   let lastSceneReactionTime = 0;
@@ -364,14 +364,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- Time-context injection for graceful paywall ---
   function getTimeContext(): string {
-    switch (timeWarningPhase) {
-      case 'winding_down':
-        return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You have about one minute left with this person today. You MUST mention this in your response. Structure your response like this: First, briefly respond to what they said (1 sentence). Then, tell them you have only got about a minute left. Example structure: "[brief response to their message]... Oh hey, just so you know, we have only got about a minute left today. [optional: brief warm comment]" You MUST include the time warning. Do not skip it.]`;
-      case 'final_goodbye':
-        return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Time is up. Keep your ENTIRE response to 1 sentence. Say a quick warm goodbye. Example: "Hey, that was really fun - come back and talk to me tomorrow, okay?" Do NOT continue the previous topic in depth. Just say bye.]`;
-      default:
-        return '';
+    if (timeWarningPhase === 'final_goodbye') {
+      return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Time is up. Keep your ENTIRE response to 1 sentence. Say a quick warm goodbye. Example: "Hey, that was really fun - come back and talk to me tomorrow, okay?" Do NOT continue the previous topic in depth. Just say bye.]`;
     }
+    return '';
   }
 
   /** Build messages array with time context injected into system prompt (without mutating chatHistory). */
@@ -389,17 +385,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   /** Advance timeWarningPhase after a response is sent during a warning phase. */
   function advanceTimePhase(responseText: string) {
-    if (timeWarningPhase === 'winding_down') {
-      // Only transition to 'mentioned' if the response actually references time
-      const mentionsTime = /minute|time|left|gotta go|running out|almost up|wrapping|heading out/i.test(responseText);
-      if (mentionsTime) {
-        timeWarningPhase = 'mentioned';
-        console.log('[TIME] winding_down → mentioned (time warning confirmed in response)');
-      } else {
-        console.log('[TIME] winding_down response did NOT mention time — will retry next response');
-        // Stay in 'winding_down' so the time context keeps being injected
-      }
-    } else if (timeWarningPhase === 'final_goodbye') {
+    if (timeWarningPhase === 'final_goodbye') {
       timeWarningPhase = 'done';
       isAcceptingAudio = false;
       console.log('[TIME] final_goodbye → done (goodbye delivered)');
@@ -780,7 +766,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
                 const proRemaining = PRO_MONTHLY_SECONDS - proUsageSeconds;
                 if (proRemaining <= 0) {
-                  if ((timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye') {
+                  if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') {
                     console.log(`[USAGE] Pro over limit but in ${timeWarningPhase} phase — letting goodbye system handle disconnect`);
                     return;
                   }
@@ -804,7 +790,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   });
 
                   if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS) {
-                    if ((timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye') {
+                    if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') {
                       console.log(`[USAGE] Free user over limit but in ${timeWarningPhase} phase — letting goodbye system handle disconnect`);
                       return;
                     }
@@ -841,15 +827,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
             if (remainingSec === null) return;
 
-            if (remainingSec <= 15 && (timeWarningPhase as string) !== 'final_goodbye' && (timeWarningPhase as string) !== 'done') {
+            if (remainingSec <= 15 && timeWarningPhase === 'normal') {
               console.log(`[TIME] ${remainingSec}s left — entering final_goodbye phase`);
               timeWarningPhase = 'final_goodbye';
               // If user doesn't speak within 3s, Kira says goodbye herself
               if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
               goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
-            } else if (remainingSec <= 60 && remainingSec > 15 && timeWarningPhase === 'normal') {
-              console.log(`[TIME] ${remainingSec}s left — entering winding_down phase`);
-              timeWarningPhase = 'winding_down';
             }
           }, 5000);
 
@@ -1432,7 +1415,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   reactionText === "''" ||
                   state !== "listening" ||
                   clientDisconnected ||
-                  (timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye'
+                  timeWarningPhase as string === 'done' || timeWarningPhase as string === 'final_goodbye'
                 ) {
                   console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
                   return;

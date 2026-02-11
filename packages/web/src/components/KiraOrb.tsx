@@ -82,6 +82,9 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
         const shadowOpacity = 0.5 + vol * 0.5;
         shadowRef.current.style.transform = `scale(${shadowScale})`;
         shadowRef.current.style.opacity = `${shadowOpacity}`;
+        // Border gets slightly thicker on louder moments
+        const borderWidth = 8 + vol * 8; // 8px to 16px
+        shadowRef.current.style.borderWidth = `${borderWidth}px`;
       }
 
       // Spawn a sonar ring on vocal peaks, moderate gap
@@ -135,7 +138,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
         pointerEvents: 'none',
       }}
     >
-      {/* Shadow ring — crisp lighter band around the orb */}
+      {/* Shadow ring — solid lighter band around the orb */}
       <div
         ref={shadowRef}
         style={{
@@ -143,14 +146,10 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
           width: '100%',
           height: '100%',
           borderRadius: '50%',
-          background: `radial-gradient(circle,
-            transparent 64%,
-            rgba(155, 180, 220, 0.4) 70%,
-            rgba(155, 180, 220, 0.3) 80%,
-            rgba(155, 180, 220, 0.1) 90%,
-            transparent 96%
-          )`,
-          transform: 'scale(1)',
+          background: 'transparent',
+          border: '12px solid rgba(140, 170, 210, 0.3)',
+          boxSizing: 'border-box',
+          transform: 'scale(1.05)',
           opacity: 0,
           transition: 'opacity 0.2s ease',
           pointerEvents: 'none',

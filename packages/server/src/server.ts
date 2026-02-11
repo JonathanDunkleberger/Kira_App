@@ -226,6 +226,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastKiraSpokeTimestamp = 0;
   let lastUserSpokeTimestamp = 0;
   let visionReactionTimer: ReturnType<typeof setTimeout> | null = null;
+  let isFirstVisionReaction = true;
 
   // --- Dedicated Vision Reaction Timer (independent of silence checker) ---
   async function triggerVisionReaction() {
@@ -249,6 +250,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     console.log("[Vision Reaction] Timer fired. Generating reaction...");
     state = "thinking";
 
+    const firstReactionExtra = isFirstVisionReaction
+      ? `\nThis is the FIRST moment you're seeing their screen. React with excitement about what you see — acknowledge that you can see it and comment on something specific. Examples:
+- "Ooh nice, I love this anime!"
+- "Oh wait I can see your screen now, this looks so good"
+- "Ooh what are we watching? The art style is gorgeous"
+- "Oh this anime! The vibes are immaculate already"
+Keep it natural and brief — 1 sentence.`
+      : "";
+
     const reactionImageContent: OpenAI.Chat.ChatCompletionContentPart[] = latestImages.map((img) => ({
       type: "image_url" as const,
       image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
@@ -261,7 +271,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       {
         role: "system",
-        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION REACTION]\nYou are watching media with the user right now via screen share.\nLook at what's on screen and react like a friend sitting next to them.\nBe opinionated. Be genuine. Be present.\n\nGood reactions:\n- "Oh I love this scene so much"\n- "The animation quality here is insane"\n- "Wait is he about to confess?!"\n- "This soundtrack hits different"\n- "She's definitely hiding something"\n- "The lighting in this shot though"\n- "Ugh this part makes me emotional"\n- "Okay that was smooth"\n\nRules:\n- Keep it to 1-2 short sentences MAX (under 15 words ideal)\n- Sound natural, like a friend reacting out loud\n- Reference something SPECIFIC you see — colors, character expressions, scene composition, mood\n- Be opinionated — say what you FEEL, not what you SEE\n- Do NOT ask the user questions\n- Do NOT describe the scene like a narrator\n- Do NOT say generic things like "this looks interesting" — be SPECIFIC\n- If truly nothing notable is happening (black screen, loading, menu), respond with [SILENT]`,
+        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION REACTION]\nYou are watching media with the user right now via screen share.\nLook at what's on screen and react like a friend sitting next to them.\nBe opinionated. Be genuine. Be present.\n\nGood reactions:\n- "Oh I love this scene so much"\n- "The animation quality here is insane"\n- "Wait is he about to confess?!"\n- "This soundtrack hits different"\n- "She's definitely hiding something"\n- "The lighting in this shot though"\n- "Ugh this part makes me emotional"\n- "Okay that was smooth"\n\nRules:\n- Keep it to 1-2 short sentences MAX (under 15 words ideal)\n- Sound natural, like a friend reacting out loud\n- Reference something SPECIFIC you see — colors, character expressions, scene composition, mood\n- Be opinionated — say what you FEEL, not what you SEE\n- Do NOT ask the user questions\n- Do NOT describe the scene like a narrator\n- Do NOT say generic things like "this looks interesting" — be SPECIFIC\n- If truly nothing notable is happening (black screen, loading, menu), respond with [SILENT]` + firstReactionExtra,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
       { role: "user", content: reactionImageContent },
@@ -286,6 +296,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
       lastKiraSpokeTimestamp = Date.now();
+      isFirstVisionReaction = false;
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reaction }));
 
       // TTS pipeline
@@ -339,8 +350,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   function startVisionReactionTimer() {
     if (visionReactionTimer) { clearTimeout(visionReactionTimer); visionReactionTimer = null; }
-    const initialDelay = 60000 + Math.random() * 30000; // 60-90 seconds first reaction
-    console.log(`[Vision] First reaction in ${Math.round(initialDelay / 1000)}s`);
+    isFirstVisionReaction = true;
+    // Fire first reaction almost immediately to establish presence
+    // Small delay to let image buffer populate with a few frames
+    const initialDelay = 4000 + Math.random() * 2000; // 4-6 seconds
+    console.log(`[Vision] First reaction in ${Math.round(initialDelay / 1000)}s (immediate presence)`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
       await triggerVisionReaction();
@@ -1876,6 +1890,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
     if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+    if (visionReactionTimer) { clearTimeout(visionReactionTimer); visionReactionTimer = null; }
+    isFirstVisionReaction = true;
     if (sttStreamer) sttStreamer.destroy();
 
     // --- USAGE: Flush remaining seconds on disconnect ---

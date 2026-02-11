@@ -52,7 +52,7 @@ const SonarRing = React.memo(({ kiraState, orbSize }: { kiraState: string; orbSi
         if (ringRef.current) {
           ringRef.current.style.visibility = 'hidden';
         }
-      }, 200);
+      }, 100);
     }
 
     return () => {
@@ -146,26 +146,47 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, isKiraSpeaking, enableBreathing]);
 
-  // ─── Halo: pulsing glow ring driven by Kira audio amplitude ─────────
+  // ─── Halo: visibility toggle with debounce (matches sonar pattern) ──
+  const haloHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const halo = haloRef.current;
     if (!halo) return;
 
     if (isKiraSpeaking) {
-      halo.style.opacity = '1';
-      let frame: number;
-      const animate = () => {
-        const vol = kiraVolRef.current;
-        const haloScale = 1.05 + vol * 0.2;
-        halo.style.transform = `scale(${haloScale})`;
-        frame = requestAnimationFrame(animate);
-      };
-      animate();
-      return () => cancelAnimationFrame(frame);
+      if (haloHideTimeout.current) {
+        clearTimeout(haloHideTimeout.current);
+        haloHideTimeout.current = null;
+      }
+      halo.style.visibility = 'visible';
     } else {
-      halo.style.opacity = '0';
-      halo.style.transform = 'scale(1)';
+      haloHideTimeout.current = setTimeout(() => {
+        if (haloRef.current) {
+          haloRef.current.style.visibility = 'hidden';
+          haloRef.current.style.transform = 'scale(1.1)';
+        }
+      }, 200);
     }
+    return () => {
+      if (haloHideTimeout.current) clearTimeout(haloHideTimeout.current);
+    };
+  }, [isKiraSpeaking]);
+
+  // ─── Halo: rAF pulse driven by Kira audio amplitude ─────────────────
+  useEffect(() => {
+    if (!isKiraSpeaking) return;
+
+    let frame: number;
+    const animate = () => {
+      if (haloRef.current) {
+        const vol = kiraVolRef.current;
+        // Scale varies 1.1 → 1.3 based on volume — creates natural variation
+        const haloScale = 1.1 + vol * 0.2;
+        haloRef.current.style.transform = `scale(${haloScale})`;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    animate();
+    return () => cancelAnimationFrame(frame);
   }, [isKiraSpeaking]);
 
   return (
@@ -177,19 +198,19 @@ export default function KiraOrb({
         {/* 1. Sonar ring — outermost, expands beyond everything */}
         <SonarRing kiraState={state} orbSize={orbSize} />
 
-        {/* 2. Pulsing halo — audio-reactive glow ring around the orb */}
+        {/* 2. Pulsing halo — Sesame-style glow ring around the orb */}
         <div
           ref={haloRef}
-          className="absolute pointer-events-none"
           style={{
-            width: orbSize,
-            height: orbSize,
+            position: 'absolute',
+            width: `${orbSize}px`,
+            height: `${orbSize}px`,
             borderRadius: '50%',
-            background: `radial-gradient(circle, rgba(${ORB_RGB}, 0.15) 60%, transparent 100%)`,
-            filter: 'blur(8px)',
-            transform: 'scale(1)',
-            opacity: 0,
-            transition: 'opacity 0.3s ease',
+            background: `radial-gradient(circle, transparent 45%, rgba(${ORB_RGB}, 0.35) 65%, transparent 80%)`,
+            filter: 'blur(6px)',
+            transform: 'scale(1.1)',
+            visibility: 'hidden',
+            pointerEvents: 'none',
           }}
         />
 

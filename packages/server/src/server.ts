@@ -79,7 +79,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
-  const voicePreference = url.searchParams.get("voice") || "natural";
+  const voicePreference = url.searchParams.get("voice") || "anime";
 
   // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
   const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
@@ -96,7 +96,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       pitch: process.env.AZURE_VOICE_NATURAL_PITCH || undefined,
     },
   };
-  let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.natural;
+  let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.anime;
   console.log(`[Voice] Preference: "${voicePreference}", voice: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
 
   // --- KEEP-ALIVE HEARTBEAT ---
@@ -606,14 +606,14 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
         if (controlMessage.type === "start_stream") {
           console.log("[WS] Received start_stream. Initializing pipeline...");
 
-          // --- L2: Load persistent memories for signed-in users ---
-          if (!isGuest && userId) {
+          // --- L2: Load persistent memories for ALL users (signed-in AND guests) ---
+          if (userId) {
             try {
               const memoryBlock = await loadUserMemories(prisma, userId);
               if (memoryBlock) {
                 chatHistory.push({ role: "system", content: memoryBlock });
                 console.log(
-                  `[Memory] Loaded ${memoryBlock.length} chars of persistent memory`
+                  `[Memory] Loaded ${memoryBlock.length} chars of persistent memory for ${isGuest ? 'guest' : 'user'} ${userId}`
                 );
               }
             } catch (err) {
@@ -1684,8 +1684,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       }
     }
 
-    // --- MEMORY EXTRACTION (signed-in users only) ---
-    if (!isGuest && userId) {
+    // --- MEMORY EXTRACTION (ALL users — signed-in AND guests) ---
+    if (userId) {
       try {
         const userMsgs = chatHistory
           .filter(m => m.role === "user" || m.role === "assistant")
@@ -1697,23 +1697,35 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           }));
 
         if (userMsgs.length >= 2) {
-          // 1. Save conversation to DB
-          const conversation = await prisma.conversation.create({
-            data: {
-              userId: userId,
-              messages: {
-                create: userMsgs.map(m => ({
-                  role: m.role,
-                  content: m.content,
-                })),
-              },
-            },
-          });
-          console.log(
-            `[Memory] Saved conversation ${conversation.id} (${userMsgs.length} messages)`
-          );
+          // 1. Save conversation to DB (signed-in users only — guests don't have a User row)
+          if (!isGuest) {
+            try {
+              const conversation = await prisma.conversation.create({
+                data: {
+                  userId: userId,
+                  messages: {
+                    create: userMsgs.map(m => ({
+                      role: m.role,
+                      content: m.content,
+                    })),
+                  },
+                },
+              });
+              console.log(
+                `[Memory] Saved conversation ${conversation.id} (${userMsgs.length} messages)`
+              );
+            } catch (convErr) {
+              console.error(
+                "[Memory] Conversation save failed:",
+                (convErr as Error).message
+              );
+            }
+          }
 
-          // 2. Extract memories
+          // 2. Extract and save memories (runs for BOTH guests and signed-in users)
+          // Guests use their guest_<id> as userId in MemoryFact.
+          // createdAt timestamp on MemoryFact enables future 30-day cleanup for guests.
+          // When a guest signs up, their facts can be migrated by updating userId.
           await extractAndSaveMemories(
             openai,
             prisma,
@@ -1721,6 +1733,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             userMsgs,
             conversationSummary
           );
+          console.log(`[Memory] Extraction complete for ${isGuest ? 'guest' : 'user'} ${userId}`);
         }
       } catch (err) {
         console.error(

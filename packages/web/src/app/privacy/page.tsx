@@ -92,12 +92,27 @@ export default function PrivacyPage() {
             ],
           },
           {
-            title: "4. Data Retention",
+            title: "4. Guest User Data",
+            content:
+              "When you use Kira without creating an account, we assign a random anonymous identifier stored in your browser. We use this identifier to remember context from your previous conversations so Kira can provide a more natural, personalized experience, and to track daily usage for free tier limits.",
+          },
+          {
+            title: "5. Guest Data Retention",
+            content:
+              "Guest conversation data is stored for up to 30 days and then automatically deleted. This data is not linked to your name, email, or any personally identifiable information. If you create an account, your guest conversation history may be transferred to your account to preserve continuity. To delete your guest data at any time, clear your browser's local storage for our site, which will remove the anonymous identifier and disconnect you from any stored conversation history.",
+          },
+          {
+            title: "6. Registered User Data",
+            content:
+              "When you create an account, we store conversation summaries and extracted preferences (such as topics you've discussed, interests you've mentioned, and your name if provided) to personalize your experience with Kira. Full conversation transcripts are stored for active conversations and may be summarized and compressed over time. You can delete your account and all associated data at any time from your account settings. Deletion is immediate and permanent.",
+          },
+          {
+            title: "7. General Data Retention",
             content:
               "We aim to minimize data storage. However, conversation logs may be temporarily processed to maintain conversation context. We do not sell your personal data to third parties.",
           },
           {
-            title: "5. Third-Party Services",
+            title: "8. Third-Party Services",
             content: "We utilize the following third-party APIs. Their privacy policies govern their handling of your data:",
             list: [
               { label: "", text: "OpenAI" },
@@ -106,7 +121,7 @@ export default function PrivacyPage() {
             ],
           },
           {
-            title: "6. Contact",
+            title: "9. Contact",
             content:
               "For privacy concerns, please contact us at: info@elsaresearch.co",
           },

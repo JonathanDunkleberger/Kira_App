@@ -94,7 +94,12 @@ export default function TermsPage() {
               "This project is in active development. The AI may hallucinate, produce incorrect information, or experience downtime. We are not liable for any damages resulting from the use of this service.",
           },
           {
-            title: "7. Changes to Terms",
+            title: "7. AI Conversations",
+            content:
+              "Kira is an AI companion. Conversations with Kira are not confidential and may be processed and stored to improve your experience. Kira may remember details from previous conversations to provide personalized responses. Do not share sensitive personal information (such as financial details, passwords, or medical information) during conversations.",
+          },
+          {
+            title: "8. Changes to Terms",
             content:
               "We reserve the right to modify these terms at any time. Continued use constitutes acceptance of the new terms.",
           },

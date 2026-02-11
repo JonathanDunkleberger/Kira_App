@@ -366,9 +366,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   function getTimeContext(): string {
     switch (timeWarningPhase) {
       case 'winding_down':
-        return `\n\n[TIME CONTEXT: You have about a minute left with this person today. In your NEXT response, naturally mention that your time together is almost up. Don't make it the whole response \u2014 respond to what they said FIRST, then weave in a brief heads-up about time. Example: "Ha yeah that's so true... oh hey, just a heads up, we only have about a minute left today." Only mention it ONCE.]`;
+        return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You have about one minute left with this person today. You MUST mention this in your response. Structure your response like this: First, briefly respond to what they said (1 sentence). Then, tell them you have only got about a minute left. Example structure: "[brief response to their message]... Oh hey, just so you know, we have only got about a minute left today. [optional: brief warm comment]" You MUST include the time warning. Do not skip it.]`;
       case 'final_goodbye':
-        return `\n\n[TIME CONTEXT: This is your LAST response \u2014 only a few seconds left. Keep it very short (1 sentence max). Respond to what they said as briefly as possible, then say a quick warm goodbye. Example: "That's awesome! Hey I gotta go but it was really great talking to you. Come back tomorrow!" Be fast and warm.]`;
+        return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Time is up. Keep your ENTIRE response to 1 sentence. Say a quick warm goodbye. Example: "Hey, that was really fun - come back and talk to me tomorrow, okay?" Do NOT continue the previous topic in depth. Just say bye.]`;
       default:
         return '';
     }
@@ -390,9 +390,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   /** Advance timeWarningPhase after a response is sent during a warning phase. */
   function advanceTimePhase(responseText: string) {
     if (timeWarningPhase === 'winding_down') {
-      // Mentioned the time warning — don't inject it again
-      timeWarningPhase = 'mentioned';
-      console.log('[TIME] winding_down → mentioned (time warning delivered)');
+      // Only transition to 'mentioned' if the response actually references time
+      const mentionsTime = /minute|time|left|gotta go|running out|almost up|wrapping|heading out/i.test(responseText);
+      if (mentionsTime) {
+        timeWarningPhase = 'mentioned';
+        console.log('[TIME] winding_down → mentioned (time warning confirmed in response)');
+      } else {
+        console.log('[TIME] winding_down response did NOT mention time — will retry next response');
+        // Stay in 'winding_down' so the time context keeps being injected
+      }
     } else if (timeWarningPhase === 'final_goodbye') {
       timeWarningPhase = 'done';
       isAcceptingAudio = false;
@@ -420,9 +426,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
     try {
       const goodbyeMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-        { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[TIME CONTEXT: Time is up. Say a quick, warm goodbye. Reference something from the conversation if possible. 1 sentence max. Be genuine and brief.]` },
+        { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You must say goodbye RIGHT NOW. Time is up. Keep it to ONE short sentence. Be warm but fast. Reference something from the conversation. Example: "Hey, our time's up for today - but let's pick this up tomorrow, okay?"]` },
         ...chatHistory.filter(m => m.role !== "system").slice(-4),
-        { role: "user", content: "[Time is up \u2014 say goodbye]" },
+        { role: "user", content: "[Time is up - say goodbye immediately]" },
       ];
 
       const response = await openai.chat.completions.create({
@@ -497,6 +503,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const PRO_MONTHLY_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "360000"); // 100 hrs/month
   let sessionStartTime: number | null = null;
   let usageCheckInterval: NodeJS.Timeout | null = null;
+  let timeCheckInterval: NodeJS.Timeout | null = null;
   let isProUser = false;
   let guestUsageSeconds = 0;
   let guestUsageBase = 0; // Accumulated seconds from previous sessions today
@@ -735,6 +742,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
             );
           }
 
+          // --- 30-SECOND INTERVAL: Usage tracking + DB writes ONLY ---
+          // Phase transitions are handled by the faster 5-second interval below.
           usageCheckInterval = setInterval(async () => {
             if (!sessionStartTime) return;
 
@@ -751,24 +760,16 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
               const remainingSec = FREE_LIMIT_SECONDS - guestUsageSeconds;
 
-              // Phase transitions based on remaining time
+              // Hard limit: only force-close if goodbye system isn't handling it
               if (remainingSec <= 0) {
-                // Hard limit reached
-                if (timeWarningPhase === 'done') return; // Already said goodbye, waiting to disconnect
-                if (timeWarningPhase === 'final_goodbye') return; // In process of saying goodbye — grace period
-                // Edge case: hit limit without warnings
-                ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
-                ws.close(1008, "Guest usage limit reached");
-                return;
-              } else if (remainingSec <= 15 && timeWarningPhase !== 'final_goodbye' && timeWarningPhase !== 'done') {
-                console.log(`[USAGE] Guest ${userId}: ${remainingSec}s left — entering final_goodbye phase`);
+                if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') {
+                  console.log(`[USAGE] Over limit but in ${timeWarningPhase} phase — letting goodbye system handle disconnect`);
+                  return;
+                }
+                // Fallback: if somehow we got here without entering final_goodbye
+                console.log(`[USAGE] Over limit, no goodbye phase active — forcing final_goodbye`);
                 timeWarningPhase = 'final_goodbye';
-                // Start goodbye timeout — if user doesn't speak within 5s, Kira initiates
-                if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
-                goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
-              } else if (remainingSec <= 60 && timeWarningPhase === 'normal') {
-                console.log(`[USAGE] Guest ${userId}: ${remainingSec}s left — entering winding_down phase`);
-                timeWarningPhase = 'winding_down';
+                // The 5-second interval will pick this up and handle the goodbye
               }
             } else if (userId) {
               if (isProUser) {
@@ -779,15 +780,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
                 const proRemaining = PRO_MONTHLY_SECONDS - proUsageSeconds;
                 if (proRemaining <= 0) {
-                  if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') return;
-                  ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
-                  ws.close(1008, "Pro usage limit reached");
-                } else if (proRemaining <= 15 && timeWarningPhase !== 'final_goodbye' && timeWarningPhase !== 'done') {
+                  if ((timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye') {
+                    console.log(`[USAGE] Pro over limit but in ${timeWarningPhase} phase — letting goodbye system handle disconnect`);
+                    return;
+                  }
+                  console.log(`[USAGE] Pro over limit, no goodbye phase active — forcing final_goodbye`);
                   timeWarningPhase = 'final_goodbye';
-                  if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
-                  goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
-                } else if (proRemaining <= 60 && timeWarningPhase === 'normal') {
-                  timeWarningPhase = 'winding_down';
                 }
               } else {
                 // Free signed-in users: daily usage tracked in Prisma
@@ -806,11 +804,12 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
                   });
 
                   if (dbUser && dbUser.dailyUsageSeconds >= FREE_LIMIT_SECONDS) {
-                    if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') return;
-                    // Free user hit limit — enter final goodbye
+                    if ((timeWarningPhase as string) === 'done' || (timeWarningPhase as string) === 'final_goodbye') {
+                      console.log(`[USAGE] Free user over limit but in ${timeWarningPhase} phase — letting goodbye system handle disconnect`);
+                      return;
+                    }
+                    console.log(`[USAGE] Free user over limit — forcing final_goodbye`);
                     timeWarningPhase = 'final_goodbye';
-                    if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
-                    goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 5000);
                   }
                 } catch (err) {
                   console.error("[Usage] DB update failed:", (err as Error).message);
@@ -818,6 +817,41 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
               }
             }
           }, 30000);
+
+          // --- 5-SECOND INTERVAL: Time warning phase transitions ---
+          // This runs frequently so we never skip the final_goodbye window.
+          // It computes remaining time from the live elapsed counter, not from DB.
+          timeCheckInterval = setInterval(() => {
+            if (!sessionStartTime) return;
+            if (timeWarningPhase === 'done') return;
+
+            const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+
+            // Compute remaining seconds based on user type
+            let remainingSec: number | null = null;
+            if (isGuest) {
+              guestUsageSeconds = guestUsageBase + elapsed;
+              remainingSec = FREE_LIMIT_SECONDS - guestUsageSeconds;
+            } else if (userId && isProUser) {
+              proUsageSeconds = proUsageBase + elapsed;
+              remainingSec = PRO_MONTHLY_SECONDS - proUsageSeconds;
+            }
+            // Free signed-in users use DB-based tracking, not real-time
+            // Their phase transitions happen in the 30s interval
+
+            if (remainingSec === null) return;
+
+            if (remainingSec <= 15 && (timeWarningPhase as string) !== 'final_goodbye' && (timeWarningPhase as string) !== 'done') {
+              console.log(`[TIME] ${remainingSec}s left — entering final_goodbye phase`);
+              timeWarningPhase = 'final_goodbye';
+              // If user doesn't speak within 3s, Kira says goodbye herself
+              if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+              goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
+            } else if (remainingSec <= 60 && remainingSec > 15 && timeWarningPhase === 'normal') {
+              console.log(`[TIME] ${remainingSec}s left — entering winding_down phase`);
+              timeWarningPhase = 'winding_down';
+            }
+          }, 5000);
 
           sttStreamer = await initDeepgram();
           isAcceptingAudio = true;
@@ -1597,6 +1631,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
+    if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
     if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (sttStreamer) sttStreamer.destroy();
@@ -1719,6 +1754,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
+    if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
     if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (sttStreamer) sttStreamer.destroy();

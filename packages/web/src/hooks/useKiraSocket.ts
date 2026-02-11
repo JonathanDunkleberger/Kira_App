@@ -121,30 +121,17 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   };
 
   /**
-   * Visualizer loop
+   * Visualizer loop — runs continuously while Kira is speaking.
+   * Lifecycle is managed by a useEffect tied to kiraState, NOT self-termination.
+   * This ensures the analyser is read across ALL TTS sentences without gaps.
    */
   const startVisualizer = useCallback(() => {
     if (playbackAnimationFrame.current) return; // Already running
 
     const updateVolume = () => {
       if (!playbackAnalyser.current || !playbackContext.current) {
-        playbackAnimationFrame.current = null;
-        return;
-      }
-
-      // Stop visualizing only when:
-      // 1. The queue is empty (no buffered chunks waiting)
-      // 2. The server has confirmed no more chunks are coming (tts_chunk_ends received)
-      // 3. All scheduled audio has finished playing (currentTime past nextStartTime)
-      // This prevents the orb from going flat between sentence TTS chunks.
-      if (
-        audioQueue.current.length === 0 &&
-        ttsChunksDone.current &&
-        playbackContext.current.currentTime > nextStartTime.current + 0.5
-      ) {
-        // Don't snap to 0 — let it decay naturally via the asymmetric smoothing above
-        // The CSS breathing handles the alive feel; this just needs to stop the loop
-        playbackAnimationFrame.current = null;
+        // No analyser yet — keep polling until audio chain is built
+        playbackAnimationFrame.current = requestAnimationFrame(updateVolume);
         return;
       }
 
@@ -177,6 +164,27 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   }, []);
 
   /**
+   * Stop the visualizer loop and reset volume to 0.
+   */
+  const stopVisualizer = useCallback(() => {
+    if (playbackAnimationFrame.current) {
+      cancelAnimationFrame(playbackAnimationFrame.current);
+      playbackAnimationFrame.current = null;
+    }
+    setPlayerVolume(0);
+  }, []);
+
+  // Visualizer lifecycle: start when speaking, stop when not.
+  // This replaces the old self-terminating approach that could miss sentences.
+  useEffect(() => {
+    if (kiraState === "speaking") {
+      startVisualizer();
+    } else {
+      stopVisualizer();
+    }
+  }, [kiraState, startVisualizer, stopVisualizer]);
+
+  /**
    * Stops current audio playback and clears the queue.
    */
   const stopAudioPlayback = useCallback(() => {
@@ -202,13 +210,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     }
 
     // 4. Stop visualizer and decay volume
-    if (playbackAnimationFrame.current) {
-        cancelAnimationFrame(playbackAnimationFrame.current);
-        playbackAnimationFrame.current = null;
-        setPlayerVolume(0);
-    }
+    stopVisualizer();
     ttsChunksDone.current = true; // Reset for next turn
-  }, []);
+  }, [stopVisualizer]);
 
   /**
    * Processes the audio queue and schedules chunks to play back-to-back.
@@ -280,16 +284,13 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
         // Keep track of the last source if we need to stop it manually later
         playbackSource.current = source;
 
-        // Start visualizer if not running
-        startVisualizer();
-
       } catch (e) {
         console.error("[AudioPlayer] Error decoding or playing audio:", e);
       }
     }
 
     isProcessingQueue.current = false;
-  }, [startVisualizer]);
+  }, []);
 
   const stopAudioPipeline = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);
@@ -306,7 +307,8 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     audioStream.current = null;
     audioContext.current = null;
     playbackContext.current = null;
-    playbackAnalyser.current = null; // Ensure analyser is cleared so it's recreated with new context
+    playbackGain.current = null;
+    playbackAnalyser.current = null; // Ensure nodes are cleared so they're recreated with new context
 
     console.log("[Audio] 🛑 Audio pipeline stopped.");
   }, []);

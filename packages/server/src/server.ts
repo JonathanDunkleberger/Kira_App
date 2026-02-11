@@ -91,9 +91,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     },
     natural: {
       voiceName: process.env.AZURE_VOICE_NATURAL || "en-US-JennyNeural",
-      style: process.env.AZURE_VOICE_NATURAL_STYLE || "chat",
+      style: process.env.AZURE_VOICE_NATURAL_STYLE || "soft voice",
       rate: process.env.AZURE_VOICE_NATURAL_RATE || undefined,
       pitch: process.env.AZURE_VOICE_NATURAL_PITCH || undefined,
+      temperature: process.env.AZURE_VOICE_NATURAL_TEMP || "0.85",
+      topP: process.env.AZURE_VOICE_NATURAL_TOP_P || "0.85",
     },
   };
   let currentVoiceConfig = VOICE_CONFIGS[voicePreference] || VOICE_CONFIGS.anime;

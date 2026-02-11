@@ -19,6 +19,8 @@ export interface AzureVoiceConfig {
   style?: string;
   rate?: string;
   pitch?: string;
+  temperature?: string;   // "0.0" to "1.0" — higher = more expressive
+  topP?: string;           // should match temperature for best results
 }
 
 class NodePushAudioStream extends PushAudioOutputStreamCallback {
@@ -89,24 +91,30 @@ export class AzureTTSStreamer extends EventEmitter {
 
   private buildSsml(text: string): string {
     const escaped = escapeXml(text);
-    const { voiceName, style, rate, pitch } = this.voiceConfig;
+    const { voiceName, style, rate, pitch, temperature, topP } = this.voiceConfig;
 
     // Build from inside out: text → prosody → express-as
     let innerContent = escaped;
 
-    // If rate/pitch are set, wrap in prosody (innermost)
+    // If rate/pitch are set, wrap in prosody (skip for DragonHD voices — they handle it contextually)
     if (rate || pitch) {
       const rateAttr = rate ? ` rate="${rate}"` : "";
       const pitchAttr = pitch ? ` pitch="${pitch}"` : "";
       innerContent = `<prosody${rateAttr}${pitchAttr}>${innerContent}</prosody>`;
     }
 
-    // If a speaking style is requested, wrap in express-as (outermost)
+    // If a speaking style is requested, wrap in express-as
     if (style) {
       innerContent = `<mstts:express-as style="${style}">${innerContent}</mstts:express-as>`;
     }
 
-    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="${voiceName}">${innerContent}</voice></speak>`;
+    // Build parameters string for DragonHD Omni voices (temperature, top_p)
+    const params: string[] = [];
+    if (temperature) params.push(`temperature=${temperature}`);
+    if (topP) params.push(`top_p=${topP}`);
+    const paramsAttr = params.length > 0 ? ` parameters="${params.join(";")}"` : "";
+
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="${voiceName}"${paramsAttr}>${innerContent}</voice></speak>`;
   }
 
   public synthesize(text: string) {

@@ -5,13 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, MessageSquare } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, MessageSquare, Sparkles } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import TextInput from "@/components/TextInput";
 import { getOrCreateGuestId } from "@/lib/guestId";
 import { getVoicePreference, setVoicePreference, VoicePreference } from "@/lib/voicePreference";
 import { KiraLogo } from "@/components/KiraLogo";
+import dynamic from "next/dynamic";
+
+const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: false });
 
 export default function ChatClient() {
   const router = useRouter();
@@ -26,6 +29,7 @@ export default function ChatClient() {
   const [guestId, setGuestId] = useState("");
   const [voicePreference, setVoicePref] = useState<VoicePreference>("anime");
   const [showChat, setShowChat] = useState(false);
+  const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
 
   // Load guest ID, voice preference, and chat toggle from localStorage
   useEffect(() => {
@@ -64,7 +68,8 @@ export default function ChatClient() {
     isPro,
     remainingSeconds,
     isAudioPlaying,
-    playerVolume
+    playerVolume,
+    playbackAnalyserNode
   } = useKiraSocket(
     token || "",
     guestId,
@@ -382,27 +387,35 @@ export default function ChatClient() {
         isPro={isPro}
       />
 
-      {/* Main Content Area — orb anchored at center, transcript below it */}
+      {/* Main Content Area — orb/avatar anchored at center, transcript below it */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto">
-        {/* Orb — absolutely centered, not affected by transcript content */}
+        {/* Visual — absolutely centered, not affected by transcript content */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 100 }}>
-          <div className="pointer-events-auto">
-            <KiraOrb
-              state={
-                isAudioPlaying
-                  ? "kiraSpeaking"
-                  : kiraState === "thinking"
-                    ? "thinking"
-                    : micVolume > 0.02
-                      ? "userSpeaking"
-                      : "idle"
-              }
-              micVolume={micVolume}
-              kiraVolume={isAudioPlaying ? playerVolume : 0}
-              size="lg"
-              showLabel
-              enableBreathing={false}
-            />
+          <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined }}>
+            {visualMode === "avatar" ? (
+              <Live2DAvatar
+                isSpeaking={isAudioPlaying}
+                analyserNode={playbackAnalyserNode}
+                emotion={null}
+              />
+            ) : (
+              <KiraOrb
+                state={
+                  isAudioPlaying
+                    ? "kiraSpeaking"
+                    : kiraState === "thinking"
+                      ? "thinking"
+                      : micVolume > 0.02
+                        ? "userSpeaking"
+                        : "idle"
+                }
+                micVolume={micVolume}
+                kiraVolume={isAudioPlaying ? playerVolume : 0}
+                size="lg"
+                showLabel
+                enableBreathing={false}
+              />
+            )}
           </div>
         </div>
 
@@ -456,6 +469,19 @@ export default function ChatClient() {
 
         {/* Voice Controls */}
         <div className="flex items-center gap-4 relative z-[1]">
+        {/* Avatar/Orb Toggle */}
+        <button
+          onClick={() => setVisualMode(prev => prev === "avatar" ? "orb" : "avatar")}
+          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+          style={{
+            background: visualMode === "avatar" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+            color: visualMode === "avatar" ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+          }}
+          title={visualMode === "avatar" ? "Switch to Orb" : "Switch to Avatar"}
+        >
+          <Sparkles size={18} />
+        </button>
+
         {/* Chat Toggle Button */}
         <button
           onClick={toggleChat}

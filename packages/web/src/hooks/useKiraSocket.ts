@@ -956,6 +956,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     isPro,
     remainingSeconds,
     isAudioPlaying,
-    playerVolume
+    playerVolume,
+    playbackAnalyserNode: playbackAnalyser.current,
   };
 };

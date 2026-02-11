@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 // ─── Orb color palette ───────────────────────────────────────────────────────
 const ORB_COLOR_CENTER = "#7B8FBF";
@@ -45,41 +45,34 @@ export default function KiraOrb({
   const isKiraSpeaking = state === "kiraSpeaking";
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
 
-  // ─── Debounced sonar ring: bridges gaps between TTS sentences ────────
-  const [showRing, setShowRing] = useState(false);
-  const hideRingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ─── Sonar ring: ref-based, bypasses React rendering entirely ────────
+  const ringRef = useRef<HTMLDivElement>(null);
+  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isKiraSpeaking) {
       // Cancel any pending hide — new sentence started
-      if (hideRingTimeout.current) {
-        clearTimeout(hideRingTimeout.current);
-        hideRingTimeout.current = null;
+      if (hideTimeout.current) {
+        clearTimeout(hideTimeout.current);
+        hideTimeout.current = null;
       }
-      setShowRing(true);
+      // Show ring immediately — direct DOM mutation, no React re-render
+      if (ringRef.current) {
+        ringRef.current.style.opacity = '1';
+      }
     } else {
-      // Delay hiding by 1.5s to bridge inter-sentence gaps (~100-500ms)
-      // Only truly hides when Kira is done speaking entirely
-      hideRingTimeout.current = setTimeout(() => {
-        setShowRing(false);
+      // Hide after 1.5s delay — bridges inter-sentence gaps (~100-500ms)
+      hideTimeout.current = setTimeout(() => {
+        if (ringRef.current) {
+          ringRef.current.style.opacity = '0';
+        }
       }, 1500);
     }
 
     return () => {
-      if (hideRingTimeout.current) {
-        clearTimeout(hideRingTimeout.current);
-      }
+      if (hideTimeout.current) clearTimeout(hideTimeout.current);
     };
   }, [isKiraSpeaking]);
-
-  // ─── Debug logs (remove after verification) ─────────────────────────
-  useEffect(() => {
-    console.log('[Orb] kiraState changed to:', state, 'at', Date.now());
-  }, [state]);
-
-  useEffect(() => {
-    console.log('[Orb] showRing:', showRing);
-  }, [showRing]);
 
   // ─── Refs so the rAF closure always sees latest values ───────────────
   const micRef = useRef(micVolume);
@@ -127,34 +120,40 @@ export default function KiraOrb({
     }
   }, [isUserSpeaking, enableBreathing]);
 
+  // ─── Memoized ring styles — prevents re-render from recreating objects ──
+  const ringWrapperStyle = useMemo(() => ({
+    position: 'absolute' as const,
+    width: orbSize,
+    height: orbSize,
+    opacity: 0,
+    transition: 'opacity 0.3s ease',
+    pointerEvents: 'none' as const,
+  }), [orbSize]);
+
+  const ringInnerStyle = useMemo(() => ({
+    width: '100%' as const,
+    height: '100%' as const,
+    borderRadius: '50%',
+    border: '2.5px solid rgba(170, 190, 230, 0.6)',
+    boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
+  }), []);
+
   return (
     <div className="relative flex flex-col items-center">
       <div
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring wrapper — always mounted, visibility via opacity only.
-             Inner div animates forever; outer div fades in/out without
-             unmounting, so the CSS animation never restarts. */}
+        {/* Sonar ring — ref controls wrapper opacity via direct DOM mutation.
+             Inner div runs sonar-ping animation forever, untouched by React.
+             No state, no conditional rendering, no re-render restarts. */}
         <div
-          style={{
-            position: 'absolute',
-            width: orbSize,
-            height: orbSize,
-            opacity: showRing ? 1 : 0,
-            transition: 'opacity 0.3s ease',
-            pointerEvents: 'none',
-          }}
+          ref={ringRef}
+          style={ringWrapperStyle}
         >
           <div
             className="sonar-ring"
-            style={{
-              width: '100%',
-              height: '100%',
-              borderRadius: '50%',
-              border: '2.5px solid rgba(170, 190, 230, 0.6)',
-              boxShadow: '0 0 10px rgba(170, 190, 230, 0.3)',
-            }}
+            style={ringInnerStyle}
           />
         </div>
 

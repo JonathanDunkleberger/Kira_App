@@ -21,6 +21,8 @@ export interface KiraOrbProps {
   state?: "idle" | "userSpeaking" | "kiraSpeaking" | "thinking";
   /** Mic volume 0-1, drives orb pulse when user speaks. */
   micVolume?: number;
+  /** Kira audio volume 0-1, drives orb + halo pulse when Kira speaks. */
+  kiraVolume?: number;
   /** Size preset — sm (mobile), md (landing / hero), lg (chat page desktop). */
   size?: OrbSize;
   /** Whether to show the state-indicator label below the orb. */
@@ -81,46 +83,55 @@ SonarRing.displayName = 'SonarRing';
 export default function KiraOrb({
   state = "idle",
   micVolume = 0,
+  kiraVolume = 0,
   size = "lg",
   showLabel = false,
   enableBreathing = true,
 }: KiraOrbProps) {
   const orbRef = useRef<HTMLDivElement>(null);
+  const haloRef = useRef<HTMLDivElement>(null);
   const animFrame = useRef<number>(0);
 
   const { orb: orbSize, glow: glowSize, container: containerSize } = SIZES[size];
 
   const isUserSpeaking = state === "userSpeaking" && micVolume > 0.02;
+  const isKiraSpeaking = state === "kiraSpeaking";
 
-  // ─── Refs so the rAF closure always sees latest values ───────────────
+  // ─── Refs so rAF closures always see latest values ───────────────────
   const micRef = useRef(micVolume);
+  const kiraVolRef = useRef(kiraVolume);
   micRef.current = micVolume;
+  kiraVolRef.current = kiraVolume;
 
-  // ─── User-speech-driven orb scale (rAF loop) ────────────────────────
+  // ─── Orb scale: user speech OR Kira speech (rAF loop) ───────────────
   useEffect(() => {
     const orb = orbRef.current;
     if (!orb) return;
 
     if (isUserSpeaking) {
-      // Kill CSS breathing — JS drives transform now
       orb.style.animation = "none";
-
       const tick = () => {
-        // Orb only moves when USER speaks
         const scale = 1 + Math.min(micRef.current, 1) * 0.15;
         orb.style.transition = "transform 0.05s ease-out";
         orb.style.transform = `scale(${scale})`;
         animFrame.current = requestAnimationFrame(tick);
       };
       tick();
-
+      return () => cancelAnimationFrame(animFrame.current);
+    } else if (isKiraSpeaking) {
+      orb.style.animation = "none";
+      const tick = () => {
+        const scale = 1 + kiraVolRef.current * 0.08; // Subtle — half of user speech
+        orb.style.transition = "transform 0.05s ease-out";
+        orb.style.transform = `scale(${scale})`;
+        animFrame.current = requestAnimationFrame(tick);
+      };
+      tick();
       return () => cancelAnimationFrame(animFrame.current);
     } else {
-      // Ease back to idle
       orb.style.transition = "transform 0.5s ease-out";
       orb.style.transform = "scale(1)";
       if (enableBreathing) {
-        // After the ease-back finishes, re-enable CSS breathing (landing page)
         const timer = setTimeout(() => {
           if (orbRef.current) {
             orbRef.current.style.transition = "";
@@ -130,11 +141,32 @@ export default function KiraOrb({
         }, 520);
         return () => clearTimeout(timer);
       } else {
-        // Chat page: stay perfectly still at scale(1), no breathing
         orb.style.animation = "none";
       }
     }
-  }, [isUserSpeaking, enableBreathing]);
+  }, [isUserSpeaking, isKiraSpeaking, enableBreathing]);
+
+  // ─── Halo: pulsing glow ring driven by Kira audio amplitude ─────────
+  useEffect(() => {
+    const halo = haloRef.current;
+    if (!halo) return;
+
+    if (isKiraSpeaking) {
+      halo.style.opacity = '1';
+      let frame: number;
+      const animate = () => {
+        const vol = kiraVolRef.current;
+        const haloScale = 1.05 + vol * 0.2;
+        halo.style.transform = `scale(${haloScale})`;
+        frame = requestAnimationFrame(animate);
+      };
+      animate();
+      return () => cancelAnimationFrame(frame);
+    } else {
+      halo.style.opacity = '0';
+      halo.style.transform = 'scale(1)';
+    }
+  }, [isKiraSpeaking]);
 
   return (
     <div className="relative flex flex-col items-center">
@@ -142,11 +174,26 @@ export default function KiraOrb({
         className="relative flex items-center justify-center"
         style={{ width: containerSize, height: containerSize }}
       >
-        {/* Sonar ring — isolated React.memo component, immune to 60fps micVolume re-renders.
-             Uses visibility: hidden/visible which never restarts CSS animations. */}
+        {/* 1. Sonar ring — outermost, expands beyond everything */}
         <SonarRing kiraState={state} orbSize={orbSize} />
 
-        {/* Subtle ambient glow behind orb */}
+        {/* 2. Pulsing halo — audio-reactive glow ring around the orb */}
+        <div
+          ref={haloRef}
+          className="absolute pointer-events-none"
+          style={{
+            width: orbSize,
+            height: orbSize,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, rgba(${ORB_RGB}, 0.15) 60%, transparent 100%)`,
+            filter: 'blur(8px)',
+            transform: 'scale(1)',
+            opacity: 0,
+            transition: 'opacity 0.3s ease',
+          }}
+        />
+
+        {/* 3. Subtle ambient glow behind orb */}
         <div
           className="absolute rounded-full pointer-events-none"
           style={{

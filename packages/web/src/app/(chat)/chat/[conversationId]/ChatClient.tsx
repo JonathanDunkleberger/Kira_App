@@ -53,7 +53,8 @@ export default function ChatClient() {
     stopScreenShare,
     isPro,
     remainingSeconds,
-    isAudioPlaying
+    isAudioPlaying,
+    playerVolume
   } = useKiraSocket(
     token || "",
     guestId,
@@ -387,6 +388,7 @@ export default function ChatClient() {
                       : "idle"
               }
               micVolume={micVolume}
+              kiraVolume={isAudioPlaying ? playerVolume : 0}
               size="lg"
               showLabel
               enableBreathing={false}

@@ -46,7 +46,7 @@
     opacity: 0.55;
   }
   100% {
-    transform: scale(1.7);
+    transform: scale(1.85);
     opacity: 0;
   }
 }

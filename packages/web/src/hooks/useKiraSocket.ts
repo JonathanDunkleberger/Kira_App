@@ -35,6 +35,30 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const audioPlayingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- Visualizer: read AnalyserNode while audio is playing ---
+  useEffect(() => {
+    if (!isAudioPlaying) {
+      setPlayerVolume(0);
+      return;
+    }
+
+    let frame: number;
+    const tick = () => {
+      if (playbackAnalyser.current) {
+        const data = new Uint8Array(playbackAnalyser.current.frequencyBinCount);
+        playbackAnalyser.current.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length / 255; // normalize 0-1
+        setPlayerVolume(avg);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+
+    return () => cancelAnimationFrame(frame);
+  }, [isAudioPlaying]);
   const ws = useRef<WebSocket | null>(null);
   const isServerReady = useRef(false); // Gate for sending audio
 
@@ -94,6 +118,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const playbackContext = useRef<AudioContext | null>(null);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
   const playbackGain = useRef<GainNode | null>(null);
+  const playbackAnalyser = useRef<AnalyserNode | null>(null);
+  const playerVolumeFrame = useRef<number>(0);
+  const [playerVolume, setPlayerVolume] = useState(0);
 
   // --- "Ramble Bot" EOU Timer ---
   const eouTimer = useRef<NodeJS.Timeout | null>(null);
@@ -170,18 +197,21 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       playbackContext.current.state === "closed"
     ) {
       playbackContext.current = new AudioContext({ sampleRate: 16000 });
-      // Reset persistent gain node when context is recreated
+      // Reset persistent audio chain when context is recreated
       playbackGain.current = null;
+      playbackAnalyser.current = null;
     }
     if (playbackContext.current.state === "suspended") {
       await playbackContext.current.resume();
     }
 
-    // Build persistent audio chain once: GainNode → Destination
-    // Every new source just connects to the GainNode.
+    // Build persistent audio chain once: Source → GainNode → AnalyserNode → Destination
     if (!playbackGain.current) {
       playbackGain.current = playbackContext.current.createGain();
-      playbackGain.current.connect(playbackContext.current.destination);
+      playbackAnalyser.current = playbackContext.current.createAnalyser();
+      playbackAnalyser.current.fftSize = 256;
+      playbackGain.current.connect(playbackAnalyser.current);
+      playbackAnalyser.current.connect(playbackContext.current.destination);
     }
 
     while (audioQueue.current.length > 0) {
@@ -925,6 +955,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     stopScreenShare,
     isPro,
     remainingSeconds,
-    isAudioPlaying
+    isAudioPlaying,
+    playerVolume
   };
 };

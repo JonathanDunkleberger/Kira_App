@@ -44,19 +44,14 @@
   0% {
     transform: scale(1);
     opacity: 0.55;
-    border-color: red;
-  }
-  50% {
-    border-color: yellow;
   }
   100% {
     transform: scale(1.7);
     opacity: 0;
-    border-color: blue;
   }
 }
 
 .sonar-ring {
-  animation: sonar-ping 2.8s ease-out infinite;
+  animation: sonar-ping 1.2s ease-out infinite;
   pointer-events: none;
 }

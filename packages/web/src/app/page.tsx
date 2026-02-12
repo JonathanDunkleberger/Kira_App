@@ -1048,19 +1048,24 @@ export default function HomePage() {
       {/* ═══════════════════════════════════════════════════════ */}
       <footer
         style={{
-          padding: "32px 24px",
+          padding: "24px 16px",
           borderTop: "1px solid rgba(255,255,255,0.03)",
           maxWidth: 900,
           margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
         }}
       >
-        <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginBottom: 12, textAlign: "center" }}>
+        <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, margin: 0, textAlign: "center", width: "100%" }}>
           By using our services, you agree to Kira&apos;s{' '}
           <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
           {' '}and{' '}
           <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
         </p>
-        <div style={{ textAlign: "left", paddingLeft: 16 }}>
+        <div style={{ textAlign: "left", width: "100%" }}>
           <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
             © {new Date().getFullYear()} Kira AI
           </span>

@@ -37,9 +37,9 @@ CONTEXT DETECTION — Adapt your unprompted behavior based on what's happening:
 UNPROMPTED BEHAVIOR (when the user is NOT talking to you):
 - Keep unprompted reactions brief (1-2 sentences max)
 - React like a friend in the room, not a narrator
-- Don't describe everything you see — just react to standout moments
+- React to standout moments — interesting visuals, mood shifts, cool details
 - Match the energy: quiet during emotional scenes, excited during hype moments
-- Silence is fine. A real friend is quiet most of the time.
+- You should react to something every so often — your presence matters. Being totally silent makes the user feel alone.
 
 WHEN THE USER ASKS YOU SOMETHING:
 - Give full, specific answers. Reference what you see in detail.
@@ -253,7 +253,7 @@ Keep it natural and brief — 1 sentence.`
     const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       {
         role: "system",
-        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are watching with the user right now via screen share.\nGlance at what's on screen and react like a friend sitting next to them.\nBe opinionated. Be genuine. Be present.\n\nGood reactions:\n- "Oh I love this scene so much"\n- "The animation quality here is insane"\n- "Wait is he about to confess?!"\n- "This soundtrack hits different"\n- "She's definitely hiding something"\n- "The lighting in this shot though"\n- "Ugh this part makes me emotional"\n- "Okay that was smooth"\n\nRules:\n- Keep it to 1-2 short sentences MAX (under 15 words ideal)\n- Sound natural, like a friend reacting out loud\n- Reference something SPECIFIC you see — a title, character name, scene detail, or mood\n- Be opinionated — say what you FEEL about what you see\n- Do NOT ask the user questions\n- Do NOT narrate play-by-play ("I see a character walking...")\n- Do NOT say generic things like "this looks interesting" — be SPECIFIC\n- If truly nothing notable is happening (black screen, loading, menu), respond with [SILENT]` + firstReactionExtra,
+        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are watching something with the user right now via screen share.\nLook at the current frames and react like a friend sitting next to them.\n\nYou MUST react to something. Find ANYTHING worth commenting on:\n- The art style, animation quality, lighting, colors\n- A character's expression or body language\n- The setting or background details (like "why does he have so many books?")\n- The mood or atmosphere of the scene\n- A plot moment ("wait is she about to...?")\n- Subtitles or dialogue you can read ("that line hit different")\n- Something funny, weird, beautiful, or emotional\n\nGood examples:\n- "the lighting in this scene is so warm"\n- "why does he have so many books though"\n- "her expression right there... she knows"\n- "this soundtrack is doing all the heavy lifting"\n- "the detail in this background is insane"\n- "wait what did he just say??"\n- "ok this is getting intense"\n- "I love how they animated the rain here"\n\nRules:\n- 1-2 short sentences MAX (under 20 words ideal)\n- Be specific about what you see — reference actual visual details\n- Sound natural, like thinking out loud\n- Do NOT ask the user questions\n- Do NOT narrate the plot ("and then he walks to...")\n- Only respond with [SILENT] if the screen is literally a black/loading screen or a static menu with nothing happening. If there is ANY visual content, react to it.\n` + firstReactionExtra,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
       { role: "user", content: reactionImageContent },
@@ -270,8 +270,19 @@ Keep it natural and brief — 1 sentence.`
       const reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
 
       if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length > 120 || reaction.length < 2) {
-        console.log(`[Vision Reaction] Kira chose silence. ("${reaction}")`);
+        console.log(`[Vision Reaction] LLM chose silence. Raw response: "${reaction}"`);
+        console.log("[Vision Reaction] Scheduling retry in 30-45 seconds instead of full cooldown.");
         state = "listening";
+
+        // Don't wait the full 75-120s — retry sooner since we got silence
+        if (visionActive && !clientDisconnected) {
+          if (visionReactionTimer) clearTimeout(visionReactionTimer);
+          visionReactionTimer = setTimeout(async () => {
+            if (!visionActive || clientDisconnected) return;
+            await triggerVisionReaction();
+            if (visionActive && !clientDisconnected) scheduleNextReaction();
+          }, 30000 + Math.random() * 15000); // 30-45 second retry after silence
+        }
         return;
       }
 
@@ -319,7 +330,7 @@ Keep it natural and brief — 1 sentence.`
   }
 
   function scheduleNextReaction() {
-    const delay = 90000 + Math.random() * 60000; // 90-150 seconds
+    const delay = 75000 + Math.random() * 45000; // 75-120 seconds
     console.log(`[Vision] Next reaction scheduled in ${Math.round(delay / 1000)}s`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
@@ -349,7 +360,7 @@ Keep it natural and brief — 1 sentence.`
   function rescheduleVisionReaction() {
     if (!visionReactionTimer) return;
     clearTimeout(visionReactionTimer);
-    const delay = 90000 + Math.random() * 60000; // 90-150 seconds after Kira speaks
+    const delay = 75000 + Math.random() * 45000; // 75-120 seconds after Kira speaks
     console.log(`[Vision] Kira spoke — rescheduling next reaction in ${Math.round(delay / 1000)}s`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
@@ -455,7 +466,7 @@ Keep it natural and brief — 1 sentence.`
         chatHistory.push({ role: "assistant", content: responseText });
         console.log(`[Silence] Kira initiates: "${responseText}"`);
         lastKiraSpokeTimestamp = Date.now();
-        if (visionActive) rescheduleVisionReaction();
+        // Don't reschedule vision timer from silence checker — these are separate systems
         ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
 
         state = "speaking";
@@ -1677,7 +1688,7 @@ Keep it natural and brief — 1 sentence.`
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
-                if (visionActive) rescheduleVisionReaction();
+                // Don't reschedule vision timer from scene reactions — already handled by scheduleNextReaction()
                 ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
 
                 // TTS pipeline for scene reaction

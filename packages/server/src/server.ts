@@ -1297,8 +1297,8 @@ Keep it natural and brief — 1 sentence.`
                 content.push({
                     type: "image_url",
                     image_url: {
-                        url: img,
-                        detail: "auto"
+                        url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`,
+                        detail: "low"
                     }
                 });
             });

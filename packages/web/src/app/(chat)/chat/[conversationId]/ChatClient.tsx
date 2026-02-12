@@ -398,23 +398,21 @@ export default function ChatClient() {
           </div>
         </div>
 
-        {/* Transcript — bottom-left pill for avatar, centered below orb for orb */}
+        {/* Transcript — bottom-center with blur pill */}
         {showChat && (
           <div
-            className={visualMode === "avatar"
-              ? "absolute left-6 flex justify-start"
-              : "absolute inset-x-0 flex justify-center"
-            }
-            style={visualMode === "avatar"
-              ? { bottom: 140, maxWidth: 360 }
-              : { top: 'calc(50% + 80px)' }
-            }
+            className="absolute flex justify-center"
+            style={{
+              bottom: 140,
+              left: "50%",
+              transform: "translateX(-50%)",
+              maxWidth: 500,
+              width: "90%",
+            }}
           >
-            <div className={visualMode === "avatar"
-              ? "min-h-[36px] flex items-center px-4 py-2 rounded-xl"
-              : "min-h-[48px] flex items-center justify-center max-w-[500px] px-6"
-            }
-              style={visualMode === "avatar" ? { background: "rgba(13,17,23,0.75)", backdropFilter: "blur(8px)" } : undefined}
+            <div
+              className="min-h-[36px] flex items-center justify-center px-5 py-2 rounded-xl w-full"
+              style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
             >
               {error && error !== "limit_reached" && (
                 <div className="mb-4 p-3 rounded relative" style={{
@@ -427,7 +425,7 @@ export default function ChatClient() {
               )}
               {transcript ? (
                 <p
-                  className={`${visualMode === "avatar" ? "text-left text-sm" : "text-center text-base"} leading-relaxed m-0 animate-[fadeIn_0.4s_ease]`}
+                  className="text-center text-sm leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
                   style={{
                     color: transcript.role === "ai"
                       ? "rgba(139,157,195,0.9)"

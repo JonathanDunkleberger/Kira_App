@@ -463,7 +463,7 @@ export default function ChatClient() {
         className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
       >
         {/* Status indicator + errors — sits between avatar and controls */}
-        <div style={{ textAlign: "center", minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", margin: "12px 0 8px 0" }}>
+        <div style={{ textAlign: "center", minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", margin: "24px 0 8px 0" }}>
           {error && error !== "limit_reached" && error !== "limit_reached_pro" && error !== "connection_lost" && (
             <div className="mb-2 p-3 rounded relative" style={{
               background: "rgba(200,55,55,0.15)",

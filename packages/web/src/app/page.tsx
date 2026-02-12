@@ -1047,10 +1047,11 @@ export default function HomePage() {
       <footer
         style={{
           padding: "32px 24px",
+          paddingLeft: 16,
           borderTop: "1px solid rgba(255,255,255,0.03)",
           maxWidth: 900,
           margin: "0 auto",
-          textAlign: "center",
+          textAlign: "left",
         }}
       >
         <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginBottom: 12 }}>

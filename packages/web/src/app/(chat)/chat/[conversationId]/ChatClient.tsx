@@ -32,6 +32,15 @@ export default function ChatClient() {
   const [showChat, setShowChat] = useState(false);
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
   const [live2dReady, setLive2dReady] = useState(false);
+  const [live2dFailed, setLive2dFailed] = useState(false);
+
+  // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
+  useEffect(() => {
+    if (live2dFailed && visualMode === "avatar") {
+      setVisualMode("orb");
+      console.log("[UI] Live2D failed — falling back to orb mode");
+    }
+  }, [live2dFailed, visualMode]);
 
   // Load guest ID, voice preference, and chat toggle from localStorage
   useEffect(() => {
@@ -375,6 +384,7 @@ export default function ChatClient() {
                   analyserNode={playbackAnalyserNode}
                   emotion={null}
                   onModelReady={() => setLive2dReady(true)}
+                  onLoadError={() => setLive2dFailed(true)}
                 />
               </>
             ) : (

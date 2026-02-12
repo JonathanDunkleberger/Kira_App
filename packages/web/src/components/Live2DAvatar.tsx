@@ -28,9 +28,10 @@ interface Live2DAvatarProps {
   analyserNode: AnalyserNode | null;
   emotion?: string | null;
   onModelReady?: () => void;
+  onLoadError?: () => void;
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onModelReady }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onModelReady, onLoadError }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
@@ -39,6 +40,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
   const initializedRef = useRef(false);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
+  const onLoadErrorRef = useRef(onLoadError);
+  onLoadErrorRef.current = onLoadError;
   const [modelReady, setModelReady] = useState(false);
 
   // Initialize PixiJS app + load model (runs once on mount)
@@ -62,27 +65,45 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
 
         if (destroyed || !containerRef.current) return;
 
-        const app = new PIXI.Application({
-          backgroundAlpha: 0,
-          resizeTo: containerRef.current,
-          resolution: window.devicePixelRatio || 2,
-          autoDensity: true,
-          antialias: true,
-        });
-        containerRef.current.appendChild(app.view as unknown as HTMLCanvasElement);
+        // Detect mobile — force DPR 1 to avoid GPU memory issues
+        // (iPhones cap WebGL textures at 4096px; 8192 textures + 3x DPR = crash)
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        let app: InstanceType<typeof PIXI.Application>;
+        try {
+          app = new PIXI.Application({
+            backgroundAlpha: 0,
+            resizeTo: containerRef.current,
+            resolution: isMobile ? 1 : (window.devicePixelRatio || 2),
+            autoDensity: true,
+            antialias: !isMobile,
+          });
+          containerRef.current.appendChild(app.view as unknown as HTMLCanvasElement);
+        } catch (pixiErr) {
+          console.error("[Live2D] Failed to create PIXI app:", pixiErr);
+          onLoadErrorRef.current?.();
+          return;
+        }
         appRef.current = app;
 
-        const model = await Live2DModel.from(
-          "/worklets/models/Kira/suki%E9%85%B1.model3.json",
-          { autoInteract: false }
-        );
+        let model;
+        try {
+          model = await Live2DModel.from(
+            "/worklets/models/Kira/suki%E9%85%B1.model3.json",
+            { autoInteract: false }
+          );
+        } catch (modelErr) {
+          console.error("[Live2D] Failed to load model:", modelErr);
+          onLoadErrorRef.current?.();
+          return;
+        }
 
         if (destroyed) return;
 
         app.stage.addChild(model as any);
 
         // Framing: show head to mid-thigh, centered with breathing room
-        const dpr = window.devicePixelRatio || 2;
+        const dpr = isMobile ? 1 : (window.devicePixelRatio || 2);
         const containerWidth = app.renderer.width / dpr;
         const containerHeight = app.renderer.height / dpr;
 
@@ -134,7 +155,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
           });
         });
       } catch (err) {
-        console.error("[Live2D] Failed to load model:", err);
+        console.error("[Live2D] Failed to initialize:", err);
+        onLoadErrorRef.current?.();
       }
     })();
 

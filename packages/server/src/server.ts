@@ -55,19 +55,84 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-// --- EXPRESSION TAG PARSING ---
-const EMOTION_REGEX = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy)\]\s*$/;
+// --- SERVER-SIDE EMOTION DETECTION ---
+const EMOTION_TAG_STRIP = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy)\]\s*$/g;
 
-/** Extract the emotion tag from an LLM response and strip it from the text. */
-function parseEmotion(text: string): { cleanText: string; emotion: string } {
-  const match = text.match(EMOTION_REGEX);
-  if (match) {
-    return {
-      cleanText: text.replace(EMOTION_REGEX, "").trim(),
-      emotion: match[1],
-    };
+/** Strip any accidental LLM emotion tags from text before TTS. */
+function stripEmotionTags(text: string): string {
+  return text.replace(EMOTION_TAG_STRIP, "").trim();
+}
+
+/** Detect emotion from response text via keyword matching. */
+function detectEmotion(text: string): string {
+  const lower = text.toLowerCase();
+
+  // Order matters — check more specific patterns first
+
+  // Blush: compliment responses, embarrassment, flattery
+  if (/\b(blush|flatter|you're (too |so )?(sweet|kind|nice)|stop it|making me)\b/.test(lower) ||
+      /\b(aww+|oh stop)\b/.test(lower)) {
+    return "blush";
   }
-  return { cleanText: text, emotion: "neutral" };
+
+  // Excited: enthusiasm, amazement, strong interest
+  if (/\b(so (cool|awesome|amazing|exciting|fun)|can't wait|love (that|it|this)|no way|that's (amazing|awesome|incredible|fantastic))\b/.test(lower) ||
+      /!.*!/.test(text) || // Multiple exclamation marks
+      /\b(oh my (god|gosh)|whoa|wow)\b/.test(lower)) {
+    return "excited";
+  }
+
+  // Love: adoring, deep affection
+  if (/\b(love love|adore|heart|so (beautiful|precious|adorable))\b/.test(lower) ||
+      /\b(that's .{0,20}beautiful|warms my heart)\b/.test(lower)) {
+    return "love";
+  }
+
+  // Sad: empathy, sadness, emotional pain
+  if (/\b(so sad|that's (tough|rough|hard)|i'm sorry|breaks my heart|that sucks|feel for you)\b/.test(lower) ||
+      (/\b(aw+|oh no)\b/.test(lower) && /\b(sorry|sad|tough|hard)\b/.test(lower))) {
+    return "sad";
+  }
+
+  // Playful: teasing, joking, banter
+  if (/\b(haha|hehe|lol|just (kidding|messing)|tease|cheeky|bet you|oh come on)\b/.test(lower) ||
+      /\b(pfft|you wish)\b/.test(lower)) {
+    return "playful";
+  }
+
+  // Thinking: pondering, considering, philosophical
+  if (/\b(hmm+|let me think|that's a (good|great|tough|interesting) question|i wonder|tricky)\b/.test(lower) ||
+      /\b(honestly.{0,20}not sure|hard to say)\b/.test(lower)) {
+    return "thinking";
+  }
+
+  // Speechless: shock, disbelief, overwhelmed
+  if (/\b(speechless|i (just )?can't|no words|that's .{0,10}(wild|insane|unreal|unbelievable))\b/.test(lower)) {
+    return "speechless";
+  }
+
+  // Eyeroll: sarcasm, exasperation, "really?"
+  if (/\b(oh (please|really|great|sure)|ugh|seriously|of course|typical|yeah right)\b/.test(lower)) {
+    return "eyeroll";
+  }
+
+  // Sleepy: tired, late night, winding down
+  if (/\b(sleep|tired|exhausted|yawn|bedtime|rest|winding down|so late)\b/.test(lower)) {
+    return "sleepy";
+  }
+
+  // Angry: frustration, annoyance
+  if (/\b(so (annoying|frustrating|unfair)|that's (wrong|messed up)|can't (believe|stand))\b/.test(lower)) {
+    return "angry";
+  }
+
+  // Happy: general positive vibes (broad catch — better than neutral)
+  if (/\b(great|awesome|nice|sounds (like a plan|fun|good|perfect)|i'd love|totally|absolutely|let's do)\b/.test(lower) ||
+      /!\s*$/.test(text.trim())) { // Ends with exclamation
+    return "happy";
+  }
+
+  return "neutral";
 }
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
@@ -326,9 +391,9 @@ Keep it natural and brief — 1 sentence.`
         }
       }
 
-      // Parse and strip emotion tag before TTS
-      const { cleanText: cleanVisionReaction, emotion: emotionVisionReaction } = parseEmotion(reaction);
-      reaction = cleanVisionReaction;
+      // Detect emotion and strip any accidental tags before TTS
+      reaction = stripEmotionTags(reaction);
+      const emotionVisionReaction = detectEmotion(reaction);
       ws.send(JSON.stringify({ type: "expression", expression: emotionVisionReaction }));
       console.log(`[Expression] ${emotionVisionReaction}`);
 
@@ -508,9 +573,9 @@ Keep it natural and brief — 1 sentence.`
           return;
         }
 
-        // Parse and strip emotion tag before TTS
-        const { cleanText: cleanSilence, emotion: emotionSilence } = parseEmotion(responseText);
-        responseText = cleanSilence;
+        // Detect emotion and strip any accidental tags before TTS
+        responseText = stripEmotionTags(responseText);
+        const emotionSilence = detectEmotion(responseText);
         ws.send(JSON.stringify({ type: "expression", expression: emotionSilence }));
         console.log(`[Expression] ${emotionSilence}`);
 
@@ -592,9 +657,9 @@ Keep it natural and brief — 1 sentence.`
         return;
       }
 
-      // Parse and strip emotion tag before TTS
-      const { cleanText: cleanRunKira, emotion: emotionRunKira } = parseEmotion(llmResponse);
-      llmResponse = cleanRunKira;
+      // Detect emotion and strip any accidental tags before TTS
+      llmResponse = stripEmotionTags(llmResponse);
+      const emotionRunKira = detectEmotion(llmResponse);
       ws.send(JSON.stringify({ type: "expression", expression: emotionRunKira }));
       console.log(`[Expression] ${emotionRunKira}`);
 
@@ -700,9 +765,9 @@ Keep it natural and brief — 1 sentence.`
 
       const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
-        // Parse and strip emotion tag before TTS
-        const { cleanText: cleanGoodbye, emotion: emotionGoodbye } = parseEmotion(goodbyeText);
-        const finalGoodbye = cleanGoodbye;
+        // Detect emotion and strip any accidental tags before TTS
+        const finalGoodbye = stripEmotionTags(goodbyeText);
+        const emotionGoodbye = detectEmotion(finalGoodbye);
         ws.send(JSON.stringify({ type: "expression", expression: emotionGoodbye }));
         console.log(`[Expression] ${emotionGoodbye}`);
 
@@ -1211,9 +1276,9 @@ Keep it natural and brief — 1 sentence.`
               let openerText = completion.choices[0]?.message?.content?.trim() || "";
               if (!openerText || openerText.length < 3 || clientDisconnected) return;
 
-              // Parse and strip emotion tag before TTS
-              const { cleanText: cleanOpener, emotion: emotionOpener } = parseEmotion(openerText);
-              openerText = cleanOpener;
+              // Detect emotion and strip any accidental tags before TTS
+              openerText = stripEmotionTags(openerText);
+              const emotionOpener = detectEmotion(openerText);
               ws.send(JSON.stringify({ type: "expression", expression: emotionOpener }));
               console.log(`[Expression] ${emotionOpener}`);
 
@@ -1488,9 +1553,9 @@ Keep it natural and brief — 1 sentence.`
               // (skip the streaming call since we already have the answer)
               llmResponse = initialMessage.content || "";
 
-              // Parse and strip emotion tag before TTS
-              const { cleanText: cleanDirect, emotion: emotionDirect } = parseEmotion(llmResponse);
-              llmResponse = cleanDirect;
+              // Detect emotion and strip any accidental tags before TTS
+              llmResponse = stripEmotionTags(llmResponse);
+              const emotionDirect = detectEmotion(llmResponse);
               ws.send(JSON.stringify({ type: "expression", expression: emotionDirect }));
               console.log(`[Expression] ${emotionDirect}`);
 
@@ -1616,18 +1681,18 @@ Keep it natural and brief — 1 sentence.`
                 }
               }
 
-              // Flush remaining text (strip any emotion tag from final chunk)
+              // Flush remaining text (strip any accidental tags from final chunk)
               if (sentenceBuffer.trim().length > 0) {
-                const { cleanText: cleanFinal } = parseEmotion(sentenceBuffer.trim());
+                const cleanFinal = stripEmotionTags(sentenceBuffer.trim());
                 if (cleanFinal.length > 0) {
                   await speakSentence(cleanFinal);
                 }
               }
 
               llmResponse = fullResponse;
-              // Parse emotion from the full streamed response
-              const { cleanText: cleanStreamed, emotion: emotionStreamed } = parseEmotion(llmResponse);
-              llmResponse = cleanStreamed;
+              // Detect emotion from the full streamed response and strip tags
+              llmResponse = stripEmotionTags(llmResponse);
+              const emotionStreamed = detectEmotion(llmResponse);
               ws.send(JSON.stringify({ type: "expression", expression: emotionStreamed }));
               console.log(`[Expression] ${emotionStreamed}`);
 
@@ -1778,9 +1843,9 @@ Keep it natural and brief — 1 sentence.`
 
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
 
-                // Parse and strip emotion tag before TTS
-                const { cleanText: cleanScene, emotion: emotionScene } = parseEmotion(reactionText);
-                reactionText = cleanScene;
+                // Detect emotion and strip any accidental tags before TTS
+                reactionText = stripEmotionTags(reactionText);
+                const emotionScene = detectEmotion(reactionText);
                 ws.send(JSON.stringify({ type: "expression", expression: emotionScene }));
                 console.log(`[Expression] ${emotionScene}`);
 
@@ -1935,9 +2000,9 @@ Keep it natural and brief — 1 sentence.`
               txtLlmResponse = txtInitialMessage?.content || "";
             }
 
-            // Parse and strip emotion tag
-            const { cleanText: cleanTxt, emotion: emotionTxt } = parseEmotion(txtLlmResponse);
-            txtLlmResponse = cleanTxt;
+            // Detect emotion and strip any accidental tags
+            txtLlmResponse = stripEmotionTags(txtLlmResponse);
+            const emotionTxt = detectEmotion(txtLlmResponse);
             ws.send(JSON.stringify({ type: "expression", expression: emotionTxt }));
             console.log(`[Expression] ${emotionTxt}`);
 

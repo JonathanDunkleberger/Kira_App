@@ -97,8 +97,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
 
         let model;
         try {
+          const modelPath = isMobile
+            ? "/worklets/models/Kira/suki%E9%85%B1.mobile.model3.json"
+            : "/worklets/models/Kira/suki%E9%85%B1.model3.json";
           model = await Live2DModel.from(
-            "/worklets/models/Kira/suki%E9%85%B1.model3.json",
+            modelPath,
             { autoInteract: false }
           );
         } catch (modelErr) {

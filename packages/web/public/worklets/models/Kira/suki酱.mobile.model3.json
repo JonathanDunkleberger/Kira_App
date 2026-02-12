@@ -1,0 +1,72 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "suki酱.moc3",
+		"Textures": [
+			"suki酱.2048/texture_00.png",
+			"suki酱.2048/texture_01.png"
+		],
+		"Physics": "suki酱.physics3.json",
+		"DisplayInfo": "suki酱.cdi3.json",
+		"Expressions": [
+			{ "Name": "blush", "File": "脸红.exp3.json" },
+			{ "Name": "angry", "File": "生气.exp3.json" },
+			{ "Name": "tears", "File": "眼泪.exp3.json" },
+			{ "Name": "star_eyes", "File": "星星眼.exp3.json" },
+			{ "Name": "heart_eyes", "File": "爱心眼.exp3.json" },
+			{ "Name": "dazed", "File": "痴呆.exp3.json" },
+			{ "Name": "speechless", "File": "无语.exp3.json" },
+			{ "Name": "sleeping", "File": "睡觉.exp3.json" },
+			{ "Name": "spiral_eyes", "File": "圈圈眼.exp3.json" },
+			{ "Name": "eye_roll", "File": "白眼.exp3.json" },
+			{ "Name": "dark_face", "File": "黑脸.exp3.json" },
+			{ "Name": "tongue_out", "File": "吐舌按键.exp3.json" },
+			{ "Name": "donut_mouth", "File": "嘴叼甜甜圈.exp3.json" },
+			{ "Name": "bandaid", "File": "创可贴.exp3.json" },
+			{ "Name": "eye_mask", "File": "眼罩.exp3.json" },
+			{ "Name": "glasses", "File": "眼镜.exp3.json" },
+			{ "Name": "short_hair", "File": "短发.exp3.json" },
+			{ "Name": "headphones_on", "File": "头戴耳机.exp3.json" },
+			{ "Name": "neck_headphones", "File": "脖颈耳机.exp3.json" },
+			{ "Name": "earbuds", "File": "耳麦.exp3.json" },
+			{ "Name": "clip_bangs", "File": "夹刘海.exp3.json" },
+			{ "Name": "low_twintails", "File": "低螺旋马尾.exp3.json" },
+			{ "Name": "hide_ears_tail", "File": "兽耳兽尾.exp3.json" },
+			{ "Name": "cat_mic", "File": "小猫麦克风.exp3.json" },
+			{ "Name": "watermark", "File": "水印.exp3.json" },
+			{ "Name": "hold_knife", "File": "拿刀.exp3.json" },
+			{ "Name": "hold_phone", "File": "拿手机.exp3.json" },
+			{ "Name": "hold_lollipop", "File": "拿棒棒糖.exp3.json" },
+			{ "Name": "hold_drawing_board", "File": "拿画板.exp3.json" },
+			{ "Name": "hold_pen", "File": "拿笔写字.exp3.json" },
+			{ "Name": "photo_off", "File": "拍照关闭.exp3.json" },
+			{ "Name": "gaming", "File": "玩游戏.exp3.json" },
+			{ "Name": "remove_jacket", "File": "外套穿脱.exp3.json" },
+			{ "Name": "blood_stain", "File": "血迹.exp3.json" }
+		],
+		"Motions": {
+			"Idle": [
+				{ "File": "Scene1.motion3.json", "FadeInTime": 0.5, "FadeOutTime": 0.5 }
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeRSmile",
+				"ParamEyeLOpen",
+				"ParamEyeLSmile"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"ParamMouthOpenY"
+			]
+		}
+	]
+}

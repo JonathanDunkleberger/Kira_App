@@ -32,6 +32,8 @@ export default function ChatClient() {
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const live2dRetryCount = useRef(0);
+  const MAX_LIVE2D_RETRIES = 1;
 
   useEffect(() => {
     setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
@@ -526,16 +528,21 @@ export default function ChatClient() {
         {/* Avatar/Orb Toggle */}
         <button
           onClick={() => {
-            setVisualMode(prev => {
-              if (prev === "avatar") {
-                return "orb";
-              } else {
-                // Switching back to avatar — reset failure state so Live2D can re-attempt
+            if (visualMode === "avatar") {
+              // Switching to orb — reset retry count so user can try avatar again later
+              live2dRetryCount.current = 0;
+              setVisualMode("orb");
+            } else {
+              // Switching back to avatar — only allow if retries not exhausted
+              if (live2dRetryCount.current < MAX_LIVE2D_RETRIES) {
+                live2dRetryCount.current++;
                 setLive2dFailed(false);
                 setLive2dReady(false);
-                return "avatar";
+                setVisualMode("avatar");
+              } else {
+                console.log("[UI] Live2D retry limit reached — staying on orb");
               }
-            });
+            }
           }}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{

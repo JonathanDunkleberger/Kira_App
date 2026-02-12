@@ -74,7 +74,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
           app = new PIXI.Application({
             backgroundAlpha: 0,
             resizeTo: containerRef.current,
-            resolution: isMobile ? 1 : (window.devicePixelRatio || 2),
+            resolution: isMobile ? 2 : (window.devicePixelRatio || 2),
             autoDensity: true,
             antialias: !isMobile,
           });
@@ -112,7 +112,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
         app.stage.addChild(model as any);
 
         // Framing: show head to mid-thigh, centered with breathing room
-        const dpr = isMobile ? 1 : (window.devicePixelRatio || 2);
+        const dpr = isMobile ? 2 : (window.devicePixelRatio || 2);
         const containerWidth = app.renderer.width / dpr;
         const containerHeight = app.renderer.height / dpr;
 
@@ -179,7 +179,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
         // Re-center model on resize
         if (modelRef.current) {
           const isMob = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          const dpr = isMob ? 1 : (window.devicePixelRatio || 2);
+          const dpr = isMob ? 2 : (window.devicePixelRatio || 2);
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
           modelRef.current.x = w / 2;

@@ -429,7 +429,7 @@ export default function ChatClient() {
       {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto">
         {/* Visual — absolutely centered */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 160 }}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 80 : 160 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined }}>
             {visualMode === "avatar" ? (
               <>
@@ -501,7 +501,7 @@ export default function ChatClient() {
               </button>
             </div>
           )}
-          {socketState === "connected" && (
+          {!isMobile && socketState === "connected" && (
             <span
               style={{
                 fontSize: 13,

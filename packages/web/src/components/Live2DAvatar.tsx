@@ -62,6 +62,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const pendingAccessories = useRef<string[]>([]);
   const webglCrashCount = useRef(0);
   const pixiCreatedAt = useRef(0); // timestamp for crash diagnostics
+  const pixiResolutionRef = useRef(1); // store actual PIXI resolution for positioning math
   const baseScaleRef = useRef(0);
   const baseYRef = useRef(0);
   const lastPinchDistance = useRef<number | null>(null);
@@ -128,6 +129,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         }
         appRef.current = app;
         pixiCreatedAt.current = Date.now();
+        pixiResolutionRef.current = resolution;
         console.log(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
@@ -177,9 +179,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         app.stage.addChild(model as any);
 
         // Framing: show head to mid-thigh, centered with breathing room
-        const dpr = window.devicePixelRatio || 2;
-        const containerWidth = app.renderer.width / dpr;
-        const containerHeight = app.renderer.height / dpr;
+        // Use the actual PIXI resolution (not device DPR) to convert renderer pixels → CSS pixels
+        const containerWidth = app.renderer.width / resolution;
+        const containerHeight = app.renderer.height / resolution;
 
         const scale = Math.min(
           containerWidth / model.width,
@@ -278,9 +280,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         );
         // Re-center model on resize
         if (modelRef.current) {
-          const dpr = window.devicePixelRatio || 2;
-          const w = appRef.current.renderer.width / dpr;
-          const h = appRef.current.renderer.height / dpr;
+          const res = pixiResolutionRef.current;
+          const w = appRef.current.renderer.width / res;
+          const h = appRef.current.renderer.height / res;
 
           // Recalculate base scale from the model's intrinsic size
           // (model.width/height already factor in scale, so divide it out first)

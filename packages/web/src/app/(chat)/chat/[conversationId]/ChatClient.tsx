@@ -31,6 +31,7 @@ export default function ChatClient() {
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
   const [live2dDismissed, setLive2dDismissed] = useState(false); // set true before WS close to clean up PIXI first
+  const isDisconnectingRef = useRef(false); // prevents orb fallback flash during clean shutdown
   const [isMobile, setIsMobile] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
@@ -40,8 +41,9 @@ export default function ChatClient() {
   }, []);
 
   // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
+  // Skip fallback during clean disconnect — just let the component unmount
   useEffect(() => {
-    if (live2dFailed && visualMode === "avatar") {
+    if (live2dFailed && visualMode === "avatar" && !isDisconnectingRef.current) {
       setVisualMode("orb");
       console.log("[UI] Live2D failed — falling back to orb mode");
     }
@@ -152,9 +154,9 @@ export default function ChatClient() {
   // Disconnect only on unmount
   useEffect(() => {
     return () => {
-      // On unmount: dismiss Live2D synchronously (triggers PIXI cleanup),
-      // then close the WebSocket. The 0ms timeout lets React flush the
-      // Live2DAvatar unmount before the socket closes.
+      // On unmount: mark disconnecting (prevents orb flash), dismiss Live2D
+      // synchronously (triggers PIXI cleanup), then close the WebSocket.
+      isDisconnectingRef.current = true;
       setLive2dDismissed(true);
       setTimeout(() => disconnect(), 0);
     };
@@ -164,11 +166,13 @@ export default function ChatClient() {
   // --- UI Logic ---
 
   const handleEndCall = async () => {
-    // 1. Unmount Live2D first so PIXI can destroy its WebGL context cleanly
+    // 1. Mark disconnecting to prevent orb fallback flash
+    isDisconnectingRef.current = true;
+    // 2. Unmount Live2D first so PIXI can destroy its WebGL context cleanly
     setLive2dDismissed(true);
-    // 2. Small delay to let React flush the unmount + PIXI cleanup
+    // 3. Small delay to let React flush the unmount + PIXI cleanup
     await new Promise(r => setTimeout(r, 100));
-    // 3. Then close WebSocket
+    // 4. Then close WebSocket
     disconnect();
     if (!hasShownRating.current) {
       hasShownRating.current = true;

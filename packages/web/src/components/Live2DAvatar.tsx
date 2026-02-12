@@ -61,6 +61,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const pendingEmotion = useRef<string | null>(null);
   const pendingAccessories = useRef<string[]>([]);
   const webglCrashCount = useRef(0);
+  const pixiCreatedAt = useRef(0); // timestamp for crash diagnostics
   const baseScaleRef = useRef(0);
   const baseYRef = useRef(0);
   const lastPinchDistance = useRef<number | null>(null);
@@ -75,6 +76,17 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   // Initialize PixiJS app + load model (runs once on mount)
   useEffect(() => {
     if (!containerRef.current || initializedRef.current) return;
+
+    // Guard: destroy any orphaned PIXI app from a previous mount (React strict mode)
+    if (appRef.current) {
+      console.warn("[Live2D] PIXI app already exists — destroying old one first");
+      try {
+        appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
+      } catch {}
+      appRef.current = null;
+      modelRef.current = null;
+    }
+
     initializedRef.current = true;
 
     let destroyed = false;
@@ -96,13 +108,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         // Detect mobile — force DPR 1 to avoid GPU memory issues
         // (iPhones cap WebGL textures at 4096px; 8192 textures + 3x DPR = crash)
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // Cap resolution: 1 on mobile (GPU memory), max 2 on desktop
+        const resolution = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {
           app = new PIXI.Application({
             backgroundAlpha: 0,
             resizeTo: containerRef.current,
-            resolution: window.devicePixelRatio || 2,
+            resolution,
             autoDensity: true,
             antialias: !isMobile,
           });
@@ -113,16 +127,32 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           return;
         }
         appRef.current = app;
+        pixiCreatedAt.current = Date.now();
+        console.log(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
         const canvas = app.view as unknown as HTMLCanvasElement;
+        const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+        if (gl) {
+          // Log GPU memory budget if available (WEBGL_debug_renderer_info)
+          try {
+            const ext = gl.getExtension("WEBGL_debug_renderer_info");
+            if (ext) {
+              console.log(`[Live2D] GPU: ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}`);
+            }
+          } catch {}
+        }
         const handleContextLost = (e: Event) => {
           e.preventDefault();
           webglCrashCount.current++;
-          console.error(`[Live2D] WebGL context lost (crash #${webglCrashCount.current})`);
+          const aliveSeconds = ((Date.now() - pixiCreatedAt.current) / 1000).toFixed(1);
+          console.error(`[Live2D] WebGL context lost (crash #${webglCrashCount.current}) after ${aliveSeconds}s`);
           if (webglCrashCount.current >= 2) {
             console.error("[Live2D] Multiple WebGL crashes — staying on orb permanently");
           }
+          // Stop the PIXI ticker to prevent further render attempts on a dead context
+          try { app.ticker.stop(); } catch {}
+          cancelAnimationFrame(animFrameRef.current);
           onLoadErrorRef.current?.();
         };
         canvas.addEventListener("webglcontextlost", handleContextLost);

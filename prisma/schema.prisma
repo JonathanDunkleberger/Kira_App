@@ -77,3 +77,16 @@ model MonthlyUsage {
   @@unique([userId, month])
   @@index([userId])
 }
+
+model GuestUsage {
+  id      String @id @default(cuid())
+  guestId String
+  date    String // "YYYY-MM-DD" e.g. "2026-02-12"
+  seconds Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([guestId, date])
+  @@index([guestId])
+}

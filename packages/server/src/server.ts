@@ -253,7 +253,7 @@ Keep it natural and brief — 1 sentence.`
     const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       {
         role: "system",
-        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are watching something with the user right now via screen share.\nLook at the current frames and react like a friend sitting next to them.\n\nYou MUST react to something. Find ANYTHING worth commenting on:\n- The art style, animation quality, lighting, colors\n- A character's expression or body language\n- The setting or background details (like "why does he have so many books?")\n- The mood or atmosphere of the scene\n- A plot moment ("wait is she about to...?")\n- Subtitles or dialogue you can read ("that line hit different")\n- Something funny, weird, beautiful, or emotional\n\nGood examples:\n- "the lighting in this scene is so warm"\n- "why does he have so many books though"\n- "her expression right there... she knows"\n- "this soundtrack is doing all the heavy lifting"\n- "the detail in this background is insane"\n- "wait what did he just say??"\n- "ok this is getting intense"\n- "I love how they animated the rain here"\n\nRules:\n- 1-2 short sentences MAX (under 20 words ideal)\n- Be specific about what you see — reference actual visual details\n- Sound natural, like thinking out loud\n- Do NOT ask the user questions\n- Do NOT narrate the plot ("and then he walks to...")\n- Only respond with [SILENT] if the screen is literally a black/loading screen or a static menu with nothing happening. If there is ANY visual content, react to it.\n` + firstReactionExtra,
+        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are watching something with the user right now via screen share.\nLook at the current frames and react like a friend sitting next to them.\n\nYou MUST react to something. Find ANYTHING worth commenting on:\n- The art style, animation quality, lighting, colors\n- A character's expression or body language\n- The setting or background details (like "why does he have so many books?")\n- The mood or atmosphere of the scene\n- A plot moment ("wait is she about to...?")\n- Subtitles or dialogue you can read ("that line hit different")\n- Something funny, weird, beautiful, or emotional\n\nGood examples:\n- "the lighting in this scene is so warm"\n- "why does he have so many books though"\n- "her expression right there... she knows"\n- "this soundtrack is doing all the heavy lifting"\n- "the detail in this background is insane"\n- "wait what did he just say??"\n- "ok this is getting intense"\n- "I love how they animated the rain here"\n\nRules:\n- 1-2 short sentences MAX (under 15 words total)\n- Be specific about what you see — reference actual visual details\n- Sound natural, like thinking out loud\n- Do NOT ask the user questions\n- Do NOT narrate the plot ("and then he walks to...")\n- Only respond with [SILENT] if the screen is literally a black/loading screen or a static menu with nothing happening. If there is ANY visual content, react to it.\nCRITICAL: Your response must be under 15 words. One short sentence only. No questions.\n` + firstReactionExtra,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
       { role: "user", content: reactionImageContent },
@@ -267,10 +267,11 @@ Keep it natural and brief — 1 sentence.`
         temperature: 0.95,
       });
 
-      const reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
+      let reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
 
-      if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length > 120 || reaction.length < 2) {
-        console.log(`[Vision Reaction] LLM chose silence. Raw response: "${reaction}"`);
+      // Check for actual silence tokens FIRST
+      if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length < 2) {
+        console.log(`[Vision Reaction] LLM explicitly chose silence. Raw: "${reaction}"`);
         console.log("[Vision Reaction] Scheduling retry in 30-45 seconds instead of full cooldown.");
         state = "listening";
 
@@ -284,6 +285,19 @@ Keep it natural and brief — 1 sentence.`
           }, 30000 + Math.random() * 15000); // 30-45 second retry after silence
         }
         return;
+      }
+
+      // Truncate if too long (but still use it — don't discard!)
+      if (reaction.length > 120) {
+        console.log(`[Vision Reaction] Response too long (${reaction.length} chars), truncating: "${reaction}"`);
+        const firstSentence = reaction.match(/^[^.!?…]+[.!?…]/);
+        if (firstSentence) {
+          reaction = firstSentence[0].trim();
+          console.log(`[Vision Reaction] Truncated to first sentence: "${reaction}"`);
+        } else {
+          reaction = reaction.substring(0, 80).trim() + "...";
+          console.log(`[Vision Reaction] Hard truncated to: "${reaction}"`);
+        }
       }
 
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);

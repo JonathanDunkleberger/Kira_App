@@ -22,6 +22,12 @@ export async function extractAndSaveMemories(
   conversationMessages: Array<{ role: string; content: string }>,
   conversationSummary: string
 ): Promise<void> {
+  // Guest users have no User record — skip fact storage entirely
+  if (userId.startsWith("guest_")) {
+    console.log("[Memory] Skipping fact storage for guest user.");
+    return;
+  }
+
   try {
     // 1. Load existing memories for dedup
     const existingMemories = await prisma.memoryFact.findMany({

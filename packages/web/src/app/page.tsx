@@ -8,7 +8,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProfileModal from "@/components/ProfileModal";
 import { KiraLogo } from "@/components/KiraLogo";
-import KiraOrb from "@/components/KiraOrb";
+// KiraOrb removed from hero — replaced with character image
 
 /* ─── Animated Counter ─── */
 function Counter({ end, suffix = "", duration = 2000 }: { end: number; suffix?: string; duration?: number }) {
@@ -323,8 +323,40 @@ export default function HomePage() {
           }}
         />
 
-        <div style={{ position: "relative", marginBottom: 40 }}>
-          <KiraOrb size="md" enableBreathing />
+        <div style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          position: "relative",
+          marginBottom: 40,
+        }}>
+          {/* Subtle glow behind character */}
+          <div style={{
+            position: "absolute",
+            width: 300,
+            height: 300,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(147,130,220,0.3) 0%, transparent 70%)",
+            filter: "blur(40px)",
+          }} />
+
+          {/* Character image with float animation */}
+          <picture>
+            <img
+              src="/suki_hero.png"
+              alt="Kira"
+              width={340}
+              height={340}
+              style={{
+                width: 340,
+                height: "auto",
+                position: "relative",
+                zIndex: 1,
+                animation: "float 4s ease-in-out infinite, heroFadeUp 0.8s ease both",
+                filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.5))",
+              }}
+            />
+          </picture>
         </div>
 
         {isSignedIn ? (
@@ -369,8 +401,7 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease 0.15s both",
               }}
             >
-              Experience real-time voice conversations with a companion who has her own mind. No typing, no lag,
-              just connection.
+              Experience real-time voice conversations with a companion who remembers you, reacts to you, and is always happy to see you.
             </p>
           </>
         )}
@@ -1071,6 +1102,10 @@ export default function HomePage() {
 
       {/* Keyframe animations */}
       <style jsx global>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-12px); }
+        }
         @keyframes heroFadeUp {
           from {
             opacity: 0;

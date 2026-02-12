@@ -31,6 +31,11 @@ export default function ChatClient() {
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
   // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
   useEffect(() => {
@@ -455,17 +460,19 @@ export default function ChatClient() {
           <Sparkles size={18} />
         </button>
 
-        {/* Vision Button */}
-        <button
-          onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
-          style={{
-            background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
-            color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
-          }}
-        >
-          {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
-        </button>
+        {/* Vision Button — desktop only (getDisplayMedia not supported on mobile) */}
+        {!isMobile && (
+          <button
+            onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+            className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+            style={{
+              background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+              color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+            }}
+          >
+            {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
+          </button>
+        )}
 
         {/* Mute Button */}
         <button

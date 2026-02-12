@@ -299,7 +299,7 @@ Keep it natural and brief — 1 sentence.`
       await new Promise(resolve => setImmediate(resolve));
 
       try {
-        const sentences = reaction.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [reaction];
+        const sentences = reaction.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
@@ -475,7 +475,7 @@ Keep it natural and brief — 1 sentence.`
         await new Promise(resolve => setImmediate(resolve));
 
         try {
-          const sentences = responseText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [responseText];
+          const sentences = responseText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
           for (const sentence of sentences) {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
@@ -548,7 +548,7 @@ Keep it natural and brief — 1 sentence.`
       if (visionActive) rescheduleVisionReaction();
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
-      const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
+      const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
       for (const sentence of sentences) {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
@@ -651,7 +651,7 @@ Keep it natural and brief — 1 sentence.`
         ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
 
-        const sentences = goodbyeText.match(/[^.!?\u2026]*(?:[.!?\u2026](?:\s+(?=[A-Z"])|$))+/g) || [goodbyeText];
+        const sentences = goodbyeText.split(/(?<=[.!?\u2026])\s+(?=[A-Z"])/);
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
@@ -1158,7 +1158,7 @@ Keep it natural and brief — 1 sentence.`
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
               await new Promise(resolve => setImmediate(resolve));
 
-              const sentences = openerText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [openerText];
+              const sentences = openerText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
               for (const sentence of sentences) {
                 const trimmed = sentence.trim();
                 if (trimmed.length === 0) continue;
@@ -1444,9 +1444,9 @@ Keep it natural and brief — 1 sentence.`
               await new Promise(resolve => setImmediate(resolve));
 
               try {
-                // Split on sentence-ending punctuation followed by space+uppercase or end of string
-                // Avoids splitting on "Dr.", "e.g.", "3.14", "U.S.A.", etc.
-                const sentences = llmResponse.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [llmResponse];
+                // Split on sentence-ending punctuation followed by space+uppercase
+                // Preserves ALL text — no silent drops like .match() had
+                const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
                 for (const sentence of sentences) {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
@@ -1697,7 +1697,7 @@ Keep it natural and brief — 1 sentence.`
                 ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
 
-                const sentences = reactionText.match(/[^.!?…]*(?:[.!?…](?:\s+(?=[A-Z"])|$))+/g) || [reactionText];
+                const sentences = reactionText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
                 for (const sentence of sentences) {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;

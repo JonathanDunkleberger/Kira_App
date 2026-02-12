@@ -52,9 +52,9 @@ export default function XOLoader() {
     const fullPath = [...xPath, ...oPath];
     const totalPoints = fullPath.length;
 
-    const trailLength = 12;
+    const trailLength = 16;
     let progress = 0;
-    const speed = 0.3;
+    const speed = 0.12;
 
     function getPointOnPath(index: number): [number, number] {
       const i = Math.floor(index) % totalPoints;
@@ -100,7 +100,7 @@ export default function XOLoader() {
         // Glow
         ctx.beginPath();
         ctx.arc(px, py, radius + 2, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(147, 130, 255, ${alpha * 0.3})`;
+        ctx.fillStyle = `rgba(100, 149, 237, ${alpha * 0.3})`;
         ctx.fill();
 
         // Core
@@ -122,7 +122,7 @@ export default function XOLoader() {
         ctx.beginPath();
         ctx.moveTo(px, py);
         ctx.lineTo(nx, ny);
-        ctx.strokeStyle = `rgba(147, 130, 255, ${Math.max(a, 0)})`;
+        ctx.strokeStyle = `rgba(100, 149, 237, ${Math.max(a, 0)})`;
         ctx.lineWidth = 3;
         ctx.stroke();
       }

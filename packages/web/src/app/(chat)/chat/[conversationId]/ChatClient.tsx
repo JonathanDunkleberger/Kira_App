@@ -173,45 +173,6 @@ export default function ChatClient() {
     return () => clearInterval(interval);
   }, [socketState, localRemaining !== null]);
 
-  if (socketState === "connecting") {
-    return (
-      <div style={{
-        minHeight: "100vh",
-        background: "#0D1117",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
-      }}>
-        <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
-          background: "rgba(107,125,179,0.15)",
-          animation: "connectPulse 1.8s ease infinite",
-          marginBottom: 24,
-        }} />
-        <p style={{
-          fontSize: 14,
-          fontWeight: 300,
-          color: "rgba(201,209,217,0.35)",
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          margin: 0,
-        }}>
-          Connecting...
-        </p>
-        <style>{`
-          @keyframes connectPulse {
-            0%, 100% { opacity: 0.3; transform: scale(0.95); }
-            50% { opacity: 0.7; transform: scale(1.05); }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
   // Start Screen (Initial State for ALL users)
   if (socketState === "idle") {
     return (
@@ -437,10 +398,24 @@ export default function ChatClient() {
           </div>
         </div>
 
-        {/* Transcript — absolutely positioned below orb center, doesn't push orb */}
+        {/* Transcript — bottom-left pill for avatar, centered below orb for orb */}
         {showChat && (
-          <div className="absolute inset-x-0 flex justify-center" style={{ top: 'calc(50% + 80px)' }}>
-            <div className="min-h-[48px] flex items-center justify-center max-w-[500px] px-6">
+          <div
+            className={visualMode === "avatar"
+              ? "absolute left-6 flex justify-start"
+              : "absolute inset-x-0 flex justify-center"
+            }
+            style={visualMode === "avatar"
+              ? { bottom: 140, maxWidth: 360 }
+              : { top: 'calc(50% + 80px)' }
+            }
+          >
+            <div className={visualMode === "avatar"
+              ? "min-h-[36px] flex items-center px-4 py-2 rounded-xl"
+              : "min-h-[48px] flex items-center justify-center max-w-[500px] px-6"
+            }
+              style={visualMode === "avatar" ? { background: "rgba(13,17,23,0.75)", backdropFilter: "blur(8px)" } : undefined}
+            >
               {error && error !== "limit_reached" && (
                 <div className="mb-4 p-3 rounded relative" style={{
                   background: "rgba(200,55,55,0.15)",
@@ -452,7 +427,7 @@ export default function ChatClient() {
               )}
               {transcript ? (
                 <p
-                  className="text-center text-base leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
+                  className={`${visualMode === "avatar" ? "text-left text-sm" : "text-center text-base"} leading-relaxed m-0 animate-[fadeIn_0.4s_ease]`}
                   style={{
                     color: transcript.role === "ai"
                       ? "rgba(139,157,195,0.9)"

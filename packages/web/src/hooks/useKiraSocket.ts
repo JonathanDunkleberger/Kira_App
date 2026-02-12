@@ -132,6 +132,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   // --- Vision: Snapshot Cooldown ---
   const lastSnapshotTime = useRef(0);
   const SNAPSHOT_COOLDOWN_MS = 5000; // One snapshot per 5 seconds max
+  const periodicCaptureTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- WebSocket Auto-Reconnect ---
   const reconnectAttempts = useRef(0);
@@ -418,6 +419,24 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
           }
       }, 1000);
 
+      // Start periodic captures every 15 seconds so the server always has fresh images
+      if (periodicCaptureTimer.current) clearInterval(periodicCaptureTimer.current);
+      periodicCaptureTimer.current = setInterval(() => {
+        if (!isScreenSharingRef.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+          if (periodicCaptureTimer.current) clearInterval(periodicCaptureTimer.current);
+          periodicCaptureTimer.current = null;
+          return;
+        }
+        const snapshot = captureScreenSnapshot();
+        if (snapshot) {
+          ws.current.send(JSON.stringify({
+            type: "image",
+            images: [snapshot],
+          }));
+          console.log("[Vision] Periodic snapshot sent.");
+        }
+      }, 15000);
+
     } catch (err) {
       console.error("[Vision] Failed to start screen share:", err);
       setIsScreenSharing(false);
@@ -428,6 +447,10 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
    * Stops screen sharing
    */
   const stopScreenShare = useCallback(() => {
+    if (periodicCaptureTimer.current) {
+      clearInterval(periodicCaptureTimer.current);
+      periodicCaptureTimer.current = null;
+    }
     if (screenStream.current) {
       screenStream.current.getTracks().forEach(track => track.stop());
       screenStream.current = null;

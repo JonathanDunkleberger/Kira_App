@@ -221,7 +221,17 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       return;
     }
     if (!latestImages || latestImages.length === 0) {
-      console.log("[Vision Reaction] Skipping — no images in buffer.");
+      console.log(`[Vision Reaction] Skipping — no images in buffer. Last image received: ${lastImageTimestamp ? new Date(lastImageTimestamp).toISOString() : "never"}`);
+      // Retry sooner — periodic captures should fill the buffer shortly
+      state = "listening";
+      if (visionActive && !clientDisconnected) {
+        if (visionReactionTimer) clearTimeout(visionReactionTimer);
+        visionReactionTimer = setTimeout(async () => {
+          if (!visionActive || clientDisconnected) return;
+          await triggerVisionReaction();
+          if (visionActive && !clientDisconnected) scheduleNextReaction();
+        }, 15000); // 15s retry — new images should arrive from periodic capture
+      }
       return;
     }
     if (timeWarningPhase === 'done' || timeWarningPhase === 'final_goodbye') {
@@ -1297,7 +1307,7 @@ Keep it natural and brief — 1 sentence.`
               content: content,
             });
             
-            latestImages = null; 
+            // Keep latestImages — don't clear. Periodic client captures will refresh them.
           } else {
             chatHistory.push({ role: "user", content: userMessage });
           }
@@ -1636,6 +1646,11 @@ Keep it natural and brief — 1 sentence.`
             visionActive = true;
             console.log("[Vision] Screen share activated via scene_update. Starting reaction timer.");
             startVisionReactionTimer();
+          }
+          // Also update latestImages so the buffer stays fresh during silent watching
+          if (controlMessage.images.length > 0) {
+            latestImages = controlMessage.images;
+            lastImageTimestamp = Date.now();
           }
           lastVisionTimestamp = Date.now();
 

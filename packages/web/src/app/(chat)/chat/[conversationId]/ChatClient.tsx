@@ -401,18 +401,23 @@ export default function ChatClient() {
         {/* Transcript — bottom-center with blur pill */}
         {showChat && (
           <div
-            className="absolute flex justify-center"
+            className="absolute"
             style={{
               bottom: 140,
               left: "50%",
               transform: "translateX(-50%)",
               maxWidth: 500,
               width: "90%",
+              textAlign: "center",
             }}
           >
             <div
-              className="min-h-[36px] flex items-center justify-center px-5 py-2 rounded-xl w-full"
-              style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)" }}
+              className="min-h-[48px] flex items-center justify-center px-3 py-2"
+              style={{
+                background: "rgba(0,0,0,0.4)",
+                backdropFilter: "blur(4px)",
+                borderRadius: 8,
+              }}
             >
               {error && error !== "limit_reached" && (
                 <div className="mb-4 p-3 rounded relative" style={{

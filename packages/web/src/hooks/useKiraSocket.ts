@@ -30,6 +30,8 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [isPro, setIsPro] = useState(false);
   const isProRef = useRef(false); // Ref mirror of isPro for use in onclose callback
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -73,6 +75,12 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isScreenSharingRef = useRef(false); // Ref to track screen share state in callbacks
+
+  // --- Camera Refs ---
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isCameraActiveRef = useRef(false);
 
   // --- Scene Detection ---
   const lastSceneUpdateSent = useRef(0);
@@ -286,6 +294,22 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     audioSource.current?.disconnect();
     audioStream.current?.getTracks().forEach((track) => track.stop());
     screenStream.current?.getTracks().forEach((track) => track.stop()); // Stop screen share
+    // Stop camera if active
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (cameraIntervalRef.current) {
+      clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.pause();
+      cameraVideoRef.current.srcObject = null;
+      cameraVideoRef.current = null;
+    }
+    setIsCameraActive(false);
+    isCameraActiveRef.current = false;
     audioContext.current?.close().catch(console.error);
     playbackContext.current?.close().catch(console.error);
 
@@ -468,6 +492,120 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     console.log("[Vision] Screen share stopped");
   }, []);
 
+  /**
+   * Captures a frame from the camera and sends it over WebSocket
+   */
+  const captureAndSendCameraFrame = useCallback(() => {
+    const video = cameraVideoRef.current;
+    if (!video || video.readyState < 2) return;
+
+    const canvas = document.createElement("canvas");
+    // Downscale to max 512px on longest side (same as screen share)
+    const MAX_DIM = 512;
+    const scale = Math.min(MAX_DIM / video.videoWidth, MAX_DIM / video.videoHeight, 1);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const jpeg = canvas.toDataURL("image/jpeg", 0.5);
+    const base64 = jpeg.split(",")[1];
+
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: "image",
+        images: [base64],
+      }));
+    }
+  }, []);
+
+  /**
+   * Starts camera capture (mobile vision)
+   */
+  const startCamera = useCallback(async (mode?: "environment" | "user") => {
+    const useFacing = mode || facingMode;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: useFacing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      cameraStreamRef.current = stream;
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
+      await video.play();
+      cameraVideoRef.current = video;
+
+      setIsCameraActive(true);
+      isCameraActiveRef.current = true;
+      console.log("[Camera] Camera started, facing:", useFacing);
+
+      // Send initial snapshot
+      setTimeout(() => {
+        captureAndSendCameraFrame();
+        console.log("[Camera] Initial snapshot sent.");
+      }, 500);
+
+      // Start periodic captures — same 15s interval as screen share
+      if (cameraIntervalRef.current) clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = setInterval(() => {
+        if (!isCameraActiveRef.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+          if (cameraIntervalRef.current) clearInterval(cameraIntervalRef.current);
+          cameraIntervalRef.current = null;
+          return;
+        }
+        captureAndSendCameraFrame();
+        console.log("[Camera] Periodic snapshot sent.");
+      }, 15000);
+
+    } catch (err) {
+      console.error("[Camera] Failed to start:", err);
+    }
+  }, [facingMode, captureAndSendCameraFrame]);
+
+  /**
+   * Stops camera capture
+   */
+  const stopCamera = useCallback(() => {
+    if (cameraIntervalRef.current) {
+      clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.pause();
+      cameraVideoRef.current.srcObject = null;
+      cameraVideoRef.current = null;
+    }
+    setIsCameraActive(false);
+    isCameraActiveRef.current = false;
+    console.log("[Camera] Camera stopped.");
+  }, []);
+
+  /**
+   * Flips from front to rear camera (or vice versa)
+   */
+  const flipCamera = useCallback(() => {
+    const newMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(newMode);
+    if (isCameraActiveRef.current) {
+      stopCamera();
+      setTimeout(() => startCamera(newMode), 300);
+    }
+  }, [facingMode, stopCamera, startCamera]);
+
   const captureScreenSnapshot = useCallback(() => {
     if (!videoRef.current || !screenStream.current) {
         console.warn("[Vision] Capture failed: No video or stream.");
@@ -615,21 +753,30 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
                 // --- VISION: Snapshot-on-Speech ---
                 // If this is the START of speech (transition from silence), capture a frame
                 // Cooldown prevents re-triggering from micro-dips in natural speech
-                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && isScreenSharingRef.current && totalSpeechFrames.current >= 100) {
+                if (speechFrameCount.current === (VAD_STABILITY_FRAMES + 1) && totalSpeechFrames.current >= 100) {
                     const now = Date.now();
                     if (now - lastSnapshotTime.current > SNAPSHOT_COOLDOWN_MS) {
-                        lastSnapshotTime.current = now;
-                        console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
-                        const snapshot = captureScreenSnapshot();
-                        if (snapshot) {
-                            console.log("[Vision] Sending snapshot on speech start...");
-                            const payload = {
-                                type: "image",
-                                images: [...sceneBufferRef.current, snapshot]
-                            };
-                            ws.current.send(JSON.stringify(payload));
-                        } else {
-                            console.warn("[Vision] Snapshot capture returned null.");
+                        // Screen share path
+                        if (isScreenSharingRef.current) {
+                            lastSnapshotTime.current = now;
+                            console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
+                            const snapshot = captureScreenSnapshot();
+                            if (snapshot) {
+                                console.log("[Vision] Sending snapshot on speech start...");
+                                const payload = {
+                                    type: "image",
+                                    images: [...sceneBufferRef.current, snapshot]
+                                };
+                                ws.current.send(JSON.stringify(payload));
+                            } else {
+                                console.warn("[Vision] Snapshot capture returned null.");
+                            }
+                        }
+                        // Camera path (mobile)
+                        if (isCameraActiveRef.current) {
+                            lastSnapshotTime.current = now;
+                            console.log("[Camera] Sending snapshot on speech start...");
+                            captureAndSendCameraFrame();
                         }
                     }
                 }
@@ -979,6 +1126,12 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
+    isCameraActive,
+    cameraStreamRef,
+    facingMode,
+    startCamera,
+    stopCamera,
+    flipCamera,
     isPro,
     remainingSeconds,
     isAudioPlaying,

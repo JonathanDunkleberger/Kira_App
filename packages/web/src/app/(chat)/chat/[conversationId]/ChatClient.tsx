@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import { getOrCreateGuestId } from "@/lib/guestId";
@@ -69,6 +69,12 @@ export default function ChatClient() {
     isScreenSharing,
     startScreenShare,
     stopScreenShare,
+    isCameraActive,
+    cameraStreamRef,
+    facingMode,
+    startCamera,
+    stopCamera,
+    flipCamera,
     isPro,
     remainingSeconds,
     isAudioPlaying,
@@ -474,6 +480,21 @@ export default function ChatClient() {
           </button>
         )}
 
+        {/* Camera Button — mobile only */}
+        {isMobile && (
+          <button
+            onClick={isCameraActive ? stopCamera : startCamera}
+            className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+            style={{
+              background: isCameraActive ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+              color: isCameraActive ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+            }}
+            title={isCameraActive ? "Stop camera" : "Start camera"}
+          >
+            <Camera size={18} />
+          </button>
+        )}
+
         {/* Mute Button */}
         <button
           onClick={toggleMute}
@@ -500,6 +521,64 @@ export default function ChatClient() {
         </button>
         </div>
       </div>
+
+      {/* Camera PIP Preview */}
+      {isCameraActive && (
+        <div style={{
+          position: "fixed",
+          bottom: 140,
+          right: 16,
+          width: 80,
+          height: 107,
+          borderRadius: 12,
+          overflow: "hidden",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+          zIndex: 30,
+        }}>
+          <video
+            ref={(el) => {
+              if (el && cameraStreamRef.current) {
+                el.srcObject = cameraStreamRef.current;
+                el.setAttribute("playsinline", "true");
+                el.muted = true;
+                el.play().catch(() => {});
+              }
+            }}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              transform: facingMode === "user" ? "scaleX(-1)" : "none",
+            }}
+            playsInline
+            muted
+            autoPlay
+          />
+          <button
+            onClick={flipCamera}
+            style={{
+              position: "absolute",
+              top: 4,
+              right: 4,
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: "rgba(0, 0, 0, 0.5)",
+              border: "none",
+              color: "white",
+              fontSize: 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+            title="Flip camera"
+          >
+            ↻
+          </button>
+        </div>
+      )}
 
       {/* Rating Modal */}
       {showRatingModal && (

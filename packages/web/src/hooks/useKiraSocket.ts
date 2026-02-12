@@ -738,8 +738,8 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       reconnectAttempts.current = 0; // Reset on successful connection
       setError(null); // Clear any error banner from a previous disconnect
       console.log("[WS] ✅ WebSocket connected.");
-      // Auto-start the conversation and mic pipeline as soon as socket is open
-      startConversation();
+      // Don't auto-start here — ChatClient will call startConversation()
+      // once the Live2D model is ready, preventing Kira from speaking to a blank screen.
     };
 
     ws.current.onmessage = (event) => {

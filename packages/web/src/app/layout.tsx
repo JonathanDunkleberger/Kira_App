@@ -30,6 +30,11 @@ export default function RootLayout({
             href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Playfair+Display:wght@400;500&display=swap"
             rel="stylesheet"
           />
+          {/* Preload Live2D model assets — start downloading before React mounts */}
+          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.model3.json" as="fetch" crossOrigin="anonymous" />
+          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.moc3" as="fetch" crossOrigin="anonymous" />
+          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.8192/texture_00.png" as="image" />
+          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.8192/texture_01.png" as="image" />
         </head>
         <body style={{ background: "#0D1117", color: "#C9D1D9", margin: 0 }}>
           {children}

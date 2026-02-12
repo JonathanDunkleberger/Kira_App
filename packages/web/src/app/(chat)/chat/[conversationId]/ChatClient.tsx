@@ -15,6 +15,7 @@ import { KiraLogo } from "@/components/KiraLogo";
 import dynamic from "next/dynamic";
 
 const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: false });
+const XOLoader = dynamic(() => import("@/components/XOLoader"), { ssr: false });
 
 export default function ChatClient() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function ChatClient() {
   const [voicePreference, setVoicePref] = useState<VoicePreference>("anime");
   const [showChat, setShowChat] = useState(false);
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
+  const [live2dReady, setLive2dReady] = useState(false);
 
   // Load guest ID, voice preference, and chat toggle from localStorage
   useEffect(() => {
@@ -50,7 +52,8 @@ export default function ChatClient() {
 
   const { 
     connect, 
-    disconnect, 
+    disconnect,
+    startConversation,
     socketState, 
     kiraState, 
     micVolume, 
@@ -75,7 +78,18 @@ export default function ChatClient() {
     guestId,
     voicePreference
   );
-  // Removed hasStarted state to allow auto-start
+
+  // Start conversation once both WebSocket is connected and Live2D model is ready
+  // (or immediately if in orb mode — no model to wait for)
+  const hasStartedConversation = useRef(false);
+  useEffect(() => {
+    if (hasStartedConversation.current) return;
+    if (socketState !== "connected") return;
+    if (visualMode === "avatar" && !live2dReady) return;
+    hasStartedConversation.current = true;
+    console.log("[Chat] Model ready + WS connected \u2014 starting conversation");
+    startConversation();
+  }, [socketState, live2dReady, visualMode, startConversation]);
 
   // 1. Get Clerk auth token
   useEffect(() => {
@@ -393,11 +407,15 @@ export default function ChatClient() {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 100 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined }}>
             {visualMode === "avatar" ? (
-              <Live2DAvatar
-                isSpeaking={isAudioPlaying}
-                analyserNode={playbackAnalyserNode}
-                emotion={null}
-              />
+              <>
+                {!live2dReady && <XOLoader />}
+                <Live2DAvatar
+                  isSpeaking={isAudioPlaying}
+                  analyserNode={playbackAnalyserNode}
+                  emotion={null}
+                  onModelReady={() => setLive2dReady(true)}
+                />
+              </>
             ) : (
               <KiraOrb
                 state={

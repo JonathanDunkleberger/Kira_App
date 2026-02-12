@@ -27,15 +27,18 @@ interface Live2DAvatarProps {
   isSpeaking: boolean;
   analyserNode: AnalyserNode | null;
   emotion?: string | null;
+  onModelReady?: () => void;
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onModelReady }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
   const animFrameRef = useRef<number>(0);
   const prevEmotionRef = useRef<string | null>(null);
   const initializedRef = useRef(false);
+  const onModelReadyRef = useRef(onModelReady);
+  onModelReadyRef.current = onModelReady;
   const [modelReady, setModelReady] = useState(false);
 
   // Initialize PixiJS app + load model (runs once on mount)
@@ -125,6 +128,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
           requestAnimationFrame(() => {
             if (!destroyed) {
               setModelReady(true);
+              onModelReadyRef.current?.();
               console.log("[Live2D] Model ready — revealing");
             }
           });
@@ -244,58 +248,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion }: Live
 
   return (
     <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative" }}>
-      {/* XO loading spinner — blue highlight snakes through grey letters */}
-      {!modelReady && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
-          }}
-        >
-          <span
-            style={{
-              fontSize: "2.5rem",
-              fontWeight: 800,
-              letterSpacing: "0.15em",
-              fontFamily: "'Inter', sans-serif",
-              color: "#555",
-              position: "relative",
-              overflow: "hidden",
-              display: "inline-block",
-            }}
-          >
-            <span style={{ position: "relative", zIndex: 1 }}>xo</span>
-            <span
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                background: "linear-gradient(90deg, transparent 0%, #60a5fa 40%, #60a5fa 60%, transparent 100%)",
-                backgroundSize: "200% 100%",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-                animation: "xoShimmer 1.2s ease-in-out infinite",
-                zIndex: 2,
-              }}
-            >
-              xo
-            </span>
-          </span>
-          <style>{`
-            @keyframes xoShimmer {
-              0% { background-position: 200% 0; }
-              100% { background-position: -200% 0; }
-            }
-          `}</style>
-        </div>
-      )}
       <div
         ref={containerRef}
         style={{

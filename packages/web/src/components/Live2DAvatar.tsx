@@ -282,6 +282,35 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
     sleepy: "sleeping",
   };
 
+  /**
+   * Properly reset Live2D expressions by clearing the expression manager state.
+   * model.expression() with no args cycles to the NEXT expression in the list
+   * (triggering random accessory expressions), so we must clear explicitly.
+   */
+  function resetExpression(model: any) {
+    try {
+      const mgr = model.internalModel?.motionManager?.expressionManager;
+      if (mgr) {
+        // Clear the currently playing expression
+        if (mgr._expressions) {
+          mgr._expressions.forEach((expr: any) => {
+            if (expr && typeof expr.weight !== "undefined") {
+              expr.weight = 0;
+            }
+          });
+        }
+        // Null out the tracked current expression
+        if ("_currentExpression" in mgr) mgr._currentExpression = null;
+        if ("currentExpression" in mgr) mgr.currentExpression = null;
+        if ("_expressionIndex" in mgr) mgr._expressionIndex = -1;
+        if ("expressionIndex" in mgr) mgr.expressionIndex = -1;
+        console.log("[Live2D] Expression cleared via manager");
+      }
+    } catch (err) {
+      console.warn("[Live2D] Failed to reset expression:", err);
+    }
+  }
+
   // Watch for expression changes
   useEffect(() => {
     const model = modelRef.current;
@@ -306,20 +335,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
 
       // Auto-reset to neutral after 4 seconds
       expressionTimeoutRef.current = setTimeout(() => {
-        try {
-          model.expression(); // Reset to default
-          console.log("[Live2D] Expression reset to neutral");
-        } catch (err) {
-          // Ignore
-        }
+        resetExpression(model);
       }, 4000);
     } else {
-      // neutral/happy — reset to default
-      try {
-        model.expression();
-      } catch (err) {
-        // Ignore
-      }
+      // neutral/happy — clear any active expression
+      resetExpression(model);
     }
   }, [emotion]);
 

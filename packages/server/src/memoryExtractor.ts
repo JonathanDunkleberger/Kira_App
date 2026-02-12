@@ -52,7 +52,7 @@ function detectTopicCategory(fact: string): string | null {
 /**
  * Extract the specific topic/subject from a fact, stripping structural words.
  * "User's favorite anime is 'Steins;Gate 0'" → "anime steins;gate"
- * "User's favorite Ben Howard song is 'The Burn'" → "howard song burn"
+ * "User's favorite Ben Howard song is 'The Burren'" → "howard song burren"
  */
 function extractTopicWords(fact: string): string[] {
   return fact

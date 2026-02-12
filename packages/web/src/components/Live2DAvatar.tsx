@@ -61,6 +61,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const pendingEmotion = useRef<string | null>(null);
   const pendingAccessories = useRef<string[]>([]);
   const webglCrashCount = useRef(0);
+  const baseScaleRef = useRef(0);
+  const baseYRef = useRef(0);
+  const lastPinchDistance = useRef<number | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1.0);
+  const zoomLevelRef = useRef(1.0);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);
@@ -155,6 +160,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         model.y = containerHeight * 0.52;
         model.anchor.set(0.5, 0.5);
 
+        // Store base positioning for zoom math
+        baseScaleRef.current = scale;
+        baseYRef.current = containerHeight * 0.52;
+
         // Eye tracking — eyes follow the cursor
         app.stage.interactive = true;
         app.stage.hitArea = app.renderer.screen;
@@ -242,8 +251,20 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const dpr = window.devicePixelRatio || 2;
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
+
+          // Recalculate base scale from the model's intrinsic size
+          // (model.width/height already factor in scale, so divide it out first)
+          const currentScale = modelRef.current.scale.x || 1;
+          const rawWidth = modelRef.current.width / currentScale;
+          const rawHeight = modelRef.current.height / currentScale;
+          const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * 0.9;
+          baseScaleRef.current = newBaseScale;
+          baseYRef.current = h * 0.52;
+
+          const z = zoomLevelRef.current;
+          modelRef.current.scale.set(newBaseScale * z);
           modelRef.current.x = w / 2;
-          modelRef.current.y = h * 0.52;
+          modelRef.current.y = baseYRef.current + (z - 1.0) * modelRef.current.height * 0.35;
         }
       }
     };
@@ -465,6 +486,69 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       }
     };
   }, []);
+
+  // Zoom: scroll wheel (desktop) + pinch (mobile)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const MIN_ZOOM = 1.0;
+    const MAX_ZOOM = 2.0;
+    const ZOOM_STEP = 0.1;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoomLevel(prev => {
+        const next = prev + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(next * 100) / 100));
+      });
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (lastPinchDistance.current !== null) {
+        const delta = distance - lastPinchDistance.current;
+        setZoomLevel(prev => {
+          const next = prev + delta * 0.005;
+          return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(next * 100) / 100));
+        });
+      }
+      lastPinchDistance.current = distance;
+    };
+
+    const handleTouchEnd = () => {
+      lastPinchDistance.current = null;
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd);
+    container.addEventListener("touchcancel", handleTouchEnd);
+
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
+      container.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, []);
+
+  // Apply zoom to model — scale up + shift down to keep face centered
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+    const model = modelRef.current;
+    if (!model || !baseScaleRef.current) return;
+
+    model.scale.set(baseScaleRef.current * zoomLevel);
+    const yOffset = (zoomLevel - 1.0) * model.height * 0.35;
+    model.y = baseYRef.current + yOffset;
+  }, [zoomLevel]);
 
   return (
     <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative" }}>

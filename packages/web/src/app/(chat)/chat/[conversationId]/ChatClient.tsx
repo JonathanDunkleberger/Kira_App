@@ -483,7 +483,7 @@ export default function ChatClient() {
         {/* Camera Button — mobile only */}
         {isMobile && (
           <button
-            onClick={isCameraActive ? stopCamera : startCamera}
+            onClick={() => isCameraActive ? stopCamera() : startCamera()}
             className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
             style={{
               background: isCameraActive ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",

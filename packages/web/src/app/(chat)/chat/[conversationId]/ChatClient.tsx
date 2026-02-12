@@ -411,27 +411,27 @@ export default function ChatClient() {
               textAlign: "center",
             }}
           >
-            <div
-              className="min-h-[48px] flex items-center justify-center px-4 py-2"
-              style={{
-                background: "rgba(0, 0, 0, 0.25)",
-                backdropFilter: "blur(8px)",
-                WebkitBackdropFilter: "blur(8px)",
-                borderRadius: 12,
-                padding: "8px 16px",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-              }}
-            >
-              {error && error !== "limit_reached" && (
-                <div className="mb-4 p-3 rounded relative" style={{
-                  background: "rgba(200,55,55,0.15)",
-                  border: "1px solid rgba(200,55,55,0.3)",
-                  color: "rgba(255,120,120,0.9)",
-                }}>
-                  <span className="block sm:inline">{error}</span>
-                </div>
-              )}
-              {transcript ? (
+            {error && error !== "limit_reached" && (
+              <div className="mb-4 p-3 rounded relative" style={{
+                background: "rgba(200,55,55,0.15)",
+                border: "1px solid rgba(200,55,55,0.3)",
+                color: "rgba(255,120,120,0.9)",
+              }}>
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
+            {transcript ? (
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  background: "rgba(0, 0, 0, 0.15)",
+                  backdropFilter: "blur(8px)",
+                  WebkitBackdropFilter: "blur(8px)",
+                  borderRadius: 12,
+                  padding: "8px 16px",
+                  border: "1px solid rgba(255, 255, 255, 0.06)",
+                }}
+              >
                 <p
                   className="text-center text-sm leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
                   style={{
@@ -447,8 +447,8 @@ export default function ChatClient() {
                     <span className="animate-pulse">|</span>
                   )}
                 </p>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

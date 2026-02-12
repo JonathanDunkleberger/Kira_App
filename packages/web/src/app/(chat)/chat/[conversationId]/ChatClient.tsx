@@ -456,20 +456,16 @@ export default function ChatClient() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Speaking / Listening indicator */}
-        <div
-          className="absolute"
-          style={{
-            bottom: isMobile ? 100 : 140,
-            left: "50%",
-            transform: "translateX(-50%)",
-            textAlign: "center",
-            zIndex: 2,
-          }}
-        >
+      {/* ─── Bottom Area: Controls ─── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
+      >
+        {/* Status indicator + errors — sits between avatar and controls */}
+        <div style={{ textAlign: "center", minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4px 0" }}>
           {error && error !== "limit_reached" && error !== "limit_reached_pro" && error !== "connection_lost" && (
-            <div className="mb-4 p-3 rounded relative" style={{
+            <div className="mb-2 p-3 rounded relative" style={{
               background: "rgba(200,55,55,0.15)",
               border: "1px solid rgba(200,55,55,0.3)",
               color: "rgba(255,120,120,0.9)",
@@ -478,7 +474,7 @@ export default function ChatClient() {
             </div>
           )}
           {error === "connection_lost" && (
-            <div className="mb-4 p-4 rounded relative text-center" style={{
+            <div className="mb-2 p-4 rounded relative text-center" style={{
               background: "rgba(200,150,55,0.15)",
               border: "1px solid rgba(200,150,55,0.3)",
               color: "rgba(255,210,130,0.9)",
@@ -498,7 +494,7 @@ export default function ChatClient() {
             </div>
           )}
           {socketState === "connected" && (
-            <p
+            <span
               style={{
                 fontSize: 13,
                 fontWeight: 300,
@@ -509,20 +505,13 @@ export default function ChatClient() {
                     ? "rgba(139,157,195,0.35)"
                     : "rgba(201,209,217,0.3)",
                 fontFamily: "'DM Sans', sans-serif",
-                margin: 0,
                 transition: "color 0.4s ease",
               }}
             >
               {isAudioPlaying ? "speaking" : kiraState === "thinking" ? "thinking" : "listening"}
-            </p>
+            </span>
           )}
         </div>
-      </div>
-
-      {/* ─── Bottom Area: Controls ─── */}
-      <div
-        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
-      >
         {/* Voice Controls */}
         <div className="flex items-center gap-4 relative z-[1]">
         {/* Avatar/Orb Toggle */}

@@ -492,6 +492,12 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     }
     setIsScreenSharing(false);
     isScreenSharingRef.current = false;
+
+    // Tell server to stop vision reactions
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: "vision_stop" }));
+    }
+
     console.log("[Vision] Screen share stopped");
   }, []);
 

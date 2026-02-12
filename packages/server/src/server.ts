@@ -503,6 +503,19 @@ Keep it natural and brief — 1 sentence.`
     }, initialDelay);
   }
 
+  function stopVision() {
+    if (visionReactionTimer) {
+      clearTimeout(visionReactionTimer);
+      visionReactionTimer = null;
+      console.log("[Vision] Reaction timer cancelled — screen share ended");
+    }
+    latestImages = null;
+    lastImageTimestamp = 0;
+    visionActive = false;
+    isFirstVisionReaction = true;
+    console.log("[Vision] Screen share deactivated");
+  }
+
   function rescheduleVisionReaction() {
     if (!visionReactionTimer) return;
     clearTimeout(visionReactionTimer);
@@ -1954,6 +1967,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           const newVoice = controlMessage.voice as "anime" | "natural";
           currentVoiceConfig = VOICE_CONFIGS[newVoice] || VOICE_CONFIGS.natural;
           console.log(`[Voice] Switched to: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
+        } else if (controlMessage.type === "vision_stop") {
+          stopVision();
         } else if (controlMessage.type === "text_message") {
           if (timeWarningPhase === 'done') return; // Don't process new messages after goodbye
 

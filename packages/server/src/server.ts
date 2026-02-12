@@ -1045,7 +1045,7 @@ Keep it natural and brief — 1 sentence.`
                 );
 
                 if (isProUser) {
-                  // Pro users: monthly usage tracked in Supabase (resets per calendar month)
+                  // Pro users: monthly usage tracked in Prisma MonthlyUsage (resets per calendar month)
                   const storedSeconds = await getProUsage(userId);
                   if (storedSeconds >= PRO_MONTHLY_SECONDS) {
                     console.log(`[USAGE] Pro user ${userId} blocked — ${storedSeconds}s >= ${PRO_MONTHLY_SECONDS}s`);
@@ -1159,7 +1159,7 @@ Keep it natural and brief — 1 sentence.`
               }
             } else if (userId) {
               if (isProUser) {
-                // Pro users: monthly usage tracked in Supabase
+                // Pro users: monthly usage tracked in Prisma MonthlyUsage
                 proUsageSeconds = proUsageBase + elapsed;
                 await saveProUsage(userId, proUsageSeconds);
                 console.log(`[USAGE] Pro ${userId}: ${proUsageSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
@@ -1597,6 +1597,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             let ttsStartedAt = 0;
             let firstTokenLogged = false;
 
+            // --- Emotion detection on first sentence ---
+            let emotionDetected = false;
+
             // --- Tool call accumulation ---
             let hasToolCalls = false;
             const toolCallAccum: Record<number, { id: string; name: string; arguments: string }> = {};
@@ -1669,6 +1672,13 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 const sentence = match[1].trim();
                 sentenceBuffer = sentenceBuffer.slice(match[0].length);
                 if (sentence.length > 0) {
+                  // Detect emotion from first sentence — sets expression while she starts talking
+                  if (!emotionDetected) {
+                    emotionDetected = true;
+                    const emotion = detectEmotion(sentence);
+                    ws.send(JSON.stringify({ type: "expression", expression: emotion }));
+                    console.log(`[Expression] ${emotion} (from first sentence)`);
+                  }
                   console.log(`[TTS] Streaming sentence: "${sentence}"`);
                   await speakSentence(sentence);
                 }
@@ -1747,6 +1757,12 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                     const sentence = match[1].trim();
                     sentenceBuffer = sentenceBuffer.slice(match[0].length);
                     if (sentence.length > 0) {
+                      if (!emotionDetected) {
+                        emotionDetected = true;
+                        const emotion = detectEmotion(sentence);
+                        ws.send(JSON.stringify({ type: "expression", expression: emotion }));
+                        console.log(`[Expression] ${emotion} (from first sentence, tool follow-up)`);
+                      }
                       console.log(`[TTS] Streaming sentence: "${sentence}"`);
                       await speakSentence(sentence);
                     }
@@ -1778,10 +1794,12 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             console.log(`[Latency] LLM total: ${llmDoneAt - llmStartAt}ms (${fullResponse.length} chars)`);
             llmResponse = stripEmotionTags(fullResponse);
 
-            // Detect emotion from the full response
-            const emotion = detectEmotion(llmResponse);
-            ws.send(JSON.stringify({ type: "expression", expression: emotion }));
-            console.log(`[Expression] ${emotion}`);
+            // If emotion wasn't detected from a sentence (very short response), detect now
+            if (!emotionDetected && llmResponse.trim().length > 0) {
+              const emotion = detectEmotion(llmResponse);
+              ws.send(JSON.stringify({ type: "expression", expression: emotion }));
+              console.log(`[Expression] ${emotion} (from full response — no sentence boundary found)`);
+            }
 
             if (llmResponse.trim().length > 0) {
               chatHistory.push({ role: "assistant", content: llmResponse });
@@ -2165,7 +2183,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
       if (wasBlockedImmediately) {
         console.log(`[USAGE] Skipping flush — connection was blocked on connect`);
       } else if (isProUser) {
-        // Pro users: flush to Supabase
+        // Pro users: flush to Prisma MonthlyUsage
         const finalElapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
         const finalTotal = proUsageBase + finalElapsed;
         await saveProUsage(userId, finalTotal);

@@ -64,3 +64,16 @@ model MemoryFact {
   @@index([userId, category])
   @@index([userId, emotionalWeight])
 }
+
+model MonthlyUsage {
+  id      String @id @default(cuid())
+  userId  String // clerkId
+  month   String // "YYYY-MM" e.g. "2026-02"
+  seconds Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, month])
+  @@index([userId])
+}

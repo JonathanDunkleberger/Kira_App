@@ -20,7 +20,6 @@ export default function ChatClient() {
   const router = useRouter();
   const { getToken, userId } = useAuth();
   const { openSignIn } = useClerk();
-  const [token, setToken] = useState<string | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const hasShownRating = useRef(false); // Prevent rating dialog from showing twice
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -31,6 +30,7 @@ export default function ChatClient() {
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
+  const [live2dDismissed, setLive2dDismissed] = useState(false); // set true before WS close to clean up PIXI first
   const [isMobile, setIsMobile] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
@@ -85,7 +85,7 @@ export default function ChatClient() {
     currentExpression,
     activeAccessories
   } = useKiraSocket(
-    token || "",
+    userId ? getToken : null,
     guestId,
     voicePreference
   );
@@ -149,24 +149,26 @@ export default function ChatClient() {
     startConversation();
   }, [socketState, live2dReady, visualMode, startConversation]);
 
-  // 1. Get Clerk auth token
-  useEffect(() => {
-    if (userId) {
-      getToken().then(setToken);
-    }
-  }, [getToken, userId]);
-
   // Disconnect only on unmount
   useEffect(() => {
     return () => {
-      disconnect();
+      // On unmount: dismiss Live2D synchronously (triggers PIXI cleanup),
+      // then close the WebSocket. The 0ms timeout lets React flush the
+      // Live2DAvatar unmount before the socket closes.
+      setLive2dDismissed(true);
+      setTimeout(() => disconnect(), 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- UI Logic ---
 
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
+    // 1. Unmount Live2D first so PIXI can destroy its WebGL context cleanly
+    setLive2dDismissed(true);
+    // 2. Small delay to let React flush the unmount + PIXI cleanup
+    await new Promise(r => setTimeout(r, 100));
+    // 3. Then close WebSocket
     disconnect();
     if (!hasShownRating.current) {
       hasShownRating.current = true;
@@ -428,14 +430,16 @@ export default function ChatClient() {
             {visualMode === "avatar" ? (
               <>
                 {!live2dReady && <XOLoader />}
-                <Live2DAvatar
-                  isSpeaking={isAudioPlaying}
-                  analyserNode={playbackAnalyserNode}
-                  emotion={currentExpression}
-                  accessories={activeAccessories}
-                  onModelReady={() => setLive2dReady(true)}
-                  onLoadError={() => setLive2dFailed(true)}
-                />
+                {!live2dDismissed && (
+                  <Live2DAvatar
+                    isSpeaking={isAudioPlaying}
+                    analyserNode={playbackAnalyserNode}
+                    emotion={currentExpression}
+                    accessories={activeAccessories}
+                    onModelReady={() => setLive2dReady(true)}
+                    onLoadError={() => setLive2dFailed(true)}
+                  />
+                )}
               </>
             ) : (
               <KiraOrb

@@ -13,7 +13,7 @@ const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each fra
 const MIN_SPEECH_FRAMES_FOR_EOU = 200; // Must have ~200 speech frames (~1-2s real speech) to prevent noise-triggered EOUs
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
-export const useKiraSocket = (token: string, guestId: string, voicePreference: string = "anime") => {
+export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null, guestId: string, voicePreference: string = "anime") => {
   const [socketState, setSocketState] = useState<SocketState>("idle");
   const [kiraState, setKiraState] = useState<KiraState>("listening");
   const kiraStateRef = useRef<KiraState>("listening"); // Ref to track state in callbacks
@@ -913,8 +913,19 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
     await initializeAudio();
 
+    // Fetch a FRESH auth token right before connecting — prevents stale JWT race conditions
+    // (token fetched at mount time can expire before the user clicks "start")
+    let freshToken: string | null = null;
+    if (getTokenFn) {
+      try {
+        freshToken = await getTokenFn();
+      } catch (err) {
+        console.error("[Auth] Failed to get fresh token:", err);
+      }
+    }
+
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
-    const authParam = token ? `token=${token}` : `guestId=${guestId}`;
+    const authParam = freshToken ? `token=${freshToken}` : `guestId=${guestId}`;
     const voiceParam = `&voice=${voicePreference}`;
     console.log(`[WS] Connecting with voice: ${voicePreference}, URL: ${wsUrl}?${authParam}${voiceParam}`);
 
@@ -1085,7 +1096,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       stopAudioPipeline();
       // Don't set error here — onclose will handle reconnection or final error
     };
-  }, [token, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
+  }, [getTokenFn, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
 
   const disconnect = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);

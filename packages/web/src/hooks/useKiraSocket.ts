@@ -147,6 +147,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   // --- WebSocket Auto-Reconnect ---
   const reconnectAttempts = useRef(0);
   const MAX_RECONNECT_ATTEMPTS = 5;
+  const conversationActive = useRef(false); // True once start_stream sent — prevents reconnect loops
 
   /**
    * Calculates adaptive EOU timeout based on how long the user has been speaking.
@@ -864,6 +865,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       console.log("[WS] Sending 'start_stream' message...");
       try {
         ws.current.send(JSON.stringify({ type: "start_stream" }));
+        conversationActive.current = true; // Mark session as live — no more auto-reconnect
       } catch (err) {
         console.error("[WS] Failed to send start_stream:", err);
       }
@@ -1032,17 +1034,28 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
       ws.current = null;
       isServerReady.current = false; // Prevent stale audio sends on reconnect
 
-      // Auto-reconnect on unexpected closes (not user-initiated or auth failure)
-      if (event.code !== 1000 && event.code !== 1008 && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
-        reconnectAttempts.current++;
-        console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
-        setTimeout(() => {
-          connect();
-        }, delay);
-      } else if (event.code !== 1000 && event.code !== 1008) {
-        // All reconnect attempts exhausted — show error to user
-        setError("Connection lost. Please refresh the page.");
+      // Auto-reconnect logic:
+      // ONLY reconnect if the conversation hasn't started yet (pre-stream connection flakiness).
+      // Once a live voice session is active, reconnecting would create a fresh server session
+      // (new chatHistory, new usage timer, new opener) — causing the "conversation loop" bug
+      // where the same exchange replays and the usage counter goes backwards.
+      if (event.code !== 1000 && event.code !== 1008) {
+        if (conversationActive.current) {
+          // Live session was interrupted — don't reconnect, show error
+          console.log("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");
+          setError("connection_lost");
+        } else if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          // Pre-conversation connection drop — safe to retry
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
+          reconnectAttempts.current++;
+          console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+          setTimeout(() => {
+            connect();
+          }, delay);
+        } else {
+          // All reconnect attempts exhausted
+          setError("Connection lost. Please refresh the page.");
+        }
       }
     };
 
@@ -1057,6 +1070,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const disconnect = useCallback(() => {
     if (eouTimer.current) clearTimeout(eouTimer.current);
     reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
+    conversationActive.current = false; // Clean shutdown — not a crash
     if (ws.current) {
       setSocketState("closing");
       ws.current.close(1000, "User ended call"); // Code 1000 = intentional close, won't trigger reconnect

@@ -466,13 +466,33 @@ export default function ChatClient() {
             textAlign: "center",
           }}
         >
-          {error && error !== "limit_reached" && error !== "limit_reached_pro" && (
+          {error && error !== "limit_reached" && error !== "limit_reached_pro" && error !== "connection_lost" && (
             <div className="mb-4 p-3 rounded relative" style={{
               background: "rgba(200,55,55,0.15)",
               border: "1px solid rgba(200,55,55,0.3)",
               color: "rgba(255,120,120,0.9)",
             }}>
               <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+          {error === "connection_lost" && (
+            <div className="mb-4 p-4 rounded relative text-center" style={{
+              background: "rgba(200,150,55,0.15)",
+              border: "1px solid rgba(200,150,55,0.3)",
+              color: "rgba(255,210,130,0.9)",
+            }}>
+              <p className="mb-2" style={{ fontSize: 14 }}>Connection lost. Your conversation ended.</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded text-sm font-medium transition-colors"
+                style={{
+                  background: "rgba(139,157,195,0.2)",
+                  border: "1px solid rgba(139,157,195,0.3)",
+                  color: "rgba(200,210,230,0.9)",
+                }}
+              >
+                Start New Conversation
+              </button>
             </div>
           )}
           {socketState === "connected" && (

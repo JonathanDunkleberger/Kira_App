@@ -1052,23 +1052,21 @@ export default function HomePage() {
           borderTop: "1px solid rgba(255,255,255,0.03)",
           maxWidth: 900,
           margin: "0 auto",
-          display: "flex",
-          flexDirection: "row",
+          display: "grid",
+          gridTemplateColumns: "1fr auto 1fr",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
         }}
       >
-        <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
+        <span style={{ justifySelf: "start", fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
           © {new Date().getFullYear()} Kira AI
         </span>
-        <span style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300 }}>
+        <span style={{ justifySelf: "center", fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300 }}>
           By using our services, you agree to Kira&apos;s{' '}
           <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
           {' '}and{' '}
           <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
         </span>
+        <span />{/* empty right column to balance the grid */}
       </footer>
 
       {/* Keyframe animations */}

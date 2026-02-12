@@ -197,12 +197,24 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       destroyed = true;
       window.removeEventListener("resize", handleResize);
       cancelAnimationFrame(animFrameRef.current);
+      if (modelRef.current) {
+        try {
+          modelRef.current.destroy({ children: true });
+        } catch (e) {
+          // ignore — model may already be destroyed
+        }
+        modelRef.current = null;
+      }
       if (appRef.current) {
-        appRef.current.destroy(true, { children: true });
+        try {
+          appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
+        } catch (e) {
+          // ignore — app may already be destroyed
+        }
         appRef.current = null;
       }
-      modelRef.current = null;
       initializedRef.current = false;
+      setModelReady(false);
     };
   }, []);
 

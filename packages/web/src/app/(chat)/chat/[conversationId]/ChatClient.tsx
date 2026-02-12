@@ -525,7 +525,18 @@ export default function ChatClient() {
         <div className="flex items-center gap-4 relative z-[1]">
         {/* Avatar/Orb Toggle */}
         <button
-          onClick={() => setVisualMode(prev => prev === "avatar" ? "orb" : "avatar")}
+          onClick={() => {
+            setVisualMode(prev => {
+              if (prev === "avatar") {
+                return "orb";
+              } else {
+                // Switching back to avatar — reset failure state so Live2D can re-attempt
+                setLive2dFailed(false);
+                setLive2dReady(false);
+                return "avatar";
+              }
+            });
+          }}
           className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
           style={{
             background: visualMode === "avatar" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",

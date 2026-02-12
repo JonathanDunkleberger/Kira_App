@@ -412,11 +412,14 @@ export default function ChatClient() {
             }}
           >
             <div
-              className="min-h-[48px] flex items-center justify-center px-3 py-2"
+              className="min-h-[48px] flex items-center justify-center px-4 py-2"
               style={{
-                background: "rgba(0,0,0,0.4)",
-                backdropFilter: "blur(4px)",
-                borderRadius: 8,
+                background: "rgba(0, 0, 0, 0.25)",
+                backdropFilter: "blur(8px)",
+                WebkitBackdropFilter: "blur(8px)",
+                borderRadius: 12,
+                padding: "8px 16px",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
               }}
             >
               {error && error !== "limit_reached" && (

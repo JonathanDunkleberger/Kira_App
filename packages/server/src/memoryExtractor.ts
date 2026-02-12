@@ -26,6 +26,16 @@ const STRUCTURAL_WORDS = new Set([
   "could", "should", "from", "with", "into", "also", "most", "probably",
 ]);
 
+/** Generic action verbs / temporal words that pass extractTopicWords but carry
+ *  no subject-specific meaning.  "plans to watch" should not count as overlap
+ *  with an unrelated fact that also contains "plans" and "watch".            */
+const GENERIC_WORDS = new Set([
+  "plans", "wants", "going", "watch", "play", "listen", "read",
+  "tried", "trying", "started", "finished", "looking", "make", "made",
+  "doing", "done", "think", "thinks", "having",
+  "will", "today", "tomorrow", "later", "soon", "recently",
+]);
+
 /** Category keywords — prevent cross-topic replacement */
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   anime: ["anime", "manga", "otaku", "waifu", "weeb", "subbed", "dubbed", "isekai", "shonen", "seinen"],
@@ -86,12 +96,15 @@ function shouldReplace(existingFact: string, newFact: string): { replace: boolea
 
   const overlap = existingWords.filter((w: string) => newWordSet.has(w));
 
-  // Require at least 2 meaningful (non-structural) words in common
-  if (overlap.length >= 2) {
-    return { replace: true, reason: `shared topic words: [${overlap.join(", ")}]` };
+  // Strip generic action verbs / temporal words — they carry no subject info
+  const meaningfulOverlap = overlap.filter((w: string) => !GENERIC_WORDS.has(w));
+
+  // Require at least 2 meaningful (non-structural, non-generic) words in common
+  if (meaningfulOverlap.length >= 2) {
+    return { replace: true, reason: `shared topic words: [${meaningfulOverlap.join(", ")}]` };
   }
 
-  return { replace: false, reason: `only ${overlap.length} topic word(s) in common: [${overlap.join(", ")}]` };
+  return { replace: false, reason: `only ${meaningfulOverlap.length} meaningful topic word(s) in common: [${meaningfulOverlap.join(", ")}] (generic filtered: [${overlap.filter((w: string) => GENERIC_WORDS.has(w)).join(", ")}])` };
 }
 
 export async function extractAndSaveMemories(

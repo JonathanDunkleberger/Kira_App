@@ -37,53 +37,6 @@ export default function ChatClient() {
     setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
   }, []);
 
-  // ─── Camera PIP preview ───
-  const previewVideoRef = useRef<HTMLVideoElement>(null);
-  const [pipPosition, setPipPosition] = useState({ x: 16, y: 140 }); // offset from bottom-right
-  const pipDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-
-  // Attach stream to video element whenever camera becomes active
-  useEffect(() => {
-    if (!isCameraActive) {
-      // Reset PIP position when camera stops
-      setPipPosition({ x: 16, y: 140 });
-      return;
-    }
-    const vid = previewVideoRef.current;
-    const stream = cameraStreamRef.current;
-    if (vid && stream) {
-      vid.srcObject = stream;
-      vid.setAttribute("playsinline", "true");
-      vid.muted = true;
-      vid.play().catch(() => {});
-    }
-  }, [isCameraActive, cameraStreamRef]);
-
-  const handlePipTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    pipDragRef.current = {
-      startX: touch.clientX,
-      startY: touch.clientY,
-      origX: pipPosition.x,
-      origY: pipPosition.y,
-    };
-  }, [pipPosition]);
-
-  const handlePipTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!pipDragRef.current) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - pipDragRef.current.startX;
-    const dy = touch.clientY - pipDragRef.current.startY;
-    setPipPosition({
-      x: pipDragRef.current.origX - dx, // inverted because offset is from right
-      y: pipDragRef.current.origY + dy,  // inverted because offset is from bottom
-    });
-  }, []);
-
-  const handlePipTouchEnd = useCallback(() => {
-    pipDragRef.current = null;
-  }, []);
-
   // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
   useEffect(() => {
     if (live2dFailed && visualMode === "avatar") {
@@ -132,6 +85,53 @@ export default function ChatClient() {
     guestId,
     voicePreference
   );
+
+  // ─── Camera PIP preview ───
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const [pipPosition, setPipPosition] = useState({ x: 16, y: 140 }); // offset from bottom-right
+  const pipDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  // Attach stream to video element whenever camera becomes active
+  useEffect(() => {
+    if (!isCameraActive) {
+      // Reset PIP position when camera stops
+      setPipPosition({ x: 16, y: 140 });
+      return;
+    }
+    const vid = previewVideoRef.current;
+    const stream = cameraStreamRef.current;
+    if (vid && stream) {
+      vid.srcObject = stream;
+      vid.setAttribute("playsinline", "true");
+      vid.muted = true;
+      vid.play().catch(() => {});
+    }
+  }, [isCameraActive, cameraStreamRef]);
+
+  const handlePipTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    pipDragRef.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      origX: pipPosition.x,
+      origY: pipPosition.y,
+    };
+  }, [pipPosition]);
+
+  const handlePipTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!pipDragRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - pipDragRef.current.startX;
+    const dy = touch.clientY - pipDragRef.current.startY;
+    setPipPosition({
+      x: pipDragRef.current.origX - dx, // inverted because offset is from right
+      y: pipDragRef.current.origY + dy,  // inverted because offset is from bottom
+    });
+  }, []);
+
+  const handlePipTouchEnd = useCallback(() => {
+    pipDragRef.current = null;
+  }, []);
 
   // Start conversation once both WebSocket is connected and Live2D model is ready
   // (or immediately if in orb mode — no model to wait for)

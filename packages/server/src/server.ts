@@ -296,9 +296,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let comfortTimer: NodeJS.Timeout | null = null;
 
   const COMFORT_STAGES = [
-    { delay: 90000, expression: "remove_jacket", label: "jacket off" },      // 1.5 min
-    { delay: 150000, expression: "clip_bangs", label: "bangs clipped" },     // 2.5 min after jacket (4 min total)
-    { delay: 240000, expression: "earbuds", label: "earbuds in" },           // 4 min after bangs (8 min total)
+    { delay: 60000, expression: "remove_jacket", label: "jacket off" },      // 1 min
+    { delay: 150000, expression: "clip_bangs", label: "bangs clipped" },     // 2.5 min after jacket (3.5 min total)
+    { delay: 240000, expression: "earbuds", label: "earbuds in" },           // 4 min after bangs (7.5 min total)
   ];
 
   function startComfortProgression(ws: WebSocket) {

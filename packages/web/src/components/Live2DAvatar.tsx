@@ -23,6 +23,22 @@ function loadCubismCore(): Promise<void> {
   });
 }
 
+/** Static emotion→expression map (used in init flush + expression effect) */
+const EMOTION_MAP_STATIC: Record<string, string | null> = {
+  neutral: null,
+  happy: null,
+  excited: "star_eyes",
+  love: "heart_eyes",
+  blush: "blush",
+  sad: "tears",
+  angry: "angry",
+  playful: "tongue_out",
+  thinking: "dazed",
+  speechless: "speechless",
+  eyeroll: "eye_roll",
+  sleepy: "sleeping",
+};
+
 interface Live2DAvatarProps {
   isSpeaking: boolean;
   analyserNode: AnalyserNode | null;
@@ -40,6 +56,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeAccessoriesRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
+  const modelStableRef = useRef(false);
+  const modelStableTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingEmotion = useRef<string | null>(null);
+  const pendingAccessories = useRef<string[]>([]);
+  const webglCrashCount = useRef(0);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);
@@ -92,7 +113,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const canvas = app.view as unknown as HTMLCanvasElement;
         const handleContextLost = (e: Event) => {
           e.preventDefault();
-          console.error("[Live2D] WebGL context lost — falling back to orb");
+          webglCrashCount.current++;
+          console.error(`[Live2D] WebGL context lost (crash #${webglCrashCount.current})`);
+          if (webglCrashCount.current >= 2) {
+            console.error("[Live2D] Multiple WebGL crashes — staying on orb permanently");
+          }
           onLoadErrorRef.current?.();
         };
         canvas.addEventListener("webglcontextlost", handleContextLost);
@@ -165,6 +190,37 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               setModelReady(true);
               onModelReadyRef.current?.();
               console.log("[Live2D] Model ready — revealing");
+
+              // Delay expressions/accessories for 2s to let GPU settle
+              modelStableTimer.current = setTimeout(() => {
+                modelStableRef.current = true;
+                console.log("[Live2D] Model stable — expressions/accessories enabled");
+
+                // Flush any queued emotion
+                if (pendingEmotion.current && modelRef.current) {
+                  const expr = pendingEmotion.current;
+                  pendingEmotion.current = null;
+                  try {
+                    const mapped = EMOTION_MAP_STATIC[expr];
+                    if (mapped) {
+                      modelRef.current.expression(mapped);
+                      console.log(`[Live2D] Flushed queued expression: ${mapped}`);
+                    }
+                  } catch {}
+                }
+
+                // Flush any queued accessories
+                if (pendingAccessories.current.length > 0 && modelRef.current) {
+                  pendingAccessories.current.forEach(acc => {
+                    try {
+                      modelRef.current.expression(acc);
+                      activeAccessoriesRef.current.add(acc);
+                      console.log(`[Live2D] Flushed queued accessory: ${acc}`);
+                    } catch {}
+                  });
+                  pendingAccessories.current = [];
+                }
+              }, 2000);
             }
           });
         });
@@ -214,6 +270,13 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         appRef.current = null;
       }
       initializedRef.current = false;
+      modelStableRef.current = false;
+      if (modelStableTimer.current) {
+        clearTimeout(modelStableTimer.current);
+        modelStableTimer.current = null;
+      }
+      pendingEmotion.current = null;
+      pendingAccessories.current = [];
       setModelReady(false);
     };
   }, []);
@@ -280,21 +343,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     return () => cancelAnimationFrame(animFrameRef.current);
   }, [isSpeaking, analyserNode]);
 
-  // Emotion-to-Live2D expression mapping
-  const EMOTION_MAP: Record<string, string | null> = {
-    neutral: null,        // Clear all expressions
-    happy: null,          // Natural state (smile via default params)
-    excited: "star_eyes",
-    love: "heart_eyes",
-    blush: "blush",
-    sad: "tears",
-    angry: "angry",
-    playful: "tongue_out",
-    thinking: "dazed",
-    speechless: "speechless",
-    eyeroll: "eye_roll",
-    sleepy: "sleeping",
-  };
+  // Use module-level emotion map
+  const EMOTION_MAP = EMOTION_MAP_STATIC;
 
   /**
    * Properly reset Live2D expressions by clearing the expression manager state.
@@ -339,6 +389,13 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     const model = modelRef.current;
     if (!model || !emotion) return;
 
+    // Queue if model not yet stable (prevents WebGL crash from early expression)
+    if (!modelStableRef.current) {
+      console.log(`[Live2D] Queuing emotion — model not yet stable: ${emotion}`);
+      pendingEmotion.current = emotion;
+      return;
+    }
+
     // Clear any pending reset
     if (expressionTimeoutRef.current) {
       clearTimeout(expressionTimeoutRef.current);
@@ -370,6 +427,16 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
+
+    // Queue if model not yet stable
+    if (!modelStableRef.current && accessories) {
+      const newItems = accessories.filter(a => !activeAccessoriesRef.current.has(a));
+      if (newItems.length > 0) {
+        console.log(`[Live2D] Queuing accessories — model not yet stable: ${newItems.join(", ")}`);
+        pendingAccessories.current.push(...newItems);
+      }
+      return;
+    }
 
     if (accessories) {
       const newSet = new Set(accessories);

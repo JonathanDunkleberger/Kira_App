@@ -86,6 +86,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
         }
         appRef.current = app;
 
+        // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
+        const canvas = app.view as unknown as HTMLCanvasElement;
+        const handleContextLost = (e: Event) => {
+          e.preventDefault();
+          console.error("[Live2D] WebGL context lost — falling back to orb");
+          onLoadErrorRef.current?.();
+        };
+        canvas.addEventListener("webglcontextlost", handleContextLost);
+
         let model;
         try {
           model = await Live2DModel.from(
@@ -169,7 +178,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
         );
         // Re-center model on resize
         if (modelRef.current) {
-          const dpr = window.devicePixelRatio || 2;
+          const isMob = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          const dpr = isMob ? 1 : (window.devicePixelRatio || 2);
           const w = appRef.current.renderer.width / dpr;
           const h = appRef.current.renderer.height / dpr;
           modelRef.current.x = w / 2;

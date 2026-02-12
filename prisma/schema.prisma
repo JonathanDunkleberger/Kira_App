@@ -27,7 +27,6 @@ model User {
   memory                 String?        @db.Text
 
   conversations          Conversation[]
-  memoryFacts            MemoryFact[]
 
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
@@ -61,10 +60,6 @@ model MemoryFact {
   lastRecalledAt  DateTime? // Updated when Kira references this memory (future feature)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-
-  // Relation is optional — guests store memories with guest_<id> as userId
-  // and have no User row. When a guest signs up, migrate their rows to the new clerkId.
-  user User? @relation(fields: [userId], references: [clerkId], onDelete: Cascade)
 
   @@index([userId, category])
   @@index([userId, emotionalWeight])

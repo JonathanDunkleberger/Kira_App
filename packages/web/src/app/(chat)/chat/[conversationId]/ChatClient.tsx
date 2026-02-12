@@ -80,7 +80,8 @@ export default function ChatClient() {
     isAudioPlaying,
     playerVolume,
     playbackAnalyserNode,
-    currentExpression
+    currentExpression,
+    activeAccessories
   } = useKiraSocket(
     token || "",
     guestId,
@@ -429,6 +430,7 @@ export default function ChatClient() {
                   isSpeaking={isAudioPlaying}
                   analyserNode={playbackAnalyserNode}
                   emotion={currentExpression}
+                  accessories={activeAccessories}
                   onModelReady={() => setLive2dReady(true)}
                   onLoadError={() => setLive2dFailed(true)}
                 />

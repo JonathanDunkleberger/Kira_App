@@ -291,6 +291,41 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let visionReactionTimer: ReturnType<typeof setTimeout> | null = null;
   let isFirstVisionReaction = true;
 
+  // --- Comfort Arc: timed accessory progression ---
+  let comfortStage = 0; // 0=default, 1=jacket off, 2=bangs clipped, 3=earbuds
+  let comfortTimer: NodeJS.Timeout | null = null;
+
+  const COMFORT_STAGES = [
+    { delay: 180000, expression: "remove_jacket", label: "jacket off" },     // 3 min
+    { delay: 300000, expression: "clip_bangs", label: "bangs clipped" },     // 5 min after jacket (8 min total)
+    { delay: 240000, expression: "earbuds", label: "earbuds in" },           // 4 min after bangs (12 min total)
+  ];
+
+  function startComfortProgression(ws: WebSocket) {
+    // Check if late night (10pm-4am) — skip to stage 1 immediately
+    const hour = new Date().getHours();
+    if (hour >= 22 || hour < 4) {
+      comfortStage = 1;
+      ws.send(JSON.stringify({ type: "accessory", accessory: "remove_jacket", action: "on" }));
+      console.log("[Comfort] Late night — starting with jacket off");
+    }
+
+    scheduleNextComfort(ws);
+  }
+
+  function scheduleNextComfort(ws: WebSocket) {
+    if (comfortStage >= COMFORT_STAGES.length) return;
+
+    const stage = COMFORT_STAGES[comfortStage];
+    comfortTimer = setTimeout(() => {
+      if (clientDisconnected || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ type: "accessory", accessory: stage.expression, action: "on" }));
+      console.log(`[Comfort] Stage ${comfortStage + 1}: ${stage.label}`);
+      comfortStage++;
+      scheduleNextComfort(ws);
+    }, stage.delay);
+  }
+
   // --- Dedicated Vision Reaction Timer (independent of silence checker) ---
   async function triggerVisionReaction() {
     if (state !== "listening") {
@@ -1316,6 +1351,9 @@ Keep it natural and brief — 1 sentence.`
               ws.send(JSON.stringify({ type: "state_listening" }));
               turnCount++; // Count the opener as a turn
               resetSilenceTimer();
+
+              // Start comfort arc after opener completes
+              startComfortProgression(ws);
             } catch (err) {
               console.error("[Opener] Error:", (err as Error).message);
               state = "listening";
@@ -2053,6 +2091,7 @@ Keep it natural and brief — 1 sentence.`
     if (silenceTimer) clearTimeout(silenceTimer);
     if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (visionReactionTimer) { clearTimeout(visionReactionTimer); visionReactionTimer = null; }
+    if (comfortTimer) { clearTimeout(comfortTimer); comfortTimer = null; }
     isFirstVisionReaction = true;
     if (sttStreamer) sttStreamer.destroy();
 

@@ -27,16 +27,18 @@ interface Live2DAvatarProps {
   isSpeaking: boolean;
   analyserNode: AnalyserNode | null;
   emotion?: string | null;
+  accessories?: string[];
   onModelReady?: () => void;
   onLoadError?: () => void;
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onModelReady, onLoadError }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, onModelReady, onLoadError }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
   const animFrameRef = useRef<number>(0);
   const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeAccessoriesRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
@@ -309,6 +311,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
     } catch (err) {
       console.warn("[Live2D] Failed to reset expression:", err);
     }
+
+    // Re-apply active accessories (they must persist through emotion resets)
+    Array.from(activeAccessoriesRef.current).forEach(acc => {
+      try {
+        model.expression(acc);
+      } catch (err) {
+        // ignore — accessory may not exist
+      }
+    });
   }
 
   // Watch for expression changes
@@ -342,6 +353,30 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
       resetExpression(model);
     }
   }, [emotion]);
+
+  // Watch for accessory changes — accessories persist (unlike emotions which flash)
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model) return;
+
+    if (accessories) {
+      const newSet = new Set(accessories);
+
+      // Turn ON new accessories
+      Array.from(newSet).forEach(acc => {
+        if (!activeAccessoriesRef.current.has(acc)) {
+          try {
+            model.expression(acc);
+            console.log(`[Live2D] Accessory ON: ${acc}`);
+          } catch (err) {
+            console.warn(`[Live2D] Failed to apply accessory: ${acc}`, err);
+          }
+        }
+      });
+
+      activeAccessoriesRef.current = newSet;
+    }
+  }, [accessories]);
 
   // Clean up expression timeout on unmount
   useEffect(() => {

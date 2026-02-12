@@ -55,6 +55,21 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+// --- EXPRESSION TAG PARSING ---
+const EMOTION_REGEX = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy)\]\s*$/;
+
+/** Extract the emotion tag from an LLM response and strip it from the text. */
+function parseEmotion(text: string): { cleanText: string; emotion: string } {
+  const match = text.match(EMOTION_REGEX);
+  if (match) {
+    return {
+      cleanText: text.replace(EMOTION_REGEX, "").trim(),
+      emotion: match[1],
+    };
+  }
+  return { cleanText: text, emotion: "neutral" };
+}
+
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -311,6 +326,12 @@ Keep it natural and brief — 1 sentence.`
         }
       }
 
+      // Parse and strip emotion tag before TTS
+      const { cleanText: cleanVisionReaction, emotion: emotionVisionReaction } = parseEmotion(reaction);
+      reaction = cleanVisionReaction;
+      ws.send(JSON.stringify({ type: "expression", expression: emotionVisionReaction }));
+      console.log(`[Expression] ${emotionVisionReaction}`);
+
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
       lastKiraSpokeTimestamp = Date.now();
@@ -472,7 +493,7 @@ Keep it natural and brief — 1 sentence.`
           presence_penalty: 0.3, // Higher to encourage novel topics
         });
 
-        const responseText = checkResponse.choices[0]?.message?.content?.trim() || "";
+        let responseText = checkResponse.choices[0]?.message?.content?.trim() || "";
 
         // Remove the nudge from history regardless of outcome
         const nudgeIdx = chatHistory.indexOf(nudge);
@@ -486,6 +507,12 @@ Keep it natural and brief — 1 sentence.`
           console.log("[Silence] Kira has nothing to say. Staying quiet.");
           return;
         }
+
+        // Parse and strip emotion tag before TTS
+        const { cleanText: cleanSilence, emotion: emotionSilence } = parseEmotion(responseText);
+        responseText = cleanSilence;
+        ws.send(JSON.stringify({ type: "expression", expression: emotionSilence }));
+        console.log(`[Expression] ${emotionSilence}`);
 
         // She has something to say — run the TTS pipeline
         chatHistory.push({ role: "assistant", content: responseText });
@@ -564,6 +591,12 @@ Keep it natural and brief — 1 sentence.`
         // Model had nothing to say — return silently
         return;
       }
+
+      // Parse and strip emotion tag before TTS
+      const { cleanText: cleanRunKira, emotion: emotionRunKira } = parseEmotion(llmResponse);
+      llmResponse = cleanRunKira;
+      ws.send(JSON.stringify({ type: "expression", expression: emotionRunKira }));
+      console.log(`[Expression] ${emotionRunKira}`);
 
       chatHistory.push({ role: "assistant", content: llmResponse });
       advanceTimePhase(llmResponse);
@@ -667,16 +700,22 @@ Keep it natural and brief — 1 sentence.`
 
       const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
-        console.log(`[Goodbye] Kira says: "${goodbyeText}"`);
-        chatHistory.push({ role: "assistant", content: goodbyeText });
-        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: goodbyeText }));
+        // Parse and strip emotion tag before TTS
+        const { cleanText: cleanGoodbye, emotion: emotionGoodbye } = parseEmotion(goodbyeText);
+        const finalGoodbye = cleanGoodbye;
+        ws.send(JSON.stringify({ type: "expression", expression: emotionGoodbye }));
+        console.log(`[Expression] ${emotionGoodbye}`);
+
+        console.log(`[Goodbye] Kira says: "${finalGoodbye}"`);
+        chatHistory.push({ role: "assistant", content: finalGoodbye });
+        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: finalGoodbye }));
 
         state = "speaking";
         ws.send(JSON.stringify({ type: "state_speaking" }));
         ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
 
-        const sentences = goodbyeText.split(/(?<=[.!?\u2026])\s+(?=[A-Z"])/);
+        const sentences = finalGoodbye.split(/(?<=[.!?\u2026])\s+(?=[A-Z"])/);
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
@@ -697,7 +736,7 @@ Keep it natural and brief — 1 sentence.`
         ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
 
         // Wait for TTS to finish playing on client, then disconnect
-        const estimatedPlayTime = Math.max(2000, goodbyeText.length * 80);
+        const estimatedPlayTime = Math.max(2000, finalGoodbye.length * 80);
         setTimeout(() => {
           if (ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify({ type: "error", code: "limit_reached", ...(isProUser ? { tier: "pro" } : {}) }));
@@ -1169,8 +1208,14 @@ Keep it natural and brief — 1 sentence.`
                 presence_penalty: 0.3,
               });
 
-              const openerText = completion.choices[0]?.message?.content?.trim() || "";
+              let openerText = completion.choices[0]?.message?.content?.trim() || "";
               if (!openerText || openerText.length < 3 || clientDisconnected) return;
+
+              // Parse and strip emotion tag before TTS
+              const { cleanText: cleanOpener, emotion: emotionOpener } = parseEmotion(openerText);
+              openerText = cleanOpener;
+              ws.send(JSON.stringify({ type: "expression", expression: emotionOpener }));
+              console.log(`[Expression] ${emotionOpener}`);
 
               // Add to chat history (NOT the instruction — just the greeting)
               chatHistory.push({ role: "assistant", content: openerText });
@@ -1442,6 +1487,13 @@ Keep it natural and brief — 1 sentence.`
               // No tool calls on first try — use this response directly
               // (skip the streaming call since we already have the answer)
               llmResponse = initialMessage.content || "";
+
+              // Parse and strip emotion tag before TTS
+              const { cleanText: cleanDirect, emotion: emotionDirect } = parseEmotion(llmResponse);
+              llmResponse = cleanDirect;
+              ws.send(JSON.stringify({ type: "expression", expression: emotionDirect }));
+              console.log(`[Expression] ${emotionDirect}`);
+
               chatHistory.push({ role: "assistant", content: llmResponse });
               advanceTimePhase(llmResponse);
 
@@ -1564,12 +1616,21 @@ Keep it natural and brief — 1 sentence.`
                 }
               }
 
-              // Flush remaining text
+              // Flush remaining text (strip any emotion tag from final chunk)
               if (sentenceBuffer.trim().length > 0) {
-                await speakSentence(sentenceBuffer.trim());
+                const { cleanText: cleanFinal } = parseEmotion(sentenceBuffer.trim());
+                if (cleanFinal.length > 0) {
+                  await speakSentence(cleanFinal);
+                }
               }
 
               llmResponse = fullResponse;
+              // Parse emotion from the full streamed response
+              const { cleanText: cleanStreamed, emotion: emotionStreamed } = parseEmotion(llmResponse);
+              llmResponse = cleanStreamed;
+              ws.send(JSON.stringify({ type: "expression", expression: emotionStreamed }));
+              console.log(`[Expression] ${emotionStreamed}`);
+
               chatHistory.push({ role: "assistant", content: llmResponse });
               advanceTimePhase(llmResponse);
 
@@ -1698,7 +1759,7 @@ Keep it natural and brief — 1 sentence.`
                   temperature: 1.0,
                 });
 
-                const reactionText = reaction.choices[0]?.message?.content?.trim() || "";
+                let reactionText = reaction.choices[0]?.message?.content?.trim() || "";
 
                 // Only speak if there's real content and we're still in a valid state
                 if (
@@ -1716,6 +1777,13 @@ Keep it natural and brief — 1 sentence.`
                 }
 
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
+
+                // Parse and strip emotion tag before TTS
+                const { cleanText: cleanScene, emotion: emotionScene } = parseEmotion(reactionText);
+                reactionText = cleanScene;
+                ws.send(JSON.stringify({ type: "expression", expression: emotionScene }));
+                console.log(`[Expression] ${emotionScene}`);
+
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
                 // Don't reschedule vision timer from scene reactions — already handled by scheduleNextReaction()
@@ -1866,6 +1934,12 @@ Keep it natural and brief — 1 sentence.`
             } else {
               txtLlmResponse = txtInitialMessage?.content || "";
             }
+
+            // Parse and strip emotion tag
+            const { cleanText: cleanTxt, emotion: emotionTxt } = parseEmotion(txtLlmResponse);
+            txtLlmResponse = cleanTxt;
+            ws.send(JSON.stringify({ type: "expression", expression: emotionTxt }));
+            console.log(`[Expression] ${emotionTxt}`);
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
             advanceTimePhase(txtLlmResponse);

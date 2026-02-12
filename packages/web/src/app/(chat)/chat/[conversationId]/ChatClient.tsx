@@ -79,7 +79,8 @@ export default function ChatClient() {
     remainingSeconds,
     isAudioPlaying,
     playerVolume,
-    playbackAnalyserNode
+    playbackAnalyserNode,
+    currentExpression
   } = useKiraSocket(
     token || "",
     guestId,
@@ -427,7 +428,7 @@ export default function ChatClient() {
                 <Live2DAvatar
                   isSpeaking={isAudioPlaying}
                   analyserNode={playbackAnalyserNode}
-                  emotion={null}
+                  emotion={currentExpression}
                   onModelReady={() => setLive2dReady(true)}
                   onLoadError={() => setLive2dFailed(true)}
                 />

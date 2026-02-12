@@ -26,6 +26,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const [micVolume, setMicVolume] = useState(0);
   const [transcript, setTranscript] = useState<{ role: "user" | "ai"; text: string } | null>(null);
 
+  const [currentExpression, setCurrentExpression] = useState<string>("neutral");
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -956,6 +957,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
           case "transcript":
             setTranscript({ role: msg.role, text: msg.text });
             break;
+          case "expression":
+            setCurrentExpression(msg.expression || "neutral");
+            break;
           case "tts_chunk_starts":
             ttsChunksDone.current = false; // More audio chunks incoming
             break;
@@ -1137,5 +1141,6 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
     isAudioPlaying,
     playerVolume,
     playbackAnalyserNode: playbackAnalyser.current,
+    currentExpression,
   };
 };

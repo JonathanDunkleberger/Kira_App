@@ -36,7 +36,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
   const animFrameRef = useRef<number>(0);
-  const prevEmotionRef = useRef<string | null>(null);
+  const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
@@ -266,19 +266,71 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, onMode
     return () => cancelAnimationFrame(animFrameRef.current);
   }, [isSpeaking, analyserNode]);
 
-  // Expression changes
+  // Emotion-to-Live2D expression mapping
+  const EMOTION_MAP: Record<string, string | null> = {
+    neutral: null,        // Clear all expressions
+    happy: null,          // Natural state (smile via default params)
+    excited: "star_eyes",
+    love: "heart_eyes",
+    blush: "blush",
+    sad: "tears",
+    angry: "angry",
+    playful: "tongue_out",
+    thinking: "dazed",
+    speechless: "speechless",
+    eyeroll: "eye_roll",
+    sleepy: "sleeping",
+  };
+
+  // Watch for expression changes
   useEffect(() => {
     const model = modelRef.current;
-    if (!model || !emotion || emotion === prevEmotionRef.current) return;
+    if (!model || !emotion) return;
 
-    try {
-      model.expression(emotion);
-      prevEmotionRef.current = emotion;
-      console.log(`[Live2D] Expression: ${emotion}`);
-    } catch (err) {
-      console.warn(`[Live2D] Expression "${emotion}" failed:`, err);
+    // Clear any pending reset
+    if (expressionTimeoutRef.current) {
+      clearTimeout(expressionTimeoutRef.current);
+      expressionTimeoutRef.current = null;
+    }
+
+    const expressionName = EMOTION_MAP[emotion];
+
+    if (expressionName) {
+      // Trigger the expression
+      try {
+        model.expression(expressionName);
+        console.log(`[Live2D] Expression: ${expressionName} (emotion: ${emotion})`);
+      } catch (err) {
+        console.warn(`[Live2D] Failed to set expression: ${expressionName}`, err);
+      }
+
+      // Auto-reset to neutral after 4 seconds
+      expressionTimeoutRef.current = setTimeout(() => {
+        try {
+          model.expression(); // Reset to default
+          console.log("[Live2D] Expression reset to neutral");
+        } catch (err) {
+          // Ignore
+        }
+      }, 4000);
+    } else {
+      // neutral/happy — reset to default
+      try {
+        model.expression();
+      } catch (err) {
+        // Ignore
+      }
     }
   }, [emotion]);
+
+  // Clean up expression timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (expressionTimeoutRef.current) {
+        clearTimeout(expressionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative" }}>

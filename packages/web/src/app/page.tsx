@@ -1047,22 +1047,22 @@ export default function HomePage() {
       <footer
         style={{
           padding: "32px 24px",
-          paddingLeft: 16,
           borderTop: "1px solid rgba(255,255,255,0.03)",
           maxWidth: 900,
           margin: "0 auto",
-          textAlign: "left",
         }}
       >
-        <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginBottom: 12 }}>
+        <p style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, marginBottom: 12, textAlign: "center" }}>
           By using our services, you agree to Kira&apos;s{' '}
           <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
           {' '}and{' '}
           <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
         </p>
-        <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
-          © {new Date().getFullYear()} Kira AI
-        </span>
+        <div style={{ textAlign: "left", paddingLeft: 16 }}>
+          <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
+            © {new Date().getFullYear()} Kira AI
+          </span>
+        </div>
       </footer>
 
       {/* Keyframe animations */}

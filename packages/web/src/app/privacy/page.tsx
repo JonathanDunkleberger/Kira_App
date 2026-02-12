@@ -197,9 +197,8 @@ export default function PrivacyPage() {
           maxWidth: 640,
           margin: "0 auto",
           padding: "24px 24px 48px",
-          paddingLeft: 16,
           borderTop: "1px solid rgba(255,255,255,0.04)",
-          textAlign: "left",
+          textAlign: "center",
           fontSize: 13,
           color: "rgba(201,209,217,0.2)",
         }}

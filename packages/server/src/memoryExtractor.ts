@@ -15,6 +15,85 @@ interface ExtractedFact {
   is_update: boolean;
 }
 
+// --- Topic-aware deduplication helpers ---
+
+/** Structural words that inflate similarity between unrelated facts */
+const STRUCTURAL_WORDS = new Set([
+  "user", "users", "user's", "favorite", "favourite", "likes", "like",
+  "loves", "love", "enjoys", "enjoy", "prefers", "prefer", "preferred",
+  "really", "very", "much", "that", "this", "their", "they", "them",
+  "have", "has", "had", "been", "being", "some", "about", "would",
+  "could", "should", "from", "with", "into", "also", "most", "probably",
+]);
+
+/** Category keywords — prevent cross-topic replacement */
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  anime: ["anime", "manga", "otaku", "waifu", "weeb", "subbed", "dubbed", "isekai", "shonen", "seinen"],
+  music: ["song", "music", "album", "artist", "band", "singer", "track", "melody", "concert", "musician", "guitar", "piano", "rap", "hiphop"],
+  movie: ["movie", "film", "cinema", "director", "actress", "actor"],
+  book: ["book", "novel", "author", "series", "read", "chapter", "sequel", "trilogy", "saga"],
+  game: ["game", "gaming", "play", "console", "steam", "playstation", "xbox", "nintendo", "rpg", "mmorpg"],
+  food: ["food", "eat", "cook", "recipe", "restaurant", "meal", "snack", "cuisine", "dish"],
+  pet: ["cat", "dog", "pet", "animal", "kitten", "puppy"],
+  sport: ["sport", "team", "football", "soccer", "basketball", "baseball", "tennis", "running", "gym", "workout"],
+  tech: ["programming", "coding", "computer", "software", "hardware", "language", "framework", "code"],
+  show: ["show", "series", "season", "episode", "watched", "watching", "binge", "sitcom", "drama"],
+};
+
+/** Detect the topic category of a fact based on keywords */
+function detectTopicCategory(fact: string): string | null {
+  const lower = fact.toLowerCase();
+  for (const [category, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw))) return category;
+  }
+  return null;
+}
+
+/**
+ * Extract the specific topic/subject from a fact, stripping structural words.
+ * "User's favorite anime is 'Steins;Gate 0'" → "anime steins;gate"
+ * "User's favorite Ben Howard song is 'The Burn'" → "howard song burn"
+ */
+function extractTopicWords(fact: string): string[] {
+  return fact
+    .toLowerCase()
+    .replace(/[''""]/g, "")  // Strip quotes
+    .split(/\s+/)
+    .filter((w: string) => w.length >= 3)
+    .map((w: string) => w.replace(/[^a-z0-9;]/g, ""))
+    .filter((w: string) => w.length >= 3 && !STRUCTURAL_WORDS.has(w));
+}
+
+/**
+ * Determine if a new fact should replace an existing fact.
+ * Requires BOTH:
+ *   1. No cross-topic-category conflict (anime ≠ music)
+ *   2. Meaningful overlap in subject-specific words (not just structural)
+ */
+function shouldReplace(existingFact: string, newFact: string): { replace: boolean; reason: string } {
+  // Gate 1: If both facts have detectable topic categories, they must match
+  const existingTopic = detectTopicCategory(existingFact);
+  const newTopic = detectTopicCategory(newFact);
+
+  if (existingTopic && newTopic && existingTopic !== newTopic) {
+    return { replace: false, reason: `different topics: ${existingTopic} vs ${newTopic}` };
+  }
+
+  // Gate 2: Extract topic words (excluding structural words) and check overlap
+  const existingWords = extractTopicWords(existingFact);
+  const newWords = extractTopicWords(newFact);
+  const newWordSet = new Set(newWords);
+
+  const overlap = existingWords.filter((w: string) => newWordSet.has(w));
+
+  // Require at least 2 meaningful (non-structural) words in common
+  if (overlap.length >= 2) {
+    return { replace: true, reason: `shared topic words: [${overlap.join(", ")}]` };
+  }
+
+  return { replace: false, reason: `only ${overlap.length} topic word(s) in common: [${overlap.join(", ")}]` };
+}
+
 export async function extractAndSaveMemories(
   openai: OpenAI,
   prisma: PrismaClient,
@@ -133,33 +212,23 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
 
       if (fact.is_update) {
         // Delete older facts in the same category that this fact supersedes.
-        // Heuristic: if the new fact shares 2+ significant words (4+ chars) with
-        // an existing fact in the same category, the old one is stale.
-        const keywords = fact.content
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((w: string) => w.length >= 4)
-          .map((w: string) => w.replace(/[^a-z]/g, ""));
+        // Uses topic-aware matching: requires subject-word overlap AND same topic category.
+        const existing = await prisma.memoryFact.findMany({
+          where: { userId, category: fact.category },
+        });
 
-        if (keywords.length > 0) {
-          const existing = await prisma.memoryFact.findMany({
-            where: { userId, category: fact.category },
-          });
+        for (const old of existing) {
+          const { replace, reason } = shouldReplace(old.content, fact.content);
 
-          for (const old of existing) {
-            const oldWords = old.content
-              .toLowerCase()
-              .split(/\s+/)
-              .filter((w: string) => w.length >= 4)
-              .map((w: string) => w.replace(/[^a-z]/g, ""));
-            const overlap = keywords.filter((k: string) => oldWords.includes(k));
-
-            if (overlap.length >= 2) {
-              await prisma.memoryFact.delete({ where: { id: old.id } });
-              console.log(
-                `[Memory] Replaced stale fact: "${old.content}" → "${fact.content}"`
-              );
-            }
+          if (replace) {
+            await prisma.memoryFact.delete({ where: { id: old.id } });
+            console.log(
+              `[Memory] Replaced stale fact (${reason}): "${old.content}" → "${fact.content}"`
+            );
+          } else {
+            console.log(
+              `[Memory] Kept both facts (${reason}): "${old.content}" ≠ "${fact.content}"`
+            );
           }
         }
       }

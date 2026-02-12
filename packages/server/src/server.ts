@@ -1273,14 +1273,34 @@ Keep it natural and brief — 1 sentence.`
                 break;
               case "pro_user":
                 if (hasMemories) {
-                  openerInstruction = `[This is a Pro subscriber you know well. Your memories about them are loaded in the conversation. Greet them like a close friend — reference something from your memories if you can, or bring up something you've been "thinking about." Be natural, warm, brief (1-2 sentences). This is someone you have real history with. Skip introductions. You know each other.]`;
+                  openerInstruction = `[This is a Pro subscriber you know well. Your memories about them are loaded in the conversation. Greet them like a close friend.
+
+IMPORTANT — VARIETY RULES:
+- Do NOT always reference the same memory. Pick a DIFFERENT topic each time.
+- If you've mentioned a movie/anime recently, try asking about their day, work, music, gaming, or something new.
+- It's perfectly fine to sometimes NOT reference a memory at all — just say hi naturally and ask what's up.
+- NEVER sound like you're reading from a fact sheet.
+- Be brief (1-2 sentences). Skip introductions. You know each other.
+
+Good variety: "Hey! How's your day going?", "What's up? Been working on anything cool?", "Yo, what are you up to tonight?"
+Bad: Mentioning the same movie/anime/fact every single time.]`;
                 } else {
                   openerInstruction = `[This is a Pro subscriber but you don't have specific memories loaded yet. Greet them warmly like a friend you're excited to talk to again. Be brief (1-2 sentences). Don't mention subscriptions or Pro status.]`;
                 }
                 break;
               case "free_user":
                 if (hasMemories) {
-                  openerInstruction = `[This is a signed-in user you know. Your memories about them are loaded in the conversation. Greet them like a friend — reference something from your memories naturally if it fits, or just say hi like you're picking up where you left off. Be brief (1-2 sentences).]`;
+                  openerInstruction = `[This is a signed-in user you know. Your memories about them are loaded in the conversation. Greet them like a friend.
+
+IMPORTANT — VARIETY RULES:
+- Do NOT always reference the same memory. Pick a DIFFERENT topic each time.
+- If you've mentioned a movie/anime recently, try asking about their day, work, music, gaming, or something new.
+- It's perfectly fine to sometimes NOT reference a memory at all — just say hi naturally like you're picking up where you left off.
+- NEVER sound like you're reading from a fact sheet.
+- Be brief (1-2 sentences).
+
+Good variety: "Hey! How's your day going?", "What's up? Been into anything new lately?", "Yo! What are you up to?"
+Bad: Mentioning the same movie/anime/fact every single time.]`;
                 } else {
                   openerInstruction = `[This is a signed-in user, but you don't have specific memories of them. They might be relatively new. Greet them casually and warmly. Be brief (1-2 sentences). Be yourself — curious and open.]`;
                 }
@@ -1302,10 +1322,10 @@ Keep it natural and brief — 1 sentence.`
               const completion = await openai.chat.completions.create({
                 model: OPENAI_MODEL,
                 messages: openerMessages,
-                temperature: 0.9,
+                temperature: 1.0,
                 max_tokens: 100,
-                frequency_penalty: 0.3,
-                presence_penalty: 0.3,
+                frequency_penalty: 0.6,
+                presence_penalty: 0.6,
               });
 
               let openerText = completion.choices[0]?.message?.content?.trim() || "";

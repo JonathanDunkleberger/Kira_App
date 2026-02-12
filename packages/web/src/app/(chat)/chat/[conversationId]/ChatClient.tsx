@@ -451,7 +451,6 @@ export default function ChatClient() {
                 micVolume={micVolume}
                 kiraVolume={isAudioPlaying ? playerVolume : 0}
                 size="lg"
-                showLabel
                 enableBreathing={false}
               />
             )}
@@ -462,10 +461,11 @@ export default function ChatClient() {
         <div
           className="absolute"
           style={{
-            bottom: 140,
+            bottom: isMobile ? 100 : 140,
             left: "50%",
             transform: "translateX(-50%)",
             textAlign: "center",
+            zIndex: 2,
           }}
         >
           {error && error !== "limit_reached" && error !== "limit_reached_pro" && error !== "connection_lost" && (

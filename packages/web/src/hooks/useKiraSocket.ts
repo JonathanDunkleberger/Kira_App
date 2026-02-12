@@ -139,6 +139,10 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
   const totalSpeechFrames = useRef(0); // Total speech frames in current utterance (reset on EOU)
   const hasSpoken = useRef(false); // Whether user has spoken enough to trigger EOU
 
+  // --- Latency Tracking ---
+  const eouSentAt = useRef(0);
+  const firstAudioLogged = useRef(false);
+
   // --- Vision: Snapshot Cooldown ---
   const lastSnapshotTime = useRef(0);
   const SNAPSHOT_COOLDOWN_MS = 5000; // One snapshot per 5 seconds max
@@ -800,6 +804,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
                   maxUtteranceTimer.current = setTimeout(() => {
                     console.log("[EOU] Max utterance length reached. Forcing EOU.");
                     if (ws.current?.readyState === WebSocket.OPEN) {
+                      eouSentAt.current = Date.now();
+                      firstAudioLogged.current = false;
+                      console.log(`[Latency] EOU sent at ${eouSentAt.current}`);
                       ws.current.send(JSON.stringify({ type: "eou" }));
                     }
                     if (eouTimer.current) clearTimeout(eouTimer.current);
@@ -817,6 +824,9 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
                   eouTimer.current = setTimeout(() => {
                     console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames, timeout: ${adaptiveTimeout}ms), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {
+                      eouSentAt.current = Date.now();
+                      firstAudioLogged.current = false;
+                      console.log(`[Latency] EOU sent at ${eouSentAt.current}`);
                       ws.current.send(JSON.stringify({ type: "eou" }));
                     }
                     eouTimer.current = null;
@@ -1017,6 +1027,10 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
         // Only process audio if we are in 'speaking' state.
         // If we are 'listening' (e.g. due to interruption), we drop these packets.
         if (kiraStateRef.current === "speaking") {
+            if (!firstAudioLogged.current && eouSentAt.current > 0) {
+              firstAudioLogged.current = true;
+              console.log(`[Latency] Client: EOU → first audio: ${Date.now() - eouSentAt.current}ms`);
+            }
             audioQueue.current.push(event.data);
             processAudioQueue();
         }

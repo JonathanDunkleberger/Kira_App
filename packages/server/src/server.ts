@@ -356,6 +356,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     }
 
     console.log("[Vision Reaction] Timer fired. Generating reaction...");
+    const visionStartAt = Date.now();
     state = "thinking";
 
     const firstReactionExtra = isFirstVisionReaction
@@ -394,6 +395,7 @@ Keep it natural and brief — 1 sentence.`
       });
 
       let reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
+      console.log(`[Latency] Vision LLM: ${Date.now() - visionStartAt}ms`);
 
       // Check for actual silence tokens FIRST
       if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length < 2) {
@@ -439,6 +441,7 @@ Keep it natural and brief — 1 sentence.`
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reaction }));
 
       // TTS pipeline
+      const visionTtsStart = Date.now();
       state = "speaking";
       ws.send(JSON.stringify({ type: "state_speaking" }));
       ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -465,6 +468,8 @@ Keep it natural and brief — 1 sentence.`
       } catch (ttsErr) {
         console.error("[Vision Reaction TTS] Pipeline error:", ttsErr);
       } finally {
+        console.log(`[Latency] Vision TTS: ${Date.now() - visionTtsStart}ms`);
+        console.log(`[Latency] Vision total: ${Date.now() - visionStartAt}ms`);
         ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
         state = "listening";
         ws.send(JSON.stringify({ type: "state_listening" }));
@@ -1002,12 +1007,14 @@ Keep it natural and brief — 1 sentence.`
           // --- L2: Load persistent memories for ALL users (signed-in AND guests) ---
           if (userId) {
             try {
+              const memLoadStart = Date.now();
               const memoryBlock = await loadUserMemories(prisma, userId);
               if (memoryBlock) {
                 chatHistory.push({ role: "system", content: memoryBlock });
                 console.log(
                   `[Memory] Loaded ${memoryBlock.length} chars of persistent memory for ${isGuest ? 'guest' : 'user'} ${userId}`
                 );
+                console.log(`[Latency] Memory load: ${Date.now() - memLoadStart}ms (${memoryBlock.length} chars)`);
               }
             } catch (err) {
               console.error(
@@ -1323,6 +1330,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             console.log(`[Opener] User type: ${userType}, hasMemories: ${hasMemories}`);
 
             try {
+              const openerStart = Date.now();
               state = "thinking";
               ws.send(JSON.stringify({ type: "state_thinking" }));
 
@@ -1342,6 +1350,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               });
 
               let openerText = completion.choices[0]?.message?.content?.trim() || "";
+              console.log(`[Latency] Opener LLM: ${Date.now() - openerStart}ms`);
               if (!openerText || openerText.length < 3 || clientDisconnected) return;
 
               // Detect emotion and strip any accidental tags before TTS
@@ -1356,6 +1365,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               ws.send(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
 
               // --- TTS pipeline for opener ---
+              const openerTtsStart = Date.now();
               state = "speaking";
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -1379,6 +1389,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 });
               }
 
+              console.log(`[Latency] Opener TTS: ${Date.now() - openerTtsStart}ms`);
+              console.log(`[Latency] Opener total: ${Date.now() - openerStart}ms`);
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
               state = "listening";
               ws.send(JSON.stringify({ type: "state_listening" }));
@@ -1444,6 +1456,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           }
 
           lastEouTime = now; // Record this EOU time for debouncing
+          const eouReceivedAt = Date.now();
+          console.log(`[Latency] EOU received | transcript ready: ${currentTurnTranscript.trim().length} chars (streaming STT)`);
           turnCount++;
           silenceInitiatedLast = false; // User spoke, allow future silence initiation
           lastUserSpokeTimestamp = Date.now();
@@ -1518,6 +1532,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             // Update rolling summary via cheap LLM call
             try {
+              const contextStart = Date.now();
               const summaryResp = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
@@ -1540,6 +1555,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               console.log(
                 `[Memory:L1] Updated summary (${conversationSummary.length} chars)`
               );
+              console.log(`[Latency] Context compression: ${Date.now() - contextStart}ms (${chatHistory.length} msgs)`);
             } catch (err) {
               console.error(
                 "[Memory:L1] Summary failed:",
@@ -1580,6 +1596,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           }
 
           let llmResponse = "";
+          const llmStartAt = Date.now();
           try {
             // Step 1: Check for tool calls with a non-streaming request
             const initialCompletion = await openai.chat.completions.create({
@@ -1623,10 +1640,14 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               // No tool calls on first try — use this response directly
               // (skip the streaming call since we already have the answer)
               llmResponse = initialMessage.content || "";
+              const llmDoneAt = Date.now();
+              console.log(`[Latency] LLM total: ${llmDoneAt - llmStartAt}ms (${llmResponse.length} chars)`);
 
               // Detect emotion and strip any accidental tags before TTS
               llmResponse = stripEmotionTags(llmResponse);
+              const emotionStart = Date.now();
               const emotionDirect = detectEmotion(llmResponse);
+              console.log(`[Latency] Emotion detection: ${Date.now() - emotionStart}ms → ${emotionDirect}`);
               ws.send(JSON.stringify({ type: "expression", expression: emotionDirect }));
               console.log(`[Expression] ${emotionDirect}`);
 
@@ -1656,6 +1677,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               // BEFORE any binary TTS audio frames are sent
               await new Promise(resolve => setImmediate(resolve));
 
+              const ttsStartAt = Date.now();
+              let ttsFirstChunkLogged = false;
               try {
                 // Split on sentence-ending punctuation followed by space+uppercase
                 // Preserves ALL text — no silent drops like .match() had
@@ -1666,7 +1689,14 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   await new Promise<void>((resolve) => {
                     console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
                     const tts = new AzureTTSStreamer(currentVoiceConfig);
-                    tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                    tts.on("audio_chunk", (chunk: Buffer) => {
+                      if (!ttsFirstChunkLogged) {
+                        ttsFirstChunkLogged = true;
+                        console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartAt}ms`);
+                        console.log(`[Latency] E2E (EOU → first audio): ${Date.now() - eouReceivedAt}ms`);
+                      }
+                      ws.send(chunk);
+                    });
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
                       console.error(`[TTS] ❌ Tool-call chunk failed: "${trimmed}"`, err);
@@ -1678,6 +1708,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               } catch (ttsErr) {
                 console.error("[TTS] Fatal error in TTS pipeline:", ttsErr);
               } finally {
+                const ttsTotal = Date.now() - ttsStartAt;
+                const e2eTotal = Date.now() - eouReceivedAt;
+                console.log(`[Latency] TTS total: ${ttsTotal}ms`);
+                console.log(`[Latency Summary] LLM: ${llmDoneAt - llmStartAt}ms | TTS: ${ttsTotal}ms | E2E: ${e2eTotal}ms`);
                 ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
                 currentTurnTranscript = "";
                 currentInterimTranscript = "";
@@ -1707,6 +1741,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             // BEFORE any binary TTS audio frames are sent
             await new Promise(resolve => setImmediate(resolve));
 
+            const streamLlmStart = Date.now();
+            let streamFirstTokenLogged = false;
+            let streamTtsFirstChunkLogged = false;
+            let streamTtsStartedAt = 0;
             try {
               const stream = await openai.chat.completions.create({
                 model: OPENAI_MODEL,
@@ -1722,10 +1760,18 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               let fullResponse = "";
 
               const speakSentence = async (text: string) => {
+                if (!streamTtsStartedAt) streamTtsStartedAt = Date.now();
                 await new Promise<void>((resolve) => {
                   console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
                   const tts = new AzureTTSStreamer(currentVoiceConfig);
-                  tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+                  tts.on("audio_chunk", (chunk: Buffer) => {
+                    if (!streamTtsFirstChunkLogged) {
+                      streamTtsFirstChunkLogged = true;
+                      console.log(`[Latency] TTS first audio (streamed): ${Date.now() - streamTtsStartedAt}ms`);
+                      console.log(`[Latency] E2E (EOU → first audio, streamed): ${Date.now() - eouReceivedAt}ms`);
+                    }
+                    ws.send(chunk);
+                  });
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {
                     console.error(`[TTS] ❌ Stream chunk failed: "${text}"`, err);
@@ -1737,6 +1783,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
               for await (const chunk of stream) {
                 const delta = chunk.choices[0]?.delta?.content || "";
+                if (delta && !streamFirstTokenLogged) {
+                  streamFirstTokenLogged = true;
+                  console.log(`[Latency] LLM first token (streamed): ${Date.now() - streamLlmStart}ms`);
+                }
                 sentenceBuffer += delta;
                 fullResponse += delta;
 
@@ -1760,6 +1810,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 }
               }
 
+              console.log(`[Latency] LLM total (streamed): ${Date.now() - streamLlmStart}ms (${fullResponse.length} chars)`);
               llmResponse = fullResponse;
               // Detect emotion from the full streamed response and strip tags
               llmResponse = stripEmotionTags(llmResponse);
@@ -1785,6 +1836,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             } catch (ttsErr) {
               console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
             } finally {
+              const streamTtsTotal = streamTtsStartedAt ? Date.now() - streamTtsStartedAt : 0;
+              const streamE2e = Date.now() - eouReceivedAt;
+              console.log(`[Latency] TTS total (streamed): ${streamTtsTotal}ms`);
+              console.log(`[Latency Summary] E2E: ${streamE2e}ms (streamed path with tool calls)`);
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
               currentTurnTranscript = "";
               currentInterimTranscript = "";

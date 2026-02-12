@@ -879,8 +879,8 @@ Keep it natural and brief — 1 sentence.`
 
   // --- CONTEXT MANAGEMENT CONSTANTS ---
   const MAX_RECENT_MESSAGES = 10;
-  const SUMMARIZE_THRESHOLD = 14;
-  const MESSAGES_TO_SUMMARIZE = 4;
+  const SUMMARIZE_THRESHOLD = 20;
+  const MESSAGES_TO_SUMMARIZE = 6;
 
   // --- USAGE TRACKING ---
   const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
@@ -1441,6 +1441,13 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               return;
             }
 
+            // Forced max-utterance EOUs with no transcript are background noise
+            if (controlMessage.forced) {
+              console.log("[EOU] Ignoring forced max-utterance EOU — no speech detected.");
+              state = "listening";
+              return;
+            }
+
             consecutiveEmptyEOUs++;
             console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
             state = "listening"; // Reset state — don't get stuck in "thinking"
@@ -1508,351 +1515,302 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             chatHistory.push({ role: "user", content: userMessage });
           }
 
-          // --- CONTEXT MANAGEMENT (Sliding Window + Rolling Summary / L1) ---
-          // Count non-system messages
+          // --- CONTEXT MANAGEMENT (Sliding Window — non-blocking) ---
+          // Immediate truncation: drop oldest non-system messages if over threshold.
+          // The LLM summary runs in the background AFTER the response is sent.
           const nonSystemCount = chatHistory.filter(m => m.role !== "system").length;
 
           if (nonSystemCount > SUMMARIZE_THRESHOLD) {
-            // Find first non-system message index
             let firstMsgIdx = chatHistory.findIndex(m => m.role !== "system");
-
-            // Skip summary message if it exists
             if (
               typeof chatHistory[firstMsgIdx]?.content === "string" &&
               (chatHistory[firstMsgIdx].content as string).startsWith("[CONVERSATION SO FAR]")
             ) {
               firstMsgIdx++;
             }
-
-            // Gather messages to compress
+            // Snapshot messages to compress (for deferred summary)
             const toCompress = chatHistory.slice(firstMsgIdx, firstMsgIdx + MESSAGES_TO_SUMMARIZE);
-            const messagesText = toCompress
-              .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
-              .join("\n");
-
-            // Update rolling summary via cheap LLM call
-            try {
-              const contextStart = Date.now();
-              const summaryResp = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                  {
-                    role: "system",
-                    content:
-                      "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise.",
-                  },
-                  {
-                    role: "user",
-                    content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${messagesText}\n\nUpdated summary:`,
-                  },
-                ],
-                max_tokens: 200,
-                temperature: 0.3,
-              });
-
-              conversationSummary =
-                summaryResp.choices[0]?.message?.content || conversationSummary;
-              console.log(
-                `[Memory:L1] Updated summary (${conversationSummary.length} chars)`
-              );
-              console.log(`[Latency] Context compression: ${Date.now() - contextStart}ms (${chatHistory.length} msgs)`);
-            } catch (err) {
-              console.error(
-                "[Memory:L1] Summary failed:",
-                (err as Error).message
-              );
-            }
-
-            // Remove compressed messages
+            // Immediately remove old messages so the LLM call below uses a trimmed context
             chatHistory.splice(firstMsgIdx, MESSAGES_TO_SUMMARIZE);
+            console.log(`[Context] Truncated ${MESSAGES_TO_SUMMARIZE} oldest messages (${chatHistory.length} remain). Summary deferred.`);
 
-            // Insert/update summary message (right after system messages, before conversation)
-            const summaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
-            const existingSummaryIdx = chatHistory.findIndex(
-              m =>
-                typeof m.content === "string" &&
-                (m.content as string).startsWith("[CONVERSATION SO FAR]")
-            );
+            // Fire-and-forget: update rolling summary in the background
+            (async () => {
+              try {
+                const contextStart = Date.now();
+                const messagesText = toCompress
+                  .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
+                  .join("\n");
+                const summaryResp = await openai.chat.completions.create({
+                  model: "gpt-4o-mini",
+                  messages: [
+                    { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
+                    { role: "user", content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${messagesText}\n\nUpdated summary:` },
+                  ],
+                  max_tokens: 200,
+                  temperature: 0.3,
+                });
+                conversationSummary = summaryResp.choices[0]?.message?.content || conversationSummary;
+                console.log(`[Memory:L1] Background summary updated (${conversationSummary.length} chars, ${Date.now() - contextStart}ms)`);
 
-            if (existingSummaryIdx >= 0) {
-              chatHistory[existingSummaryIdx] = {
-                role: "system",
-                content: summaryContent,
-              };
-            } else {
-              // Insert after all system messages but before first user/assistant message
-              const insertAt = chatHistory.filter(
-                m => m.role === "system"
-              ).length;
-              chatHistory.splice(insertAt, 0, {
-                role: "system",
-                content: summaryContent,
-              });
-            }
-
-            console.log(
-              `[Context] Compressed history. ${chatHistory.length} messages in context.`
-            );
+                // Insert/update summary message
+                const summaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
+                const existingSummaryIdx = chatHistory.findIndex(
+                  m => typeof m.content === "string" && (m.content as string).startsWith("[CONVERSATION SO FAR]")
+                );
+                if (existingSummaryIdx >= 0) {
+                  chatHistory[existingSummaryIdx] = { role: "system", content: summaryContent };
+                } else {
+                  const insertAt = chatHistory.filter(m => m.role === "system").length;
+                  chatHistory.splice(insertAt, 0, { role: "system", content: summaryContent });
+                }
+              } catch (err) {
+                console.error("[Memory:L1] Background summary failed:", (err as Error).message);
+              }
+            })();
           }
 
           let llmResponse = "";
           const llmStartAt = Date.now();
           try {
-            // Step 1: Check for tool calls with a non-streaming request
-            const initialCompletion = await openai.chat.completions.create({
+            // Single streaming call with tools — auto-detects tool calls vs content.
+            // If the model calls a tool, we accumulate chunks, handle it, then do a
+            // follow-up streaming call. If it responds with content, TTS starts on the
+            // first complete sentence — cutting perceived latency nearly in half.
+            const mainStream = await openai.chat.completions.create({
               model: OPENAI_MODEL,
               messages: getMessagesWithTimeContext(),
               tools: tools,
               tool_choice: "auto",
+              stream: true,
               temperature: 0.85,
               max_tokens: 300,
               frequency_penalty: 0.3,
               presence_penalty: 0.2,
             });
 
-            const initialMessage = initialCompletion.choices[0]?.message;
+            // --- Shared state for streaming ---
+            let sentenceBuffer = "";
+            let fullResponse = "";
+            let ttsStarted = false;
+            let ttsFirstChunkLogged = false;
+            let ttsStartedAt = 0;
+            let firstTokenLogged = false;
 
-            if (initialMessage?.tool_calls) {
-              // Handle tool calls (existing logic)
-              chatHistory.push(initialMessage);
-              for (const toolCall of initialMessage.tool_calls) {
-                if (toolCall.function.name === "update_viewing_context") {
-                  const args = JSON.parse(toolCall.function.arguments);
-                  viewingContext = args.context;
-                  console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
-                  const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
-                  if (systemMsg) {
-                    let content = systemMsg.content as string;
-                    const contextMarker = "\n\n[CURRENT CONTEXT]:";
-                    if (content.includes(contextMarker)) {
-                      content = content.split(contextMarker)[0];
-                    }
-                    systemMsg.content = content + `${contextMarker} ${viewingContext}`;
+            // --- Tool call accumulation ---
+            let hasToolCalls = false;
+            const toolCallAccum: Record<number, { id: string; name: string; arguments: string }> = {};
+
+            const speakSentence = async (text: string) => {
+              if (!ttsStartedAt) ttsStartedAt = Date.now();
+              await new Promise<void>((resolve) => {
+                console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
+                const tts = new AzureTTSStreamer(currentVoiceConfig);
+                tts.on("audio_chunk", (chunk: Buffer) => {
+                  if (!ttsFirstChunkLogged) {
+                    ttsFirstChunkLogged = true;
+                    console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartedAt}ms`);
+                    console.log(`[Latency] E2E (EOU → first audio): ${Date.now() - eouReceivedAt}ms`);
                   }
-                  chatHistory.push({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: `Context updated to: ${viewingContext}`,
-                  });
+                  ws.send(chunk);
+                });
+                tts.on("tts_complete", () => resolve());
+                tts.on("error", (err: Error) => {
+                  console.error(`[TTS] ❌ Stream chunk failed: "${text}"`, err);
+                  resolve();
+                });
+                tts.synthesize(text);
+              });
+            };
+
+            for await (const chunk of mainStream) {
+              const delta = chunk.choices[0]?.delta;
+
+              // --- Tool call path: accumulate fragments ---
+              if (delta?.tool_calls) {
+                hasToolCalls = true;
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index;
+                  if (!toolCallAccum[idx]) {
+                    toolCallAccum[idx] = { id: "", name: "", arguments: "" };
+                  }
+                  if (tc.id) toolCallAccum[idx].id = tc.id;
+                  if (tc.function?.name) toolCallAccum[idx].name = tc.function.name;
+                  if (tc.function?.arguments) toolCallAccum[idx].arguments += tc.function.arguments;
                 }
-              }
-            } else if (initialMessage && !initialMessage.tool_calls) {
-              // No tool calls on first try — use this response directly
-              // (skip the streaming call since we already have the answer)
-              llmResponse = initialMessage.content || "";
-              const llmDoneAt = Date.now();
-              console.log(`[Latency] LLM total: ${llmDoneAt - llmStartAt}ms (${llmResponse.length} chars)`);
-
-              // Detect emotion and strip any accidental tags before TTS
-              llmResponse = stripEmotionTags(llmResponse);
-              const emotionStart = Date.now();
-              const emotionDirect = detectEmotion(llmResponse);
-              console.log(`[Latency] Emotion detection: ${Date.now() - emotionStart}ms → ${emotionDirect}`);
-              ws.send(JSON.stringify({ type: "expression", expression: emotionDirect }));
-              console.log(`[Expression] ${emotionDirect}`);
-
-              chatHistory.push({ role: "assistant", content: llmResponse });
-              advanceTimePhase(llmResponse);
-
-              // Vision response length safety net
-              if (visionActive && llmResponse.length > 150) {
-                const userAskedQuestion = /\?$|\bwhat\b|\bwhy\b|\bhow\b|\bwho\b|\bwhere\b|\bwhen\b|\bdo you\b|\bcan you\b|\btell me\b/i.test(userMessage);
-                if (!userAskedQuestion) {
-                  console.log(`[Vision] Warning: Long response during co-watching: ${llmResponse.length} chars`);
-                }
+                continue;
               }
 
-              console.log(`[AI RESPONSE]: "${llmResponse}"`);
-              lastKiraSpokeTimestamp = Date.now();
-              if (visionActive) rescheduleVisionReaction();
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
-              
+              // --- Content path: stream to TTS ---
+              const content = delta?.content || "";
+              if (!content) continue;
+
+              if (!firstTokenLogged) {
+                firstTokenLogged = true;
+                console.log(`[Latency] LLM first token: ${Date.now() - llmStartAt}ms`);
+              }
+
+              // Lazily initialize TTS pipeline on first content delta
+              if (!ttsStarted) {
+                ttsStarted = true;
+                if (silenceTimer) clearTimeout(silenceTimer);
+                state = "speaking";
+                ws.send(JSON.stringify({ type: "state_speaking" }));
+                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                await new Promise(resolve => setImmediate(resolve));
+              }
+
+              sentenceBuffer += content;
+              fullResponse += content;
+
+              // Flush complete sentences to TTS immediately
+              const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
+              if (match) {
+                const sentence = match[1].trim();
+                sentenceBuffer = sentenceBuffer.slice(match[0].length);
+                if (sentence.length > 0) {
+                  console.log(`[TTS] Streaming sentence: "${sentence}"`);
+                  await speakSentence(sentence);
+                }
+              }
+            }
+
+            // --- After stream ends: handle tool calls or finalize content ---
+            if (hasToolCalls) {
+              // Process accumulated tool calls
+              const toolCallsArray = Object.values(toolCallAccum);
+              chatHistory.push({
+                role: "assistant",
+                content: null,
+                tool_calls: toolCallsArray.map(tc => ({
+                  id: tc.id,
+                  type: "function" as const,
+                  function: { name: tc.name, arguments: tc.arguments },
+                })),
+              });
+
+              for (const tc of toolCallsArray) {
+                if (tc.name === "update_viewing_context") {
+                  try {
+                    const args = JSON.parse(tc.arguments);
+                    viewingContext = args.context;
+                    console.log(`[Context] Updated viewing context to: "${viewingContext}"`);
+                    const systemMsg = chatHistory[0] as OpenAI.Chat.ChatCompletionSystemMessageParam;
+                    if (systemMsg) {
+                      let sysContent = systemMsg.content as string;
+                      const contextMarker = "\n\n[CURRENT CONTEXT]:";
+                      if (sysContent.includes(contextMarker)) {
+                        sysContent = sysContent.split(contextMarker)[0];
+                      }
+                      systemMsg.content = sysContent + `${contextMarker} ${viewingContext}`;
+                    }
+                    chatHistory.push({
+                      role: "tool",
+                      tool_call_id: tc.id,
+                      content: `Context updated to: ${viewingContext}`,
+                    });
+                  } catch (parseErr) {
+                    console.error("[Tool] Failed to parse tool args:", parseErr);
+                  }
+                }
+              }
+
+              // Follow-up streaming call after tool processing (tools omitted to prevent chaining)
               if (silenceTimer) clearTimeout(silenceTimer);
               state = "speaking";
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-              // Yield one event-loop tick so the WebSocket control frames
-              // (state_speaking, tts_chunk_starts) are flushed to the client
-              // BEFORE any binary TTS audio frames are sent
               await new Promise(resolve => setImmediate(resolve));
 
-              const ttsStartAt = Date.now();
-              let ttsFirstChunkLogged = false;
               try {
-                // Split on sentence-ending punctuation followed by space+uppercase
-                // Preserves ALL text — no silent drops like .match() had
-                const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
-                for (const sentence of sentences) {
-                  const trimmed = sentence.trim();
-                  if (trimmed.length === 0) continue;
-                  await new Promise<void>((resolve) => {
-                    console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
-                    const tts = new AzureTTSStreamer(currentVoiceConfig);
-                    tts.on("audio_chunk", (chunk: Buffer) => {
-                      if (!ttsFirstChunkLogged) {
-                        ttsFirstChunkLogged = true;
-                        console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartAt}ms`);
-                        console.log(`[Latency] E2E (EOU → first audio): ${Date.now() - eouReceivedAt}ms`);
-                      }
-                      ws.send(chunk);
-                    });
-                    tts.on("tts_complete", () => resolve());
-                    tts.on("error", (err: Error) => {
-                      console.error(`[TTS] ❌ Tool-call chunk failed: "${trimmed}"`, err);
-                      resolve();
-                    });
-                    tts.synthesize(trimmed);
-                  });
-                }
-              } catch (ttsErr) {
-                console.error("[TTS] Fatal error in TTS pipeline:", ttsErr);
-              } finally {
-                const ttsTotal = Date.now() - ttsStartAt;
-                const e2eTotal = Date.now() - eouReceivedAt;
-                console.log(`[Latency] TTS total: ${ttsTotal}ms`);
-                console.log(`[Latency Summary] LLM: ${llmDoneAt - llmStartAt}ms | TTS: ${ttsTotal}ms | E2E: ${e2eTotal}ms`);
-                ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-                currentTurnTranscript = "";
-                currentInterimTranscript = "";
-                transcriptClearedAt = Date.now();
-                state = "listening";
-                ws.send(JSON.stringify({ type: "state_listening" }));
-                console.log("[STATE] Back to listening, transcripts cleared.");
-                resetSilenceTimer();
-              }
-              
-              // Skip the streaming path below
-              return;
-            }
-
-            // Step 2: Streaming LLM call (only reached if tool calls were processed)
-            // NOTE: This is an intentional second LLM call. After processing tool calls (e.g.
-            // update_viewing_context), we need a fresh completion that incorporates the tool
-            // results. Tools are omitted here to prevent infinite chaining. Adds ~1-2s latency
-            // on tool-call turns only (which are infrequent).
-            if (silenceTimer) clearTimeout(silenceTimer);
-            state = "speaking";
-            ws.send(JSON.stringify({ type: "state_speaking" }));
-            ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-
-            // Yield one event-loop tick so the WebSocket control frames
-            // (state_speaking, tts_chunk_starts) are flushed to the client
-            // BEFORE any binary TTS audio frames are sent
-            await new Promise(resolve => setImmediate(resolve));
-
-            const streamLlmStart = Date.now();
-            let streamFirstTokenLogged = false;
-            let streamTtsFirstChunkLogged = false;
-            let streamTtsStartedAt = 0;
-            try {
-              const stream = await openai.chat.completions.create({
-                model: OPENAI_MODEL,
-                messages: getMessagesWithTimeContext(),
-                stream: true,
-                temperature: 0.85,
-                max_tokens: 300,
-                frequency_penalty: 0.3,
-                presence_penalty: 0.2,
-              });
-
-              let sentenceBuffer = "";
-              let fullResponse = "";
-
-              const speakSentence = async (text: string) => {
-                if (!streamTtsStartedAt) streamTtsStartedAt = Date.now();
-                await new Promise<void>((resolve) => {
-                  console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
-                  const tts = new AzureTTSStreamer(currentVoiceConfig);
-                  tts.on("audio_chunk", (chunk: Buffer) => {
-                    if (!streamTtsFirstChunkLogged) {
-                      streamTtsFirstChunkLogged = true;
-                      console.log(`[Latency] TTS first audio (streamed): ${Date.now() - streamTtsStartedAt}ms`);
-                      console.log(`[Latency] E2E (EOU → first audio, streamed): ${Date.now() - eouReceivedAt}ms`);
-                    }
-                    ws.send(chunk);
-                  });
-                  tts.on("tts_complete", () => resolve());
-                  tts.on("error", (err: Error) => {
-                    console.error(`[TTS] ❌ Stream chunk failed: "${text}"`, err);
-                    resolve();
-                  });
-                  tts.synthesize(text);
+                const followUpStream = await openai.chat.completions.create({
+                  model: OPENAI_MODEL,
+                  messages: getMessagesWithTimeContext(),
+                  stream: true,
+                  temperature: 0.85,
+                  max_tokens: 300,
+                  frequency_penalty: 0.3,
+                  presence_penalty: 0.2,
                 });
-              };
 
-              for await (const chunk of stream) {
-                const delta = chunk.choices[0]?.delta?.content || "";
-                if (delta && !streamFirstTokenLogged) {
-                  streamFirstTokenLogged = true;
-                  console.log(`[Latency] LLM first token (streamed): ${Date.now() - streamLlmStart}ms`);
-                }
-                sentenceBuffer += delta;
-                fullResponse += delta;
-
-                // Split on sentence-ending punctuation followed by space+uppercase or end
-                const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
-                if (match) {
-                  const sentence = match[1].trim();
-                  sentenceBuffer = sentenceBuffer.slice(match[0].length);
-                  if (sentence.length > 0) {
-                    console.log(`[TTS] Streaming sentence: "${sentence}"`);
-                    await speakSentence(sentence);
+                for await (const chunk of followUpStream) {
+                  const content = chunk.choices[0]?.delta?.content || "";
+                  if (!content) continue;
+                  if (!firstTokenLogged) {
+                    firstTokenLogged = true;
+                    console.log(`[Latency] LLM first token (tool follow-up): ${Date.now() - llmStartAt}ms`);
+                  }
+                  sentenceBuffer += content;
+                  fullResponse += content;
+                  const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
+                  if (match) {
+                    const sentence = match[1].trim();
+                    sentenceBuffer = sentenceBuffer.slice(match[0].length);
+                    if (sentence.length > 0) {
+                      console.log(`[TTS] Streaming sentence: "${sentence}"`);
+                      await speakSentence(sentence);
+                    }
                   }
                 }
+              } catch (followErr) {
+                console.error("[Pipeline] Tool follow-up streaming error:", (followErr as Error).message);
               }
+            }
 
-              // Flush remaining text (strip any accidental tags from final chunk)
-              if (sentenceBuffer.trim().length > 0) {
-                const cleanFinal = stripEmotionTags(sentenceBuffer.trim());
-                if (cleanFinal.length > 0) {
-                  await speakSentence(cleanFinal);
-                }
+            // Flush remaining sentence buffer
+            if (sentenceBuffer.trim().length > 0) {
+              // Initialize TTS pipeline if nothing was spoken yet (very short response)
+              if (!ttsStarted) {
+                ttsStarted = true;
+                if (silenceTimer) clearTimeout(silenceTimer);
+                state = "speaking";
+                ws.send(JSON.stringify({ type: "state_speaking" }));
+                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                await new Promise(resolve => setImmediate(resolve));
               }
+              const cleanFinal = stripEmotionTags(sentenceBuffer.trim());
+              if (cleanFinal.length > 0) {
+                await speakSentence(cleanFinal);
+              }
+            }
 
-              console.log(`[Latency] LLM total (streamed): ${Date.now() - streamLlmStart}ms (${fullResponse.length} chars)`);
-              llmResponse = fullResponse;
-              // Detect emotion from the full streamed response and strip tags
-              llmResponse = stripEmotionTags(llmResponse);
-              const emotionStreamed = detectEmotion(llmResponse);
-              ws.send(JSON.stringify({ type: "expression", expression: emotionStreamed }));
-              console.log(`[Expression] ${emotionStreamed}`);
+            const llmDoneAt = Date.now();
+            console.log(`[Latency] LLM total: ${llmDoneAt - llmStartAt}ms (${fullResponse.length} chars)`);
+            llmResponse = stripEmotionTags(fullResponse);
 
+            // Detect emotion from the full response
+            const emotion = detectEmotion(llmResponse);
+            ws.send(JSON.stringify({ type: "expression", expression: emotion }));
+            console.log(`[Expression] ${emotion}`);
+
+            if (llmResponse.trim().length > 0) {
               chatHistory.push({ role: "assistant", content: llmResponse });
               advanceTimePhase(llmResponse);
-
-              // Vision response length safety net
-              if (visionActive && llmResponse.length > 150) {
-                const userAskedQuestion = /\?$|\bwhat\b|\bwhy\b|\bhow\b|\bwho\b|\bwhere\b|\bwhen\b|\bdo you\b|\bcan you\b|\btell me\b/i.test(userMessage);
-                if (!userAskedQuestion) {
-                  console.log(`[Vision] Warning: Long response during co-watching: ${llmResponse.length} chars`);
-                }
-              }
-
-              console.log(`[AI RESPONSE]: "${llmResponse}"`);
-              lastKiraSpokeTimestamp = Date.now();
-              if (visionActive) rescheduleVisionReaction();
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
-            } catch (ttsErr) {
-              console.error("[TTS] Fatal error in streaming TTS pipeline:", ttsErr);
-            } finally {
-              const streamTtsTotal = streamTtsStartedAt ? Date.now() - streamTtsStartedAt : 0;
-              const streamE2e = Date.now() - eouReceivedAt;
-              console.log(`[Latency] TTS total (streamed): ${streamTtsTotal}ms`);
-              console.log(`[Latency Summary] E2E: ${streamE2e}ms (streamed path with tool calls)`);
-              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-              currentTurnTranscript = "";
-              currentInterimTranscript = "";
-              transcriptClearedAt = Date.now();
-              state = "listening";
-              ws.send(JSON.stringify({ type: "state_listening" }));
-              console.log("[STATE] Back to listening, transcripts cleared.");
-              resetSilenceTimer();
             }
+
+            // Vision response length safety net
+            if (visionActive && llmResponse.length > 150) {
+              const userAskedQuestion = /\?$|\bwhat\b|\bwhy\b|\bhow\b|\bwho\b|\bwhere\b|\bwhen\b|\bdo you\b|\bcan you\b|\btell me\b/i.test(userMessage);
+              if (!userAskedQuestion) {
+                console.log(`[Vision] Warning: Long response during co-watching: ${llmResponse.length} chars`);
+              }
+            }
+
+            console.log(`[AI RESPONSE]: "${llmResponse}"`);
+            lastKiraSpokeTimestamp = Date.now();
+            if (visionActive) rescheduleVisionReaction();
+            ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+
+            // Latency summary
+            const ttsTotal = ttsStartedAt ? Date.now() - ttsStartedAt : 0;
+            const e2eTotal = Date.now() - eouReceivedAt;
+            console.log(`[Latency] TTS total: ${ttsTotal}ms`);
+            console.log(`[Latency Summary] LLM: ${llmDoneAt - llmStartAt}ms | TTS: ${ttsTotal}ms | E2E: ${e2eTotal}ms`);
 
           } catch (err) {
             console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
-            // Ensure client always returns to listening state on any error
+          } finally {
+            // Always return to listening state and clean up
             try {
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
             } catch (_) { /* ws may be closed */ }
@@ -1863,7 +1821,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             try {
               ws.send(JSON.stringify({ type: "state_listening" }));
             } catch (_) { /* ws may be closed */ }
-            console.log("[STATE] Back to listening after error, transcripts cleared.");
+            console.log("[STATE] Back to listening, transcripts cleared.");
+            resetSilenceTimer();
           }
         } else if (controlMessage.type === "interrupt") {
           // Interrupt disabled — too sensitive (desk taps, coughs break conversation)
@@ -2043,7 +2002,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
           chatHistory.push({ role: "user", content: userMessage });
 
-          // --- CONTEXT MANAGEMENT (reuse same rolling summary logic) ---
+          // --- CONTEXT MANAGEMENT (non-blocking — same as voice EOU path) ---
           const txtNonSystemCount = chatHistory.filter(m => m.role !== "system").length;
           if (txtNonSystemCount > SUMMARIZE_THRESHOLD) {
             let txtFirstMsgIdx = chatHistory.findIndex(m => m.role !== "system");
@@ -2054,34 +2013,39 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               txtFirstMsgIdx++;
             }
             const txtToCompress = chatHistory.slice(txtFirstMsgIdx, txtFirstMsgIdx + MESSAGES_TO_SUMMARIZE);
-            const txtMessagesText = txtToCompress
-              .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
-              .join("\n");
-            try {
-              const txtSummaryResp = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                  { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
-                  { role: "user", content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${txtMessagesText}\n\nUpdated summary:` },
-                ],
-                max_tokens: 200,
-                temperature: 0.3,
-              });
-              conversationSummary = txtSummaryResp.choices[0]?.message?.content || conversationSummary;
-            } catch (err) {
-              console.error("[Memory:L1] Text chat summary failed:", (err as Error).message);
-            }
             chatHistory.splice(txtFirstMsgIdx, MESSAGES_TO_SUMMARIZE);
-            const txtSummaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
-            const txtExistingSummaryIdx = chatHistory.findIndex(
-              m => typeof m.content === "string" && (m.content as string).startsWith("[CONVERSATION SO FAR]")
-            );
-            if (txtExistingSummaryIdx >= 0) {
-              chatHistory[txtExistingSummaryIdx] = { role: "system", content: txtSummaryContent };
-            } else {
-              const txtInsertAt = chatHistory.filter(m => m.role === "system").length;
-              chatHistory.splice(txtInsertAt, 0, { role: "system", content: txtSummaryContent });
-            }
+            console.log(`[Context] Text chat: truncated ${MESSAGES_TO_SUMMARIZE} oldest messages. Summary deferred.`);
+
+            // Fire-and-forget background summary
+            (async () => {
+              try {
+                const txtMessagesText = txtToCompress
+                  .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
+                  .join("\n");
+                const txtSummaryResp = await openai.chat.completions.create({
+                  model: "gpt-4o-mini",
+                  messages: [
+                    { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
+                    { role: "user", content: `Existing summary:\n${conversationSummary || "(start of conversation)"}\n\nNew messages:\n${txtMessagesText}\n\nUpdated summary:` },
+                  ],
+                  max_tokens: 200,
+                  temperature: 0.3,
+                });
+                conversationSummary = txtSummaryResp.choices[0]?.message?.content || conversationSummary;
+                const txtSummaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
+                const txtExistingSummaryIdx = chatHistory.findIndex(
+                  m => typeof m.content === "string" && (m.content as string).startsWith("[CONVERSATION SO FAR]")
+                );
+                if (txtExistingSummaryIdx >= 0) {
+                  chatHistory[txtExistingSummaryIdx] = { role: "system", content: txtSummaryContent };
+                } else {
+                  const txtInsertAt = chatHistory.filter(m => m.role === "system").length;
+                  chatHistory.splice(txtInsertAt, 0, { role: "system", content: txtSummaryContent });
+                }
+              } catch (err) {
+                console.error("[Memory:L1] Text chat background summary failed:", (err as Error).message);
+              }
+            })();
           }
 
           try {

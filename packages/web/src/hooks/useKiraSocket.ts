@@ -807,7 +807,7 @@ export const useKiraSocket = (token: string, guestId: string, voicePreference: s
                       eouSentAt.current = Date.now();
                       firstAudioLogged.current = false;
                       console.log(`[Latency] EOU sent at ${eouSentAt.current}`);
-                      ws.current.send(JSON.stringify({ type: "eou" }));
+                      ws.current.send(JSON.stringify({ type: "eou", forced: true }));
                     }
                     if (eouTimer.current) clearTimeout(eouTimer.current);
                     eouTimer.current = null;

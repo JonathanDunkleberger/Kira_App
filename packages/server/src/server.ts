@@ -310,7 +310,7 @@ Keep it natural and brief — 1 sentence.`
             });
             tts.on("tts_complete", () => resolve());
             tts.on("error", (err: Error) => {
-              console.error("[Vision Reaction TTS] Error:", err);
+              console.error(`[Vision Reaction TTS] ❌ Chunk failed: "${trimmed}"`, err);
               resolve();
             });
             tts.synthesize(trimmed);
@@ -485,7 +485,7 @@ Keep it natural and brief — 1 sentence.`
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
-                console.error("[TTS] Sentence error:", err);
+                console.error(`[TTS] ❌ Silence chunk failed: "${trimmed}"`, err);
                 resolve();
               });
               tts.synthesize(trimmed);
@@ -558,7 +558,7 @@ Keep it natural and brief — 1 sentence.`
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
-            console.error("[TTS] Sentence error:", err);
+            console.error(`[TTS] ❌ Chunk failed: "${trimmed}"`, err);
             resolve();
           });
           tts.synthesize(trimmed);
@@ -662,7 +662,7 @@ Keep it natural and brief — 1 sentence.`
             });
             tts.on("tts_complete", () => resolve());
             tts.on("error", (err: Error) => {
-              console.error("[Goodbye TTS] Error:", err);
+              console.error(`[Goodbye TTS] ❌ Chunk failed: "${trimmed}"`, err);
               resolve();
             });
             tts.synthesize(trimmed);
@@ -1169,7 +1169,7 @@ Keep it natural and brief — 1 sentence.`
                   });
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {
-                    console.error("[Opener TTS] Sentence error:", err);
+                    console.error(`[Opener TTS] ❌ Chunk failed: "${trimmed}"`, err);
                     resolve();
                   });
                   tts.synthesize(trimmed);
@@ -1456,7 +1456,7 @@ Keep it natural and brief — 1 sentence.`
                     tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
-                      console.error("[TTS] Sentence error:", err);
+                      console.error(`[TTS] ❌ Tool-call chunk failed: "${trimmed}"`, err);
                       resolve();
                     });
                     tts.synthesize(trimmed);
@@ -1515,7 +1515,7 @@ Keep it natural and brief — 1 sentence.`
                   tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {
-                    console.error("[TTS] Sentence error:", err);
+                    console.error(`[TTS] ❌ Stream chunk failed: "${text}"`, err);
                     resolve();
                   });
                   tts.synthesize(text);
@@ -1708,7 +1708,7 @@ Keep it natural and brief — 1 sentence.`
                     });
                     tts.on("tts_complete", () => resolve());
                     tts.on("error", (err: Error) => {
-                      console.error("[Scene TTS] Error:", err);
+                      console.error(`[Scene TTS] ❌ Chunk failed: "${trimmed}"`, err);
                       resolve();
                     });
                     tts.synthesize(trimmed);

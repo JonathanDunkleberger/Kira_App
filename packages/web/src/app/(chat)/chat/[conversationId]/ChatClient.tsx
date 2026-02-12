@@ -5,10 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useKiraSocket } from "@/hooks/useKiraSocket";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, MessageSquare, Sparkles } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
-import TextInput from "@/components/TextInput";
 import { getOrCreateGuestId } from "@/lib/guestId";
 import { getVoicePreference, setVoicePreference, VoicePreference } from "@/lib/voicePreference";
 import { KiraLogo } from "@/components/KiraLogo";
@@ -29,7 +28,6 @@ export default function ChatClient() {
   const [hoverRating, setHoverRating] = useState(0);
   const [guestId, setGuestId] = useState("");
   const [voicePreference, setVoicePref] = useState<VoicePreference>("anime");
-  const [showChat, setShowChat] = useState(false);
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
@@ -48,16 +46,7 @@ export default function ChatClient() {
       setGuestId(getOrCreateGuestId());
     }
     setVoicePref(getVoicePreference());
-    if (typeof window !== 'undefined') {
-      setShowChat(localStorage.getItem('kira-show-chat') === 'true');
-    }
   }, [userId]);
-
-  const toggleChat = () => {
-    const next = !showChat;
-    setShowChat(next);
-    localStorage.setItem('kira-show-chat', String(next));
-  };
 
   const { 
     connect, 
@@ -66,8 +55,6 @@ export default function ChatClient() {
     socketState, 
     kiraState, 
     micVolume, 
-    transcript,
-    sendText,
     error,
     sendVoiceChange,
     isAudioBlocked, 
@@ -371,9 +358,9 @@ export default function ChatClient() {
         isPro={isPro}
       />
 
-      {/* Main Content Area — orb/avatar anchored at center, transcript below it */}
+      {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto">
-        {/* Visual — absolutely centered, not affected by transcript content */}
+        {/* Visual — absolutely centered */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 100 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined }}>
             {visualMode === "avatar" ? (
@@ -408,74 +395,51 @@ export default function ChatClient() {
           </div>
         </div>
 
-        {/* Transcript — bottom-center with blur pill */}
-        {showChat && (
-          <div
-            className="absolute"
-            style={{
-              bottom: 140,
-              left: "50%",
-              transform: "translateX(-50%)",
-              maxWidth: 500,
-              width: "90%",
-              textAlign: "center",
-            }}
-          >
-            {error && error !== "limit_reached" && (
-              <div className="mb-4 p-3 rounded relative" style={{
-                background: "rgba(200,55,55,0.15)",
-                border: "1px solid rgba(200,55,55,0.3)",
-                color: "rgba(255,120,120,0.9)",
-              }}>
-                <span className="block sm:inline">{error}</span>
-              </div>
-            )}
-            {transcript ? (
-              <div
-                className="flex items-center justify-center"
-                style={{
-                  background: "rgba(0, 0, 0, 0.15)",
-                  backdropFilter: "blur(8px)",
-                  WebkitBackdropFilter: "blur(8px)",
-                  borderRadius: 12,
-                  padding: "8px 16px",
-                  border: "1px solid rgba(255, 255, 255, 0.06)",
-                }}
-              >
-                <p
-                  className="text-center text-sm leading-relaxed m-0 animate-[fadeIn_0.4s_ease]"
-                  style={{
-                    color: transcript.role === "ai"
-                      ? "rgba(139,157,195,0.9)"
-                      : "rgba(201,209,217,0.7)",
-                    fontWeight: transcript.role === "ai" ? 400 : 300,
-                    fontStyle: transcript.role === "user" ? "italic" : "normal",
-                  }}
-                >
-                  {transcript.text}
-                  {transcript.role === "user" && kiraState === "listening" && (
-                    <span className="animate-pulse">|</span>
-                  )}
-                </p>
-              </div>
-            ) : null}
-          </div>
-        )}
+        {/* Speaking / Listening indicator */}
+        <div
+          className="absolute"
+          style={{
+            bottom: 140,
+            left: "50%",
+            transform: "translateX(-50%)",
+            textAlign: "center",
+          }}
+        >
+          {error && error !== "limit_reached" && error !== "limit_reached_pro" && (
+            <div className="mb-4 p-3 rounded relative" style={{
+              background: "rgba(200,55,55,0.15)",
+              border: "1px solid rgba(200,55,55,0.3)",
+              color: "rgba(255,120,120,0.9)",
+            }}>
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+          {socketState === "connected" && (
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 300,
+                letterSpacing: "0.08em",
+                color: isAudioPlaying
+                  ? "rgba(139,157,195,0.55)"
+                  : kiraState === "thinking"
+                    ? "rgba(139,157,195,0.35)"
+                    : "rgba(201,209,217,0.3)",
+                fontFamily: "'DM Sans', sans-serif",
+                margin: 0,
+                transition: "color 0.4s ease",
+              }}
+            >
+              {isAudioPlaying ? "speaking" : kiraState === "thinking" ? "thinking" : "listening"}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* ─── Bottom Area: Text Chat + Input + Controls ─── */}
+      {/* ─── Bottom Area: Controls ─── */}
       <div
         className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
       >
-        {/* Text Input — only visible when chat is toggled on */}
-        {showChat && (
-          <TextInput
-            onSend={sendText}
-            disabled={socketState !== "connected"}
-            kiraState={kiraState}
-          />
-        )}
-
         {/* Voice Controls */}
         <div className="flex items-center gap-4 relative z-[1]">
         {/* Avatar/Orb Toggle */}
@@ -489,19 +453,6 @@ export default function ChatClient() {
           title={visualMode === "avatar" ? "Switch to Orb" : "Switch to Avatar"}
         >
           <Sparkles size={18} />
-        </button>
-
-        {/* Chat Toggle Button */}
-        <button
-          onClick={toggleChat}
-          className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
-          style={{
-            background: showChat ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
-            color: showChat ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
-          }}
-          title={showChat ? "Hide transcript" : "Show transcript"}
-        >
-          <MessageSquare size={18} />
         </button>
 
         {/* Vision Button */}

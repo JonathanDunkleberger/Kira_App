@@ -583,11 +583,13 @@ export default function HomePage() {
                 {
                   icon: (
                     <>
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
                     </>
                   ),
-                  title: "Text When You Can\u2019t Talk",
-                  desc: "At work? Roommate sleeping? Switch to text and the conversation keeps going. Same personality, same memory.",
+                  title: "Voice Only",
+                  desc: "No text box, no typing. Just talk. Kira listens in real time and responds naturally — like a phone call, not a chat window.",
                 },
                 {
                   icon: (

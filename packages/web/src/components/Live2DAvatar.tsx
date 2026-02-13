@@ -106,11 +106,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         if (destroyed || !containerRef.current) return;
 
-        // Detect mobile — force DPR 1 to avoid GPU memory issues
-        // (iPhones cap WebGL textures at 4096px; 8192 textures + 3x DPR = crash)
+        // Detect mobile for antialias toggle
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Cap resolution: 1 on mobile (GPU memory), max 2 on desktop
-        const resolution = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+        // Cap resolution at 2× — sharp on Retina/mobile without blowing GPU memory
+        const resolution = Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {

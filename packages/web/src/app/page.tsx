@@ -1078,26 +1078,23 @@ export default function HomePage() {
       {/*  FOOTER                                                 */}
       {/* ═══════════════════════════════════════════════════════ */}
       <footer
+        className="kira-footer"
         style={{
           padding: "24px 16px",
           borderTop: "1px solid rgba(255,255,255,0.03)",
           maxWidth: 900,
           margin: "0 auto",
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center",
         }}
       >
-        <span style={{ justifySelf: "start", fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
+        <span className="kira-footer-copy" style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
           © {new Date().getFullYear()} Kira AI
         </span>
-        <span style={{ justifySelf: "center", fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300 }}>
+        <span className="kira-footer-legal" style={{ fontSize: 11, color: "rgba(201,209,217,0.2)", fontWeight: 300, textAlign: "center" }}>
           By using our services, you agree to Kira&apos;s{' '}
           <Link href="/terms" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Terms of Use</Link>
           {' '}and{' '}
           <Link href="/privacy" style={{ color: "rgba(201,209,217,0.3)", textDecoration: "underline" }}>Privacy Policy</Link>.
         </span>
-        <span />{/* empty right column to balance the grid */}
       </footer>
 
       {/* Keyframe animations */}
@@ -1137,6 +1134,24 @@ export default function HomePage() {
         }
         html {
           scroll-behavior: smooth;
+        }
+        /* Footer: 3-col grid on desktop, stacked centered on mobile */
+        .kira-footer {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+        }
+        .kira-footer-copy { justify-self: start; }
+        .kira-footer-legal { justify-self: center; }
+        @media (max-width: 767px) {
+          .kira-footer {
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+            gap: 8px;
+          }
+          .kira-footer-copy { justify-self: auto; }
+          .kira-footer-legal { justify-self: auto; }
         }
       `}</style>
     </div>

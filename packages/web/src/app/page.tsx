@@ -401,7 +401,7 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease 0.15s both",
               }}
             >
-              Talk to someone, not something. A real-time voice companion who remembers your conversations, reacts to what you say, and actually has opinions.
+              Talk to someone, not something. Real-time voice. Real memory. Real personality.
             </p>
           </>
         )}

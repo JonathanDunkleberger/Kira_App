@@ -88,6 +88,22 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       modelRef.current = null;
     }
 
+    // Aggressively reclaim orphaned WebGL contexts (iOS limits to ~2 total)
+    const container = containerRef.current;
+    if (container) {
+      const oldCanvases = container.querySelectorAll("canvas");
+      oldCanvases.forEach(c => {
+        try {
+          const gl = c.getContext("webgl2") || c.getContext("webgl");
+          if (gl) {
+            const ext = gl.getExtension("WEBGL_lose_context");
+            if (ext) ext.loseContext();
+          }
+        } catch {}
+        c.remove();
+      });
+    }
+
     initializedRef.current = true;
 
     let destroyed = false;
@@ -106,10 +122,18 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         if (destroyed || !containerRef.current) return;
 
-        // Detect mobile for antialias toggle
+        // Detect mobile / iOS for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Cap resolution at 2× — sharp on Retina/mobile without blowing GPU memory
-        const resolution = Math.min(window.devicePixelRatio || 1, 2);
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        // iOS WebKit strictly limits WebGL contexts + VRAM — force DPR 1 for reliability.
+        // Android & desktop get DPR capped at 2 for sharpness.
+        const resolution = isIOS ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+
+        // On mobile, let the browser reclaim GPU resources before we allocate
+        if (isMobile) {
+          await new Promise(r => setTimeout(r, 300));
+          if (destroyed || !containerRef.current) return;
+        }
 
         let app: InstanceType<typeof PIXI.Application>;
         try {
@@ -314,6 +338,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         modelRef.current = null;
       }
       if (appRef.current) {
+        // Explicitly lose WebGL context so iOS can reclaim the slot
+        try {
+          const canvas = appRef.current.view as unknown as HTMLCanvasElement;
+          const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+          if (gl) {
+            const ext = gl.getExtension("WEBGL_lose_context");
+            if (ext) ext.loseContext();
+          }
+        } catch {}
         try {
           appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
         } catch (e) {

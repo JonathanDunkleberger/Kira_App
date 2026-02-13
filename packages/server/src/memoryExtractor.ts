@@ -263,6 +263,25 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
     console.log(
       `[Memory] Extracted and saved ${savedCount} facts for user ${userId}.`
     );
+
+    // --- Memory cap: prune oldest low-weight facts if over 200 ---
+    const MAX_MEMORY_FACTS = 200;
+    const totalFacts = await prisma.memoryFact.count({ where: { userId } });
+    if (totalFacts > MAX_MEMORY_FACTS) {
+      const excess = totalFacts - MAX_MEMORY_FACTS;
+      const toDelete = await prisma.memoryFact.findMany({
+        where: { userId },
+        orderBy: [{ emotionalWeight: "asc" }, { createdAt: "asc" }],
+        take: excess,
+        select: { id: true },
+      });
+      if (toDelete.length > 0) {
+        await prisma.memoryFact.deleteMany({
+          where: { id: { in: toDelete.map(f => f.id) } },
+        });
+        console.log(`[Memory] Pruned ${toDelete.length} low-weight facts (cap: ${MAX_MEMORY_FACTS})`);
+      }
+    }
   } catch (err) {
     console.error("[Memory] Extraction failed:", (err as Error).message);
     // Non-fatal — conversation still works without memory save

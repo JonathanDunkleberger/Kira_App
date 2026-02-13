@@ -95,7 +95,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       oldCanvases.forEach(c => {
         try {
           const gl = c.getContext("webgl2") || c.getContext("webgl");
-          if (gl) {
+          if (gl && !gl.isContextLost()) {
             const ext = gl.getExtension("WEBGL_lose_context");
             if (ext) ext.loseContext();
           }
@@ -342,7 +342,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         try {
           const canvas = appRef.current.view as unknown as HTMLCanvasElement;
           const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-          if (gl) {
+          if (gl && !gl.isContextLost()) {
             const ext = gl.getExtension("WEBGL_lose_context");
             if (ext) ext.loseContext();
           }

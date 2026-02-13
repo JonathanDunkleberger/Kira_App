@@ -1,6 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "./prismaClient.js";
 
 function getCurrentMonth(): string {
   return new Date().toISOString().slice(0, 7); // "YYYY-MM"

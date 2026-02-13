@@ -2,7 +2,7 @@ import { WebSocketServer } from "ws";
 import type { IncomingMessage } from "http";
 import { createServer } from "http";
 import { URL } from "url";
-import { PrismaClient } from "@prisma/client";
+import prisma from "./prismaClient.js";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
@@ -136,11 +136,10 @@ function detectEmotion(text: string): string {
 }
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
-const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const server = createServer((req, res) => {
-  if (req.url === "/health") {
+  if (req.url === "/health" || req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("ok");
     return;
@@ -149,7 +148,7 @@ const server = createServer((req, res) => {
   // --- Guest buffer retrieval endpoint (called by Clerk webhook) ---
   if (req.url?.startsWith("/api/guest-buffer/") && req.method === "DELETE") {
     const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${process.env.INTERNAL_API_SECRET}`) {
+    if (!process.env.INTERNAL_API_SECRET || authHeader !== `Bearer ${process.env.INTERNAL_API_SECRET}`) {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Unauthorized" }));
       return;
@@ -170,18 +169,35 @@ const server = createServer((req, res) => {
   res.writeHead(404);
   res.end();
 });
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 5 * 1024 * 1024 });
+
+  // --- Per-IP connection tracking ---
+  const connectionsPerIp = new Map<string, number>();
+  const MAX_CONNECTIONS_PER_IP = 5;
 
   console.log("[Server] Starting...");
 
 wss.on("connection", (ws: any, req: IncomingMessage) => {
+  // --- PER-IP CONNECTION LIMIT ---
+  const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+  const currentCount = connectionsPerIp.get(clientIp) || 0;
+  if (currentCount >= MAX_CONNECTIONS_PER_IP) {
+    console.warn(`[WS] Rejected connection from ${clientIp} — ${currentCount} active connections`);
+    ws.close(1008, "Too many connections");
+    return;
+  }
+  connectionsPerIp.set(clientIp, currentCount + 1);
+
   // --- ORIGIN VALIDATION ---
   const origin = req.headers.origin;
   const allowedOrigins = [
     "https://www.xoxokira.com",
     "https://xoxokira.com",
-    "http://localhost:3000",
   ];
+  // Allow localhost only in development
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push("http://localhost:3000");
+  }
 
   if (origin && !allowedOrigins.includes(origin)) {
     console.warn(`[WS] Rejected connection from origin: ${origin}`);
@@ -193,7 +209,15 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   const url = new URL(req.url!, `wss://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const guestId = url.searchParams.get("guestId");
-  const voicePreference = url.searchParams.get("voice") || "anime";
+
+  // Validate guestId format (must be guest_<uuid>)
+  if (guestId && !/^guest_[a-f0-9-]{36}$/.test(guestId)) {
+    console.warn(`[Auth] Rejected invalid guestId format: ${guestId}`);
+    ws.close(1008, "Invalid guest ID format");
+    return;
+  }
+
+  const voicePreference = (url.searchParams.get("voice") === "natural" ? "natural" : "anime") as "anime" | "natural";
 
   // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
   const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
@@ -264,8 +288,64 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let messageCount = 0;
   const messageCountResetInterval = setInterval(() => { messageCount = 0; }, 1000);
 
+  // --- LLM CALL RATE LIMITING (prevent abuse via rapid EOU/text_message spam) ---
+  const LLM_MAX_CALLS_PER_MINUTE = 12;
+  let llmCallCount = 0;
+  const llmRateLimitInterval = setInterval(() => { llmCallCount = 0; }, 60000);
+
   // --- 2. PIPELINE SETUP ---
-  let state = "listening";
+  let state: string = "listening";
+  let stateTimeoutTimer: NodeJS.Timeout | null = null;
+  let pendingEOU: string | null = null;
+
+  function setState(newState: string) {
+    state = newState;
+
+    // Clear any existing safety timer
+    if (stateTimeoutTimer) { clearTimeout(stateTimeoutTimer); stateTimeoutTimer = null; }
+
+    // If not listening, set a 30s safety timeout
+    if (newState !== "listening") {
+      stateTimeoutTimer = setTimeout(() => {
+        console.error(`[STATE] ⚠️ Safety timeout! Stuck in "${state}" for 30s. Forcing reset to listening.`);
+        state = "listening";
+        stateTimeoutTimer = null;
+        // Notify client so UI stays in sync
+        try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
+        // Process any queued EOU
+        if (pendingEOU) {
+          const queued = pendingEOU;
+          pendingEOU = null;
+          console.log(`[EOU] Processing queued EOU after safety timeout: "${queued}"`);
+          processEOU(queued);
+        }
+      }, 30000);
+    } else {
+      // Returning to listening — check for pending EOUs
+      if (pendingEOU) {
+        const queued = pendingEOU;
+        pendingEOU = null;
+        console.log(`[EOU] Processing queued EOU: "${queued}"`);
+        // Use setImmediate to avoid re-entrancy
+        setImmediate(() => processEOU(queued));
+      }
+    }
+  }
+
+  /** Re-inject a queued EOU transcript into the pipeline by simulating an eou message. */
+  function processEOU(transcript: string) {
+    if (state !== "listening") {
+      console.warn(`[EOU] processEOU called but state is "${state}". Re-queuing.`);
+      pendingEOU = transcript;
+      return;
+    }
+    // Set the transcript so the EOU handler picks it up
+    currentTurnTranscript = transcript;
+    currentInterimTranscript = "";
+    // Emit a synthetic EOU message through the ws handler
+    ws.emit("message", Buffer.from(JSON.stringify({ type: "eou" })), false);
+  }
+
   let sttStreamer: DeepgramSTTStreamer | null = null;
   let currentTurnTranscript = "";
   let currentInterimTranscript = "";
@@ -332,6 +412,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       console.log("[Vision Reaction] Skipping — state is:", state);
       return;
     }
+    // Note: vision reactions use state directly for local checks but setState() for transitions
     if (clientDisconnected) {
       console.log("[Vision Reaction] Skipping — client disconnected.");
       return;
@@ -339,7 +420,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     if (!latestImages || latestImages.length === 0) {
       console.log(`[Vision Reaction] Skipping — no images in buffer. Last image received: ${lastImageTimestamp ? new Date(lastImageTimestamp).toISOString() : "never"}`);
       // Retry sooner — periodic captures should fill the buffer shortly
-      state = "listening";
+      setState("listening");
       if (visionActive && !clientDisconnected) {
         if (visionReactionTimer) clearTimeout(visionReactionTimer);
         visionReactionTimer = setTimeout(async () => {
@@ -357,7 +438,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
     console.log("[Vision Reaction] Timer fired. Generating reaction...");
     const visionStartAt = Date.now();
-    state = "thinking";
+    setState("thinking");
 
     const firstReactionExtra = isFirstVisionReaction
       ? `\nThis is the FIRST moment you're seeing their screen. React with excitement about what you see — acknowledge that you can see it and comment on something specific. Examples:
@@ -368,7 +449,9 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 Keep it natural and brief — 1 sentence.`
       : "";
 
-    const reactionImageContent: OpenAI.Chat.ChatCompletionContentPart[] = latestImages.map((img) => ({
+    // Cap at 2 most recent images for vision reactions to reduce latency
+    const reactionImages = latestImages!.slice(-2);
+    const reactionImageContent: OpenAI.Chat.ChatCompletionContentPart[] = reactionImages.map((img) => ({
       type: "image_url" as const,
       image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
     }));
@@ -401,7 +484,7 @@ Keep it natural and brief — 1 sentence.`
       if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length < 2) {
         console.log(`[Vision Reaction] LLM explicitly chose silence. Raw: "${reaction}"`);
         console.log("[Vision Reaction] Scheduling retry in 30-45 seconds instead of full cooldown.");
-        state = "listening";
+        setState("listening");
 
         // Don't wait the full 75-120s — retry sooner since we got silence
         if (visionActive && !clientDisconnected) {
@@ -442,7 +525,7 @@ Keep it natural and brief — 1 sentence.`
 
       // TTS pipeline
       const visionTtsStart = Date.now();
-      state = "speaking";
+      setState("speaking");
       ws.send(JSON.stringify({ type: "state_speaking" }));
       ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
       await new Promise(resolve => setImmediate(resolve));
@@ -471,12 +554,12 @@ Keep it natural and brief — 1 sentence.`
         console.log(`[Latency] Vision TTS: ${Date.now() - visionTtsStart}ms`);
         console.log(`[Latency] Vision total: ${Date.now() - visionStartAt}ms`);
         ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-        state = "listening";
+        setState("listening");
         ws.send(JSON.stringify({ type: "state_listening" }));
       }
     } catch (err) {
       console.error("[Vision Reaction] Error:", (err as Error).message);
-      state = "listening";
+      setState("listening");
     }
   }
 
@@ -585,7 +668,7 @@ Keep it natural and brief — 1 sentence.`
       }
 
       silenceInitiatedLast = true;
-      state = "thinking"; // Lock state IMMEDIATELY to prevent race condition
+      setState("thinking"); // Lock state IMMEDIATELY to prevent race condition
       if (silenceTimer) clearTimeout(silenceTimer); // Clear self
 
       console.log(`[Silence] User has been quiet. Checking if Kira has something to say.${visionActive ? ' (vision mode)' : ''}`);
@@ -639,7 +722,7 @@ Keep it natural and brief — 1 sentence.`
         // Don't reschedule vision timer from silence checker — these are separate systems
         ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
 
-        state = "speaking";
+        setState("speaking");
         ws.send(JSON.stringify({ type: "state_speaking" }));
         ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
@@ -668,7 +751,7 @@ Keep it natural and brief — 1 sentence.`
           currentTurnTranscript = "";
           currentInterimTranscript = "";
           transcriptClearedAt = Date.now();
-          state = "listening";
+          setState("listening");
           ws.send(JSON.stringify({ type: "state_listening" }));
           // Do NOT reset silence timer here — Kira gets ONE unprompted turn.
           // Only the user speaking again (eou/text_message) resets it.
@@ -688,7 +771,7 @@ Keep it natural and brief — 1 sentence.`
   async function runKiraTurn() {
     let llmResponse = "";
     if (silenceTimer) clearTimeout(silenceTimer);
-    state = "speaking";
+    setState("speaking");
     ws.send(JSON.stringify({ type: "state_speaking" }));
     ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
     await new Promise(resolve => setImmediate(resolve));
@@ -747,7 +830,7 @@ Keep it natural and brief — 1 sentence.`
       currentTurnTranscript = "";
       currentInterimTranscript = "";
       transcriptClearedAt = Date.now();
-      state = "listening";
+      setState("listening");
       ws.send(JSON.stringify({ type: "state_listening" }));
       resetSilenceTimer();
     }
@@ -828,7 +911,7 @@ Keep it natural and brief — 1 sentence.`
         chatHistory.push({ role: "assistant", content: finalGoodbye });
         ws.send(JSON.stringify({ type: "transcript", role: "ai", text: finalGoodbye }));
 
-        state = "speaking";
+        setState("speaking");
         ws.send(JSON.stringify({ type: "state_speaking" }));
         ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
@@ -1331,7 +1414,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             try {
               const openerStart = Date.now();
-              state = "thinking";
+              setState("thinking");
               ws.send(JSON.stringify({ type: "state_thinking" }));
 
               const openerMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -1366,7 +1449,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
               // --- TTS pipeline for opener ---
               const openerTtsStart = Date.now();
-              state = "speaking";
+              setState("speaking");
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
               await new Promise(resolve => setImmediate(resolve));
@@ -1392,7 +1475,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               console.log(`[Latency] Opener TTS: ${Date.now() - openerTtsStart}ms`);
               console.log(`[Latency] Opener total: ${Date.now() - openerStart}ms`);
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-              state = "listening";
+              setState("listening");
               ws.send(JSON.stringify({ type: "state_listening" }));
               turnCount++; // Count the opener as a turn
               resetSilenceTimer();
@@ -1401,7 +1484,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               startComfortProgression(ws);
             } catch (err) {
               console.error("[Opener] Error:", (err as Error).message);
-              state = "listening";
+              setState("listening");
               ws.send(JSON.stringify({ type: "state_listening" }));
             }
           }, 500);
@@ -1419,11 +1502,19 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           }
 
           if (state !== "listening" || !sttStreamer) {
+            // Queue the EOU if we have a transcript, so it's not silently dropped
+            const queuedTranscript = (currentTurnTranscript.trim() || currentInterimTranscript.trim());
+            if (queuedTranscript) {
+              console.warn(`[EOU] Received while in "${state}" state. Queuing for when ready.`);
+              pendingEOU = queuedTranscript;
+              currentTurnTranscript = "";
+              currentInterimTranscript = "";
+            }
             return; // Already thinking/speaking
           }
 
           // CRITICAL: Lock state IMMEDIATELY to prevent audio from leaking into next turn
-          state = "thinking";
+          setState("thinking");
           if (silenceTimer) clearTimeout(silenceTimer);
 
           // If no final transcript, immediately use interim (no waiting needed)
@@ -1437,20 +1528,20 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             // If vision is active, silently ignore empty EOUs (likely screen share noise)
             if (visionActive) {
               console.log("[EOU] Ignoring empty EOU during vision session (likely screen share noise).");
-              state = "listening";
+              setState("listening");
               return;
             }
 
             // Forced max-utterance EOUs with no transcript are background noise
             if (controlMessage.forced) {
               console.log("[EOU] Ignoring forced max-utterance EOU — no speech detected.");
-              state = "listening";
+              setState("listening");
               return;
             }
 
             consecutiveEmptyEOUs++;
             console.log(`[EOU] No transcript available (${consecutiveEmptyEOUs} consecutive empty EOUs), ignoring EOU.`);
-            state = "listening"; // Reset state — don't get stuck in "thinking"
+            setState("listening"); // Reset state — don't get stuck in "thinking"
 
             if (consecutiveEmptyEOUs >= 4 &&
                 (Date.now() - lastTranscriptReceivedAt > 30000)) {
@@ -1464,6 +1555,15 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
           lastEouTime = now; // Record this EOU time for debouncing
           const eouReceivedAt = Date.now();
+
+          // LLM rate limit check
+          llmCallCount++;
+          if (llmCallCount > LLM_MAX_CALLS_PER_MINUTE) {
+            console.warn(`[RateLimit] LLM call rate exceeded (${llmCallCount}/${LLM_MAX_CALLS_PER_MINUTE}/min). Dropping EOU.`);
+            setState("listening");
+            return;
+          }
+
           console.log(`[Latency] EOU received | transcript ready: ${currentTurnTranscript.trim().length} chars (streaming STT)`);
           turnCount++;
           silenceInitiatedLast = false; // User spoke, allow future silence initiation
@@ -1477,7 +1577,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           // Content-based dedup: reject if identical to last processed message
           if (userMessage === lastProcessedTranscript) {
             console.log(`[EOU] Ignoring duplicate transcript: "${userMessage}"`);
-            state = "listening";
+            setState("listening");
             return;
           }
           lastProcessedTranscript = userMessage;
@@ -1489,13 +1589,15 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           // Check if we have a recent image (within last 10 seconds)
           const imageCheckTime = Date.now();
           if (latestImages && latestImages.length > 0 && (imageCheckTime - lastImageTimestamp < 10000)) {
-            console.log(`[Vision] Attaching ${latestImages.length} images to user message.`);
+            // Cap at 2 most recent images to reduce vision LLM latency
+            const imagesToSend = latestImages.slice(-2);
+            console.log(`[Vision] Attaching ${imagesToSend.length} images to user message (${latestImages.length} in buffer).`);
             
             const content: OpenAI.Chat.ChatCompletionContentPart[] = [
                 { type: "text", text: userMessage }
             ];
 
-            latestImages.forEach((img) => {
+            imagesToSend.forEach((img) => {
                 content.push({
                     type: "image_url",
                     image_url: {
@@ -1657,7 +1759,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               if (!ttsStarted) {
                 ttsStarted = true;
                 if (silenceTimer) clearTimeout(silenceTimer);
-                state = "speaking";
+                setState("speaking");
                 ws.send(JSON.stringify({ type: "state_speaking" }));
                 ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
@@ -1727,7 +1829,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
               // Follow-up streaming call after tool processing (tools omitted to prevent chaining)
               if (silenceTimer) clearTimeout(silenceTimer);
-              state = "speaking";
+              setState("speaking");
               ws.send(JSON.stringify({ type: "state_speaking" }));
               ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
               await new Promise(resolve => setImmediate(resolve));
@@ -1779,7 +1881,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               if (!ttsStarted) {
                 ttsStarted = true;
                 if (silenceTimer) clearTimeout(silenceTimer);
-                state = "speaking";
+                setState("speaking");
                 ws.send(JSON.stringify({ type: "state_speaking" }));
                 ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
@@ -1835,7 +1937,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             currentTurnTranscript = "";
             currentInterimTranscript = "";
             transcriptClearedAt = Date.now();
-            state = "listening";
+            setState("listening");
             try {
               ws.send(JSON.stringify({ type: "state_listening" }));
             } catch (_) { /* ws may be closed */ }
@@ -1850,8 +1952,13 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array
           if (controlMessage.images && Array.isArray(controlMessage.images)) {
-             console.log(`[Vision] Received ${controlMessage.images.length} images. Updating buffer.`);
-             latestImages = controlMessage.images;
+             // Validate & cap incoming images
+             const validImages = controlMessage.images
+               .filter((img: unknown) => typeof img === "string" && img.length < 2_000_000)
+               .slice(0, 5);
+             if (validImages.length === 0) return;
+             console.log(`[Vision] Received ${validImages.length} images (${controlMessage.images.length} sent). Updating buffer.`);
+             latestImages = validImages;
              lastImageTimestamp = Date.now();
              if (!visionActive) {
                visionActive = true;
@@ -1859,7 +1966,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                startVisionReactionTimer();
              }
              lastVisionTimestamp = Date.now();
-          } else if (controlMessage.image) {
+          } else if (controlMessage.image && typeof controlMessage.image === "string" && controlMessage.image.length < 2_000_000) {
             console.log("[Vision] Received single image snapshot. Updating buffer.");
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
@@ -1871,6 +1978,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             lastVisionTimestamp = Date.now();
           }
         } else if (controlMessage.type === "scene_update" && controlMessage.images && Array.isArray(controlMessage.images)) {
+          // Validate & cap scene update images
+          const validSceneImages = controlMessage.images
+            .filter((img: unknown) => typeof img === "string" && img.length < 2_000_000)
+            .slice(0, 5);
           // Scene updates also confirm vision is active
           if (!visionActive) {
             visionActive = true;
@@ -1878,8 +1989,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             startVisionReactionTimer();
           }
           // Also update latestImages so the buffer stays fresh during silent watching
-          if (controlMessage.images.length > 0) {
-            latestImages = controlMessage.images;
+          if (validSceneImages.length > 0) {
+            latestImages = validSceneImages;
             lastImageTimestamp = Date.now();
           }
           lastVisionTimestamp = Date.now();
@@ -1899,7 +2010,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             lastSceneReactionTime = now;
             console.log(`[Scene] Evaluating scene reaction (watching: ${viewingContext})`);
 
-            const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = controlMessage.images.map((img: string) => ({
+            const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = validSceneImages.map((img: string) => ({
               type: "image_url" as const,
               image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
             }));
@@ -1958,7 +2069,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
 
                 // TTS pipeline for scene reaction
-                state = "speaking";
+                setState("speaking");
                 ws.send(JSON.stringify({ type: "state_speaking" }));
                 ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
@@ -1982,14 +2093,14 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 }
 
                 ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-                state = "listening";
+                setState("listening");
                 ws.send(JSON.stringify({ type: "state_listening" }));
                 resetSilenceTimer();
               } catch (err) {
                 console.error("[Scene] Reaction error:", (err as Error).message);
                 // Ensure state is restored on error
-                if (state === "speaking") {
-                  state = "listening";
+                if ((state as string) === "speaking") {
+                  setState("listening");
                   try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
                 }
               }
@@ -2011,11 +2122,18 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           if (state !== "listening") return;
           if (silenceTimer) clearTimeout(silenceTimer);
 
-          const userMessage = controlMessage.text?.trim();
+          const userMessage = typeof controlMessage.text === "string" ? controlMessage.text.trim() : "";
           if (!userMessage || userMessage.length === 0) return;
           if (userMessage.length > 2000) return; // Prevent abuse
 
-          state = "thinking";
+          // LLM rate limit check
+          llmCallCount++;
+          if (llmCallCount > LLM_MAX_CALLS_PER_MINUTE) {
+            console.warn(`[RateLimit] LLM call rate exceeded (${llmCallCount}/${LLM_MAX_CALLS_PER_MINUTE}/min). Dropping text_message.`);
+            return;
+          }
+
+          setState("thinking");
           ws.send(JSON.stringify({ type: "state_thinking" }));
 
           chatHistory.push({ role: "user", content: userMessage });
@@ -2127,7 +2245,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             console.error("[TextChat] Error:", (err as Error).message);
             ws.send(JSON.stringify({ type: "error", message: "Failed to get response" }));
           } finally {
-            state = "listening";
+            setState("listening");
             ws.send(JSON.stringify({ type: "state_listening" }));
             turnCount++;
             silenceInitiatedLast = false; // User spoke, allow future silence initiation
@@ -2156,8 +2274,15 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
   ws.on("close", async (code: number) => {
     console.log(`[WS] Client disconnected. Code: ${code}`);
     clientDisconnected = true;
+
+    // Decrement per-IP connection count
+    const ipCount = connectionsPerIp.get(clientIp) || 1;
+    if (ipCount <= 1) connectionsPerIp.delete(clientIp);
+    else connectionsPerIp.set(clientIp, ipCount - 1);
+
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
+    clearInterval(llmRateLimitInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -2297,6 +2422,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
     clientDisconnected = true;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
+    clearInterval(llmRateLimitInterval);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);

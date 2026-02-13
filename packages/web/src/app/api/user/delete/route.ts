@@ -2,14 +2,6 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
-import { createClient } from "@supabase/supabase-js";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
 
 export async function DELETE() {
   try {
@@ -35,26 +27,12 @@ export async function DELETE() {
       console.error("[DELETE_ACCOUNT] Stripe cancellation failed (continuing):", stripeErr);
     }
 
-    // --- 2. Delete from Supabase (pro_usage + guest_usage) ---
-    // These tables are outside Prisma and won't cascade.
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        // Delete pro usage record (keyed by clerk_id)
-        const { error: proErr } = await supabase
-          .from("pro_usage")
-          .delete()
-          .eq("clerk_id", userId);
-        if (proErr) console.error("[DELETE_ACCOUNT] pro_usage delete failed:", proErr.message);
-        else console.log(`[DELETE_ACCOUNT] Deleted pro_usage for ${userId}`);
-
-        // Note: guest_usage is keyed by guest_id (e.g. "guest_abc123"), not clerkId.
-        // We can't reliably map clerkId → guestId here. Guest usage rows are
-        // low-sensitivity (just a counter) and expire daily, so this is acceptable.
-        // If the client passes guestId in the future, we can clean that too.
-      } catch (supaErr) {
-        console.error("[DELETE_ACCOUNT] Supabase cleanup failed (continuing):", supaErr);
-      }
+    // --- 2. Clean up usage records via Prisma ---
+    try {
+      await prisma.monthlyUsage.deleteMany({ where: { userId } });
+      console.log(`[DELETE_ACCOUNT] Deleted MonthlyUsage for ${userId}`);
+    } catch (usageErr) {
+      console.error("[DELETE_ACCOUNT] MonthlyUsage cleanup failed (continuing):", usageErr);
     }
 
     // --- 3. Delete from Prisma (User + cascaded Conversations, Messages, MemoryFacts) ---

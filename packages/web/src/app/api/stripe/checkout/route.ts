@@ -1,10 +1,23 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 
+const ALLOWED_ORIGINS = [
+  "https://www.xoxokira.com",
+  "https://xoxokira.com",
+  ...(process.env.NODE_ENV !== "production" ? ["http://localhost:3000"] : []),
+];
+
 export async function POST(req: Request) {
   try {
+    // CSRF protection: verify the request originates from our own site
+    const origin = headers().get("origin");
+    if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+
     const { userId } = auth();
     const user = await currentUser();
 
@@ -82,9 +95,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("[STRIPE_CHECKOUT]", error);
-    if (error instanceof Error) {
-        return new NextResponse(`Internal Error: ${error.message}`, { status: 500 });
-    }
     return new NextResponse("Internal Error", { status: 500 });
   }
 }

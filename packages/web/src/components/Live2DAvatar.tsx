@@ -125,9 +125,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         // Detect mobile / iOS for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        // iOS WebKit strictly limits WebGL contexts + VRAM — force DPR 1 for reliability.
-        // Android & desktop get DPR capped at 2 for sharpness.
-        const resolution = isIOS ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+        // iOS: 1.5 balances sharpness vs VRAM (was 1, too blurry on 3x screens).
+        // Android/desktop: cap at 2.
+        const resolution = isIOS ? 1.5 : Math.min(window.devicePixelRatio || 1, 2);
 
         // On mobile, let the browser reclaim GPU resources before we allocate
         if (isMobile) {

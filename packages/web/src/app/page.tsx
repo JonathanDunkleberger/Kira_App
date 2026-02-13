@@ -333,6 +333,9 @@ export default function HomePage() {
           {/* Subtle glow behind character */}
           <div style={{
             position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
             width: 300,
             height: 300,
             borderRadius: "50%",
@@ -341,13 +344,14 @@ export default function HomePage() {
           }} />
 
           {/* Character image with float animation */}
-          <picture>
+          <picture style={{ display: "block" }}>
             <img
               src="/suki_hero.png"
               alt="Kira"
               width={340}
               height={340}
               style={{
+                display: "block",
                 width: 340,
                 height: "auto",
                 position: "relative",
@@ -614,13 +618,13 @@ export default function HomePage() {
                 {
                   icon: (
                     <>
-                      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z" />
-                      <path d="M12 8v4" />
-                      <path d="M12 16h.01" />
+                      <path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" />
+                      <circle cx="19" cy="5" r="2" />
+                      <circle cx="5" cy="19" r="2" />
                     </>
                   ),
-                  title: "She Speaks First",
-                  desc: "Kira doesn\u2019t wait for you to say something. She\u2019ll comment on what you\u2019re watching, check in during silence, and start conversations on her own.",
+                  title: "Live2D Avatar",
+                  desc: "Watch her react in real time — expressions, emotions, accessories, and idle movement that bring her to life.",
                 },
                 {
                   icon: (

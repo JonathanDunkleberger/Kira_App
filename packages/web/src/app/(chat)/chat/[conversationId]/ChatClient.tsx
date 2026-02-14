@@ -97,7 +97,6 @@ export default function ChatClient() {
   const { 
     connect, 
     disconnect,
-    startConversation,
     socketState, 
     kiraState, 
     micVolume, 
@@ -176,44 +175,9 @@ export default function ChatClient() {
     pipDragRef.current = null;
   }, []);
 
-  // Start conversation once WebSocket is connected.
-  // Don't block on Live2D — voice is the core experience.
-  // If in avatar mode, give Live2D a grace period, then start regardless.
-  const hasStartedConversation = useRef(false);
-  const conversationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (hasStartedConversation.current) return;
-    if (socketState !== "connected") return;
-
-    // If orb mode or Live2D already ready, start immediately
-    if (visualMode !== "avatar" || live2dReady) {
-      hasStartedConversation.current = true;
-      console.log("[Chat] WS connected — starting conversation (visualMode:", visualMode, "live2dReady:", live2dReady, ")");
-      startConversation();
-      return;
-    }
-
-    // Avatar mode but Live2D not ready yet — give it a generous grace period
-    // so the voice experience isn't blocked by a slow model load
-    if (!conversationTimerRef.current) {
-      console.log("[Chat] WS connected but Live2D not ready — starting 10s grace timer");
-      conversationTimerRef.current = setTimeout(() => {
-        if (!hasStartedConversation.current && socketState === "connected") {
-          hasStartedConversation.current = true;
-          console.log("[Chat] Live2D grace period expired — starting conversation without avatar");
-          startConversation();
-        }
-      }, 10000);
-    }
-  }, [socketState, live2dReady, visualMode, startConversation]);
-
-  // Clean up conversation grace timer
-  useEffect(() => {
-    return () => {
-      if (conversationTimerRef.current) clearTimeout(conversationTimerRef.current);
-    };
-  }, []);
+  // ─── start_stream is now sent atomically in the hook's onopen handler ───
+  // No more useEffect race — connect() → WS open → start_stream → audio pipeline
+  // all happen in the same call stack, immune to React remounts.
 
   // ─── DO NOT disconnect on unmount ───
   // React can remount this component at any time (Clerk auth, Next.js RSC, etc.).

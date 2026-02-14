@@ -1074,6 +1074,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     // ─── Store to singleton immediately so remounts can find it ───
+    debugLog("[Singleton] connectionStore.ws → WebSocket (from connect, pre-open)");
     connectionStore.ws = ws.current;
 
     ws.current.onopen = () => {
@@ -1088,8 +1089,25 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       connectionStore.audioContext = audioContext.current;
       connectionStore.playbackContext = playbackContext.current;
       connectionStore.audioStream = audioStream.current;
-      // Don't auto-start here — ChatClient will call startConversation()
-      // once the Live2D model is ready, preventing Kira from speaking to a blank screen.
+      
+      // ─── Send start_stream IMMEDIATELY — don't wait for ChatClient's useEffect ───
+      // The old flow relied on ChatClient's useEffect firing after socketState changed,
+      // but React remounts can kill the component before that effect runs.
+      // Doing it here makes connect → start_stream atomic.
+      if (!conversationActive.current) {
+        debugLog("[Connect] Sending start_stream immediately after connect");
+        try {
+          ws.current!.send(JSON.stringify({ type: "start_stream" }));
+          conversationActive.current = true;
+          connectionStore.conversationActive = true;
+          debugLog("[Connect] start_stream sent, conversationActive=true");
+        } catch (err) {
+          debugLog("[Connect] ❌ Failed to send start_stream:", err);
+        }
+        // Start mic pipeline immediately — audio was already initialized in connect()
+        debugLog("[Connect] Starting audio pipeline...");
+        startAudioPipeline();
+      }
     };
 
     // ─── Wire handlers through refs so remounts get fresh closures ───
@@ -1202,6 +1220,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     onCloseRef.current = (event: CloseEvent) => {
       debugLog("[WS] 🔌 Connection closed. Code:", event.code, "Reason:", event.reason, "Clean:", event.wasClean);
+      debugLog("[Singleton] connectionStore.ws → null (from onclose). Caller:", new Error().stack?.split('\n')[1]?.trim());
       debugLog("[State] socketState → closed (from onclose)");
       setSocketState("closed");
       connectionStore.socketState = "closed";
@@ -1262,7 +1281,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     ws.current.onclose = (e) => onCloseRef.current?.(e);
     ws.current.onerror = (e) => onErrorRef.current?.(e);
 
-  }, [getTokenFn, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
+  }, [getTokenFn, guestId, startAudioPipeline, processAudioQueue, stopAudioPipeline, initializeAudio]);
 
   const disconnect = useCallback(() => {
     debugLog("[WS] disconnect() called. ws.current exists:", !!ws.current);
@@ -1270,6 +1289,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
     conversationActive.current = false; // Clean shutdown — not a crash
     // ─── Clear singleton — this is an intentional disconnect ───
+    debugLog("[Singleton] connectionStore.ws → null (from disconnect)");
     connectionStore.ws = null;
     connectionStore.socketState = "closing";
     connectionStore.isServerReady = false;

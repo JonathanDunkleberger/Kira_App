@@ -279,6 +279,20 @@ export default function ChatClient() {
     return () => clearInterval(interval);
   }, [socketState, localRemaining !== null]);
 
+  // Dump persistent debug logs from sessionStorage (survives page reloads)
+  useEffect(() => {
+    if (socketState === "idle") {
+      try {
+        const raw = sessionStorage.getItem('kira-debug');
+        if (raw) {
+          const logs = JSON.parse(raw) as string[];
+          console.log(`%c[DebugDump] ${logs.length} stored logs:`, 'color: orange; font-weight: bold');
+          logs.forEach((l) => console.log(l));
+        }
+      } catch {}
+    }
+  }, [socketState]);
+
   // Start Screen (Initial State for ALL users)
   if (socketState === "idle") {
     return (

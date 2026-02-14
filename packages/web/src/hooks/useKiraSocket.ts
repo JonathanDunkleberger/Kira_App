@@ -2,6 +2,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSceneDetection } from "./useSceneDetection";
 
+// --- Persistent debug logger (survives page reloads via sessionStorage) ---
+function debugLog(...args: any[]) {
+  const msg = `[${new Date().toISOString().slice(11, 23)}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}`;
+  console.log(...args);
+  try {
+    const logs = JSON.parse(sessionStorage.getItem('kira-debug') || '[]');
+    logs.push(msg);
+    if (logs.length > 100) logs.splice(0, logs.length - 100);
+    sessionStorage.setItem('kira-debug', JSON.stringify(logs));
+  } catch {}
+}
+
 // Define the states
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
@@ -327,7 +339,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     playbackContext.current = null;
     playbackGain.current = null;
 
-    console.log("[Audio] 🛑 Audio pipeline stopped.");
+    debugLog("[Audio] 🛑 Audio pipeline stopped.");
   }, []);
 
   /**
@@ -336,33 +348,33 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    */
   const initializeAudio = useCallback(async () => {
     try {
-      console.log("[Audio] Initializing audio contexts...");
+      debugLog("[Audio] Initializing audio contexts...");
       
       // 1. Create/Resume AudioContext
       if (!audioContext.current || audioContext.current.state === "closed") {
         audioContext.current = new AudioContext();
-        console.log(`[Audio] Created capture AudioContext (sampleRate: ${audioContext.current.sampleRate})`);
+        debugLog(`[Audio] Created capture AudioContext (sampleRate: ${audioContext.current.sampleRate})`);
       }
       if (audioContext.current.state === "suspended") {
-        console.log("[Audio] Capture AudioContext is suspended, resuming...");
+        debugLog("[Audio] Capture AudioContext is suspended, resuming...");
         await audioContext.current.resume();
       }
-      console.log(`[Audio] Capture AudioContext state: ${audioContext.current.state}`);
+      debugLog(`[Audio] Capture AudioContext state: ${audioContext.current.state}`);
 
       // 2. Create/Resume PlaybackContext
       if (!playbackContext.current || playbackContext.current.state === "closed") {
         playbackContext.current = new AudioContext({ sampleRate: 16000 });
-        console.log("[Audio] Created playback AudioContext (sampleRate: 16000)");
+        debugLog("[Audio] Created playback AudioContext (sampleRate: 16000)");
       }
       if (playbackContext.current.state === "suspended") {
-        console.log("[Audio] Playback AudioContext is suspended, resuming...");
+        debugLog("[Audio] Playback AudioContext is suspended, resuming...");
         await playbackContext.current.resume();
       }
-      console.log(`[Audio] Playback AudioContext state: ${playbackContext.current.state}`);
+      debugLog(`[Audio] Playback AudioContext state: ${playbackContext.current.state}`);
 
       // 3. Request Mic Permission (if not already)
       if (!audioStream.current) {
-        console.log("[Audio] Requesting mic permission...");
+        debugLog("[Audio] Requesting mic permission...");
         audioStream.current = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -371,15 +383,15 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             noiseSuppression: true,
           },
         });
-        console.log(`[Audio] Mic permission granted. Tracks: ${audioStream.current.getAudioTracks().length}, active: ${audioStream.current.active}`);
+        debugLog(`[Audio] Mic permission granted. Tracks: ${audioStream.current.getAudioTracks().length}, active: ${audioStream.current.active}`);
       } else {
-        console.log(`[Audio] Mic stream already exists. active: ${audioStream.current.active}`);
+        debugLog(`[Audio] Mic stream already exists. active: ${audioStream.current.active}`);
       }
 
       setIsAudioBlocked(false);
       return true;
     } catch (err) {
-      console.error("[Audio] Failed to initialize audio:", err);
+      debugLog("[Audio] ❌ Failed to initialize audio:", err);
       setIsAudioBlocked(true);
       return false;
     }
@@ -932,17 +944,17 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    */
   const connect = useCallback(async () => {
     if (ws.current) {
-      console.log("[Connect] Aborted — WebSocket already exists");
+      debugLog("[Connect] Aborted — WebSocket already exists");
       return;
     }
 
-    console.log("[Connect] Starting connection attempt...");
+    debugLog("[Connect] Starting connection attempt...");
 
     // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
     const audioOk = await initializeAudio();
-    console.log(`[Connect] Audio initialized: ${audioOk}`);
+    debugLog(`[Connect] Audio initialized: ${audioOk}`);
     if (!audioOk) {
-      console.error("[Connect] Failed: audio initialization returned false (mic denied or AudioContext failed)");
+      debugLog("[Connect] ❌ Failed: audio initialization returned false (mic denied or AudioContext failed)");
       return;
     }
 
@@ -952,16 +964,16 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     if (getTokenFn) {
       try {
         freshToken = await getTokenFn();
-        console.log("[Connect] Auth token fetched successfully");
+        debugLog("[Connect] Auth token fetched successfully");
       } catch (err) {
-        console.error("[Connect] Failed to get fresh token:", err);
+        debugLog("[Connect] ❌ Failed to get fresh token:", err);
       }
     }
 
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = freshToken ? `token=${freshToken}` : `guestId=${guestId}`;
     const voiceParam = `&voice=${voicePreference}`;
-    console.log(`[WS] Connecting with voice: ${voicePreference}, URL: ${wsUrl}?${authParam}${voiceParam}`);
+    debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}`);
 
     setSocketState("connecting");
     isServerReady.current = false;
@@ -972,7 +984,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       setSocketState("connected");
       reconnectAttempts.current = 0; // Reset on successful connection
       setError(null); // Clear any error banner from a previous disconnect
-      console.log("[WS] ✅ WebSocket connected.");
+      debugLog("[Connect] ✅ WebSocket connected.");
       // Don't auto-start here — ChatClient will call startConversation()
       // once the Live2D model is ready, preventing Kira from speaking to a blank screen.
     };

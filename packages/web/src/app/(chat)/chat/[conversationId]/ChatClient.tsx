@@ -479,7 +479,7 @@ export default function ChatClient() {
             {visualMode === "avatar" ? (
               <>
                 {!live2dReady && <XOLoader />}
-                {!live2dDismissed && (
+                {!live2dDismissed && socketState === "connected" && (
                   <Live2DAvatar
                     isSpeaking={isAudioPlaying}
                     analyserNode={playbackAnalyserNode}
@@ -565,7 +565,12 @@ export default function ChatClient() {
                 live2dRetryCount.current++;
                 setLive2dFailed(false);
                 setLive2dReady(false);
-                setVisualMode("avatar");
+                // Delay remount to let iOS free the previous WebGL context
+                setLive2dDismissed(true);
+                setTimeout(() => {
+                  setLive2dDismissed(false);
+                  setVisualMode("avatar");
+                }, 800);
               } else {
                 console.log("[UI] Live2D retry limit reached — staying on orb");
               }

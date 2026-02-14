@@ -63,6 +63,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null); // explicit canvas ref for cleanup
+  const glRef = useRef<WebGLRenderingContext | WebGL2RenderingContext | null>(null); // stored GL context — NEVER call getContext during cleanup
   const contextLostHandlerRef = useRef<((e: Event) => void) | null>(null); // stored for removal
   const animFrameRef = useRef<number>(0);
   const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,19 +159,20 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       appRef.current = null;
     }
 
-    // 5. Explicitly lose the WebGL context — forces the browser / GPU driver
-    //    to free VRAM.  iOS Safari hard-limits active contexts (~2-3).
-    if (canvasRef.current) {
+    // 5. Explicitly lose the WebGL context using the STORED reference.
+    //    NEVER call getContext() here — on iOS it can CREATE a new context
+    //    (counting against the ~2-3 context limit) instead of returning the old one.
+    if (glRef.current) {
       try {
-        const gl = canvasRef.current.getContext("webgl2") || canvasRef.current.getContext("webgl");
-        if (gl && !gl.isContextLost()) {
-          const ext = gl.getExtension("WEBGL_lose_context");
+        if (!glRef.current.isContextLost()) {
+          const ext = glRef.current.getExtension("WEBGL_lose_context");
           if (ext) {
             ext.loseContext();
             console.log("[Live2D] WebGL context explicitly released");
           }
         }
       } catch {}
+      glRef.current = null;
     }
 
     // 6. Remove canvas from DOM (PIXI's destroy(true) should do this,
@@ -209,6 +211,12 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     activeAccessoriesRef.current = new Set();
     setModelReady(false);
 
+    // 9. Clear PIXI from window — the Live2D SDK reads from window.PIXI,
+    //    and stale references from a previous instance can cause init failures.
+    try {
+      delete (window as any).PIXI;
+    } catch {}
+
     logMemory("after cleanup");
     console.log("[Live2D] Cleanup complete");
   });
@@ -223,19 +231,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       cleanupLive2D.current();
     }
 
-    // Aggressively reclaim orphaned WebGL contexts (iOS limits to ~2 total)
+    // Remove orphaned canvases from previous mounts (React strict mode).
+    // Do NOT call getContext on them — on iOS that can CREATE a new context
+    // and waste one of the ~2-3 available context slots.
     const container = containerRef.current;
     if (container) {
       const oldCanvases = container.querySelectorAll("canvas");
       oldCanvases.forEach(c => {
-        try {
-          const gl = c.getContext("webgl2") || c.getContext("webgl");
-          if (gl && !gl.isContextLost()) {
-            const ext = gl.getExtension("WEBGL_lose_context");
-            if (ext) ext.loseContext();
-          }
-        } catch {}
         c.remove();
+        console.log("[Live2D] Removed orphaned canvas");
       });
     }
 
@@ -313,7 +317,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
         const canvas = canvasRef.current!;
+        // Store the GL context NOW — never call getContext again (iOS context limit)
         const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+        glRef.current = gl;
         if (gl) {
           // Log GPU memory budget if available (WEBGL_debug_renderer_info)
           try {
@@ -333,7 +339,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             console.error("[Live2D] Multiple WebGL crashes — staying on orb permanently");
           }
           // Stop the PIXI ticker to prevent further render attempts on a dead context
-          try { app.ticker.stop(); } catch {}
+          try { appRef.current?.ticker.stop(); } catch {}
           cancelAnimationFrame(animFrameRef.current);
           onLoadErrorRef.current?.();
         };

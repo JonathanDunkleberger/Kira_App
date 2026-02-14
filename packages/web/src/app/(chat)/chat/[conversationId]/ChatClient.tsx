@@ -97,6 +97,7 @@ export default function ChatClient() {
   const { 
     connect, 
     disconnect,
+    signalVisualReady,
     socketState, 
     kiraState, 
     micVolume, 
@@ -127,6 +128,13 @@ export default function ChatClient() {
     guestId,
     voicePreference
   );
+
+  // Orb mode is always "visually ready" — signal immediately so start_stream isn't blocked
+  useEffect(() => {
+    if (visualMode === "orb") {
+      signalVisualReady();
+    }
+  }, [visualMode, signalVisualReady]);
 
   // ─── Camera PIP preview ───
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -480,17 +488,20 @@ export default function ChatClient() {
             {visualMode === "avatar" ? (
               <>
                 {!live2dReady && <XOLoader />}
-                {!live2dDismissed && socketState === "connected" && (
-                  <Live2DAvatar
-                    isSpeaking={isAudioPlaying}
-                    analyserNode={playbackAnalyserNode}
-                    emotion={currentExpression}
-                    accessories={activeAccessories}
-                    onModelReady={() => {
-                      setLive2dReady(true);
-                    }}
-                    onLoadError={() => setLive2dFailed(true)}
-                  />
+                {!live2dDismissed && (
+                  <div style={{ opacity: socketState === "connected" && live2dReady ? 1 : 0, transition: "opacity 0.3s ease" }}>
+                    <Live2DAvatar
+                      isSpeaking={isAudioPlaying}
+                      analyserNode={playbackAnalyserNode}
+                      emotion={currentExpression}
+                      accessories={activeAccessories}
+                      onModelReady={() => {
+                        setLive2dReady(true);
+                        signalVisualReady();
+                      }}
+                      onLoadError={() => setLive2dFailed(true)}
+                    />
+                  </div>
                 )}
               </>
             ) : (

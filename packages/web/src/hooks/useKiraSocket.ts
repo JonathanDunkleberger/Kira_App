@@ -18,10 +18,10 @@ export function debugLog(...args: any[]) {
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
-// ─── Module-level singleton — survives React remounts ───
-// React can unmount/remount components at any time (Clerk auth, Next.js RSC,
-// Strict Mode). The WebSocket and audio pipeline must survive this.
-const connectionStore: {
+// ─── Window-level singleton — survives React remounts AND module re-evaluation ───
+// Module-level vars can be re-created if Next.js re-evaluates the module during
+// code splitting or dynamic imports. window is truly global and survives everything.
+interface ConnectionStore {
   ws: WebSocket | null;
   socketState: SocketState;
   audioContext: AudioContext | null;
@@ -34,20 +34,28 @@ const connectionStore: {
   isServerReady: boolean;
   conversationActive: boolean;
   reconnectAttempts: number;
-} = {
-  ws: null,
-  socketState: "idle",
-  audioContext: null,
-  playbackContext: null,
-  audioStream: null,
-  audioWorkletNode: null,
-  audioSource: null,
-  playbackGain: null,
-  playbackAnalyser: null,
-  isServerReady: false,
-  conversationActive: false,
-  reconnectAttempts: 0,
-};
+}
+
+function getConnectionStore(): ConnectionStore | null {
+  if (typeof window === "undefined") return null;
+  if (!(window as any).__kiraConnectionStore) {
+    (window as any).__kiraConnectionStore = {
+      ws: null,
+      socketState: "idle",
+      audioContext: null,
+      playbackContext: null,
+      audioStream: null,
+      audioWorkletNode: null,
+      audioSource: null,
+      playbackGain: null,
+      playbackAnalyser: null,
+      isServerReady: false,
+      conversationActive: false,
+      reconnectAttempts: 0,
+    } as ConnectionStore;
+  }
+  return (window as any).__kiraConnectionStore as ConnectionStore;
+}
 
 // Adaptive EOU: short utterances get snappy response, long utterances get patience for multi-part questions
 const EOU_TIMEOUT_MIN = 500;   // 500ms silence for short utterances ("yes", "no", "hi")
@@ -60,9 +68,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   // ─── Restore state from singleton if a live connection exists ───
   const [socketState, setSocketState] = useState<SocketState>(() => {
     // Use the stored socketState directly — it's authoritative
-    if (connectionStore.socketState === "connected" || connectionStore.socketState === "connecting") {
-      debugLog("[Hook] Restoring socketState →", connectionStore.socketState, "from singleton. ws:", !!connectionStore.ws);
-      return connectionStore.socketState;
+    if (getConnectionStore()!.socketState === "connected" || getConnectionStore()!.socketState === "connecting") {
+      debugLog("[Hook] Restoring socketState →", getConnectionStore()!.socketState, "from singleton. ws:", !!getConnectionStore()!.ws);
+      return getConnectionStore()!.socketState;
     }
     return "idle";
   });
@@ -71,29 +79,29 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
   // Log hook mount/unmount — DO NOT close WS on unmount (singleton survives remount)
   useEffect(() => {
-    debugLog("[Hook] useKiraSocket MOUNTED. Singleton ws:", !!connectionStore.ws, 
-      "readyState:", connectionStore.ws?.readyState,
-      "socketState restored as:", connectionStore.ws?.readyState === WebSocket.OPEN ? "connected" : "idle");
+    debugLog("[Hook] useKiraSocket MOUNTED. Singleton ws:", !!getConnectionStore()!.ws, 
+      "readyState:", getConnectionStore()!.ws?.readyState,
+      "socketState restored as:", getConnectionStore()!.ws?.readyState === WebSocket.OPEN ? "connected" : "idle");
     return () => {
       debugLog("[Hook] useKiraSocket UNMOUNTING — preserving singleton");
       // Sync current refs TO singleton only if they're alive.
       // NEVER overwrite singleton with null — that destroys the connection for the next mount.
       // The ONLY place that should null out singleton is disconnect() (explicit End Call).
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        connectionStore.ws = ws.current;
+        getConnectionStore()!.ws = ws.current;
         debugLog("[Hook] WebSocket preserved in singleton (readyState:", ws.current.readyState, ")");
       }
-      if (audioContext.current) connectionStore.audioContext = audioContext.current;
-      if (playbackContext.current) connectionStore.playbackContext = playbackContext.current;
-      if (audioStream.current) connectionStore.audioStream = audioStream.current;
-      if (audioWorkletNode.current) connectionStore.audioWorkletNode = audioWorkletNode.current;
-      if (audioSource.current) connectionStore.audioSource = audioSource.current;
-      if (playbackGain.current) connectionStore.playbackGain = playbackGain.current;
-      if (playbackAnalyser.current) connectionStore.playbackAnalyser = playbackAnalyser.current;
+      if (audioContext.current) getConnectionStore()!.audioContext = audioContext.current;
+      if (playbackContext.current) getConnectionStore()!.playbackContext = playbackContext.current;
+      if (audioStream.current) getConnectionStore()!.audioStream = audioStream.current;
+      if (audioWorkletNode.current) getConnectionStore()!.audioWorkletNode = audioWorkletNode.current;
+      if (audioSource.current) getConnectionStore()!.audioSource = audioSource.current;
+      if (playbackGain.current) getConnectionStore()!.playbackGain = playbackGain.current;
+      if (playbackAnalyser.current) getConnectionStore()!.playbackAnalyser = playbackAnalyser.current;
       // Always sync these non-nullable flags
-      connectionStore.isServerReady = isServerReady.current;
-      connectionStore.conversationActive = conversationActive.current;
-      connectionStore.reconnectAttempts = reconnectAttempts.current;
+      getConnectionStore()!.isServerReady = isServerReady.current;
+      getConnectionStore()!.conversationActive = conversationActive.current;
+      getConnectionStore()!.reconnectAttempts = reconnectAttempts.current;
     };
   }, []);
 
@@ -102,6 +110,10 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const onMessageRef = useRef<((event: MessageEvent) => void) | null>(null);
   const onCloseRef = useRef<((event: CloseEvent) => void) | null>(null);
   const onErrorRef = useRef<((event: Event) => void) | null>(null);
+
+  // ─── Visual-ready gating: don't send start_stream until Live2D is loaded (or timeout) ───
+  const visualReadyRef = useRef(false);
+  const wsOpenRef = useRef(false); // true once ws.onopen fires
 
   // Sync ref with state
   useEffect(() => {
@@ -148,14 +160,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     return () => cancelAnimationFrame(frame);
   }, [isAudioPlaying]);
-  const ws = useRef<WebSocket | null>(connectionStore.ws);
-  const isServerReady = useRef(connectionStore.isServerReady); // Gate for sending audio
+  const ws = useRef<WebSocket | null>(getConnectionStore()!.ws);
+  const isServerReady = useRef(getConnectionStore()!.isServerReady); // Gate for sending audio
 
   // --- Audio Pipeline Refs (restore from singleton if present) ---
-  const audioContext = useRef<AudioContext | null>(connectionStore.audioContext);
-  const audioWorkletNode = useRef<AudioWorkletNode | null>(connectionStore.audioWorkletNode);
-  const audioSource = useRef<MediaStreamAudioSourceNode | null>(connectionStore.audioSource);
-  const audioStream = useRef<MediaStream | null>(connectionStore.audioStream);
+  const audioContext = useRef<AudioContext | null>(getConnectionStore()!.audioContext);
+  const audioWorkletNode = useRef<AudioWorkletNode | null>(getConnectionStore()!.audioWorkletNode);
+  const audioSource = useRef<MediaStreamAudioSourceNode | null>(getConnectionStore()!.audioSource);
+  const audioStream = useRef<MediaStream | null>(getConnectionStore()!.audioStream);
 
   // --- Screen Share Refs ---
   const screenStream = useRef<MediaStream | null>(null);
@@ -210,10 +222,10 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const scheduledSources = useRef<AudioBufferSourceNode[]>([]); // Track all scheduled sources
   const ttsChunksDone = useRef(true); // Whether server has finished sending audio for this turn
 
-  const playbackContext = useRef<AudioContext | null>(connectionStore.playbackContext);
+  const playbackContext = useRef<AudioContext | null>(getConnectionStore()!.playbackContext);
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
-  const playbackGain = useRef<GainNode | null>(connectionStore.playbackGain);
-  const playbackAnalyser = useRef<AnalyserNode | null>(connectionStore.playbackAnalyser);
+  const playbackGain = useRef<GainNode | null>(getConnectionStore()!.playbackGain);
+  const playbackAnalyser = useRef<AnalyserNode | null>(getConnectionStore()!.playbackAnalyser);
   const playerVolumeFrame = useRef<number>(0);
   const [playerVolume, setPlayerVolume] = useState(0);
 
@@ -234,9 +246,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const periodicCaptureTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- WebSocket Auto-Reconnect ---
-  const reconnectAttempts = useRef(connectionStore.reconnectAttempts);
+  const reconnectAttempts = useRef(getConnectionStore()!.reconnectAttempts);
   const MAX_RECONNECT_ATTEMPTS = 5;
-  const conversationActive = useRef(connectionStore.conversationActive); // True once start_stream sent — prevents reconnect loops
+  const conversationActive = useRef(getConnectionStore()!.conversationActive); // True once start_stream sent — prevents reconnect loops
 
   /**
    * Calculates adaptive EOU timeout based on how long the user has been speaking.
@@ -413,13 +425,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     playbackGain.current = null;
 
     // ─── Clear audio from singleton ───
-    connectionStore.audioContext = null;
-    connectionStore.playbackContext = null;
-    connectionStore.audioStream = null;
-    connectionStore.audioWorkletNode = null;
-    connectionStore.audioSource = null;
-    connectionStore.playbackGain = null;
-    connectionStore.playbackAnalyser = null;
+    getConnectionStore()!.audioContext = null;
+    getConnectionStore()!.playbackContext = null;
+    getConnectionStore()!.audioStream = null;
+    getConnectionStore()!.audioWorkletNode = null;
+    getConnectionStore()!.audioSource = null;
+    getConnectionStore()!.playbackGain = null;
+    getConnectionStore()!.playbackAnalyser = null;
 
     debugLog("[Audio] 🛑 Audio pipeline stopped.");
   }, []);
@@ -1006,7 +1018,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       try {
         ws.current.send(JSON.stringify({ type: "start_stream" }));
         conversationActive.current = true; // Mark session as live — no more auto-reconnect
-        connectionStore.conversationActive = true;
+        getConnectionStore()!.conversationActive = true;
         debugLog("[StartConvo] start_stream sent, conversationActive=true");
       } catch (err) {
         debugLog("[StartConvo] ❌ Failed to send start_stream:", err);
@@ -1021,6 +1033,21 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       );
     }
   }, [startAudioPipeline]);
+
+  /**
+   * Signal that the visual layer (Live2D avatar or orb) is ready.
+   * If the WebSocket is already open but waiting, this triggers start_stream + mic pipeline.
+   */
+  const signalVisualReady = useCallback(() => {
+    if (visualReadyRef.current) return; // Already signaled
+    visualReadyRef.current = true;
+    debugLog("[VisualReady] Visual layer ready. wsOpen:", wsOpenRef.current, "conversationActive:", conversationActive.current);
+
+    if (wsOpenRef.current && !conversationActive.current) {
+      debugLog("[VisualReady] WS already open — sending start_stream now");
+      startConversation();
+    }
+  }, [startConversation]);
 
   /**
    * Explicitly resume audio contexts.
@@ -1068,45 +1095,49 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     debugLog("[State] socketState → connecting");
     setSocketState("connecting");
-    connectionStore.socketState = "connecting";
+    getConnectionStore()!.socketState = "connecting";
     isServerReady.current = false;
     ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     // ─── Store to singleton immediately so remounts can find it ───
-    debugLog("[Singleton] connectionStore.ws → WebSocket (from connect, pre-open)");
-    connectionStore.ws = ws.current;
+    debugLog("[Singleton] getConnectionStore()!.ws → WebSocket (from connect, pre-open)");
+    getConnectionStore()!.ws = ws.current;
 
     ws.current.onopen = () => {
       debugLog("[State] socketState → connected");
       setSocketState("connected");
-      connectionStore.socketState = "connected";
+      getConnectionStore()!.socketState = "connected";
       reconnectAttempts.current = 0; // Reset on successful connection
-      connectionStore.reconnectAttempts = 0;
+      getConnectionStore()!.reconnectAttempts = 0;
       setError(null); // Clear any error banner from a previous disconnect
       debugLog("[Connect] ✅ WebSocket connected. Singleton stored immediately.");
       // Store audio refs to singleton now that connection is live
-      connectionStore.audioContext = audioContext.current;
-      connectionStore.playbackContext = playbackContext.current;
-      connectionStore.audioStream = audioStream.current;
+      getConnectionStore()!.audioContext = audioContext.current;
+      getConnectionStore()!.playbackContext = playbackContext.current;
+      getConnectionStore()!.audioStream = audioStream.current;
       
-      // ─── Send start_stream IMMEDIATELY — don't wait for ChatClient's useEffect ───
-      // The old flow relied on ChatClient's useEffect firing after socketState changed,
-      // but React remounts can kill the component before that effect runs.
-      // Doing it here makes connect → start_stream atomic.
-      if (!conversationActive.current) {
-        debugLog("[Connect] Sending start_stream immediately after connect");
-        try {
-          ws.current!.send(JSON.stringify({ type: "start_stream" }));
-          conversationActive.current = true;
-          connectionStore.conversationActive = true;
-          debugLog("[Connect] start_stream sent, conversationActive=true");
-        } catch (err) {
-          debugLog("[Connect] ❌ Failed to send start_stream:", err);
+      // ─── Visual-ready gating ───
+      // Don't send start_stream until the visual layer (Live2D / orb) signals ready.
+      // This prevents the server from sending audio before the user sees anything.
+      // Fallback: 15s timeout so we never hang forever if Live2D fails silently.
+      wsOpenRef.current = true;
+
+      if (visualReadyRef.current) {
+        // Visual is already loaded (orb mode, or Live2D preloaded fast) — start immediately
+        debugLog("[Connect] Visual already ready — sending start_stream now");
+        if (!conversationActive.current) {
+          startConversation();
         }
-        // Start mic pipeline immediately — audio was already initialized in connect()
-        debugLog("[Connect] Starting audio pipeline...");
-        startAudioPipeline();
+      } else {
+        // Visual not ready yet — wait for signalVisualReady() or 15s timeout
+        debugLog("[Connect] Waiting for visual ready signal (15s timeout)...");
+        setTimeout(() => {
+          if (!conversationActive.current && wsOpenRef.current) {
+            debugLog("[Connect] ⏱ Visual-ready timeout (15s) — sending start_stream anyway");
+            startConversation();
+          }
+        }, 15000);
       }
     };
 
@@ -1130,7 +1161,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             debugLog("[WS] Received stream_ready — setting kiraState to listening");
             setKiraState("listening");
             isServerReady.current = true;
-            connectionStore.isServerReady = true;
+            getConnectionStore()!.isServerReady = true;
             break;
           case "ping":
             // Respond to server heartbeat to keep connection alive
@@ -1220,15 +1251,16 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     onCloseRef.current = (event: CloseEvent) => {
       debugLog("[WS] 🔌 Connection closed. Code:", event.code, "Reason:", event.reason, "Clean:", event.wasClean);
-      debugLog("[Singleton] connectionStore.ws → null (from onclose). Caller:", new Error().stack?.split('\n')[1]?.trim());
+      debugLog("[Singleton] getConnectionStore()!.ws → null (from onclose). Caller:", new Error().stack?.split('\n')[1]?.trim());
       debugLog("[State] socketState → closed (from onclose)");
       setSocketState("closed");
-      connectionStore.socketState = "closed";
+      getConnectionStore()!.socketState = "closed";
+      wsOpenRef.current = false; // WS is no longer open
       
       // ─── Clear singleton ───
-      connectionStore.ws = null;
-      connectionStore.isServerReady = false;
-      connectionStore.conversationActive = false;
+      getConnectionStore()!.ws = null;
+      getConnectionStore()!.isServerReady = false;
+      getConnectionStore()!.conversationActive = false;
 
       if (event.code === 1008) {
         // Don't overwrite a more specific error (e.g. "limit_reached_pro")
@@ -1257,7 +1289,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           // Pre-conversation connection drop — safe to retry
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
           reconnectAttempts.current++;
-          connectionStore.reconnectAttempts = reconnectAttempts.current;
+          getConnectionStore()!.reconnectAttempts = reconnectAttempts.current;
           debugLog(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
           setTimeout(() => {
             connect();
@@ -1271,7 +1303,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     onErrorRef.current = (err: Event) => {
       debugLog("[WS] ❌ WebSocket error event fired:", err);
-      // Don't null connectionStore.ws here — onclose ALWAYS fires after onerror
+      // Don't null getConnectionStore()!.ws here — onclose ALWAYS fires after onerror
       // and handles singleton cleanup + reconnect logic. Nulling here would race.
       // Don't set socketState or call stopAudioPipeline — let onclose handle it all.
     };
@@ -1281,20 +1313,22 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     ws.current.onclose = (e) => onCloseRef.current?.(e);
     ws.current.onerror = (e) => onErrorRef.current?.(e);
 
-  }, [getTokenFn, guestId, startAudioPipeline, processAudioQueue, stopAudioPipeline, initializeAudio]);
+  }, [getTokenFn, guestId, startConversation, startAudioPipeline, processAudioQueue, stopAudioPipeline, initializeAudio]);
 
   const disconnect = useCallback(() => {
     debugLog("[WS] disconnect() called. ws.current exists:", !!ws.current);
     if (eouTimer.current) clearTimeout(eouTimer.current);
     reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
     conversationActive.current = false; // Clean shutdown — not a crash
+    visualReadyRef.current = false; // Reset for next session
+    wsOpenRef.current = false;
     // ─── Clear singleton — this is an intentional disconnect ───
-    debugLog("[Singleton] connectionStore.ws → null (from disconnect)");
-    connectionStore.ws = null;
-    connectionStore.socketState = "closing";
-    connectionStore.isServerReady = false;
-    connectionStore.conversationActive = false;
-    connectionStore.reconnectAttempts = 0;
+    debugLog("[Singleton] getConnectionStore()!.ws → null (from disconnect)");
+    getConnectionStore()!.ws = null;
+    getConnectionStore()!.socketState = "closing";
+    getConnectionStore()!.isServerReady = false;
+    getConnectionStore()!.conversationActive = false;
+    getConnectionStore()!.reconnectAttempts = 0;
     if (ws.current) {
       debugLog("[State] socketState → closing (from disconnect)");
       setSocketState("closing");
@@ -1367,6 +1401,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     connect,
     disconnect,
     startConversation,
+    signalVisualReady,
     socketState,
     kiraState,
     micVolume,

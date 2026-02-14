@@ -128,10 +128,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       } catch (err) {
         if (!destroyed) {
           console.error(`[Live2D] Initialization failed after ${(performance.now() - loadStart).toFixed(0)}ms:`, err);
-          // Record crash in sessionStorage so ChatClient can skip Live2D on reload
+          // Record crash in localStorage so ChatClient can skip Live2D on reload
           try {
-            const crashes = parseInt(sessionStorage.getItem('live2d-crashes') || '0', 10);
-            sessionStorage.setItem('live2d-crashes', String(crashes + 1));
+            const crashes = parseInt(localStorage.getItem('live2d-crashes') || '0', 10);
+            localStorage.setItem('live2d-crashes', String(crashes + 1));
+            localStorage.setItem('live2d-crash-time', String(Date.now()));
           } catch {}
           onLoadErrorRef.current?.();
         }

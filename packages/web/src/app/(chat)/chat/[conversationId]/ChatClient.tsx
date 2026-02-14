@@ -63,9 +63,19 @@ export default function ChatClient() {
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
       || (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
 
-    // If Live2D crashed before in this session, skip it
+    // If Live2D crashed before, skip it (with 24-hour expiry so it retries later)
     let crashes = 0;
-    try { crashes = parseInt(sessionStorage.getItem('live2d-crashes') || '0', 10); } catch {}
+    try {
+      const lastCrashTime = parseInt(localStorage.getItem('live2d-crash-time') || '0', 10);
+      const hoursSinceCrash = lastCrashTime ? (Date.now() - lastCrashTime) / 3600000 : 999;
+      if (hoursSinceCrash > 24) {
+        // Reset crash counter after 24 hours — give Live2D another chance
+        localStorage.removeItem('live2d-crashes');
+        localStorage.removeItem('live2d-crash-time');
+      } else {
+        crashes = parseInt(localStorage.getItem('live2d-crashes') || '0', 10);
+      }
+    } catch {}
     if (crashes > 0) {
       console.log(`[UI] Previous Live2D crash detected (${crashes}) — using orb-only mode`);
       setVisualMode("orb");
@@ -511,7 +521,10 @@ export default function ChatClient() {
                     onModelReady={() => {
                       setLive2dReady(true);
                       // Clear crash counter on successful load
-                      try { sessionStorage.setItem('live2d-crashes', '0'); } catch {}
+                      try {
+                        localStorage.setItem('live2d-crashes', '0');
+                        localStorage.removeItem('live2d-crash-time');
+                      } catch {}
                     }}
                     onLoadError={() => setLive2dFailed(true)}
                   />

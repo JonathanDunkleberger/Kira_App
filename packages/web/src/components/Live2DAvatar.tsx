@@ -369,14 +369,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const containerWidth = app.renderer.width / resolution;
         const containerHeight = app.renderer.height / resolution;
 
-        const scaleFactor = isMobile ? 1.0 : 0.9;
+        const scaleFactor = 0.9;
         const scale = Math.min(
           containerWidth / model.width,
           containerHeight / model.height
         ) * scaleFactor;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        const yPosition = containerHeight * 0.55;
+        const yPosition = containerHeight * (isMobile ? 0.57 : 0.55);
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -476,10 +476,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const rawWidth = modelRef.current.width / currentScale;
           const rawHeight = modelRef.current.height / currentScale;
           const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          const sf = mobile ? 1.0 : 0.9;
+          const sf = 0.9;
           const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = h * 0.55;
+          baseYRef.current = h * (mobile ? 0.57 : 0.55);
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);

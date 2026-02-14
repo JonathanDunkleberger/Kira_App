@@ -615,8 +615,8 @@ export default function HomePage() {
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </>
                   ),
-                  title: "Sees Your Screen",
-                  desc: "Share your screen and she watches alongside you. She\u2019ll react to what\u2019s happening without you having to describe it.",
+                  title: "Camera & Screen Vision",
+                  desc: "Share your camera or screen and she watches alongside you. She\u2019ll react to what\u2019s happening without you having to describe it.",
                 },
                 {
                   icon: (
@@ -855,7 +855,7 @@ export default function HomePage() {
                     gap: 10,
                   }}
                 >
-                  {["15 minutes per day", "Full voice & text chat", "Screen sharing", "Persistent memory"].map(
+                  {["15 minutes per day", "Full voice & text chat", "Camera & screen vision", "Persistent memory"].map(
                     (item, i) => (
                       <li
                         key={i}

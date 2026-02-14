@@ -287,9 +287,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         // Detect mobile for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Mobile: allow up to 3x native resolution (stays sharp when zoomed)
-        // Desktop: cap at 2x for retina sharpness
-        const resolution = isMobile ? Math.min(window.devicePixelRatio || 1, 3) : Math.min(window.devicePixelRatio || 1, 2);
+        // Full native resolution — no cap. iPhone 12 gets 3x, desktop whatever the display supports.
+        const resolution = window.devicePixelRatio || 1;
 
         let app: InstanceType<typeof PIXI.Application>;
         try {

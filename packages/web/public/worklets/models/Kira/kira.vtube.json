@@ -1,10 +1,10 @@
 {
     "Version": 1,
-    "Name": "suki酱",
+    "Name": "kira",
     "ModelID": "cc9d4a135b814af39da587061f983e58",
     "FileReferences": {
-        "Icon": "封面.png",
-        "Model": "suki酱.model3.json",
+        "Icon": "cover.png",
+        "Model": "kira.model3.json",
         "IdleAnimation": "Scene1.motion3.json",
         "IdleAnimationWhenTrackingLost": ""
     },

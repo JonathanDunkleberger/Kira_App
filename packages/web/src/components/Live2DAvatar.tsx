@@ -203,8 +203,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         let model;
         try {
           const modelPath = isMobile
-            ? "/worklets/models/Kira/suki%E9%85%B1.mobile.model3.json"
-            : "/worklets/models/Kira/suki%E9%85%B1.model3.json";
+            ? "/worklets/models/Kira/kira.mobile.model3.json"
+            : "/worklets/models/Kira/kira.model3.json";
           model = await Live2DModel.from(
             modelPath,
             { autoInteract: false }

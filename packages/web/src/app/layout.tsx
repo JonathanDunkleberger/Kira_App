@@ -31,8 +31,8 @@ export default function RootLayout({
             rel="stylesheet"
           />
           {/* Preload Live2D model assets — start downloading before React mounts */}
-          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.model3.json" as="fetch" crossOrigin="anonymous" />
-          <link rel="preload" href="/worklets/models/Kira/suki%E9%85%B1.moc3" as="fetch" crossOrigin="anonymous" />
+          <link rel="preload" href="/worklets/models/Kira/kira.model3.json" as="fetch" crossOrigin="anonymous" />
+          <link rel="preload" href="/worklets/models/Kira/kira.moc3" as="fetch" crossOrigin="anonymous" />
 
         </head>
         <body style={{ background: "#0D1117", color: "#C9D1D9", margin: 0 }}>

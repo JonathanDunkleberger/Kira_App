@@ -2,8 +2,8 @@ const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 
-const srcDir = path.join(__dirname, "../public/worklets/models/Kira/suki酱.8192");
-const outDir = path.join(__dirname, "../public/worklets/models/Kira/suki酱.2048");
+const srcDir = path.join(__dirname, "../public/worklets/models/Kira/kira.8192");
+const outDir = path.join(__dirname, "../public/worklets/models/Kira/kira.2048");
 
 fs.mkdirSync(outDir, { recursive: true });
 

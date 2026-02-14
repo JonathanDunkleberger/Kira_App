@@ -1,0 +1,72 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "kira.moc3",
+		"Textures": [
+			"kira.2048/texture_00.png",
+			"kira.2048/texture_01.png"
+		],
+		"Physics": "kira.physics3.json",
+		"DisplayInfo": "kira.cdi3.json",
+		"Expressions": [
+			{ "Name": "blush", "File": "blush.exp3.json" },
+			{ "Name": "angry", "File": "angry.exp3.json" },
+			{ "Name": "tears", "File": "tears.exp3.json" },
+			{ "Name": "star_eyes", "File": "star_eyes.exp3.json" },
+			{ "Name": "heart_eyes", "File": "heart_eyes.exp3.json" },
+			{ "Name": "dazed", "File": "dazed.exp3.json" },
+			{ "Name": "speechless", "File": "speechless.exp3.json" },
+			{ "Name": "sleeping", "File": "sleeping.exp3.json" },
+			{ "Name": "spiral_eyes", "File": "spiral_eyes.exp3.json" },
+			{ "Name": "eye_roll", "File": "eye_roll.exp3.json" },
+			{ "Name": "dark_face", "File": "dark_face.exp3.json" },
+			{ "Name": "tongue_out", "File": "tongue_out.exp3.json" },
+			{ "Name": "donut_mouth", "File": "donut_mouth.exp3.json" },
+			{ "Name": "bandaid", "File": "bandaid.exp3.json" },
+			{ "Name": "eye_mask", "File": "eye_mask.exp3.json" },
+			{ "Name": "glasses", "File": "glasses.exp3.json" },
+			{ "Name": "short_hair", "File": "short_hair.exp3.json" },
+			{ "Name": "headphones_on", "File": "headphones_on.exp3.json" },
+			{ "Name": "neck_headphones", "File": "neck_headphones.exp3.json" },
+			{ "Name": "earbuds", "File": "earbuds.exp3.json" },
+			{ "Name": "clip_bangs", "File": "clip_bangs.exp3.json" },
+			{ "Name": "low_twintails", "File": "low_twintails.exp3.json" },
+			{ "Name": "hide_ears_tail", "File": "hide_ears_tail.exp3.json" },
+			{ "Name": "cat_mic", "File": "cat_mic.exp3.json" },
+			{ "Name": "watermark", "File": "watermark.exp3.json" },
+			{ "Name": "hold_knife", "File": "hold_knife.exp3.json" },
+			{ "Name": "hold_phone", "File": "hold_phone.exp3.json" },
+			{ "Name": "hold_lollipop", "File": "hold_lollipop.exp3.json" },
+			{ "Name": "hold_drawing_board", "File": "hold_drawing_board.exp3.json" },
+			{ "Name": "hold_pen", "File": "hold_pen.exp3.json" },
+			{ "Name": "photo_off", "File": "photo_off.exp3.json" },
+			{ "Name": "gaming", "File": "gaming.exp3.json" },
+			{ "Name": "remove_jacket", "File": "remove_jacket.exp3.json" },
+			{ "Name": "blood_stain", "File": "blood_stain.exp3.json" }
+		],
+		"Motions": {
+			"Idle": [
+				{ "File": "Scene1.motion3.json", "FadeInTime": 0.5, "FadeOutTime": 0.5 }
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeRSmile",
+				"ParamEyeLOpen",
+				"ParamEyeLSmile"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"ParamMouthOpenY"
+			]
+		}
+	]
+}

@@ -36,7 +36,6 @@ export default function ChatClient() {
   const [deviceDetected, setDeviceDetected] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
-  const live2dSkippedRef = useRef(false); // true when Live2D was skipped (crash history / low-end)
 
   useEffect(() => {
     const checkMobile = () => {
@@ -55,41 +54,7 @@ export default function ChatClient() {
     return () => {
       window.removeEventListener("resize", checkMobile);
       clearTimeout(fallback);
-    };
-  }, []);
-
-  // On mount: check session crash history & low-end heuristic → auto-orb
-  useEffect(() => {
-    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-      || (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
-
-    // If Live2D crashed before, skip it (with 24-hour expiry so it retries later)
-    let crashes = 0;
-    try {
-      const lastCrashTime = parseInt(localStorage.getItem('live2d-crash-time') || '0', 10);
-      const hoursSinceCrash = lastCrashTime ? (Date.now() - lastCrashTime) / 3600000 : 999;
-      if (hoursSinceCrash > 24) {
-        // Reset crash counter after 24 hours — give Live2D another chance
-        localStorage.removeItem('live2d-crashes');
-        localStorage.removeItem('live2d-crash-time');
-      } else {
-        crashes = parseInt(localStorage.getItem('live2d-crashes') || '0', 10);
-      }
-    } catch {}
-    if (crashes > 0) {
-      console.log(`[UI] Previous Live2D crash detected (${crashes}) — using orb-only mode`);
-      setVisualMode("orb");
-      live2dSkippedRef.current = true;
-      return;
-    }
-
-    // Low-end mobile heuristic: ≤4 logical cores → skip Live2D
-    const isLowEnd = mobile && (navigator.hardwareConcurrency || 4) <= 4;
-    if (isLowEnd) {
-      console.log(`[UI] Low-end mobile detected (cores: ${navigator.hardwareConcurrency}) — using orb-only mode`);
-      setVisualMode("orb");
-      live2dSkippedRef.current = true;
-    }
+    };  
   }, []);
 
   // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
@@ -209,7 +174,7 @@ export default function ChatClient() {
       return;
     }
 
-    // Avatar mode but Live2D not ready yet — give it a grace period
+    // Avatar mode but Live2D not ready yet — give it a generous grace period
     // so the voice experience isn't blocked by a slow model load
     if (!conversationTimerRef.current) {
       conversationTimerRef.current = setTimeout(() => {
@@ -218,7 +183,7 @@ export default function ChatClient() {
           console.log("[Chat] Live2D grace period expired — starting conversation without avatar");
           startConversation();
         }
-      }, 5000);
+      }, 10000);
     }
   }, [socketState, live2dReady, visualMode, startConversation]);
 
@@ -520,11 +485,6 @@ export default function ChatClient() {
                     accessories={activeAccessories}
                     onModelReady={() => {
                       setLive2dReady(true);
-                      // Clear crash counter on successful load
-                      try {
-                        localStorage.setItem('live2d-crashes', '0');
-                        localStorage.removeItem('live2d-crash-time');
-                      } catch {}
                     }}
                     onLoadError={() => setLive2dFailed(true)}
                   />

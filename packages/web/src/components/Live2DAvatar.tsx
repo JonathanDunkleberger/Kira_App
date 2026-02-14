@@ -112,9 +112,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     (async () => {
       const loadStart = performance.now();
       try {
-        // Detect mobile for timeout tuning
-        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const MODEL_LOAD_TIMEOUT = isMobileDevice ? 8000 : 15000;
+        const MODEL_LOAD_TIMEOUT = 30000;
 
         // Race the entire init against a timeout
         const timeoutPromise = new Promise<never>((_, reject) => {
@@ -128,12 +126,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       } catch (err) {
         if (!destroyed) {
           console.error(`[Live2D] Initialization failed after ${(performance.now() - loadStart).toFixed(0)}ms:`, err);
-          // Record crash in localStorage so ChatClient can skip Live2D on reload
-          try {
-            const crashes = parseInt(localStorage.getItem('live2d-crashes') || '0', 10);
-            localStorage.setItem('live2d-crashes', String(crashes + 1));
-            localStorage.setItem('live2d-crash-time', String(Date.now()));
-          } catch {}
           onLoadErrorRef.current?.();
         }
       } finally {
@@ -153,18 +145,12 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         if (destroyed || !containerRef.current) return;
 
-        // Detect mobile / iOS for GPU budget decisions
+        // Detect mobile for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        // iOS: 1.5 balances sharpness vs VRAM (was 1, too blurry on 3x screens).
-        // Android/desktop: cap at 2.
-        const resolution = isIOS ? 1.5 : Math.min(window.devicePixelRatio || 1, 2);
-
-        // On mobile, let the browser reclaim GPU resources before we allocate
-        if (isMobile) {
-          await new Promise(r => setTimeout(r, 300));
-          if (destroyed || !containerRef.current) return;
-        }
+        // Mobile: render at 1x to reduce GPU memory (the model still looks fine).
+        // iOS: 1x (was 1.5 but the 33MB .moc3 needs all the headroom it can get).
+        // Desktop: cap at 2x for retina sharpness.
+        const resolution = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {
@@ -174,6 +160,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             resolution,
             autoDensity: true,
             antialias: !isMobile,
+            powerPreference: isMobile ? "low-power" : "default",
           });
           containerRef.current.appendChild(app.view as unknown as HTMLCanvasElement);
         } catch (pixiErr) {

@@ -370,18 +370,20 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const containerWidth = app.renderer.width / resolution;
         const containerHeight = app.renderer.height / resolution;
 
+        const scaleFactor = isMobile ? 1.1 : 0.9;
         const scale = Math.min(
           containerWidth / model.width,
           containerHeight / model.height
-        ) * 0.9;
+        ) * scaleFactor;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        model.y = containerHeight * 0.52;
+        const yPosition = isMobile ? containerHeight * 0.58 : containerHeight * 0.52;
+        model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
         // Store base positioning for zoom math
         baseScaleRef.current = scale;
-        baseYRef.current = containerHeight * 0.52;
+        baseYRef.current = yPosition;
 
         // Eye tracking — eyes follow the cursor
         app.stage.interactive = true;
@@ -474,9 +476,11 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const currentScale = modelRef.current.scale.x || 1;
           const rawWidth = modelRef.current.width / currentScale;
           const rawHeight = modelRef.current.height / currentScale;
-          const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * 0.9;
+          const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          const sf = mobile ? 1.1 : 0.9;
+          const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = h * 0.52;
+          baseYRef.current = mobile ? h * 0.58 : h * 0.52;
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);
@@ -755,7 +759,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   }, [zoomLevel]);
 
   return (
-    <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative", overflow: "hidden" }}>
+    <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "90vh", margin: "0 auto", position: "relative", overflow: "hidden" }}>
       <div
         ref={containerRef}
         style={{

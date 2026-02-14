@@ -287,10 +287,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         // Detect mobile for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Mobile: render at 1x to reduce GPU memory (the model still looks fine).
-        // iOS: 1x (was 1.5 but the 33MB .moc3 needs all the headroom it can get).
+        // Mobile: 1.5x gives good sharpness on Retina without full 2x/3x VRAM cost.
         // Desktop: cap at 2x for retina sharpness.
-        const resolution = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+        const resolution = isMobile ? 1.5 : Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {

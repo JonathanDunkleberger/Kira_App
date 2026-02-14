@@ -341,18 +341,24 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // 1. Create/Resume AudioContext
       if (!audioContext.current || audioContext.current.state === "closed") {
         audioContext.current = new AudioContext();
+        console.log(`[Audio] Created capture AudioContext (sampleRate: ${audioContext.current.sampleRate})`);
       }
       if (audioContext.current.state === "suspended") {
+        console.log("[Audio] Capture AudioContext is suspended, resuming...");
         await audioContext.current.resume();
       }
+      console.log(`[Audio] Capture AudioContext state: ${audioContext.current.state}`);
 
       // 2. Create/Resume PlaybackContext
       if (!playbackContext.current || playbackContext.current.state === "closed") {
         playbackContext.current = new AudioContext({ sampleRate: 16000 });
+        console.log("[Audio] Created playback AudioContext (sampleRate: 16000)");
       }
       if (playbackContext.current.state === "suspended") {
+        console.log("[Audio] Playback AudioContext is suspended, resuming...");
         await playbackContext.current.resume();
       }
+      console.log(`[Audio] Playback AudioContext state: ${playbackContext.current.state}`);
 
       // 3. Request Mic Permission (if not already)
       if (!audioStream.current) {
@@ -365,7 +371,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             noiseSuppression: true,
           },
         });
-        console.log("[Audio] Mic permission granted.");
+        console.log(`[Audio] Mic permission granted. Tracks: ${audioStream.current.getAudioTracks().length}, active: ${audioStream.current.active}`);
+      } else {
+        console.log(`[Audio] Mic stream already exists. active: ${audioStream.current.active}`);
       }
 
       setIsAudioBlocked(false);
@@ -923,10 +931,20 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    * Main connection logic
    */
   const connect = useCallback(async () => {
-    if (ws.current) return;
+    if (ws.current) {
+      console.log("[Connect] Aborted — WebSocket already exists");
+      return;
+    }
+
+    console.log("[Connect] Starting connection attempt...");
 
     // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
-    await initializeAudio();
+    const audioOk = await initializeAudio();
+    console.log(`[Connect] Audio initialized: ${audioOk}`);
+    if (!audioOk) {
+      console.error("[Connect] Failed: audio initialization returned false (mic denied or AudioContext failed)");
+      return;
+    }
 
     // Fetch a FRESH auth token right before connecting — prevents stale JWT race conditions
     // (token fetched at mount time can expire before the user clicks "start")
@@ -934,8 +952,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     if (getTokenFn) {
       try {
         freshToken = await getTokenFn();
+        console.log("[Connect] Auth token fetched successfully");
       } catch (err) {
-        console.error("[Auth] Failed to get fresh token:", err);
+        console.error("[Connect] Failed to get fresh token:", err);
       }
     }
 

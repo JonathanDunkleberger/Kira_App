@@ -422,7 +422,7 @@ export default function HomePage() {
             animation: "heroFadeUp 0.8s ease 0.3s both",
           }}
         >
-          <Link
+          <a
             href="/chat/kira"
             style={{
               display: "flex",
@@ -456,7 +456,7 @@ export default function HomePage() {
             }}
           >
             {isSignedIn ? "Talk to Kira" : "Meet Kira — Free"}
-          </Link>
+          </a>
           {!isSignedIn && (
             <span style={{ fontSize: 12, color: "rgba(201,209,217,0.3)", fontWeight: 300 }}>
               No account required · 15 minutes free daily
@@ -873,7 +873,7 @@ export default function HomePage() {
                     )
                   )}
                 </ul>
-                <Link
+                <a
                   href="/chat/kira"
                   style={{
                     display: "block",
@@ -899,7 +899,7 @@ export default function HomePage() {
                   }}
                 >
                   Get started
-                </Link>
+                </a>
               </div>
 
               {/* Pro tier */}
@@ -1044,7 +1044,7 @@ export default function HomePage() {
             >
               No signup required. Start talking and she&apos;ll start learning.
             </p>
-            <Link
+            <a
               href="/chat/kira"
               style={{
                 display: "inline-flex",
@@ -1076,7 +1076,7 @@ export default function HomePage() {
               }}
             >
               Talk to Kira
-            </Link>
+            </a>
           </section>
         </>
       )}

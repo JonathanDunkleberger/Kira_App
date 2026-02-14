@@ -3,8 +3,6 @@
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKiraSocket } from "@/hooks/useKiraSocket";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
@@ -17,7 +15,6 @@ const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: f
 const XOLoader = dynamic(() => import("@/components/XOLoader"), { ssr: false });
 
 export default function ChatClient() {
-  const router = useRouter();
   const { getToken, userId } = useAuth();
   const { openSignIn } = useClerk();
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -229,12 +226,12 @@ export default function ChatClient() {
     // TODO: Save rating to backend
     console.log("User rated conversation:", rating);
     setShowRatingModal(false);
-    router.push("/");
+    window.location.href = "/"; // Hard nav to guarantee WebGL cleanup
   };
 
   const handleContinue = () => {
     setShowRatingModal(false);
-    router.push("/");
+    window.location.href = "/"; // Hard nav to guarantee WebGL cleanup
   };
 
   const handleUpgrade = async () => {
@@ -395,12 +392,12 @@ export default function ChatClient() {
     <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif", height: "100dvh" }} className="flex flex-col items-center justify-center w-full">
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
-        <Link href="/">
+        <a href="/">
           <span className="font-medium text-lg flex items-center gap-2" style={{ color: "#C9D1D9" }}>
             <KiraLogo size={24} id="chatXO" />
             Kira
           </span>
-        </Link>
+        </a>
         
         {/* Profile Link + Timer */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -866,7 +863,7 @@ export default function ChatClient() {
                   >
                     Create free account
                   </button>
-                  <Link
+                  <a
                     href="/"
                     style={{
                       display: "block",
@@ -881,7 +878,7 @@ export default function ChatClient() {
                     }}
                   >
                     I&apos;ll come back tomorrow
-                  </Link>
+                  </a>
                 </div>
               </>
             ) : (
@@ -926,7 +923,7 @@ export default function ChatClient() {
                   >
                     Upgrade to Pro — $9.99/mo
                   </button>
-                  <Link
+                  <a
                     href="/"
                     style={{
                       display: "block",
@@ -941,7 +938,7 @@ export default function ChatClient() {
                     }}
                   >
                     I&apos;ll come back tomorrow
-                  </Link>
+                  </a>
                 </div>
               </>
             )}
@@ -1013,7 +1010,7 @@ export default function ChatClient() {
             }}>
               Resets on the 1st of next month
             </p>
-            <Link
+            <a
               href="/"
               style={{
                 display: "block",
@@ -1032,7 +1029,7 @@ export default function ChatClient() {
               }}
             >
               Back to home
-            </Link>
+            </a>
           </div>
         </div>
       )}

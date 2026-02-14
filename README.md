@@ -1,7 +1,7 @@
 # Kira
 
 <p align="center">
-  <img src="./packages/web/public/KIRA_2_DEMO.png" alt="Kira AI" width="280" />
+  <img src="./packages/web/public/KIRA_2_DEMO.png" alt="Kira AI" width="600" />
 </p>
 
 <p align="center">

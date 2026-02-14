@@ -615,13 +615,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   }, [zoomLevel]);
 
   return (
-    <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative" }}>
+    <div style={{ width: "100%", height: "100%", maxWidth: "600px", maxHeight: "85vh", margin: "0 auto", position: "relative", overflow: "hidden" }}>
       <div
         ref={containerRef}
         style={{
           width: "100%",
           height: "100%",
           pointerEvents: "auto",
+          overflow: "hidden",
           opacity: modelReady ? 1 : 0,
           transition: "opacity 0.3s ease-in",
         }}

@@ -539,6 +539,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    */
   const startCamera = useCallback(async (mode?: "environment" | "user") => {
     const useFacing = mode || facingMode;
+    console.log("[Camera] startCamera called, facingMode:", useFacing);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error("[Camera] getUserMedia not available — requires HTTPS");
+      setError("Camera not available — HTTPS required");
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -548,6 +556,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         },
         audio: false,
       });
+      console.log("[Camera] Got stream:", stream.getVideoTracks().length, "video tracks");
 
       cameraStreamRef.current = stream;
 
@@ -582,6 +591,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     } catch (err) {
       console.error("[Camera] Failed to start:", err);
+      const msg = (err as Error).message || "Unknown camera error";
+      if (msg.includes("NotAllowedError") || msg.includes("Permission")) {
+        setError("Camera permission denied");
+      } else {
+        setError("Camera failed: " + msg);
+      }
     }
   }, [facingMode, captureAndSendCameraFrame]);
 

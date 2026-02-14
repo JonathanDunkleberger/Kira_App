@@ -327,6 +327,7 @@ export default function HomePage() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
+          width: "100%",
           position: "relative",
           marginBottom: 40,
         }}>

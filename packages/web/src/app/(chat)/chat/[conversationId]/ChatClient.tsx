@@ -166,7 +166,7 @@ export default function ChatClient() {
     // If orb mode or Live2D already ready, start immediately
     if (visualMode !== "avatar" || live2dReady) {
       hasStartedConversation.current = true;
-      console.log("[Chat] WS connected — starting conversation");
+      console.log("[Chat] WS connected — starting conversation (visualMode:", visualMode, "live2dReady:", live2dReady, ")");
       startConversation();
       return;
     }
@@ -174,6 +174,7 @@ export default function ChatClient() {
     // Avatar mode but Live2D not ready yet — give it a generous grace period
     // so the voice experience isn't blocked by a slow model load
     if (!conversationTimerRef.current) {
+      console.log("[Chat] WS connected but Live2D not ready — starting 10s grace timer");
       conversationTimerRef.current = setTimeout(() => {
         if (!hasStartedConversation.current && socketState === "connected") {
           hasStartedConversation.current = true;
@@ -367,7 +368,7 @@ export default function ChatClient() {
         </p>
 
         <button
-          onClick={() => connect()}
+          onClick={() => { console.log("[Chat] 🎤 Connect button tapped"); connect(); }}
           style={{
             display: "flex",
             alignItems: "center",

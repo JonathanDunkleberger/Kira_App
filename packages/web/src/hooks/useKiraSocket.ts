@@ -9,7 +9,7 @@ function debugLog(...args: any[]) {
   try {
     const logs = JSON.parse(sessionStorage.getItem('kira-debug') || '[]');
     logs.push(msg);
-    if (logs.length > 100) logs.splice(0, logs.length - 100);
+    if (logs.length > 200) logs.splice(0, logs.length - 200);
     sessionStorage.setItem('kira-debug', JSON.stringify(logs));
   } catch {}
 }
@@ -29,6 +29,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const [socketState, setSocketState] = useState<SocketState>("idle");
   const [kiraState, setKiraState] = useState<KiraState>("listening");
   const kiraStateRef = useRef<KiraState>("listening"); // Ref to track state in callbacks
+
+  // Log hook mount/unmount — if we see "mount" twice, the component re-mounted (state reset to idle)
+  useEffect(() => {
+    debugLog("[Hook] useKiraSocket MOUNTED — socketState starts as idle");
+    return () => debugLog("[Hook] useKiraSocket UNMOUNTED");
+  }, []);
 
   // Sync ref with state
   useEffect(() => {
@@ -692,7 +698,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    */
   const startAudioPipeline = useCallback(async () => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      console.error("[Audio] WebSocket not open, cannot start pipeline.");
+      debugLog("[Audio] ❌ WebSocket not open, cannot start pipeline.");
       return;
     }
 
@@ -706,17 +712,17 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // 2. Load AudioWorklet module
       if (!audioContext.current) throw new Error("AudioContext is null");
       
-      console.log("[Audio] Loading AudioWorklet module...");
+      debugLog("[Audio] Loading AudioWorklet module...");
       try {
         // Use a robust path for the worklet
         const workletUrl = "/worklets/AudioWorkletProcessor.js";
         // Check if module is already added (not directly possible, but addModule is idempotent-ish or throws)
         // We'll just try adding it.
         await audioContext.current.audioWorklet.addModule(workletUrl);
-        console.log("[Audio] AudioWorklet module loaded.");
+        debugLog("[Audio] AudioWorklet module loaded.");
       } catch (e) {
         // Ignore error if module already added (DOMException)
-        console.log("[Audio] Worklet might already be loaded:", e);
+        debugLog("[Audio] Worklet might already be loaded:", e);
       }
 
       // 3. Create the Worklet Node
@@ -911,22 +917,23 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    * Adds detailed logs to trace user action and pipeline startup.
    */
   const startConversation = useCallback(() => {
-    console.log("[UI] Start button clicked.");
+    debugLog("[StartConvo] startConversation called. ws exists:", !!ws.current, "readyState:", ws.current?.readyState);
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      console.log("[WS] Sending 'start_stream' message...");
+      debugLog("[StartConvo] Sending 'start_stream' message...");
       try {
         ws.current.send(JSON.stringify({ type: "start_stream" }));
         conversationActive.current = true; // Mark session as live — no more auto-reconnect
+        debugLog("[StartConvo] start_stream sent, conversationActive=true");
       } catch (err) {
-        console.error("[WS] Failed to send start_stream:", err);
+        debugLog("[StartConvo] ❌ Failed to send start_stream:", err);
       }
       
       // Start mic immediately to satisfy browser user-gesture requirements
-      console.log("[Audio] Starting local audio pipeline...");
+      debugLog("[StartConvo] Starting local audio pipeline...");
       startAudioPipeline();
     } else {
-      console.error(
-        "[WS] Cannot start stream: WebSocket is not open or not connected."
+      debugLog(
+        "[StartConvo] ❌ Cannot start: WebSocket not open. ws:", !!ws.current, "readyState:", ws.current?.readyState
       );
     }
   }, [startAudioPipeline]);
@@ -975,12 +982,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     const voiceParam = `&voice=${voicePreference}`;
     debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}`);
 
+    debugLog("[State] socketState → connecting");
     setSocketState("connecting");
     isServerReady.current = false;
     ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     ws.current.onopen = () => {
+      debugLog("[State] socketState → connected");
       setSocketState("connected");
       reconnectAttempts.current = 0; // Reset on successful connection
       setError(null); // Clear any error banner from a previous disconnect
@@ -993,10 +1002,11 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       if (typeof event.data === "string") {
         // This is a JSON control message
         const msg = JSON.parse(event.data);
+        debugLog("[WS] ← message:", msg.type, msg.type === "session_config" ? JSON.stringify(msg).slice(0, 200) : "");
 
         switch (msg.type) {
           case "session_config":
-            console.log("[WS] Received session config:", msg);
+            debugLog("[WS] Received session_config:", JSON.stringify(msg));
             setIsPro(msg.isPro);
             isProRef.current = msg.isPro;
             if (msg.remainingSeconds !== undefined) {
@@ -1004,7 +1014,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             }
             break;
           case "stream_ready":
-            console.log("[WS] Received stream_ready.");
+            debugLog("[WS] Received stream_ready — setting kiraState to listening");
             setKiraState("listening");
             isServerReady.current = true;
             break;
@@ -1067,14 +1077,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           case "error":
             if (msg.code === "limit_reached") {
               if (msg.tier === "pro") {
-                console.warn("[WS] Pro monthly limit reached.");
+                debugLog("[WS] ⚠️ Pro monthly limit reached.");
                 setError("limit_reached_pro");
               } else {
-                console.warn("[WS] Daily limit reached.");
+                debugLog("[WS] ⚠️ Daily limit reached.");
                 setError("limit_reached");
               }
             } else {
-              console.error("[WS] Server error:", msg.message);
+              debugLog("[WS] ❌ Server error:", msg.message);
               setError(msg.message);
             }
             break;
@@ -1086,7 +1096,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         if (kiraStateRef.current === "speaking") {
             if (!firstAudioLogged.current && eouSentAt.current > 0) {
               firstAudioLogged.current = true;
-              console.log(`[Latency] Client: EOU → first audio: ${Date.now() - eouSentAt.current}ms`);
+              debugLog(`[Latency] Client: EOU → first audio: ${Date.now() - eouSentAt.current}ms`);
             }
             audioQueue.current.push(event.data);
             processAudioQueue();
@@ -1095,7 +1105,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     };
 
     ws.current.onclose = (event) => {
-      console.log(`[WS] 🔌 Connection closed: ${event.code} - ${event.reason}`);
+      debugLog("[WS] 🔌 Connection closed. Code:", event.code, "Reason:", event.reason, "Clean:", event.wasClean);
+      debugLog("[State] socketState → closed (from onclose)");
       setSocketState("closed");
       
       if (event.code === 1008) {
@@ -1119,13 +1130,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       if (event.code !== 1000 && event.code !== 1008) {
         if (conversationActive.current) {
           // Live session was interrupted — don't reconnect, show error
-          console.log("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");
+          debugLog("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");
           setError("connection_lost");
         } else if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           // Pre-conversation connection drop — safe to retry
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
           reconnectAttempts.current++;
-          console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+          debugLog(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
           setTimeout(() => {
             connect();
           }, delay);
@@ -1137,7 +1148,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     };
 
     ws.current.onerror = (err) => {
-      console.error("[WS] ❌ WebSocket error:", err);
+      debugLog("[WS] ❌ WebSocket error event fired:", err);
+      debugLog("[State] socketState → closed (from onerror)");
       setSocketState("closed");
       stopAudioPipeline();
       // Don't set error here — onclose will handle reconnection or final error
@@ -1145,10 +1157,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   }, [getTokenFn, guestId, startConversation, processAudioQueue, stopAudioPipeline]);
 
   const disconnect = useCallback(() => {
+    debugLog("[WS] disconnect() called. ws.current exists:", !!ws.current);
     if (eouTimer.current) clearTimeout(eouTimer.current);
     reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
     conversationActive.current = false; // Clean shutdown — not a crash
     if (ws.current) {
+      debugLog("[State] socketState → closing (from disconnect)");
       setSocketState("closing");
       ws.current.close(1000, "User ended call"); // Code 1000 = intentional close, won't trigger reconnect
     }

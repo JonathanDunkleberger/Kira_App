@@ -48,10 +48,22 @@ interface Live2DAvatarProps {
   onLoadError?: () => void;
 }
 
+/** Log JS heap usage (Chrome only — no-op on Safari/Firefox) */
+function logMemory(label: string) {
+  try {
+    const mem = (performance as any).memory;
+    if (mem) {
+      console.log(`[Memory] ${label} — Used: ${(mem.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB, Total: ${(mem.totalJSHeapSize / 1024 / 1024).toFixed(1)}MB`);
+    }
+  } catch {}
+}
+
 export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, onModelReady, onLoadError }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null); // explicit canvas ref for cleanup
+  const contextLostHandlerRef = useRef<((e: Event) => void) | null>(null); // stored for removal
   const animFrameRef = useRef<number>(0);
   const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeAccessoriesRef = useRef<Set<string>>(new Set());
@@ -74,18 +86,141 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   onLoadErrorRef.current = onLoadError;
   const [modelReady, setModelReady] = useState(false);
 
+  /**
+   * Full GPU + memory cleanup — must release ALL resources to prevent the
+   * "second conversation crash" on mobile (iOS limits WebGL to ~2 contexts).
+   *
+   * Order matters:
+   *   1. Stop render loop (no more GPU draw calls)
+   *   2. Destroy Live2D model (releases model buffers)
+   *   3. Remove webglcontextlost listener (prevent closure leak)
+   *   4. Destroy PIXI app *while context is still valid* (so it can delete
+   *      textures / framebuffers via real WebGL calls)
+   *   5. Lose WebGL context (forces the browser to free GPU memory)
+   *   6. Remove canvas from DOM
+   *   7. Clear PIXI global texture caches (module-level singletons that survive unmount)
+   *   8. Reset refs
+   */
+  const cleanupLive2D = useRef(() => {
+    console.log("[Live2D] Starting full cleanup…");
+    logMemory("before cleanup");
+
+    // 1. Stop render loop
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = 0;
+    }
+
+    // Clear timers
+    if (modelStableTimer.current) {
+      clearTimeout(modelStableTimer.current);
+      modelStableTimer.current = null;
+    }
+    if (expressionTimeoutRef.current) {
+      clearTimeout(expressionTimeoutRef.current);
+      expressionTimeoutRef.current = null;
+    }
+
+    // 2. Destroy the Live2D model (frees model buffers + child display objects)
+    if (modelRef.current) {
+      try {
+        modelRef.current.destroy({ children: true });
+        console.log("[Live2D] Model destroyed");
+      } catch (e) {
+        console.warn("[Live2D] Model destroy error (may already be destroyed):", e);
+      }
+      modelRef.current = null;
+    }
+
+    // 3. Remove the webglcontextlost listener (its closure captures the PIXI app,
+    //    preventing GC if left attached)
+    if (canvasRef.current && contextLostHandlerRef.current) {
+      canvasRef.current.removeEventListener("webglcontextlost", contextLostHandlerRef.current);
+      contextLostHandlerRef.current = null;
+    }
+
+    // 4. Destroy the PIXI Application *before* losing the context —
+    //    PIXI needs a live context to call deleteTexture / deleteBuffer etc.
+    if (appRef.current) {
+      try {
+        appRef.current.ticker.stop();
+      } catch {}
+      try {
+        appRef.current.destroy(true, {
+          children: true,
+          texture: true,
+          baseTexture: true,
+        });
+        console.log("[Live2D] PIXI app destroyed");
+      } catch (e) {
+        console.warn("[Live2D] PIXI app destroy error:", e);
+      }
+      appRef.current = null;
+    }
+
+    // 5. Explicitly lose the WebGL context — forces the browser / GPU driver
+    //    to free VRAM.  iOS Safari hard-limits active contexts (~2-3).
+    if (canvasRef.current) {
+      try {
+        const gl = canvasRef.current.getContext("webgl2") || canvasRef.current.getContext("webgl");
+        if (gl && !gl.isContextLost()) {
+          const ext = gl.getExtension("WEBGL_lose_context");
+          if (ext) {
+            ext.loseContext();
+            console.log("[Live2D] WebGL context explicitly released");
+          }
+        }
+      } catch {}
+    }
+
+    // 6. Remove canvas from DOM (PIXI's destroy(true) should do this,
+    //    but belt-and-suspenders for the context-loss path)
+    if (canvasRef.current && canvasRef.current.parentNode) {
+      canvasRef.current.parentNode.removeChild(canvasRef.current);
+    }
+    canvasRef.current = null;
+
+    // 7. Flush PIXI's global texture caches — these are module-level Maps
+    //    that survive component unmount and hold GPU texture references.
+    try {
+      const PIXI = (window as any).PIXI;
+      if (PIXI) {
+        if (PIXI.utils?.TextureCache) {
+          for (const key in PIXI.utils.TextureCache) {
+            try { PIXI.utils.TextureCache[key].destroy(true); } catch {}
+          }
+        }
+        if (PIXI.utils?.BaseTextureCache) {
+          for (const key in PIXI.utils.BaseTextureCache) {
+            try { PIXI.utils.BaseTextureCache[key].destroy(); } catch {}
+          }
+        }
+        console.log("[Live2D] PIXI texture caches cleared");
+      }
+    } catch (e) {
+      console.warn("[Live2D] Cache cleanup error:", e);
+    }
+
+    // 8. Reset all state refs
+    initializedRef.current = false;
+    modelStableRef.current = false;
+    pendingEmotion.current = null;
+    pendingAccessories.current = [];
+    activeAccessoriesRef.current = new Set();
+    setModelReady(false);
+
+    logMemory("after cleanup");
+    console.log("[Live2D] Cleanup complete");
+  });
+
   // Initialize PixiJS app + load model (runs once on mount)
   useEffect(() => {
     if (!containerRef.current || initializedRef.current) return;
 
     // Guard: destroy any orphaned PIXI app from a previous mount (React strict mode)
     if (appRef.current) {
-      console.warn("[Live2D] PIXI app already exists — destroying old one first");
-      try {
-        appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
-      } catch {}
-      appRef.current = null;
-      modelRef.current = null;
+      console.warn("[Live2D] PIXI app already exists — running full cleanup first");
+      cleanupLive2D.current();
     }
 
     // Aggressively reclaim orphaned WebGL contexts (iOS limits to ~2 total)
@@ -105,6 +240,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     }
 
     initializedRef.current = true;
+    logMemory("before init");
 
     let destroyed = false;
     let loadTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -169,12 +305,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           return;
         }
         appRef.current = app;
+        // Store canvas ref for cleanup (PIXI.view is the <canvas>)
+        canvasRef.current = app.view as unknown as HTMLCanvasElement;
         pixiCreatedAt.current = Date.now();
         pixiResolutionRef.current = resolution;
         console.log(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
-        const canvas = app.view as unknown as HTMLCanvasElement;
+        const canvas = canvasRef.current!;
         const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
         if (gl) {
           // Log GPU memory budget if available (WEBGL_debug_renderer_info)
@@ -190,6 +328,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           webglCrashCount.current++;
           const aliveSeconds = ((Date.now() - pixiCreatedAt.current) / 1000).toFixed(1);
           console.error(`[Live2D] WebGL context lost (crash #${webglCrashCount.current}) after ${aliveSeconds}s`);
+          logMemory("at context loss");
           if (webglCrashCount.current >= 2) {
             console.error("[Live2D] Multiple WebGL crashes — staying on orb permanently");
           }
@@ -198,6 +337,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           cancelAnimationFrame(animFrameRef.current);
           onLoadErrorRef.current?.();
         };
+        // Store handler ref so cleanup can remove it (prevents closure leak)
+        contextLostHandlerRef.current = handleContextLost;
         canvas.addEventListener("webglcontextlost", handleContextLost);
 
         let model;
@@ -344,41 +485,19 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     return () => {
       destroyed = true;
       window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(animFrameRef.current);
-      if (modelRef.current) {
-        try {
-          modelRef.current.destroy({ children: true });
-        } catch (e) {
-          // ignore — model may already be destroyed
-        }
-        modelRef.current = null;
-      }
-      if (appRef.current) {
-        // Explicitly lose WebGL context so iOS can reclaim the slot
-        try {
-          const canvas = appRef.current.view as unknown as HTMLCanvasElement;
-          const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-          if (gl && !gl.isContextLost()) {
-            const ext = gl.getExtension("WEBGL_lose_context");
-            if (ext) ext.loseContext();
-          }
-        } catch {}
-        try {
-          appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
-        } catch (e) {
-          // ignore — app may already be destroyed
-        }
-        appRef.current = null;
-      }
-      initializedRef.current = false;
-      modelStableRef.current = false;
-      if (modelStableTimer.current) {
-        clearTimeout(modelStableTimer.current);
-        modelStableTimer.current = null;
-      }
-      pendingEmotion.current = null;
-      pendingAccessories.current = [];
-      setModelReady(false);
+      cleanupLive2D.current();
+    };
+  }, []);
+
+  // Safety net: release GPU resources if the page is being unloaded (tab close,
+  // hard navigation, etc.) — React's unmount may not fire in time on mobile Safari.
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      cleanupLive2D.current();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
 

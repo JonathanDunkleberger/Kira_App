@@ -213,8 +213,10 @@ export default function ChatClient() {
     isDisconnectingRef.current = true;
     // 2. Unmount Live2D first so PIXI can destroy its WebGL context cleanly
     setLive2dDismissed(true);
-    // 3. Small delay to let React flush the unmount + PIXI cleanup
-    await new Promise(r => setTimeout(r, 100));
+    // 3. Give the browser time to flush the React unmount + release GPU memory.
+    //    500ms is generous but mobile browsers need it to actually free VRAM
+    //    after WEBGL_lose_context before a new context can be created.
+    await new Promise(r => setTimeout(r, 500));
     // 4. Then close WebSocket
     disconnect();
     if (!hasShownRating.current) {

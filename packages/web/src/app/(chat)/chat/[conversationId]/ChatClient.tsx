@@ -489,7 +489,6 @@ export default function ChatClient() {
               <>
                 {!live2dReady && <XOLoader />}
                 {!live2dDismissed && (
-                  <div style={{ opacity: socketState === "connected" && live2dReady ? 1 : 0, transition: "opacity 0.3s ease" }}>
                     <Live2DAvatar
                       isSpeaking={isAudioPlaying}
                       analyserNode={playbackAnalyserNode}
@@ -501,7 +500,6 @@ export default function ChatClient() {
                       }}
                       onLoadError={() => setLive2dFailed(true)}
                     />
-                  </div>
                 )}
               </>
             ) : (

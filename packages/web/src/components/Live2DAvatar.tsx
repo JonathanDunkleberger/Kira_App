@@ -287,8 +287,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         // Detect mobile for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Full native resolution capped at 2x (saves VRAM vs 3x on iPhone)
-        const resolution = Math.min(window.devicePixelRatio || 1, 2);
+        // Mobile: allow up to 3x native resolution (stays sharp when zoomed)
+        // Desktop: cap at 2x for retina sharpness
+        const resolution = isMobile ? Math.min(window.devicePixelRatio || 1, 3) : Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {
@@ -376,7 +377,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         ) * scaleFactor;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        const yPosition = containerHeight * (isMobile ? 0.57 : 0.55);
+        const yPosition = containerHeight * (isMobile ? 0.59 : 0.56);
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -479,7 +480,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const sf = 0.9;
           const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = h * (mobile ? 0.57 : 0.55);
+          baseYRef.current = h * (mobile ? 0.59 : 0.56);
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);

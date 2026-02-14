@@ -33,11 +33,28 @@ export default function ChatClient() {
   const [live2dDismissed, setLive2dDismissed] = useState(false); // set true before WS close to clean up PIXI first
   const isDisconnectingRef = useRef(false); // prevents orb fallback flash during clean shutdown
   const [isMobile, setIsMobile] = useState(false);
+  const [deviceDetected, setDeviceDetected] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
 
   useEffect(() => {
-    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+    const checkMobile = () => {
+      const mobile =
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
+      setIsMobile(mobile);
+      setDeviceDetected(true);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+
+    // Fallback re-check: guarantee detection even if the initial check raced
+    const fallback = setTimeout(checkMobile, 2000);
+
+    return () => {
+      window.removeEventListener("resize", checkMobile);
+      clearTimeout(fallback);
+    };
   }, []);
 
   // If Live2D fails to load (e.g. mobile GPU limits), auto-switch to orb
@@ -534,8 +551,8 @@ export default function ChatClient() {
           <Sparkles size={18} />
         </button>
 
-        {/* Vision Button — desktop only (getDisplayMedia not supported on mobile) */}
-        {!isMobile && (
+        {/* Vision / Camera Button — only rendered after device detection */}
+        {deviceDetected && !isMobile && (
           <button
             onClick={isScreenSharing ? stopScreenShare : startScreenShare}
             className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
@@ -543,13 +560,14 @@ export default function ChatClient() {
               background: isScreenSharing ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
               color: isScreenSharing ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
             }}
+            title={isScreenSharing ? "Stop screen share" : "Start screen share"}
           >
             {isScreenSharing ? <Eye size={18} /> : <EyeOff size={18} />}
           </button>
         )}
 
-        {/* Camera Button — mobile only */}
-        {isMobile && (
+        {/* Camera Button — mobile only, rendered after device detection */}
+        {deviceDetected && isMobile && (
           <button
             onClick={() => isCameraActive ? stopCamera() : startCamera()}
             className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"

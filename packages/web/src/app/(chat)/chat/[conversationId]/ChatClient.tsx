@@ -215,14 +215,16 @@ export default function ChatClient() {
     };
   }, []);
 
-  // Disconnect only on unmount
+  // ─── DO NOT disconnect on unmount ───
+  // React can remount this component at any time (Clerk auth, Next.js RSC, etc.).
+  // The WebSocket lives in a module-level singleton and survives remounts.
+  // Only handleEndCall() → disconnect() closes the WS intentionally.
   useEffect(() => {
     return () => {
-      // On unmount: mark disconnecting (prevents orb flash), dismiss Live2D
-      // synchronously (triggers PIXI cleanup), then close the WebSocket.
+      debugLog("[ChatClient] Unmount cleanup — WS stays alive in singleton");
+      // Just clean up Live2D visuals, don't touch the WebSocket
       isDisconnectingRef.current = true;
       setLive2dDismissed(true);
-      setTimeout(() => disconnect(), 0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

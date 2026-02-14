@@ -427,10 +427,10 @@ export default function ChatClient() {
       />
 
       {/* Main Content Area — orb/avatar centered */}
-      <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden" }}>
+      <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden", zIndex: 1 }}>
         {/* Visual — absolutely centered */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 80 : 160 }}>
-          <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined }}>
+          <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
             {visualMode === "avatar" ? (
               <>
                 {!live2dReady && <XOLoader />}
@@ -468,7 +468,8 @@ export default function ChatClient() {
 
       {/* ─── Bottom Area: Controls ─── */}
       <div
-        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9 z-10"
+        className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-5 pb-9"
+        style={{ zIndex: 50, position: "fixed" }}
       >
         {/* Status indicator + errors — sits between avatar and controls */}
         <div style={{ textAlign: "center", minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", margin: "24px 0 8px 0" }}>

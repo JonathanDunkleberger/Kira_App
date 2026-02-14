@@ -107,9 +107,39 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     initializedRef.current = true;
 
     let destroyed = false;
+    let loadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
+      const loadStart = performance.now();
       try {
+        // Detect mobile for timeout tuning
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const MODEL_LOAD_TIMEOUT = isMobileDevice ? 8000 : 15000;
+
+        // Race the entire init against a timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          loadTimeoutId = setTimeout(
+            () => reject(new Error(`Model load timeout (${MODEL_LOAD_TIMEOUT}ms)`)),
+            MODEL_LOAD_TIMEOUT
+          );
+        });
+
+        await Promise.race([_initLive2D(), timeoutPromise]);
+      } catch (err) {
+        if (!destroyed) {
+          console.error(`[Live2D] Initialization failed after ${(performance.now() - loadStart).toFixed(0)}ms:`, err);
+          // Record crash in sessionStorage so ChatClient can skip Live2D on reload
+          try {
+            const crashes = parseInt(sessionStorage.getItem('live2d-crashes') || '0', 10);
+            sessionStorage.setItem('live2d-crashes', String(crashes + 1));
+          } catch {}
+          onLoadErrorRef.current?.();
+        }
+      } finally {
+        if (loadTimeoutId) clearTimeout(loadTimeoutId);
+      }
+
+      async function _initLive2D() {
         // 1. Load Cubism Core SDK (required by pixi-live2d-display)
         await loadCubismCore();
 
@@ -227,7 +257,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         });
 
         modelRef.current = model;
-        console.log("[Live2D] Model loaded successfully");
+        const loadMs = (performance.now() - loadStart).toFixed(0);
+        console.log(`[Live2D] Model loaded successfully in ${loadMs}ms`);
 
         // Hide the built-in watermark overlay.
         // Live2D resets parameters every frame, so we must override
@@ -253,7 +284,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             if (!destroyed) {
               setModelReady(true);
               onModelReadyRef.current?.();
-              console.log("[Live2D] Model ready — revealing");
+              console.log(`[Live2D] Model ready — revealing (total ${(performance.now() - loadStart).toFixed(0)}ms)`);
 
               // Delay expressions/accessories for 2s to let GPU settle
               modelStableTimer.current = setTimeout(() => {
@@ -288,10 +319,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             }
           });
         });
-      } catch (err) {
-        console.error("[Live2D] Failed to initialize:", err);
-        onLoadErrorRef.current?.();
-      }
+      } // end _initLive2D
     })();
 
     // Handle resize

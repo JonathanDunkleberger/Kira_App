@@ -347,7 +347,7 @@ export default function ChatClient() {
   }
 
   return (
-    <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} className="flex flex-col items-center justify-center w-full h-screen">
+    <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif", height: "100dvh" }} className="flex flex-col items-center justify-center w-full">
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
         <Link href="/">
@@ -429,7 +429,7 @@ export default function ChatClient() {
       {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden", zIndex: 1 }}>
         {/* Visual — absolutely centered */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 80 : 160 }}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 140 : 160 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
             {visualMode === "avatar" ? (
               <>
@@ -501,24 +501,6 @@ export default function ChatClient() {
                 Start New Conversation
               </button>
             </div>
-          )}
-          {!isMobile && socketState === "connected" && (
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 300,
-                letterSpacing: "0.08em",
-                color: isAudioPlaying
-                  ? "rgba(139,157,195,0.55)"
-                  : kiraState === "thinking"
-                    ? "rgba(139,157,195,0.35)"
-                    : "rgba(201,209,217,0.3)",
-                fontFamily: "'DM Sans', sans-serif",
-                transition: "color 0.4s ease",
-              }}
-            >
-              {isAudioPlaying ? "speaking" : kiraState === "thinking" ? "thinking" : "listening"}
-            </span>
           )}
         </div>
         {/* Voice Controls */}

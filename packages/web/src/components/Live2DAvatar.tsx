@@ -287,9 +287,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         // Detect mobile for GPU budget decisions
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Mobile: 1.5x gives good sharpness on Retina without full 2x/3x VRAM cost.
-        // Desktop: cap at 2x for retina sharpness.
-        const resolution = isMobile ? 1.5 : Math.min(window.devicePixelRatio || 1, 2);
+        // Full native resolution capped at 2x (saves VRAM vs 3x on iPhone)
+        const resolution = Math.min(window.devicePixelRatio || 1, 2);
 
         let app: InstanceType<typeof PIXI.Application>;
         try {
@@ -370,14 +369,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const containerWidth = app.renderer.width / resolution;
         const containerHeight = app.renderer.height / resolution;
 
-        const scaleFactor = isMobile ? 1.1 : 0.9;
+        const scaleFactor = isMobile ? 1.0 : 0.9;
         const scale = Math.min(
           containerWidth / model.width,
           containerHeight / model.height
         ) * scaleFactor;
         model.scale.set(scale);
         model.x = containerWidth / 2;
-        const yPosition = isMobile ? containerHeight * 0.58 : containerHeight * 0.52;
+        const yPosition = containerHeight * 0.55;
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -477,10 +476,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const rawWidth = modelRef.current.width / currentScale;
           const rawHeight = modelRef.current.height / currentScale;
           const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          const sf = mobile ? 1.1 : 0.9;
+          const sf = mobile ? 1.0 : 0.9;
           const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = mobile ? h * 0.58 : h * 0.52;
+          baseYRef.current = h * 0.55;
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);

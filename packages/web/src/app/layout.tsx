@@ -34,6 +34,16 @@ export default function RootLayout({
           <link rel="preload" href="/worklets/models/Kira/kira.model3.json" as="fetch" crossOrigin="anonymous" />
           <link rel="preload" href="/worklets/models/Kira/kira.moc3" as="fetch" crossOrigin="anonymous" />
 
+          {/* Mobile debug console — add ?debug to any URL to activate */}
+          <script dangerouslySetInnerHTML={{ __html: `
+            if (window.location.search.includes('debug')) {
+              var s = document.createElement('script');
+              s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+              s.onload = function() { eruda.init(); };
+              document.head.appendChild(s);
+            }
+          ` }} />
+
         </head>
         <body style={{ background: "#0D1117", color: "#C9D1D9", margin: 0 }}>
           {children}

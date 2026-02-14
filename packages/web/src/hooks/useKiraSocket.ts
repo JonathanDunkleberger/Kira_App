@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSceneDetection } from "./useSceneDetection";
 
 // --- Persistent debug logger (survives page reloads via sessionStorage) ---
-function debugLog(...args: any[]) {
+export function debugLog(...args: any[]) {
   const msg = `[${new Date().toISOString().slice(11, 23)}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}`;
   console.log(...args);
   try {

@@ -2,7 +2,7 @@
 
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useKiraSocket } from "@/hooks/useKiraSocket";
+import { useKiraSocket, debugLog } from "@/hooks/useKiraSocket";
 import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
@@ -15,7 +15,7 @@ const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: f
 const XOLoader = dynamic(() => import("@/components/XOLoader"), { ssr: false });
 
 export default function ChatClient() {
-  const { getToken, userId } = useAuth();
+  const { getToken, userId, isLoaded: clerkLoaded } = useAuth();
   const { openSignIn } = useClerk();
   const [showRatingModal, setShowRatingModal] = useState(false);
   const hasShownRating = useRef(false); // Prevent rating dialog from showing twice
@@ -33,6 +33,29 @@ export default function ChatClient() {
   const [deviceDetected, setDeviceDetected] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
+
+  // --- Debug: track mount/unmount and what triggers remount ---
+  useEffect(() => {
+    debugLog("[ChatClient] MOUNTED. URL:", window.location.href, "userId:", userId, "clerkLoaded:", clerkLoaded);
+    return () => {
+      debugLog("[ChatClient] UNMOUNTING. URL:", window.location.href);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Debug: track Clerk auth state changes (userId flipping can cause subtree re-renders) ---
+  const prevUserId = useRef(userId);
+  useEffect(() => {
+    if (prevUserId.current !== userId) {
+      debugLog("[ChatClient] userId changed:", prevUserId.current, "→", userId);
+      prevUserId.current = userId;
+    }
+  }, [userId]);
+
+  // --- Debug: track Clerk isLoaded change ---
+  useEffect(() => {
+    debugLog("[ChatClient] clerkLoaded changed to:", clerkLoaded, "userId:", userId);
+  }, [clerkLoaded, userId]);
 
   useEffect(() => {
     const checkMobile = () => {

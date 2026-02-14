@@ -345,23 +345,25 @@ export default function HomePage() {
           }} />
 
           {/* Character image with float animation */}
-          <picture style={{ display: "block" }}>
-            <img
-              src="/suki_hero.png"
-              alt="Kira"
-              width={340}
-              height={340}
-              style={{
-                display: "block",
-                width: 340,
-                height: "auto",
-                position: "relative",
-                zIndex: 1,
-                animation: "float 4s ease-in-out infinite, heroFadeUp 0.8s ease both",
-                filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.5))",
-              }}
-            />
-          </picture>
+          <div style={{ transform: "translateX(8px)" }}>
+            <picture style={{ display: "block" }}>
+              <img
+                src="/suki_hero.png"
+                alt="Kira"
+                width={340}
+                height={340}
+                style={{
+                  display: "block",
+                  width: 340,
+                  height: "auto",
+                  position: "relative",
+                  zIndex: 1,
+                  animation: "float 4s ease-in-out infinite, heroFadeUp 0.8s ease both",
+                  filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.5))",
+                }}
+              />
+            </picture>
+          </div>
         </div>
 
         {isSignedIn ? (

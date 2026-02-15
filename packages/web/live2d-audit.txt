@@ -1,3 +1,6 @@
+═══════════════════════════════════════════════════════════════════════════════
+FILE: packages/web/src/components/Live2DAvatar.tsx
+═══════════════════════════════════════════════════════════════════════════════
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -41,71 +44,6 @@ const EMOTION_MAP_STATIC: Record<string, string | null> = {
   speechless: "speechless",
   eyeroll: "eye_roll",
   sleepy: "sleeping",
-};
-
-/** Per-emotion parameter overrides (brows, head tilt, mouth shape) */
-const EMOTION_PARAMS: Record<string, Record<string, number>> = {
-  sad: {
-    "ParamBrowLY": -0.7,      // Brows droop down
-    "ParamBrowRY": -0.7,
-    "ParamBrowLForm": -0.5,   // Inner brows raise (worried shape)
-    "ParamBrowRForm": -0.5,
-    "ParamAngle8": -3,         // Slight head down
-  },
-  angry: {
-    "ParamBrowLY": -0.3,      // Brows down
-    "ParamBrowRY": -0.3,
-    "ParamBrowLForm": 0.8,    // Brows furrowed inward
-    "ParamBrowRForm": 0.8,
-    "ParamAngle9": -2,         // Slight aggressive head tilt
-  },
-  thinking: {
-    "ParamBrowLY": 0.5,       // One brow up
-    "ParamBrowRY": -0.2,      // Other slightly down (asymmetric = thinking)
-    "ParamAngle9": 4,          // Head tilt to side
-    "ParamAngle8": 2,          // Slight head up
-  },
-  excited: {
-    "ParamBrowLY": 0.8,       // Brows up!
-    "ParamBrowRY": 0.8,
-    "ParamAngle8": 2,          // Head up (enthusiastic)
-  },
-  love: {
-    "ParamBrowLY": 0.4,       // Soft raised brows
-    "ParamBrowRY": 0.4,
-    "ParamAngle9": 3,          // Gentle head tilt
-  },
-  blush: {
-    "ParamBrowLY": 0.3,
-    "ParamBrowRY": 0.3,
-    "ParamAngle8": -2,         // Shy head down
-    "ParamAngle9": 3,          // Head tilt
-  },
-  happy: {
-    "ParamBrowLY": 0.4,       // Slightly raised brows
-    "ParamBrowRY": 0.4,
-    "ParamEyeRSmile": 0.6,    // Eye smile
-    "ParamEyeLSmile": 0.6,
-  },
-  sleepy: {
-    "ParamBrowLY": -0.5,      // Drooping brows
-    "ParamBrowRY": -0.5,
-    "ParamAngle8": -4,         // Head drooping down
-  },
-  speechless: {
-    "ParamBrowLY": 0.9,       // Brows way up (shock)
-    "ParamBrowRY": 0.9,
-  },
-  eyeroll: {
-    "ParamBrowLY": 0.3,
-    "ParamBrowRY": 0.3,
-    "ParamAngle9": 5,          // Exasperated head tilt
-  },
-  playful: {
-    "ParamBrowLY": 0.5,       // One brow raised (mischievous)
-    "ParamBrowRY": -0.1,
-    "ParamAngle9": -3,         // Cheeky head tilt
-  },
 };
 
 interface Live2DAvatarProps {
@@ -464,55 +402,22 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const loadMs = (performance.now() - loadStart).toFixed(0);
         debugLog(`[Live2D] Model loaded successfully in ${loadMs}ms`);
 
-        // Per-frame parameter patch — runs after every Live2D internal update.
-        // We override the update method to force critical params each frame because
-        // Live2D's expression/motion system resets parameters every tick.
+        // Hide the built-in watermark overlay.
+        // Live2D resets parameters every frame, so we must override
+        // Param155 on every tick. The original update method is patched
+        // to force the watermark parameter after each internal update.
         try {
           const internalModel = model.internalModel;
           const origUpdate = internalModel.update.bind(internalModel);
-          let frameCount = 0;
-
           internalModel.update = function (dt: number, now: number) {
             origUpdate(dt, now);
-            frameCount++;
-            const t = frameCount / 60; // Approximate seconds (60fps)
-            const core = internalModel.coreModel as any;
-
             try {
-              // --- Watermark hide ---
-              core.setParameterValueById("Param155", 1);
-
-              // --- Force ears + tail visible (Param157 = 0 means show) ---
-              // Some expressions may accidentally set this; forcing it every frame guarantees ears stay visible
-              core.setParameterValueById("Param157", 0);
-
-              // --- Breathing (gentle sine wave) ---
-              // ParamBreath: 0 = exhaled, 1 = inhaled. ~4 second cycle, natural rhythm.
-              const breath = (Math.sin(t * 1.5) + 1) * 0.5; // 0 to 1, ~4.2s cycle
-              core.setParameterValueById("ParamBreath", breath);
-
-              // --- Idle body sway (very subtle) ---
-              // ParamAngle15 = body X (side to side), ParamAngle16 = body Y (forward/back)
-              // Different frequencies create organic non-repeating movement
-              const bodyX = Math.sin(t * 0.4) * 2 + Math.sin(t * 0.7) * 1; // ±3 degrees
-              const bodyY = Math.sin(t * 0.3) * 1.5; // ±1.5 degrees
-              core.setParameterValueById("ParamAngle15", bodyX);
-              core.setParameterValueById("ParamAngle16", bodyY);
-
-              // --- Head micro-movements (even more subtle) ---
-              // ParamAngle7/8/9 = face X/Y/Z (head tilt/nod/turn)
-              // Very small amplitude — just enough to feel alive, not distracting
-              const headX = Math.sin(t * 0.5) * 1.5 + Math.sin(t * 1.1) * 0.5; // ±2 degrees
-              const headY = Math.sin(t * 0.35) * 1 + Math.cos(t * 0.8) * 0.5;  // ±1.5 degrees
-              const headZ = Math.sin(t * 0.25) * 1; // ±1 degree (slight head tilt)
-              core.setParameterValueById("ParamAngle7", headX);
-              core.setParameterValueById("ParamAngle8", headY);
-              core.setParameterValueById("ParamAngle9", headZ);
+              (internalModel.coreModel as any).setParameterValueById("Param155", 1);
             } catch {}
           };
-          debugLog("[Live2D] Per-frame patch applied (watermark, ears, breathing, idle sway)");
+          debugLog("[Live2D] Watermark hide patch applied (Param155=1 per frame)");
         } catch (err2) {
-          console.warn("[Live2D] Could not patch per-frame update:", err2);
+          console.warn("[Live2D] Could not patch watermark hide:", err2);
         }
 
         // Wait 2 frames for the watermark parameter to take effect before showing
@@ -662,12 +567,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         if (core) {
           core.setParameterValueById("ParamMouthOpenY", mouthOpen);
           core.setParameterValueById("ParamMouthForm", 0.15 + mouthOpen * 0.2);
-
-          // Subtle head movement while speaking — nods with speech rhythm
-          const speakNod = mouthOpen * 2; // 0 to 2 degrees based on mouth open
-          const speakSway = Math.sin(Date.now() / 400) * mouthOpen * 1.5; // Gentle side-to-side
-          core.setParameterValueById("ParamAngle8", speakNod);
-          core.setParameterValueById("ParamAngle9", speakSway);
         }
       } catch {}
 
@@ -749,53 +648,13 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         console.warn(`[Live2D] Failed to set expression: ${expressionName}`, err);
       }
 
-      // Apply emotion-specific parameter overrides (brows, head tilt)
-      const paramOverrides = EMOTION_PARAMS[emotion];
-      if (paramOverrides) {
-        try {
-          const core = model.internalModel?.coreModel;
-          if (core) {
-            for (const [param, value] of Object.entries(paramOverrides)) {
-              core.setParameterValueById(param, value);
-            }
-            debugLog(`[Live2D] Emotion params applied: ${Object.keys(paramOverrides).join(", ")}`);
-          }
-        } catch (err) {
-          console.warn("[Live2D] Failed to set emotion params:", err);
-        }
-      }
-
       // Auto-reset to neutral after 4 seconds
       expressionTimeoutRef.current = setTimeout(() => {
         resetExpression(model);
-        // Reset param overrides to defaults
-        try {
-          const core = model.internalModel?.coreModel;
-          if (core) {
-            core.setParameterValueById("ParamBrowLY", 0);
-            core.setParameterValueById("ParamBrowRY", 0);
-            core.setParameterValueById("ParamBrowLForm", 0);
-            core.setParameterValueById("ParamBrowRForm", 0);
-            core.setParameterValueById("ParamEyeRSmile", 0);
-            core.setParameterValueById("ParamEyeLSmile", 0);
-          }
-        } catch {}
       }, 4000);
     } else {
       // neutral/happy — clear any active expression
       resetExpression(model);
-      // Apply happy params if happy (subtle difference from neutral)
-      if (emotion === "happy") {
-        const paramOverrides = EMOTION_PARAMS.happy;
-        try {
-          const core = model.internalModel?.coreModel;
-          if (core && paramOverrides) {
-            for (const [param, value] of Object.entries(paramOverrides)) {
-              core.setParameterValueById(param, value);
-            }
-          }
-        } catch {}
-      }
     }
   }, [emotion]);
 
@@ -921,3 +780,446 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     </div>
   );
 }
+
+═══════════════════════════════════════════════════════════════════════════════
+AVAILABLE MODEL PARAMETERS (from .model3.json):
+═══════════════════════════════════════════════════════════════════════════════
+--- packages/web/public/worklets/models/Kira/kira.mobile.model3.json ---
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "kira.moc3",
+		"Textures": [
+			"kira.2048/texture_00.png",
+			"kira.2048/texture_01.png"
+		],
+		"Physics": "kira.physics3.json",
+		"DisplayInfo": "kira.cdi3.json",
+		"Expressions": [
+			{ "Name": "blush", "File": "blush.exp3.json" },
+			{ "Name": "angry", "File": "angry.exp3.json" },
+			{ "Name": "tears", "File": "tears.exp3.json" },
+			{ "Name": "star_eyes", "File": "star_eyes.exp3.json" },
+			{ "Name": "heart_eyes", "File": "heart_eyes.exp3.json" },
+			{ "Name": "dazed", "File": "dazed.exp3.json" },
+			{ "Name": "speechless", "File": "speechless.exp3.json" },
+			{ "Name": "sleeping", "File": "sleeping.exp3.json" },
+			{ "Name": "spiral_eyes", "File": "spiral_eyes.exp3.json" },
+			{ "Name": "eye_roll", "File": "eye_roll.exp3.json" },
+			{ "Name": "dark_face", "File": "dark_face.exp3.json" },
+			{ "Name": "tongue_out", "File": "tongue_out.exp3.json" },
+			{ "Name": "donut_mouth", "File": "donut_mouth.exp3.json" },
+			{ "Name": "bandaid", "File": "bandaid.exp3.json" },
+			{ "Name": "eye_mask", "File": "eye_mask.exp3.json" },
+			{ "Name": "glasses", "File": "glasses.exp3.json" },
+			{ "Name": "short_hair", "File": "short_hair.exp3.json" },
+			{ "Name": "headphones_on", "File": "headphones_on.exp3.json" },
+			{ "Name": "neck_headphones", "File": "neck_headphones.exp3.json" },
+			{ "Name": "earbuds", "File": "earbuds.exp3.json" },
+			{ "Name": "clip_bangs", "File": "clip_bangs.exp3.json" },
+			{ "Name": "low_twintails", "File": "low_twintails.exp3.json" },
+			{ "Name": "hide_ears_tail", "File": "hide_ears_tail.exp3.json" },
+			{ "Name": "cat_mic", "File": "cat_mic.exp3.json" },
+			{ "Name": "watermark", "File": "watermark.exp3.json" },
+			{ "Name": "hold_knife", "File": "hold_knife.exp3.json" },
+			{ "Name": "hold_phone", "File": "hold_phone.exp3.json" },
+			{ "Name": "hold_lollipop", "File": "hold_lollipop.exp3.json" },
+			{ "Name": "hold_drawing_board", "File": "hold_drawing_board.exp3.json" },
+			{ "Name": "hold_pen", "File": "hold_pen.exp3.json" },
+			{ "Name": "photo_off", "File": "photo_off.exp3.json" },
+			{ "Name": "gaming", "File": "gaming.exp3.json" },
+			{ "Name": "remove_jacket", "File": "remove_jacket.exp3.json" },
+			{ "Name": "blood_stain", "File": "blood_stain.exp3.json" }
+		],
+		"Motions": {
+			"Idle": [
+				{ "File": "Scene1.motion3.json", "FadeInTime": 0.5, "FadeOutTime": 0.5 }
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeRSmile",
+				"ParamEyeLOpen",
+				"ParamEyeLSmile"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"ParamMouthOpenY"
+			]
+		}
+	]
+}
+--- packages/web/public/worklets/models/Kira/kira.model3.json ---
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "kira.moc3",
+		"Textures": [
+			"kira.8192/texture_00.png",
+			"kira.8192/texture_01.png"
+		],
+		"Physics": "kira.physics3.json",
+		"DisplayInfo": "kira.cdi3.json",
+		"Expressions": [
+			{ "Name": "blush", "File": "blush.exp3.json" },
+			{ "Name": "angry", "File": "angry.exp3.json" },
+			{ "Name": "tears", "File": "tears.exp3.json" },
+			{ "Name": "star_eyes", "File": "star_eyes.exp3.json" },
+			{ "Name": "heart_eyes", "File": "heart_eyes.exp3.json" },
+			{ "Name": "dazed", "File": "dazed.exp3.json" },
+			{ "Name": "speechless", "File": "speechless.exp3.json" },
+			{ "Name": "sleeping", "File": "sleeping.exp3.json" },
+			{ "Name": "spiral_eyes", "File": "spiral_eyes.exp3.json" },
+			{ "Name": "eye_roll", "File": "eye_roll.exp3.json" },
+			{ "Name": "dark_face", "File": "dark_face.exp3.json" },
+			{ "Name": "tongue_out", "File": "tongue_out.exp3.json" },
+			{ "Name": "donut_mouth", "File": "donut_mouth.exp3.json" },
+			{ "Name": "bandaid", "File": "bandaid.exp3.json" },
+			{ "Name": "eye_mask", "File": "eye_mask.exp3.json" },
+			{ "Name": "glasses", "File": "glasses.exp3.json" },
+			{ "Name": "short_hair", "File": "short_hair.exp3.json" },
+			{ "Name": "headphones_on", "File": "headphones_on.exp3.json" },
+			{ "Name": "neck_headphones", "File": "neck_headphones.exp3.json" },
+			{ "Name": "earbuds", "File": "earbuds.exp3.json" },
+			{ "Name": "clip_bangs", "File": "clip_bangs.exp3.json" },
+			{ "Name": "low_twintails", "File": "low_twintails.exp3.json" },
+			{ "Name": "hide_ears_tail", "File": "hide_ears_tail.exp3.json" },
+			{ "Name": "cat_mic", "File": "cat_mic.exp3.json" },
+			{ "Name": "watermark", "File": "watermark.exp3.json" },
+			{ "Name": "hold_knife", "File": "hold_knife.exp3.json" },
+			{ "Name": "hold_phone", "File": "hold_phone.exp3.json" },
+			{ "Name": "hold_lollipop", "File": "hold_lollipop.exp3.json" },
+			{ "Name": "hold_drawing_board", "File": "hold_drawing_board.exp3.json" },
+			{ "Name": "hold_pen", "File": "hold_pen.exp3.json" },
+			{ "Name": "photo_off", "File": "photo_off.exp3.json" },
+			{ "Name": "gaming", "File": "gaming.exp3.json" },
+			{ "Name": "remove_jacket", "File": "remove_jacket.exp3.json" },
+			{ "Name": "blood_stain", "File": "blood_stain.exp3.json" }
+		],
+		"Motions": {
+			"Idle": [
+				{ "File": "Scene1.motion3.json", "FadeInTime": 0.5, "FadeOutTime": 0.5 }
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeRSmile",
+				"ParamEyeLOpen",
+				"ParamEyeLSmile"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": [
+				"ParamMouthOpenY"
+			]
+		}
+	]
+}
+
+═══════════════════════════════════════════════════════════════════════════════
+AVAILABLE MOTIONS (list all .motion3.json files):
+═══════════════════════════════════════════════════════════════════════════════
+--- packages/web/public/worklets/models/Kira/Scene1.motion3.json ---
+
+═══════════════════════════════════════════════════════════════════════════════
+AVAILABLE EXPRESSIONS (list all .exp3.json files):
+═══════════════════════════════════════════════════════════════════════════════
+--- packages/web/public/worklets/models/Kira/dark_face.exp3.json ---
+--- packages/web/public/worklets/models/Kira/photo_off.exp3.json ---
+--- packages/web/public/worklets/models/Kira/blush.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hold_lollipop.exp3.json ---
+--- packages/web/public/worklets/models/Kira/eye_mask.exp3.json ---
+--- packages/web/public/worklets/models/Kira/sleeping.exp3.json ---
+--- packages/web/public/worklets/models/Kira/eye_roll.exp3.json ---
+--- packages/web/public/worklets/models/Kira/tears.exp3.json ---
+--- packages/web/public/worklets/models/Kira/neck_headphones.exp3.json ---
+--- packages/web/public/worklets/models/Kira/headphones_on.exp3.json ---
+--- packages/web/public/worklets/models/Kira/tongue_out.exp3.json ---
+--- packages/web/public/worklets/models/Kira/cat_mic.exp3.json ---
+--- packages/web/public/worklets/models/Kira/flying_head.exp3.json ---
+--- packages/web/public/worklets/models/Kira/blood_stain.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hold_pen.exp3.json ---
+--- packages/web/public/worklets/models/Kira/short_hair.exp3.json ---
+--- packages/web/public/worklets/models/Kira/gaming.exp3.json ---
+--- packages/web/public/worklets/models/Kira/chibi.exp3.json ---
+--- packages/web/public/worklets/models/Kira/star_eyes.exp3.json ---
+--- packages/web/public/worklets/models/Kira/angry.exp3.json ---
+--- packages/web/public/worklets/models/Kira/heart_eyes.exp3.json ---
+--- packages/web/public/worklets/models/Kira/clip_bangs.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hold_drawing_board.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hide_ears_tail.exp3.json ---
+--- packages/web/public/worklets/models/Kira/low_twintails.exp3.json ---
+--- packages/web/public/worklets/models/Kira/dazed.exp3.json ---
+--- packages/web/public/worklets/models/Kira/remove_jacket.exp3.json ---
+--- packages/web/public/worklets/models/Kira/speechless.exp3.json ---
+--- packages/web/public/worklets/models/Kira/spiral_eyes.exp3.json ---
+--- packages/web/public/worklets/models/Kira/donut_mouth.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hold_knife.exp3.json ---
+--- packages/web/public/worklets/models/Kira/watermark.exp3.json ---
+--- packages/web/public/worklets/models/Kira/glasses.exp3.json ---
+--- packages/web/public/worklets/models/Kira/hold_phone.exp3.json ---
+--- packages/web/public/worklets/models/Kira/earbuds.exp3.json ---
+--- packages/web/public/worklets/models/Kira/bandaid.exp3.json ---
+--- packages/web/public/worklets/models/Kira/mouse_hairpin.exp3.json ---
+
+═══════════════════════════════════════════════════════════════════════════════
+ALL PARAMETER IDs IN MODEL (what we can actually control):
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+SERVER EMOTION DETECTION (what emotions server detects):
+═══════════════════════════════════════════════════════════════════════════════
+75:    return "blush";
+82:    return "excited";
+88:    return "love";
+94:    return "sad";
+100:    return "playful";
+106:    return "thinking";
+111:    return "speechless";
+116:    return "eyeroll";
+121:    return "sleepy";
+126:    return "angry";
+132:    return "happy";
+135:  return "neutral";
+
+═══════════════════════════════════════════════════════════════════════════════
+CLIENT EXPRESSION HANDLING (how expressions map to model):
+═══════════════════════════════════════════════════════════════════════════════
+6:const isDebug = typeof window !== 'undefined' && (process.env.NODE_ENV !== 'production' || window.location.search.includes('debug'));
+30:/** Static emotion→expression map (used in init flush + expression effect) */
+35:  love: "heart_eyes",
+37:  sad: "tears",
+49:  emotion?: string | null;
+65:export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, onModelReady, onLoadError }: Live2DAvatarProps) {
+73:  const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+78:  const pendingEmotion = useRef<string | null>(null);
+106:   *   7. Clear PIXI global texture caches (module-level singletons that survive unmount)
+119:    // Clear timers
+121:      clearTimeout(modelStableTimer.current);
+124:    if (expressionTimeoutRef.current) {
+125:      clearTimeout(expressionTimeoutRef.current);
+126:      expressionTimeoutRef.current = null;
+204:        debugLog("[Live2D] PIXI texture caches cleared");
+213:    pendingEmotion.current = null;
+218:    // 9. Clear PIXI from window — the Live2D SDK reads from window.PIXI,
+276:        if (loadTimeoutId) clearTimeout(loadTimeoutId);
+403:        // Live2D resets parameters every frame, so we must override
+405:        // to force the watermark parameter after each internal update.
+420:        // Wait 2 frames for the watermark parameter to take effect before showing
+428:              // Delay expressions/accessories for 2s to let GPU settle
+431:                debugLog("[Live2D] Model stable — expressions/accessories enabled");
+433:                // Flush any queued emotion
+434:                if (pendingEmotion.current && modelRef.current) {
+435:                  const expr = pendingEmotion.current;
+436:                  pendingEmotion.current = null;
+440:                      modelRef.current.expression(mapped);
+441:                      debugLog(`[Live2D] Flushed queued expression: ${mapped}`);
+450:                      modelRef.current.expression(acc);
+452:                      debugLog(`[Live2D] Flushed queued accessory: ${acc}`);
+553:        smoothedVolume *= 0.6; // Rapid decay — drops to near-zero in ~3-4 frames
+556:      // Hard cutoff for near-silence
+578:  // Use module-level emotion map
+582:   * Properly reset Live2D expressions by clearing the expression manager state.
+583:   * model.expression() with no args cycles to the NEXT expression in the list
+584:   * (triggering random accessory expressions), so we must clear explicitly.
+588:      const mgr = model.internalModel?.motionManager?.expressionManager;
+590:        // Clear the currently playing expression
+591:        if (mgr._expressions) {
+592:          mgr._expressions.forEach((expr: any) => {
+598:        // Null out the tracked current expression
+601:        if ("_expressionIndex" in mgr) mgr._expressionIndex = -1;
+602:        if ("expressionIndex" in mgr) mgr.expressionIndex = -1;
+603:        debugLog("[Live2D] Expression cleared via manager");
+606:      console.warn("[Live2D] Failed to reset expression:", err);
+609:    // Re-apply active accessories (they must persist through emotion resets)
+612:        model.expression(acc);
+614:        // ignore — accessory may not exist
+619:  // Watch for expression changes
+622:    if (!model || !emotion) return;
+624:    // Queue if model not yet stable (prevents WebGL crash from early expression)
+626:      debugLog(`[Live2D] Queuing emotion — model not yet stable: ${emotion}`);
+627:      pendingEmotion.current = emotion;
+631:    // Clear any pending reset
+632:    if (expressionTimeoutRef.current) {
+633:      clearTimeout(expressionTimeoutRef.current);
+634:      expressionTimeoutRef.current = null;
+637:    const expressionName = EMOTION_MAP[emotion];
+639:    if (expressionName) {
+
+═══════════════════════════════════════════════════════════════════════════════
+FULL PARAMETER LIST (from kira.cdi3.json — human-readable names)
+═══════════════════════════════════════════════════════════════════════════════
+
+--- TOGGLE/SWITCH PARAMS (☆☆切换按键☆☆) ---
+Param4          ☆☆切换按键☆☆
+Param155        水印关闭 (watermark off)
+Param156        飞头 (flying head)
+Param78         转Q (chibi)
+Param52         夹刘海 (clip bangs)
+Param45         低螺旋 (low twintails)
+Param46         短发 (short hair)
+Param61         头戴耳机 (headphones on)
+Param159        耳麦 (earbuds)
+Param158        麦克风隐藏 (mic hide)
+Param62         脖颈耳机 (neck headphones)
+Param64         创可贴 (bandaid)
+Param66         眼罩 (eye mask)
+Param67         鼠标发饰 (mouse hairpin)
+Param80         外套穿脱 (remove jacket)
+Param117        眼镜 (glasses)
+Param123        白眼 (eye roll)
+Param154        小猫麦克风 (cat mic)
+Param157        兽耳兽尾关闭 (HIDE EARS + TAIL)
+
+--- EXPRESSION PARAMS (☆☆表情按键☆☆) ---
+Param5          ☆☆表情按键☆☆
+Param113        痴呆 (dazed)
+Param60         脸红 (blush)
+Param90         血迹 (blood stain)
+Param63         黑脸 (dark face)
+Param97         星星眼 (star eyes)
+Param99         睡觉 (sleeping)
+Param110        眼泪 (tears)
+Param112        爱心眼 (heart eyes)
+Param115        圈圈眼 (spiral eyes)
+Param118        嘴叼甜甜圈 (donut mouth)
+Param119        无语 (speechless)
+Param120        生气 (angry)
+
+--- ACTION PARAMS (☆☆动作按键☆☆) ---
+Param6          ☆☆动作按键☆☆
+Param79         拿画板 (hold drawing board)
+Param48         拿笔写字 (hold pen)
+Param81         拿手机 (hold phone)
+Param42         拍照关闭 (photo off)
+Param82         拿棒棒糖 (hold lollipop)
+Param83         拿刀 (hold knife)
+Param88         打游戏 (gaming)
+
+--- FACE/HEAD INPUT PARAMS ---
+ParamAngle5     输入 X (face input X)
+ParamAngle4     输入 Y (face input Y)
+ParamAngle3     输入 Z (face input Z)
+ParamAngle12    输入 身体X (body input X)
+ParamAngle13    输入 身体Y (body input Y)
+ParamAngle14    输入 身体Z (body input Z)
+ParamAngle7     脸 X (face X)
+ParamAngle8     脸 Y (face Y)
+ParamAngle9     脸 Z (face Z)
+ParamAngle15    身X (body X)
+ParamAngle16    身Y (body Y)
+ParamAngle17    身Z (body Z)
+
+--- EYE PARAMS ---
+ParamEyeROpen   左眼 開閉 (right eye open/close)
+ParamEyeRSmile  左眼 微笑 (right eye smile)
+ParamEyeLOpen   右眼 (left eye open/close)
+ParamEyeLSmile  右眼 微笑 (left eye smile)
+ParamEyeBallX   眼珠 X (eyeball X)
+ParamEyeBallY   眼珠 Y (eyeball Y)
+ParamBrowLY     右眉上下 (left brow Y)
+ParamBrowRY     左眉 上下 (right brow Y)
+ParamBrowLForm  右眉 変形 (left brow form)
+ParamBrowRForm  左眉 変形 (right brow form)
+
+--- EAR PARAMS (10 params total!) ---
+Param71         左耳 (left ear 1)
+Param72         左耳2 (left ear 2)
+Param73         左耳3 (left ear 3)
+Param76         左耳4 (left ear 4)
+Param77         左耳5 (left ear 5)
+Param68         右耳 (right ear 1)
+Param69         右耳2 (right ear 2)
+Param70         右耳3 (right ear 3)
+Param74         右耳4 (right ear 4)
+Param75         右耳5 (right ear 5)
+
+--- MOUTH PARAMS ---
+ParamMouthForm     嘴 变形 (mouth form)
+ParamMouthOpenY    嘴 张开和闭合 (mouth open/close)
+ParamTongueOut     吐舌 (tongue out)
+ParamMouthFunnel   撅嘴 (funnel/pucker)
+ParamMouthShrug    抿嘴 (shrug/press)
+ParamJawOpen       嚼嚼 面捕 (jaw open - face capture)
+ParamJawOpen2      嚼嚼 (jaw open)
+ParamCheekPuff     鼓脸面捕 (cheek puff - face capture)
+ParamCheekPuff3    鼓脸 (cheek puff)
+ParamMouthX        歪嘴面捕 (mouth X - face capture)
+ParamMouthX2       歪嘴 (mouth X)
+
+--- BREATHING ---
+ParamBreath        呼吸 (breathing)
+
+--- PHYSICS-DRIVEN EARS ---
+Physics[35]: ParamEyeROpen -> Param71, Param72, Param73, Param147, Param148 (LEFT ear)
+Physics[36]: ParamEyeLOpen -> Param68, Param69, Param70, Param149, Param150 (RIGHT ear)
+
+--- IDLE MOTION (Scene1.motion3.json) ---
+Duration: 3s, Loop: true
+Curves (6 total):
+  Param109  (Z动画 - Z animation)
+  Param111  (眼泪动画 - tear animation)
+  Param114  (痴呆动画 - daze animation)
+  Param116  (圈圈动画 - spiral animation)
+  Param47   (闪光灯动画 - flash animation)
+  Param145  (尾巴动画 - TAIL animation)
+
+═══════════════════════════════════════════════════════════════════════════════
+AUDIT ANALYSIS — WHAT'S BROKEN / UNUSED / QUICK WINS
+═══════════════════════════════════════════════════════════════════════════════
+
+🔴 EAR BUG — ROOT CAUSE:
+   Ears are driven by PHYSICS linked to eye open/close params (ParamEyeROpen/LOpen).
+   The EyeBlink group in model3.json uses these same params for auto-blink.
+   If the auto-blink system is properly running, ears SHOULD animate via physics.
+   Param157 = "兽耳兽尾关闭" = HIDE EARS + TAIL toggle.
+   If hide_ears_tail expression was ever activated (or stuck), ears vanish.
+   CHECK: Is Param157 being set to 1 anywhere? Or is EyeBlink group not running?
+
+🟡 PARAMS THE CODE USES (only 4!):
+   - ParamMouthOpenY (lip sync)
+   - ParamMouthForm (lip sync smile shape)
+   - Param155 (watermark hide)
+   - Eye tracking via model.focus() (sets ParamEyeBallX/Y)
+
+🟢 PARAMS THE CODE DOES NOT USE (rich model features wasted!):
+   - ParamBreath (breathing animation — should be a gentle idle sine wave!)
+   - ParamBrowLY/RY + ParamBrowLForm/RForm (eyebrow movement — huge expressiveness)
+   - ParamAngle7/8/9 (face angle X/Y/Z — head tilt for emotions!)
+   - ParamAngle15/16/17 (body sway — could add idle motion)
+   - ParamTongueOut (tongue — for playful expression)
+   - ParamMouthFunnel (pucker lips)
+   - ParamMouthShrug (press lips — thinking)
+   - ParamCheekPuff3 (cheek puff — cute idle reaction)
+   - ParamJawOpen2 (jaw movement — could supplement lip sync)
+   - ParamMouthX2 (mouth sideways — could add personality to speech)
+
+🟢 EXPRESSIONS ON DISK BUT NOT IN model3.json:
+   - flying_head.exp3.json (exists on disk, not in Expressions array)
+   - chibi.exp3.json (exists on disk, not in Expressions array)
+   - mouse_hairpin.exp3.json (exists on disk, not in Expressions array)
+
+🟢 EMOTION MAP GAPS:
+   Server detects 12 emotions → EMOTION_MAP maps to 10 expressions.
+   "neutral" and "happy" both map to null (no expression change).
+   Could use brow/head params for subtle happy vs neutral difference.
+
+🔵 IDLE MOTION IS MINIMAL:
+   Only 6 curves in Scene1.motion3.json — animates Z position, tear/daze/spiral/flash effects, and tail.
+   Does NOT animate: breathing, body sway, head micro-movements, ear wiggles, brow raises.
+   Most Live2D characters have much richer idle motions.

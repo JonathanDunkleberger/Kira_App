@@ -529,23 +529,23 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               // with our own animation here. These params MUST be set inside
               // coreModel.update (before origCoreUpdate) to survive the
               // physics→deformation pipeline.
-              const earBase = Math.sin(t * 2.0) * 0.15;
-              const earSlow = Math.sin(t * 0.8) * 0.3;
-              const earBreath = breath * 0.1;
+              const earBase = Math.sin(t * 2.0) * 0.8;
+              const earSlow = Math.sin(t * 0.8) * 1.5;
+              const earBreath = breath * 0.5;
 
               // Right ear
               coreModel.setParameterValueById("Param68", earSlow + earBase + earBreath);
-              coreModel.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.1);
-              coreModel.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.08);
+              coreModel.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.5);
+              coreModel.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.4);
               coreModel.setParameterValueById("Param74", earBase * 0.5);
-              coreModel.setParameterValueById("Param75", Math.sin(t * 1.5) * 0.1);
+              coreModel.setParameterValueById("Param75", Math.sin(t * 1.5) * 0.5);
 
               // Left ear (slightly offset phase for organic asymmetry)
               coreModel.setParameterValueById("Param71", earSlow + earBase * 0.9 + earBreath);
-              coreModel.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.1);
-              coreModel.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.08);
+              coreModel.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.5);
+              coreModel.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.4);
               coreModel.setParameterValueById("Param76", earBase * 0.4);
-              coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.1);
+              coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.5);
             } catch {}
 
             // NOW do mesh deformation with our values applied

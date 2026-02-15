@@ -44,6 +44,19 @@ export default function RootLayout({
             }
           ` }} />
 
+          {/* Google Analytics 4 */}
+          {process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID && (
+            <>
+              <script async src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID}`} />
+              <script dangerouslySetInnerHTML={{ __html: `
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID}');
+              ` }} />
+            </>
+          )}
+
         </head>
         <body style={{ background: "#0D1117", color: "#C9D1D9", margin: 0 }}>
           {children}

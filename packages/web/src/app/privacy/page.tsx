@@ -79,7 +79,7 @@ export default function PrivacyPage() {
 
       <article style={{ maxWidth: 640, margin: "0 auto", padding: "48px 24px 80px" }}>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 400, color: "#E2E8F0", marginBottom: 8, lineHeight: 1.2 }}>Privacy Policy</h1>
-        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 15, 2026</p>
+        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 14, 2026</p>
 
         {/* 1 */}
         <h2 style={h2Style}>1. Introduction</h2>

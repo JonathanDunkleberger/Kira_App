@@ -114,7 +114,7 @@ export default function TermsPage() {
         >
           Terms of Service
         </h1>
-        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 15, 2026</p>
+        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 14, 2026</p>
 
         {/* ── 1. Acceptance of Terms ── */}
         <h2 style={heading2}>1. Acceptance of Terms</h2>

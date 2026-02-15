@@ -955,7 +955,7 @@ export default function HomePage() {
                     gap: 10,
                   }}
                 >
-                  {["Unlimited conversations", "Everything in Free", "Voice & personality customization", "Extended memory depth"].map(
+                  {["Unlimited conversations", "Everything in Free", "Early access to new features", "Extended memory depth"].map(
                     (item, i) => (
                       <li
                         key={i}

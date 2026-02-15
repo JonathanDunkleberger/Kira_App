@@ -1180,9 +1180,24 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           case "state_speaking":
             kiraStateRef.current = "speaking";
             setKiraState("speaking");
-            audioQueue.current = []; // Clear old queue
-            nextStartTime.current = 0; // Reset scheduling time
-            ttsChunksDone.current = false; // CRITICAL: Prevent visualizer from self-terminating before audio arrives
+            // CRITICAL: Stop any audio still playing from a previous turn
+            // This prevents double-speak when a proactive comment overlaps with a user response
+            scheduledSources.current.forEach((source) => {
+              try { source.stop(); } catch (e) { /* already stopped */ }
+            });
+            scheduledSources.current = [];
+            playbackSource.current = null;
+            audioQueue.current = [];
+            if (playbackContext.current) {
+              nextStartTime.current = playbackContext.current.currentTime;
+            } else {
+              nextStartTime.current = 0;
+            }
+            if (audioPlayingTimeout.current) {
+              clearTimeout(audioPlayingTimeout.current);
+              audioPlayingTimeout.current = null;
+            }
+            ttsChunksDone.current = false;
             break;
           case "state_listening":
             kiraStateRef.current = "listening";

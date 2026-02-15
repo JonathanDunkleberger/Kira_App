@@ -2030,6 +2030,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             // Fire-and-forget — don't block the message loop
             (async () => {
+              // Lock state BEFORE async LLM call to prevent other proactive systems
+              // (silence timer, vision reaction) from also starting a turn
+              setState("thinking");
               try {
                 const reaction = await openai.chat.completions.create({
                   model: OPENAI_MODEL,
@@ -2047,11 +2050,12 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   reactionText.includes("[SKIP]") ||
                   reactionText === '""' ||
                   reactionText === "''" ||
-                  state !== "listening" ||
                   clientDisconnected ||
                   timeWarningPhase as string === 'done' || timeWarningPhase as string === 'final_goodbye'
                 ) {
                   console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
+                  setState("listening");
+                  ws.send(JSON.stringify({ type: "state_listening" }));
                   return;
                 }
 
@@ -2098,11 +2102,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 resetSilenceTimer();
               } catch (err) {
                 console.error("[Scene] Reaction error:", (err as Error).message);
-                // Ensure state is restored on error
-                if ((state as string) === "speaking") {
-                  setState("listening");
-                  try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
-                }
+                setState("listening");
+                try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
               }
             })();
           }

@@ -3,7 +3,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSceneDetection } from "./useSceneDetection";
 
 // --- Persistent debug logger (survives page reloads via sessionStorage) ---
+// Silent in production unless ?debug is in the URL
+const isDebug = typeof window !== 'undefined' && (process.env.NODE_ENV !== 'production' || window.location.search.includes('debug'));
 export function debugLog(...args: any[]) {
+  if (!isDebug) return;
   const msg = `[${new Date().toISOString().slice(11, 23)}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}`;
   console.log(...args);
   try {
@@ -546,13 +549,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         stopScreenShare();
       };
 
-      console.log("[Vision] Screen share started");
+      debugLog("[Vision] Screen share started");
       
       // Send an initial snapshot immediately to establish context
       setTimeout(() => {
           const snapshot = captureScreenSnapshot();
           if (snapshot && ws.current?.readyState === WebSocket.OPEN) {
-              console.log("[Vision] Sending initial snapshot...");
+              debugLog("[Vision] Sending initial snapshot...");
               // Send buffer + current frame
               const payload = {
                   type: "image",
@@ -578,7 +581,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             type: "image",
             images: [snapshot],
           }));
-          console.log("[Vision] Periodic snapshot sent.");
+          debugLog("[Vision] Periodic snapshot sent.");
         }
       }, 15000);
 
@@ -616,7 +619,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       ws.current.send(JSON.stringify({ type: "vision_stop" }));
     }
 
-    console.log("[Vision] Screen share stopped");
+    debugLog("[Vision] Screen share stopped");
   }, []);
 
   /**
@@ -653,7 +656,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
    */
   const startCamera = useCallback(async (mode?: "environment" | "user") => {
     const useFacing = mode || facingMode;
-    console.log("[Camera] startCamera called, facingMode:", useFacing);
+    debugLog("[Camera] startCamera called, facingMode:", useFacing);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       console.error("[Camera] getUserMedia not available — requires HTTPS");
@@ -670,7 +673,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         },
         audio: false,
       });
-      console.log("[Camera] Got stream:", stream.getVideoTracks().length, "video tracks");
+      debugLog("[Camera] Got stream:", stream.getVideoTracks().length, "video tracks");
 
       cameraStreamRef.current = stream;
 
@@ -683,12 +686,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
       setIsCameraActive(true);
       isCameraActiveRef.current = true;
-      console.log("[Camera] Camera started, facing:", useFacing);
+      debugLog("[Camera] Camera started, facing:", useFacing);
 
       // Send initial snapshot
       setTimeout(() => {
         captureAndSendCameraFrame();
-        console.log("[Camera] Initial snapshot sent.");
+        debugLog("[Camera] Initial snapshot sent.");
       }, 500);
 
       // Start periodic captures — same 15s interval as screen share
@@ -700,7 +703,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           return;
         }
         captureAndSendCameraFrame();
-        console.log("[Camera] Periodic snapshot sent.");
+        debugLog("[Camera] Periodic snapshot sent.");
       }, 15000);
 
     } catch (err) {
@@ -733,7 +736,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     }
     setIsCameraActive(false);
     isCameraActiveRef.current = false;
-    console.log("[Camera] Camera stopped.");
+    debugLog("[Camera] Camera stopped.");
   }, []);
 
   /**
@@ -834,7 +837,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             // ... (Existing message handler logic) ...
             // Handle Debug Messages from Worklet
             if (event.data && event.data.type === "debug") {
-               console.log("[AudioWorklet]", event.data.message);
+               debugLog("[AudioWorklet]", event.data.message);
                return;
             }
     
@@ -901,10 +904,10 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
                         // Screen share path
                         if (isScreenSharingRef.current) {
                             lastSnapshotTime.current = now;
-                            console.log("[Vision] Speech start detected while screen sharing. Attempting capture...");
+                            debugLog("[Vision] Speech start detected while screen sharing. Attempting capture...");
                             const snapshot = captureScreenSnapshot();
                             if (snapshot) {
-                                console.log("[Vision] Sending snapshot on speech start...");
+                                debugLog("[Vision] Sending snapshot on speech start...");
                                 const payload = {
                                     type: "image",
                                     images: [...sceneBufferRef.current, snapshot]
@@ -917,7 +920,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
                         // Camera path (mobile)
                         if (isCameraActiveRef.current) {
                             lastSnapshotTime.current = now;
-                            console.log("[Camera] Sending snapshot on speech start...");
+                            debugLog("[Camera] Sending snapshot on speech start...");
                             captureAndSendCameraFrame();
                         }
                     }
@@ -931,11 +934,11 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     
                 if (!maxUtteranceTimer.current) {
                   maxUtteranceTimer.current = setTimeout(() => {
-                    console.log("[EOU] Max utterance length reached. Forcing EOU.");
+                    debugLog("[EOU] Max utterance length reached. Forcing EOU.");
                     if (ws.current?.readyState === WebSocket.OPEN) {
                       eouSentAt.current = Date.now();
                       firstAudioLogged.current = false;
-                      console.log(`[Latency] EOU sent at ${eouSentAt.current}`);
+                      debugLog(`[Latency] EOU sent at ${eouSentAt.current}`);
                       ws.current.send(JSON.stringify({ type: "eou", forced: true }));
                     }
                     if (eouTimer.current) clearTimeout(eouTimer.current);
@@ -951,11 +954,11 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
                 if (!eouTimer.current && hasSpoken.current) {
                   const adaptiveTimeout = getAdaptiveEOUTimeout();
                   eouTimer.current = setTimeout(() => {
-                    console.log(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames, timeout: ${adaptiveTimeout}ms), sending End of Utterance.`);
+                    debugLog(`[EOU] Silence detected after speech (${totalSpeechFrames.current} speech frames, timeout: ${adaptiveTimeout}ms), sending End of Utterance.`);
                     if (ws.current?.readyState === WebSocket.OPEN) {
                       eouSentAt.current = Date.now();
                       firstAudioLogged.current = false;
-                      console.log(`[Latency] EOU sent at ${eouSentAt.current}`);
+                      debugLog(`[Latency] EOU sent at ${eouSentAt.current}`);
                       ws.current.send(JSON.stringify({ type: "eou" }));
                     }
                     eouTimer.current = null;
@@ -977,7 +980,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // 4. Connect the Mic to the Worklet (if not already)
       if (audioSource.current) audioSource.current.disconnect();
       
-      console.log("[Audio] Connecting mic to worklet...");
+      debugLog("[Audio] Connecting mic to worklet...");
       if (audioStream.current) {
         audioSource.current = audioContext.current.createMediaStreamSource(
           audioStream.current
@@ -993,7 +996,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       audioWorkletNode.current.connect(silentGain);
       silentGain.connect(audioContext.current.destination);
 
-      console.log("[Audio] ✅ Audio pipeline started.");
+      debugLog("[Audio] ✅ Audio pipeline started.");
     } catch (err) {
       console.error("[Audio] ❌ Failed to start audio pipeline:", err);
       setError("Microphone access denied or failed. Please check permissions.");
@@ -1393,7 +1396,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const sendVoiceChange = useCallback((voice: string) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({ type: "voice_change", voice }));
-      console.log(`[WS] Sent voice_change: ${voice}`);
+      debugLog(`[WS] Sent voice_change: ${voice}`);
     }
   }, []);
 

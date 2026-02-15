@@ -82,7 +82,7 @@ export default function ChatClient() {
   useEffect(() => {
     if (live2dFailed && visualMode === "avatar" && !isDisconnectingRef.current) {
       setVisualMode("orb");
-      console.log("[UI] Live2D failed — falling back to orb mode");
+      debugLog("[UI] Live2D failed — falling back to orb mode");
     }
   }, [live2dFailed, visualMode]);
 
@@ -222,7 +222,7 @@ export default function ChatClient() {
 
   const handleRate = () => {
     // TODO: Save rating to backend
-    console.log("User rated conversation:", rating);
+    debugLog("User rated conversation:", rating);
     setShowRatingModal(false);
     window.location.href = "/"; // Hard nav to guarantee WebGL cleanup
   };
@@ -284,8 +284,8 @@ export default function ChatClient() {
         const raw = sessionStorage.getItem('kira-debug');
         if (raw) {
           const logs = JSON.parse(raw) as string[];
-          console.log(`%c[DebugDump] ${logs.length} stored logs:`, 'color: orange; font-weight: bold');
-          logs.forEach((l) => console.log(l));
+          debugLog(`%c[DebugDump] ${logs.length} stored logs:`, 'color: orange; font-weight: bold');
+          logs.forEach((l) => debugLog(l));
         }
       } catch {}
     }
@@ -365,7 +365,7 @@ export default function ChatClient() {
         </p>
 
         <button
-          onClick={() => { console.log("[Chat] 🎤 Connect button tapped"); connect(); }}
+          onClick={() => { debugLog("[Chat] 🎤 Connect button tapped"); connect(); }}
           style={{
             display: "flex",
             alignItems: "center",
@@ -582,7 +582,7 @@ export default function ChatClient() {
                   setVisualMode("avatar");
                 }, 800);
               } else {
-                console.log("[UI] Live2D retry limit reached — staying on orb");
+                debugLog("[UI] Live2D retry limit reached — staying on orb");
               }
             }
           }}

@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Silent in production unless ?debug is in the URL
+const isDebug = typeof window !== 'undefined' && (process.env.NODE_ENV !== 'production' || window.location.search.includes('debug'));
+function debugLog(...args: any[]) { if (isDebug) debugLog(...args); }
+
 // pixi-live2d-display requires PIXI on window before import.
 // Dynamic import is handled below to avoid SSR issues.
 
@@ -15,7 +19,7 @@ function loadCubismCore(): Promise<void> {
     const script = document.createElement("script");
     script.src = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js";
     script.onload = () => {
-      console.log("[Live2D] Cubism Core loaded");
+      debugLog("[Live2D] Cubism Core loaded");
       resolve();
     };
     script.onerror = () => reject(new Error("Failed to load Cubism Core SDK"));
@@ -53,7 +57,7 @@ function logMemory(label: string) {
   try {
     const mem = (performance as any).memory;
     if (mem) {
-      console.log(`[Memory] ${label} — Used: ${(mem.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB, Total: ${(mem.totalJSHeapSize / 1024 / 1024).toFixed(1)}MB`);
+      debugLog(`[Memory] ${label} — Used: ${(mem.usedJSHeapSize / 1024 / 1024).toFixed(1)}MB, Total: ${(mem.totalJSHeapSize / 1024 / 1024).toFixed(1)}MB`);
     }
   } catch {}
 }
@@ -103,7 +107,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
    *   8. Reset refs
    */
   const cleanupLive2D = useRef(() => {
-    console.log("[Live2D] Starting full cleanup…");
+    debugLog("[Live2D] Starting full cleanup…");
     logMemory("before cleanup");
 
     // 1. Stop render loop
@@ -126,7 +130,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     if (modelRef.current) {
       try {
         modelRef.current.destroy({ children: true });
-        console.log("[Live2D] Model destroyed");
+        debugLog("[Live2D] Model destroyed");
       } catch (e) {
         console.warn("[Live2D] Model destroy error (may already be destroyed):", e);
       }
@@ -152,7 +156,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           texture: true,
           baseTexture: true,
         });
-        console.log("[Live2D] PIXI app destroyed");
+        debugLog("[Live2D] PIXI app destroyed");
       } catch (e) {
         console.warn("[Live2D] PIXI app destroy error:", e);
       }
@@ -168,7 +172,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const ext = glRef.current.getExtension("WEBGL_lose_context");
           if (ext) {
             ext.loseContext();
-            console.log("[Live2D] WebGL context explicitly released");
+            debugLog("[Live2D] WebGL context explicitly released");
           }
         }
       } catch {}
@@ -197,7 +201,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             try { PIXI.utils.BaseTextureCache[key].destroy(); } catch {}
           }
         }
-        console.log("[Live2D] PIXI texture caches cleared");
+        debugLog("[Live2D] PIXI texture caches cleared");
       }
     } catch (e) {
       console.warn("[Live2D] Cache cleanup error:", e);
@@ -218,7 +222,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     } catch {}
 
     logMemory("after cleanup");
-    console.log("[Live2D] Cleanup complete");
+    debugLog("[Live2D] Cleanup complete");
   });
 
   // Initialize PixiJS app + load model (runs once on mount)
@@ -239,7 +243,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       const oldCanvases = container.querySelectorAll("canvas");
       oldCanvases.forEach(c => {
         c.remove();
-        console.log("[Live2D] Removed orphaned canvas");
+        debugLog("[Live2D] Removed orphaned canvas");
       });
     }
 
@@ -311,7 +315,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         canvasRef.current = app.view as unknown as HTMLCanvasElement;
         pixiCreatedAt.current = Date.now();
         pixiResolutionRef.current = resolution;
-        console.log(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
+        debugLog(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
         const canvas = canvasRef.current!;
@@ -323,7 +327,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           try {
             const ext = gl.getExtension("WEBGL_debug_renderer_info");
             if (ext) {
-              console.log(`[Live2D] GPU: ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}`);
+              debugLog(`[Live2D] GPU: ${gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)}`);
             }
           } catch {}
         }
@@ -393,7 +397,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         modelRef.current = model;
         const loadMs = (performance.now() - loadStart).toFixed(0);
-        console.log(`[Live2D] Model loaded successfully in ${loadMs}ms`);
+        debugLog(`[Live2D] Model loaded successfully in ${loadMs}ms`);
 
         // Hide the built-in watermark overlay.
         // Live2D resets parameters every frame, so we must override
@@ -408,7 +412,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               (internalModel.coreModel as any).setParameterValueById("Param155", 1);
             } catch {}
           };
-          console.log("[Live2D] Watermark hide patch applied (Param155=1 per frame)");
+          debugLog("[Live2D] Watermark hide patch applied (Param155=1 per frame)");
         } catch (err2) {
           console.warn("[Live2D] Could not patch watermark hide:", err2);
         }
@@ -419,12 +423,12 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             if (!destroyed) {
               setModelReady(true);
               onModelReadyRef.current?.();
-              console.log(`[Live2D] Model ready — revealing (total ${(performance.now() - loadStart).toFixed(0)}ms)`);
+              debugLog(`[Live2D] Model ready — revealing (total ${(performance.now() - loadStart).toFixed(0)}ms)`);
 
               // Delay expressions/accessories for 2s to let GPU settle
               modelStableTimer.current = setTimeout(() => {
                 modelStableRef.current = true;
-                console.log("[Live2D] Model stable — expressions/accessories enabled");
+                debugLog("[Live2D] Model stable — expressions/accessories enabled");
 
                 // Flush any queued emotion
                 if (pendingEmotion.current && modelRef.current) {
@@ -434,7 +438,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                     const mapped = EMOTION_MAP_STATIC[expr];
                     if (mapped) {
                       modelRef.current.expression(mapped);
-                      console.log(`[Live2D] Flushed queued expression: ${mapped}`);
+                      debugLog(`[Live2D] Flushed queued expression: ${mapped}`);
                     }
                   } catch {}
                 }
@@ -445,7 +449,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                     try {
                       modelRef.current.expression(acc);
                       activeAccessoriesRef.current.add(acc);
-                      console.log(`[Live2D] Flushed queued accessory: ${acc}`);
+                      debugLog(`[Live2D] Flushed queued accessory: ${acc}`);
                     } catch {}
                   });
                   pendingAccessories.current = [];
@@ -596,7 +600,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         if ("currentExpression" in mgr) mgr.currentExpression = null;
         if ("_expressionIndex" in mgr) mgr._expressionIndex = -1;
         if ("expressionIndex" in mgr) mgr.expressionIndex = -1;
-        console.log("[Live2D] Expression cleared via manager");
+        debugLog("[Live2D] Expression cleared via manager");
       }
     } catch (err) {
       console.warn("[Live2D] Failed to reset expression:", err);
@@ -619,7 +623,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
     // Queue if model not yet stable (prevents WebGL crash from early expression)
     if (!modelStableRef.current) {
-      console.log(`[Live2D] Queuing emotion — model not yet stable: ${emotion}`);
+      debugLog(`[Live2D] Queuing emotion — model not yet stable: ${emotion}`);
       pendingEmotion.current = emotion;
       return;
     }
@@ -636,7 +640,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       // Trigger the expression
       try {
         model.expression(expressionName);
-        console.log(`[Live2D] Expression: ${expressionName} (emotion: ${emotion})`);
+        debugLog(`[Live2D] Expression: ${expressionName} (emotion: ${emotion})`);
       } catch (err) {
         console.warn(`[Live2D] Failed to set expression: ${expressionName}`, err);
       }
@@ -660,7 +664,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     if (!modelStableRef.current && accessories) {
       const newItems = accessories.filter(a => !activeAccessoriesRef.current.has(a));
       if (newItems.length > 0) {
-        console.log(`[Live2D] Queuing accessories — model not yet stable: ${newItems.join(", ")}`);
+        debugLog(`[Live2D] Queuing accessories — model not yet stable: ${newItems.join(", ")}`);
         pendingAccessories.current.push(...newItems);
       }
       return;
@@ -674,7 +678,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         if (!activeAccessoriesRef.current.has(acc)) {
           try {
             model.expression(acc);
-            console.log(`[Live2D] Accessory ON: ${acc}`);
+            debugLog(`[Live2D] Accessory ON: ${acc}`);
           } catch (err) {
             console.warn(`[Live2D] Failed to apply accessory: ${acc}`, err);
           }

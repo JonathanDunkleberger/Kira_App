@@ -479,6 +479,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             const core = internalModel.coreModel as any;
 
             try {
+              if (frameCount % 300 === 1) {
+                console.log(`[Live2D] Per-frame patch running (frame ${frameCount}), setting ears + breathing`);
+              }
+
               // --- Watermark hide ---
               core.setParameterValueById("Param155", 1);
 
@@ -509,29 +513,74 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               core.setParameterValueById("ParamAngle8", headY);
               core.setParameterValueById("ParamAngle9", headZ);
 
-              // --- Ear animation (direct control — physics link unreliable) ---
-              // 10 ear params: Param68-70,74-75 (right ear), Param71-73,76-77 (left ear)
-              // Gentle idle flutter + reactive twitch synced to breathing
-              // Use different frequencies per param for organic layered movement
-              const earBase = Math.sin(t * 2.0) * 0.15; // Fast subtle flutter
-              const earSlow = Math.sin(t * 0.8) * 0.3;  // Slow sway
-              const earBreath = breath * 0.1;             // Tiny sync with breathing
+              // --- Ear animation (direct control — physics unreliable) ---
+              const earBase = Math.sin(t * 2.0) * 0.15;
+              const earSlow = Math.sin(t * 0.8) * 0.3;
+              const earBreath = breath * 0.1;
 
-              // Right ear (Param68-70 = main, Param74-75 = detail)
-              core.setParameterValueById("Param68", earSlow + earBase + earBreath);
-              core.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.1);
-              core.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.08);
-              core.setParameterValueById("Param74", earBase * 0.5);
-              core.setParameterValueById("Param75", Math.sin(t * 1.5) * 0.1);
-
-              // Left ear (Param71-73 = main, Param76-77 = detail) — slightly offset phase
-              core.setParameterValueById("Param71", earSlow + earBase * 0.9 + earBreath);
-              core.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.1);
-              core.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.08);
-              core.setParameterValueById("Param76", earBase * 0.4);
-              core.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.1);
+              // Try both ID-based and index-based setting
+              const earParamMap: [string, number][] = [
+                ["Param68", earSlow + earBase + earBreath],
+                ["Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.1],
+                ["Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.08],
+                ["Param74", earBase * 0.5],
+                ["Param75", Math.sin(t * 1.5) * 0.1],
+                ["Param71", earSlow + earBase * 0.9 + earBreath],
+                ["Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.1],
+                ["Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.08],
+                ["Param76", earBase * 0.4],
+                ["Param77", Math.sin(t * 1.3) * 0.1],
+              ];
+              for (const [paramId, value] of earParamMap) {
+                try {
+                  core.setParameterValueById(paramId, value);
+                } catch {
+                  // ID-based failed — try finding by index
+                  try {
+                    const count = core.getParameterCount();
+                    for (let i = 0; i < count; i++) {
+                      if (core.getParameterId(i) === paramId) {
+                        core.setParameterValueByIndex(i, value);
+                        break;
+                      }
+                    }
+                  } catch {}
+                }
+              }
             } catch {}
           };
+
+          // --- Enumerate all parameter IDs for debugging ---
+          try {
+            const coreModel = internalModel.coreModel as any;
+            const paramCount = coreModel.getParameterCount();
+            const paramIds: string[] = [];
+            for (let i = 0; i < paramCount; i++) {
+              paramIds.push(coreModel.getParameterId(i));
+            }
+            console.log(`[Live2D] Model has ${paramCount} parameters:`);
+            console.log("[Live2D] All param IDs:", JSON.stringify(paramIds));
+
+            // Specifically check ear-related params
+            const earParams = paramIds.filter((id: string) =>
+              id.includes("Param68") || id.includes("Param69") || id.includes("Param70") ||
+              id.includes("Param71") || id.includes("Param72") || id.includes("Param73") ||
+              id.includes("Param74") || id.includes("Param75") || id.includes("Param76") ||
+              id.includes("Param77") || id.toLowerCase().includes("ear")
+            );
+            console.log("[Live2D] Ear params found:", earParams.length > 0 ? earParams : "NONE — ear param IDs may be different!");
+
+            // Check breathing
+            const breathParam = paramIds.filter((id: string) => id.includes("Breath") || id.includes("breath"));
+            console.log("[Live2D] Breath params found:", breathParam.length > 0 ? breathParam : "NONE");
+
+            // Check body angle params
+            const angleParams = paramIds.filter((id: string) => id.includes("Angle") || id.includes("angle"));
+            console.log("[Live2D] Angle params found:", angleParams);
+          } catch (enumErr) {
+            console.warn("[Live2D] Failed to enumerate params:", enumErr);
+          }
+
           debugLog("[Live2D] Per-frame patch applied (watermark, ears, breathing, idle sway)");
         } catch (err2) {
           console.warn("[Live2D] Could not patch per-frame update:", err2);

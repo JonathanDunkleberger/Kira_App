@@ -154,29 +154,36 @@ export async function extractAndSaveMemories(
       messages: [
         {
           role: "system",
-          content: `You are a memory extraction system for Kira, an AI companion. Analyze this conversation and extract important facts about the user that Kira should remember for future conversations.
+          content: `You are a memory extraction system for Kira, an AI companion. Analyze this conversation and extract important facts about THE USER that Kira should remember for future conversations.
 
-Extract facts into these categories:
-- identity: Name, age, location, occupation, pronouns
-- preference: Likes, dislikes, favorites, tastes, hobbies
-- relationship: People in their life, pets, relationship dynamics
-- emotional: Emotional patterns, recurring feelings, sensitivities
-- experience: Shared jokes, memorable moments, callbacks
-- context: Ongoing life situations, upcoming events, current projects
-- opinion: Their views, beliefs, stances on topics
-
-Rules:
-- Only extract facts the USER explicitly stated or clearly implied. Do not infer.
+CRITICAL RULES:
+- Every fact MUST be about the USER, written in third person. Always start with "User" or "Their" or "They".
+  CORRECT: "User's favorite anime is Attack on Titan"
+  CORRECT: "User is stressed about their job interview next Tuesday"
+  CORRECT: "They prefer being called Alex"
+  WRONG: "Loves Attack on Titan" (ambiguous — could be mistaken for Kira's preference)
+  WRONG: "Favorite movie is Interstellar" (missing subject)
+- NEVER extract facts about Kira or what Kira said/thinks. Only extract facts about the user.
+- Only extract facts the user explicitly stated or clearly implied. Do not infer personality traits.
 - Each fact should be a single, atomic statement.
 - Include emotional context where relevant.
 - If a fact UPDATES a previously known fact, mark is_update as true.
-- If the conversation was low-content, return an empty array. Do not force facts.
+- If the conversation was low-content (small talk, greetings only), return an empty array.
 - Max 10 facts per conversation.
+
+Extract facts into these categories:
+- identity: Name, age, location, occupation, pronouns
+- preference: Their likes, dislikes, favorites, tastes, hobbies
+- relationship: People in their life, pets, relationship dynamics
+- emotional: Their emotional patterns, recurring feelings, sensitivities
+- experience: Shared moments with Kira, inside jokes, callbacks
+- context: Their ongoing life situations, upcoming events, current projects
+- opinion: Their views, beliefs, stances on topics
 
 Respond ONLY with a JSON array:
 [{"category": "identity", "content": "User's name is Alex", "emotional_weight": 0.8, "is_update": false}]
 
-emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
+emotional_weight: 0.0 to 1.0 — how personally important is this fact to the user.`,
         },
         {
           role: "user",
@@ -206,6 +213,40 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact.`,
       console.log("[Memory] No new facts extracted.");
       return;
     }
+
+    // Deduplicate against existing memories
+    const deduplicatedFacts = facts.filter(newFact => {
+      const newContent = newFact.content.toLowerCase();
+      // Extract meaningful keywords (skip common words)
+      const skipWords = new Set(['user', 'users', 'their', 'they', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'has', 'have', 'had', 'be', 'been', 'being', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'like', 'that', 'this', 'it', 'and', 'or', 'but', 'not', 'very', 'really', 'just', 'also', 'than', 'then', 'so', 'if', 'when', 'what', 'which', 'who', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'only', 'own', 'same']);
+      const newKeywords = newContent.split(/\s+/).filter(w => w.length > 2 && !skipWords.has(w));
+
+      for (const existing of existingMemories) {
+        const existingContent = existing.content.toLowerCase();
+        const existingKeywords = existingContent.split(/\s+/).filter(w => w.length > 2 && !skipWords.has(w));
+
+        // Check keyword overlap
+        const overlap = newKeywords.filter(k => existingKeywords.includes(k));
+        const overlapRatio = newKeywords.length > 0 ? overlap.length / newKeywords.length : 0;
+
+        // If same category and >60% keyword overlap, it's a duplicate
+        if (newFact.category === existing.category && overlapRatio > 0.6) {
+          console.log(`[Memory] Dedup: "${newFact.content}" overlaps with existing "${existing.content}" (${Math.round(overlapRatio * 100)}%)`);
+
+          // If marked as update, delete old and keep new
+          if (newFact.is_update) {
+            prisma.memoryFact.delete({ where: { id: existing.id } }).catch(() => {});
+            console.log(`[Memory] Replacing old fact with updated version`);
+            return true; // Keep the new fact
+          }
+          return false; // Skip duplicate
+        }
+      }
+      return true; // No duplicate found, keep it
+    });
+
+    // Replace facts with deduplicated version
+    facts.splice(0, facts.length, ...deduplicatedFacts);
 
     // 6. Save to database
     const validCategories = [

@@ -287,10 +287,10 @@ export default function TermsPage() {
           securely and associated with your account. You can request deletion of your memory data
           by contacting us at{" "}
           <a
-            href="mailto:support@kiraai.app"
+            href="mailto:info@elsaresearch.co"
             style={{ color: "rgba(139,157,195,0.7)", textDecoration: "underline" }}
           >
-            support@kiraai.app
+            info@elsaresearch.co
           </a>.
         </p>
 
@@ -427,10 +427,10 @@ export default function TermsPage() {
         <p style={paragraph}>
           If you have any questions about these Terms, please contact us at{" "}
           <a
-            href="mailto:support@kiraai.app"
+            href="mailto:info@elsaresearch.co"
             style={{ color: "rgba(139,157,195,0.7)", textDecoration: "underline" }}
           >
-            support@kiraai.app
+            info@elsaresearch.co
           </a>.
         </p>
       </article>

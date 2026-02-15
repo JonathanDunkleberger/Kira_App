@@ -508,6 +508,28 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               core.setParameterValueById("ParamAngle7", headX);
               core.setParameterValueById("ParamAngle8", headY);
               core.setParameterValueById("ParamAngle9", headZ);
+
+              // --- Ear animation (direct control — physics link unreliable) ---
+              // 10 ear params: Param68-70,74-75 (right ear), Param71-73,76-77 (left ear)
+              // Gentle idle flutter + reactive twitch synced to breathing
+              // Use different frequencies per param for organic layered movement
+              const earBase = Math.sin(t * 2.0) * 0.15; // Fast subtle flutter
+              const earSlow = Math.sin(t * 0.8) * 0.3;  // Slow sway
+              const earBreath = breath * 0.1;             // Tiny sync with breathing
+
+              // Right ear (Param68-70 = main, Param74-75 = detail)
+              core.setParameterValueById("Param68", earSlow + earBase + earBreath);
+              core.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.1);
+              core.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.08);
+              core.setParameterValueById("Param74", earBase * 0.5);
+              core.setParameterValueById("Param75", Math.sin(t * 1.5) * 0.1);
+
+              // Left ear (Param71-73 = main, Param76-77 = detail) — slightly offset phase
+              core.setParameterValueById("Param71", earSlow + earBase * 0.9 + earBreath);
+              core.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.1);
+              core.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.08);
+              core.setParameterValueById("Param76", earBase * 0.4);
+              core.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.1);
             } catch {}
           };
           debugLog("[Live2D] Per-frame patch applied (watermark, ears, breathing, idle sway)");

@@ -514,7 +514,7 @@ export default function HomePage() {
             }}
           >
             {[
-              { value: <Counter end={500} suffix="ms" />, label: "avg response time" },
+              { value: <span>&lt;1.5s</span>, label: "avg response time" },
               { value: <Counter end={24} suffix="/7" />, label: "always available" },
               { value: <Counter end={100} suffix="%" />, label: "conversations remembered" },
             ].map((stat, i) => (
@@ -616,7 +616,7 @@ export default function HomePage() {
                     </>
                   ),
                   title: "Camera & Screen Vision",
-                  desc: "Share your camera or screen and she watches alongside you. She\u2019ll react to what\u2019s happening without you having to describe it.",
+                  desc: "Share your camera or screen \u2014 she watches alongside you and reacts to what\u2019s happening without you having to explain.",
                 },
                 {
                   icon: (
@@ -646,7 +646,7 @@ export default function HomePage() {
                     </>
                   ),
                   title: "Private by Default",
-                  desc: "Guest conversations are never stored. Signed-in memory is yours alone. No training on your data, no sharing, no ads.",
+                  desc: "Your conversations stay between you and Kira. No training on your data, no sharing, no ads.",
                 },
               ].map((feature, i) => (
                 <div
@@ -855,7 +855,7 @@ export default function HomePage() {
                     gap: 10,
                   }}
                 >
-                  {["15 minutes per day", "Full voice & text chat", "Camera & screen vision", "Persistent memory"].map(
+                  {["15 minutes per day", "Full voice chat", "Camera & screen vision", "Persistent memory"].map(
                     (item, i) => (
                       <li
                         key={i}
@@ -955,7 +955,7 @@ export default function HomePage() {
                     gap: 10,
                   }}
                 >
-                  {["Unlimited conversations", "Everything in Free", "Priority response speed", "Extended memory depth"].map(
+                  {["Unlimited conversations", "Everything in Free", "Voice & personality customization", "Extended memory depth"].map(
                     (item, i) => (
                       <li
                         key={i}
@@ -999,6 +999,9 @@ export default function HomePage() {
                 >
                   Upgrade to Pro
                 </button>
+                <p style={{ fontSize: 12, color: "rgba(201,209,217,0.3)", marginTop: 8, textAlign: "center" as const }}>
+                  Cancel anytime from your profile. No contracts.
+                </p>
               </div>
             </div>
           </section>

@@ -464,22 +464,19 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         const loadMs = (performance.now() - loadStart).toFixed(0);
         debugLog(`[Live2D] Model loaded successfully in ${loadMs}ms`);
 
-        // Per-frame parameter patch — runs after every Live2D internal update.
-        // We override the update method to force critical params each frame because
-        // Live2D's expression/motion system resets parameters every tick.
-        //
-        // KEY INSIGHT: setParameterValueById marks params as "overridden" internally
-        // in the SDK. Direct Float32Array writes do NOT — so they get silently ignored.
-        // We use setParameterValueById for everything EXCEPT physics-output params (ears),
-        // which we override via direct array write AFTER physics has already run.
+        // --- Per-frame parameter overrides ---
+        // We patch at the coreModel.update() level, which is called INSIDE
+        // internalModel.update() AFTER physics has run but BEFORE mesh deformation.
+        // Pipeline: motions → physics (writes ears) → coreModel.update() → mesh deform
+        // By injecting our values before calling origCoreUpdate(), mesh deformation
+        // uses OUR values — physics can no longer overwrite them.
         try {
           const internalModel = model.internalModel;
-          const origUpdate = internalModel.update.bind(internalModel);
-          let frameCount = 0;
+          const coreModel = internalModel.coreModel as any;
 
           // Log all param IDs once for future debugging
           try {
-            const rawModel = (internalModel.coreModel as any)._model;
+            const rawModel = coreModel._model;
             if (rawModel && rawModel.parameters) {
               const allKeys: string[] = [];
               for (let i = 0; i < rawModel.parameters.count; i++) {
@@ -489,11 +486,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             }
           } catch {}
 
-          internalModel.update = function (dt: number, now: number) {
-            origUpdate(dt, now);
+          // Patch coreModel.update — called INSIDE internalModel.update,
+          // AFTER physics but the original does mesh deformation.
+          const origCoreUpdate = coreModel.update.bind(coreModel);
+          let frameCount = 0;
+
+          coreModel.update = function () {
             frameCount++;
             const t = frameCount / 60;
-            const core = internalModel.coreModel as any;
 
             if (frameCount % 300 === 1) {
               console.log(`[Live2D] Per-frame patch running (frame ${frameCount})`);
@@ -501,63 +501,59 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
             try {
               // --- Watermark hide ---
-              core.setParameterValueById("Param155", 1);
+              coreModel.setParameterValueById("Param155", 1);
 
               // --- Force ears + tail visible ---
-              core.setParameterValueById("Param157", 0);
+              coreModel.setParameterValueById("Param157", 0);
 
-              // --- Breathing ---
+              // --- Breathing (gentle sine wave, ~4.2s cycle) ---
               const breath = (Math.sin(t * 1.5) + 1) * 0.5;
-              core.setParameterValueById("ParamBreath", breath);
+              coreModel.setParameterValueById("ParamBreath", breath);
 
-              // --- Idle body sway ---
+              // --- Idle body sway (subtle, organic) ---
               const bodyX = Math.sin(t * 0.4) * 2 + Math.sin(t * 0.7) * 1;
               const bodyY = Math.sin(t * 0.3) * 1.5;
-              core.setParameterValueById("ParamAngle15", bodyX);
-              core.setParameterValueById("ParamAngle16", bodyY);
+              coreModel.setParameterValueById("ParamAngle15", bodyX);
+              coreModel.setParameterValueById("ParamAngle16", bodyY);
 
               // --- Head micro-movements ---
               const headX = Math.sin(t * 0.5) * 1.5 + Math.sin(t * 1.1) * 0.5;
               const headY = Math.sin(t * 0.35) * 1 + Math.cos(t * 0.8) * 0.5;
               const headZ = Math.sin(t * 0.25) * 1;
-              core.setParameterValueById("ParamAngle7", headX);
-              core.setParameterValueById("ParamAngle8", headY);
-              core.setParameterValueById("ParamAngle9", headZ);
+              coreModel.setParameterValueById("ParamAngle7", headX);
+              coreModel.setParameterValueById("ParamAngle8", headY);
+              coreModel.setParameterValueById("ParamAngle9", headZ);
 
-              // --- Ear animation (post-physics override) ---
-              // Ears are PHYSICS-DRIVEN: physics reads ParamEyeROpen/LOpen and
-              // WRITES to Param68-77 every frame inside origUpdate(). We can't use
-              // setParameterValueById because physics overwrites it. Instead we write
-              // directly to the raw values array AFTER physics has already run.
-              const rawModel = core._model;
-              if (rawModel && rawModel.parameters && rawModel.parameters.values) {
-                const values = rawModel.parameters.values;
-                const ids = rawModel.parameters.ids;
+              // --- Ear animation (AFTER physics, BEFORE mesh deformation) ---
+              // Physics writes to Param68-77 based on eye blinks, but we override
+              // with our own animation here. This is the critical fix — these params
+              // MUST be set inside coreModel.update (before origCoreUpdate) to
+              // survive the physics→deformation pipeline.
+              // TEMP: Large amplitude for debugging — will reduce once confirmed working.
+              const earBase = Math.sin(t * 2.0) * 3.0;
+              const earSlow = Math.sin(t * 0.8) * 5.0;
+              const earBreath = breath * 2.0;
 
-                const earBase = Math.sin(t * 2.0) * 3.0;
-                const earSlow = Math.sin(t * 0.8) * 5.0;
-                const earBreath = breath * 2.0;
+              // Right ear
+              coreModel.setParameterValueById("Param68", earSlow + earBase + earBreath);
+              coreModel.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 2.0);
+              coreModel.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 1.5);
+              coreModel.setParameterValueById("Param74", earBase * 0.5);
+              coreModel.setParameterValueById("Param75", Math.sin(t * 1.5) * 2.0);
 
-                // Find and override ear params by scanning the IDs array
-                for (let i = 0; i < ids.length; i++) {
-                  const id = ids[i];
-                  switch (id) {
-                    case "Param68": values[i] = earSlow + earBase + earBreath; break;
-                    case "Param69": values[i] = earBase * 0.7 + Math.sin(t * 2.3) * 2.0; break;
-                    case "Param70": values[i] = earSlow * 0.5 + Math.sin(t * 1.7) * 1.5; break;
-                    case "Param74": values[i] = earBase * 0.5; break;
-                    case "Param75": values[i] = Math.sin(t * 1.5) * 2.0; break;
-                    case "Param71": values[i] = earSlow + earBase * 0.9 + earBreath; break;
-                    case "Param72": values[i] = earBase * 0.6 + Math.sin(t * 2.5) * 2.0; break;
-                    case "Param73": values[i] = earSlow * 0.5 + Math.sin(t * 1.9) * 1.5; break;
-                    case "Param76": values[i] = earBase * 0.4; break;
-                    case "Param77": values[i] = Math.sin(t * 1.3) * 2.0; break;
-                  }
-                }
-              }
+              // Left ear (slightly offset phase for organic asymmetry)
+              coreModel.setParameterValueById("Param71", earSlow + earBase * 0.9 + earBreath);
+              coreModel.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 2.0);
+              coreModel.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 1.5);
+              coreModel.setParameterValueById("Param76", earBase * 0.4);
+              coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 2.0);
             } catch {}
+
+            // NOW do mesh deformation with our values applied
+            origCoreUpdate();
           };
-          console.log("[Live2D] Per-frame patch applied (setParameterValueById + direct ear override)");
+
+          console.log("[Live2D] Per-frame patch applied (coreModel.update pre-deformation override)");
         } catch (err2) {
           console.warn("[Live2D] Could not patch per-frame update:", err2);
         }

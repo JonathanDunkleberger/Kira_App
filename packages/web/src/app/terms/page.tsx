@@ -1,6 +1,63 @@
 import React from "react";
 import Link from "next/link";
 
+/* ── style helpers ─────────────────────────────────────── */
+const textMuted = "rgba(201,209,217,0.6)";
+const textEmphasis = "rgba(201,209,217,0.8)";
+const dividerColor = "rgba(255,255,255,0.04)";
+
+const heading2: React.CSSProperties = {
+  fontFamily: "'Playfair Display', serif",
+  fontSize: 20,
+  fontWeight: 400,
+  color: "#E2E8F0",
+  marginBottom: 12,
+};
+
+const heading3: React.CSSProperties = {
+  fontFamily: "'DM Sans', sans-serif",
+  fontSize: 16,
+  fontWeight: 500,
+  color: textEmphasis,
+  marginBottom: 8,
+  marginTop: 20,
+};
+
+const paragraph: React.CSSProperties = {
+  color: textMuted,
+  margin: "0 0 12px",
+};
+
+const bulletList: React.CSSProperties = {
+  listStyle: "none",
+  padding: 0,
+  margin: "0 0 12px",
+};
+
+const bulletItem: React.CSSProperties = {
+  color: textMuted,
+  paddingLeft: 16,
+  position: "relative" as const,
+  marginBottom: 8,
+};
+
+const bulletDot: React.CSSProperties = {
+  position: "absolute" as const,
+  left: 0,
+  color: "rgba(139,157,195,0.4)",
+};
+
+const bold: React.CSSProperties = {
+  color: textEmphasis,
+  fontWeight: 500,
+};
+
+const Divider = () => (
+  <div style={{ height: 1, background: dividerColor, margin: "32px 0" }} />
+);
+
+/* ── page ──────────────────────────────────────────────── */
+
 export default function TermsPage() {
   return (
     <div
@@ -51,116 +108,331 @@ export default function TermsPage() {
             fontSize: 32,
             fontWeight: 400,
             color: "#E2E8F0",
-            marginBottom: 48,
+            marginBottom: 8,
             lineHeight: 1.2,
           }}
         >
           Terms of Service
         </h1>
+        <p style={{ ...paragraph, marginBottom: 48, fontSize: 14 }}>
+          <strong style={bold}>Effective Date:</strong> July 2025
+        </p>
 
-        {/* Sections */}
-        {[
-          {
-            title: "1. Acceptance of Terms",
-            content:
-              "By accessing Kira AI, you agree to these Terms. If you do not agree, do not use the service.",
-          },
-          {
-            title: "2. Description of Service",
-            content:
-              'Kira AI is a prototype conversational AI application. It is provided "as is" and "as available." We make no guarantees regarding uptime, accuracy of AI responses, or latency.',
-          },
-          {
-            title: "3. Subscriptions and Limits",
-            content: null,
-            list: [
-              { label: "Free Tier", text: "Limited to approximately 15 minutes of usage per day." },
-              { label: "Pro Subscription", text: "Costs $9.99/month. Grants unlimited conversations subject to our Fair Use Policy (see below)." },
-              { label: "Cancellation", text: "You may cancel your subscription at any time via your Profile settings. Access remains through the end of the billing period. No refunds are issued for partial months." },
-            ],
-          },
-          {
-            title: "4. Fair Use Policy",
-            content: "Pro subscriptions are marketed as \"unlimited\" and are intended for generous personal use. To ensure a quality experience for all users, Pro accounts are subject to a soft monthly cap of approximately 100 hours of conversation time per calendar month. If you reach this limit, access will resume on the 1st of the following month. This cap is well beyond what the vast majority of users will ever approach. We reserve the right to adjust fair-use thresholds as the service evolves.",
-          },
-          {
-            title: "5. User Conduct",
-            content:
-              "You agree not to use the AI to generate illegal, harmful, or abusive content. We reserve the right to terminate accounts that violate this policy without refund.",
-          },
-          {
-            title: "6. Disclaimer of Warranties",
-            content:
-              "This project is in active development. The AI may hallucinate, produce incorrect information, or experience downtime. We are not liable for any damages resulting from the use of this service.",
-          },
-          {
-            title: "7. AI Conversations",
-            content:
-              "Kira is an AI companion. Conversations with Kira are not confidential and may be processed and stored to improve your experience. Kira may remember details from previous conversations to provide personalized responses. Do not share sensitive personal information (such as financial details, passwords, or medical information) during conversations.",
-          },
-          {
-            title: "8. Changes to Terms",
-            content:
-              "We reserve the right to modify these terms at any time. Continued use constitutes acceptance of the new terms.",
-          },
-        ].map((section, i) => (
-          <div key={i}>
-            {i > 0 && (
-              <div
-                style={{
-                  height: 1,
-                  background: "rgba(255,255,255,0.04)",
-                  margin: "32px 0",
-                }}
-              />
-            )}
-            <h2
-              style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: 20,
-                fontWeight: 400,
-                color: "#E2E8F0",
-                marginBottom: 12,
-              }}
-            >
-              {section.title}
-            </h2>
-            {section.content && (
-              <p style={{ color: "rgba(201,209,217,0.6)", margin: "0 0 12px" }}>
-                {section.content}
-              </p>
-            )}
-            {section.list && (
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {section.list.map((item, j) => (
-                  <li
-                    key={j}
-                    style={{
-                      color: "rgba(201,209,217,0.6)",
-                      paddingLeft: 16,
-                      position: "relative",
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        color: "rgba(139,157,195,0.4)",
-                      }}
-                    >
-                      ·
-                    </span>
-                    <strong style={{ color: "rgba(201,209,217,0.8)", fontWeight: 500 }}>
-                      {item.label}:
-                    </strong>{" "}
-                    {item.text}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+        {/* ── 1. Acceptance of Terms ── */}
+        <h2 style={heading2}>1. Acceptance of Terms</h2>
+        <p style={paragraph}>
+          By accessing or using Kira AI (&quot;Kira,&quot; &quot;the Service,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;),
+          you agree to be bound by these Terms of Service. If you do not agree to all of these terms,
+          do not use the Service.
+        </p>
+
+        <Divider />
+
+        {/* ── 2. Eligibility ── */}
+        <h2 style={heading2}>2. Eligibility</h2>
+        <p style={paragraph}>
+          You must be at least <strong style={bold}>18 years of age</strong> to use Kira AI.
+          By using the Service, you represent and warrant that you meet this age requirement.
+          We do not knowingly provide the Service to anyone under 18.
+        </p>
+
+        <Divider />
+
+        {/* ── 3. Description of Service ── */}
+        <h2 style={heading2}>3. Description of Service</h2>
+        <p style={paragraph}>
+          Kira AI is an AI companion application that provides real-time voice and text conversations
+          powered by artificial intelligence. The Service is provided &quot;as is&quot; and &quot;as available.&quot;
+          We make no guarantees regarding uptime, response accuracy, or latency. The Service is under
+          active development and features may change, be added, or be removed at any time.
+        </p>
+
+        <Divider />
+
+        {/* ── 4. Nature of AI ── */}
+        <h2 style={heading2}>4. Nature of AI</h2>
+        <p style={paragraph}>You acknowledge and understand that:</p>
+        <ul style={bulletList}>
+          {[
+            "Kira is an artificial intelligence, not a human being",
+            "AI responses may be inaccurate, incomplete, or inappropriate (\"hallucinations\")",
+            "Kira should not be relied upon for medical, legal, financial, or emergency advice",
+            "The AI's personality, memory, and responses are generated by machine learning models and do not constitute real emotions or consciousness",
+            "Conversations with Kira are not confidential therapy or counseling sessions",
+          ].map((text, i) => (
+            <li key={i} style={bulletItem}>
+              <span style={bulletDot}>·</span>
+              {text}
+            </li>
+          ))}
+        </ul>
+
+        <Divider />
+
+        {/* ── 5. Subscriptions and Payment ── */}
+        <h2 style={heading2}>5. Subscriptions and Payment</h2>
+
+        <h3 style={heading3}>5.1 Free Tier</h3>
+        <p style={paragraph}>
+          Free accounts are limited to approximately <strong style={bold}>15 minutes</strong> of
+          conversation time per day. Daily limits reset at midnight UTC.
+        </p>
+
+        <h3 style={heading3}>5.2 Pro Subscription</h3>
+        <p style={paragraph}>
+          Pro subscriptions cost <strong style={bold}>$9.99/month</strong> and provide unlimited
+          conversations subject to the Fair Use Policy (Section 6). All prices are in USD.
+        </p>
+
+        <h3 style={heading3}>5.3 Billing</h3>
+        <p style={paragraph}>
+          Subscriptions are billed monthly through Stripe. By subscribing, you authorize recurring
+          monthly charges to your payment method. You are responsible for keeping your payment
+          information current.
+        </p>
+
+        <h3 style={heading3}>5.4 Cancellation</h3>
+        <p style={paragraph}>
+          You may cancel your subscription at any time through your Profile settings.
+          Upon cancellation, you retain Pro access through the end of your current billing period.
+          <strong style={bold}> No refunds</strong> are issued for partial billing periods.
+        </p>
+
+        <h3 style={heading3}>5.5 Price Changes</h3>
+        <p style={paragraph}>
+          We reserve the right to change subscription pricing. Existing subscribers will receive
+          at least 30 days&apos; notice before any price increase takes effect.
+        </p>
+
+        <Divider />
+
+        {/* ── 6. Fair Use Policy ── */}
+        <h2 style={heading2}>6. Fair Use Policy</h2>
+        <p style={paragraph}>
+          Pro subscriptions are marketed as &quot;unlimited&quot; and are intended for generous
+          personal use. To ensure service quality for all users, Pro accounts are subject to a soft
+          monthly cap of approximately <strong style={bold}>100 hours</strong> of conversation time
+          per calendar month. If you reach this limit, access will resume on the 1st of the
+          following month.
+        </p>
+        <p style={paragraph}>
+          This cap is well beyond what the vast majority of users will ever approach. We reserve
+          the right to adjust fair-use thresholds as the service evolves and will provide reasonable
+          notice of any significant changes.
+        </p>
+
+        <Divider />
+
+        {/* ── 7. Acceptable Use ── */}
+        <h2 style={heading2}>7. Acceptable Use</h2>
+        <p style={paragraph}>You agree not to use the Service to:</p>
+        <ul style={bulletList}>
+          {[
+            "Generate content that is illegal, harmful, threatening, abusive, harassing, defamatory, or otherwise objectionable",
+            "Attempt to extract, reverse-engineer, or replicate the AI's underlying models or system prompts",
+            "Use automated scripts, bots, or tools to access the Service (other than through our official interface)",
+            "Impersonate any person or entity, or misrepresent your affiliation with any person or entity",
+            "Transmit viruses, malware, or any other malicious code",
+            "Interfere with or disrupt the Service or servers",
+            "Attempt to gain unauthorized access to any accounts, systems, or networks",
+            "Use the Service for commercial purposes without written permission",
+            "Share your account credentials with others",
+            "Violate any applicable local, state, national, or international law",
+          ].map((text, i) => (
+            <li key={i} style={bulletItem}>
+              <span style={bulletDot}>·</span>
+              {text}
+            </li>
+          ))}
+        </ul>
+        <p style={paragraph}>
+          We reserve the right to terminate accounts that violate this policy without refund
+          or prior notice.
+        </p>
+
+        <Divider />
+
+        {/* ── 8. Your Content ── */}
+        <h2 style={heading2}>8. Your Content</h2>
+
+        <h3 style={heading3}>8.1 Ownership</h3>
+        <p style={paragraph}>
+          You retain ownership of any content you provide to the Service (text, voice, images).
+          However, by using the Service, you grant us a limited license to process this content
+          as necessary to provide and improve the Service.
+        </p>
+
+        <h3 style={heading3}>8.2 AI-Generated Content</h3>
+        <p style={paragraph}>
+          Content generated by Kira is provided for your personal use. We make no claims of
+          ownership over AI-generated responses, but we also make no guarantees about the
+          originality, accuracy, or fitness for any particular purpose of such content.
+        </p>
+
+        <h3 style={heading3}>8.3 Sensitive Information</h3>
+        <p style={paragraph}>
+          Do <strong style={bold}>not</strong> share sensitive personal information during
+          conversations, including but not limited to: passwords, financial account numbers,
+          Social Security numbers, or medical records. We are not liable for any consequences
+          resulting from your disclosure of sensitive information.
+        </p>
+
+        <Divider />
+
+        {/* ── 9. Memory and Personalization ── */}
+        <h2 style={heading2}>9. Memory and Personalization</h2>
+        <p style={paragraph}>
+          Kira may remember details from previous conversations to provide a more personalized
+          experience. This memory system is a core feature of the Service. Memory data is stored
+          securely and associated with your account. You can request deletion of your memory data
+          by contacting us at{" "}
+          <a
+            href="mailto:support@kiraai.app"
+            style={{ color: "rgba(139,157,195,0.7)", textDecoration: "underline" }}
+          >
+            support@kiraai.app
+          </a>.
+        </p>
+
+        <Divider />
+
+        {/* ── 10. Vision Features ── */}
+        <h2 style={heading2}>10. Vision Features</h2>
+        <p style={paragraph}>
+          Kira may offer optional vision features that allow image analysis through your device
+          camera or uploaded images. When using vision features:
+        </p>
+        <ul style={bulletList}>
+          {[
+            "Camera access requires your explicit permission via your device/browser settings",
+            "Images are processed in real-time and are not permanently stored on our servers",
+            "You are responsible for ensuring you have the right to share any images you provide",
+            "Do not use vision features to capture or share images of people without their consent",
+          ].map((text, i) => (
+            <li key={i} style={bulletItem}>
+              <span style={bulletDot}>·</span>
+              {text}
+            </li>
+          ))}
+        </ul>
+
+        <Divider />
+
+        {/* ── 11. Service Modifications ── */}
+        <h2 style={heading2}>11. Service Modifications</h2>
+        <p style={paragraph}>
+          We reserve the right to modify, suspend, or discontinue any part of the Service at any
+          time, with or without notice. This includes changing features, adjusting usage limits,
+          updating AI models, or altering the user interface. We will not be liable to you or any
+          third party for any such modifications, suspension, or discontinuation.
+        </p>
+
+        <Divider />
+
+        {/* ── 12. Disclaimer of Warranties ── */}
+        <h2 style={heading2}>12. Disclaimer of Warranties</h2>
+        <p style={paragraph}>
+          THE SERVICE IS PROVIDED &quot;AS IS&quot; AND &quot;AS AVAILABLE&quot; WITHOUT WARRANTIES
+          OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF
+          MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. WE DO NOT WARRANT
+          THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR SECURE, OR THAT ANY DEFECTS WILL BE
+          CORRECTED.
+        </p>
+
+        <Divider />
+
+        {/* ── 13. Limitation of Liability ── */}
+        <h2 style={heading2}>13. Limitation of Liability</h2>
+        <p style={paragraph}>
+          TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL KIRA AI, ITS OFFICERS,
+          DIRECTORS, EMPLOYEES, OR AGENTS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+          CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS OR REVENUES, WHETHER INCURRED
+          DIRECTLY OR INDIRECTLY, OR ANY LOSS OF DATA, USE, GOODWILL, OR OTHER INTANGIBLE LOSSES
+          RESULTING FROM YOUR USE OF THE SERVICE.
+        </p>
+        <p style={paragraph}>
+          Our total liability for any claims arising from or related to the Service shall not exceed
+          the amount you paid us in the <strong style={bold}>12 months</strong> preceding the claim.
+        </p>
+
+        <Divider />
+
+        {/* ── 14. Indemnification ── */}
+        <h2 style={heading2}>14. Indemnification</h2>
+        <p style={paragraph}>
+          You agree to indemnify, defend, and hold harmless Kira AI and its affiliates from any
+          claims, damages, obligations, losses, liabilities, costs, or expenses arising from:
+          your use of the Service, your violation of these Terms, or your violation of any
+          third-party rights.
+        </p>
+
+        <Divider />
+
+        {/* ── 15. Governing Law ── */}
+        <h2 style={heading2}>15. Governing Law</h2>
+        <p style={paragraph}>
+          These Terms shall be governed by and construed in accordance with the laws of the
+          State of <strong style={bold}>Delaware</strong>, United States, without regard to its
+          conflict of law provisions. Any disputes arising under these Terms shall be resolved
+          in the courts located in Delaware.
+        </p>
+
+        <Divider />
+
+        {/* ── 16. Termination ── */}
+        <h2 style={heading2}>16. Termination</h2>
+        <p style={paragraph}>
+          We may terminate or suspend your access to the Service immediately, without prior notice
+          or liability, for any reason, including without limitation if you breach these Terms.
+          Upon termination, your right to use the Service will immediately cease. Provisions of
+          these Terms that by their nature should survive termination shall survive, including
+          ownership provisions, warranty disclaimers, indemnity, and limitations of liability.
+        </p>
+
+        <Divider />
+
+        {/* ── 17. Changes to Terms ── */}
+        <h2 style={heading2}>17. Changes to Terms</h2>
+        <p style={paragraph}>
+          We reserve the right to modify these Terms at any time. Material changes will be communicated
+          through the Service or via the email associated with your account. Your continued use of the
+          Service after changes are posted constitutes acceptance of the revised Terms. If you do not
+          agree to the new Terms, you must stop using the Service.
+        </p>
+
+        <Divider />
+
+        {/* ── 18. Severability ── */}
+        <h2 style={heading2}>18. Severability</h2>
+        <p style={paragraph}>
+          If any provision of these Terms is found to be unenforceable or invalid, that provision
+          shall be limited or eliminated to the minimum extent necessary so that these Terms shall
+          otherwise remain in full force and effect.
+        </p>
+
+        <Divider />
+
+        {/* ── 19. Entire Agreement ── */}
+        <h2 style={heading2}>19. Entire Agreement</h2>
+        <p style={paragraph}>
+          These Terms, together with our Privacy Policy, constitute the entire agreement between
+          you and Kira AI regarding the use of the Service and supersede all prior agreements
+          and understandings.
+        </p>
+
+        <Divider />
+
+        {/* ── 20. Contact ── */}
+        <h2 style={heading2}>20. Contact</h2>
+        <p style={paragraph}>
+          If you have any questions about these Terms, please contact us at{" "}
+          <a
+            href="mailto:support@kiraai.app"
+            style={{ color: "rgba(139,157,195,0.7)", textDecoration: "underline" }}
+          >
+            support@kiraai.app
+          </a>.
+        </p>
       </article>
 
       {/* Footer */}

@@ -495,8 +495,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             frameCount++;
             const t = frameCount / 60;
 
-            if (frameCount % 300 === 1) {
-              console.log(`[Live2D] Per-frame patch running (frame ${frameCount})`);
+            if (frameCount % 3600 === 1) {
+              debugLog(`[Live2D] Per-frame patch running (frame ${frameCount})`);
             }
 
             try {
@@ -526,34 +526,33 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
               // --- Ear animation (AFTER physics, BEFORE mesh deformation) ---
               // Physics writes to Param68-77 based on eye blinks, but we override
-              // with our own animation here. This is the critical fix — these params
-              // MUST be set inside coreModel.update (before origCoreUpdate) to
-              // survive the physics→deformation pipeline.
-              // TEMP: Large amplitude for debugging — will reduce once confirmed working.
-              const earBase = Math.sin(t * 2.0) * 3.0;
-              const earSlow = Math.sin(t * 0.8) * 5.0;
-              const earBreath = breath * 2.0;
+              // with our own animation here. These params MUST be set inside
+              // coreModel.update (before origCoreUpdate) to survive the
+              // physics→deformation pipeline.
+              const earBase = Math.sin(t * 2.0) * 0.15;
+              const earSlow = Math.sin(t * 0.8) * 0.3;
+              const earBreath = breath * 0.1;
 
               // Right ear
               coreModel.setParameterValueById("Param68", earSlow + earBase + earBreath);
-              coreModel.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 2.0);
-              coreModel.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 1.5);
+              coreModel.setParameterValueById("Param69", earBase * 0.7 + Math.sin(t * 2.3) * 0.1);
+              coreModel.setParameterValueById("Param70", earSlow * 0.5 + Math.sin(t * 1.7) * 0.08);
               coreModel.setParameterValueById("Param74", earBase * 0.5);
-              coreModel.setParameterValueById("Param75", Math.sin(t * 1.5) * 2.0);
+              coreModel.setParameterValueById("Param75", Math.sin(t * 1.5) * 0.1);
 
               // Left ear (slightly offset phase for organic asymmetry)
               coreModel.setParameterValueById("Param71", earSlow + earBase * 0.9 + earBreath);
-              coreModel.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 2.0);
-              coreModel.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 1.5);
+              coreModel.setParameterValueById("Param72", earBase * 0.6 + Math.sin(t * 2.5) * 0.1);
+              coreModel.setParameterValueById("Param73", earSlow * 0.5 + Math.sin(t * 1.9) * 0.08);
               coreModel.setParameterValueById("Param76", earBase * 0.4);
-              coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 2.0);
+              coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.1);
             } catch {}
 
             // NOW do mesh deformation with our values applied
             origCoreUpdate();
           };
 
-          console.log("[Live2D] Per-frame patch applied (coreModel.update pre-deformation override)");
+          debugLog("[Live2D] Per-frame patch applied (coreModel.update pre-deformation override)");
         } catch (err2) {
           console.warn("[Live2D] Could not patch per-frame update:", err2);
         }

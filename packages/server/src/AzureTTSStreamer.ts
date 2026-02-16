@@ -21,6 +21,55 @@ export interface AzureVoiceConfig {
   pitch?: string;
   temperature?: string;   // "0.0" to "1.0" — higher = more expressive
   topP?: string;           // should match temperature for best results
+  emotion?: string;        // current emotion for prosody adjustment (from [EMO:...] tag)
+}
+
+// Prosody adjustments per emotion — applied ON TOP of the base voice config
+// rate: percentage change ("+10%" = 10% faster, "-15%" = 15% slower)
+// pitch: percentage or semitone change
+// volume: "soft", "medium", "loud", or percentage like "+10%"
+interface EmotionProsody {
+  rate?: string;
+  pitch?: string;
+  volume?: string;
+}
+
+const EMOTION_PROSODY: Record<string, EmotionProsody> = {
+  neutral:     {},                                              // no change
+  happy:       { rate: "+5%",  pitch: "+5%"  },                // slightly upbeat
+  excited:     { rate: "+15%", pitch: "+10%", volume: "+10%" },// fast, bright, louder
+  love:        { rate: "-8%",  pitch: "-3%",  volume: "soft" },// slow, warm, intimate
+  blush:       { rate: "-5%",  pitch: "+8%",  volume: "soft" },// shy, slightly higher
+  sad:         { rate: "-15%", pitch: "-8%",  volume: "soft" },// slow, lower, quiet
+  angry:       { rate: "+8%",  pitch: "-5%",  volume: "+15%" },// tight, lower, louder
+  playful:     { rate: "+10%", pitch: "+8%"  },                // bouncy, bright
+  thinking:    { rate: "-12%", pitch: "-3%"  },                // slower, deliberate
+  speechless:  { rate: "-20%", pitch: "-5%"  },                // very slow, flat
+  eyeroll:     { rate: "+5%",  pitch: "-3%"  },                // slightly faster, flat/bored
+  sleepy:      { rate: "-20%", pitch: "-10%", volume: "soft" },// very slow, low, quiet
+  frustrated:  { rate: "+5%",  pitch: "-5%",  volume: "+5%" }, // slightly tight, harder
+  confused:    { rate: "-8%",  pitch: "+5%"  },                // slower, rising inflection
+  surprised:   { rate: "+10%", pitch: "+12%", volume: "+10%" },// fast, high, loud
+};
+
+/**
+ * Merge a base prosody value (e.g. "+25%") with an emotion adjustment (e.g. "+10%").
+ * Both are percentage strings — they get added together: +25% + +10% = +35%.
+ */
+function mergeRateOrPitch(base: string | undefined, emotionAdj: string | undefined): string | undefined {
+  if (!emotionAdj) return base;
+  if (!base) return emotionAdj;
+
+  const baseMatch = base.match(/^([+-]?\d+(?:\.\d+)?)%$/);
+  const emotionMatch = emotionAdj.match(/^([+-]?\d+(?:\.\d+)?)%$/);
+
+  if (baseMatch && emotionMatch) {
+    const total = parseFloat(baseMatch[1]) + parseFloat(emotionMatch[1]);
+    return `${total >= 0 ? "+" : ""}${total.toFixed(0)}%`;
+  }
+
+  // If formats don't match, prefer emotion adjustment
+  return emotionAdj;
 }
 
 class NodePushAudioStream extends PushAudioOutputStreamCallback {
@@ -91,16 +140,25 @@ export class AzureTTSStreamer extends EventEmitter {
 
   private buildSsml(text: string): string {
     const escaped = escapeXml(text);
-    const { voiceName, style, rate, pitch, temperature, topP } = this.voiceConfig;
+    const { voiceName, style, rate, pitch, temperature, topP, emotion } = this.voiceConfig;
+
+    // Get emotion-based prosody adjustments
+    const emotionProsody = EMOTION_PROSODY[emotion || "neutral"] || {};
+
+    // Merge base rate/pitch with emotion adjustments (additive)
+    const finalRate = mergeRateOrPitch(rate, emotionProsody.rate);
+    const finalPitch = mergeRateOrPitch(pitch, emotionProsody.pitch);
+    const finalVolume = emotionProsody.volume; // volume doesn't stack with base
 
     // Build from inside out: text → prosody → express-as
     let innerContent = escaped;
 
-    // If rate/pitch are set, wrap in prosody (skip for DragonHD voices — they handle it contextually)
-    if (rate || pitch) {
-      const rateAttr = rate ? ` rate="${rate}"` : "";
-      const pitchAttr = pitch ? ` pitch="${pitch}"` : "";
-      innerContent = `<prosody${rateAttr}${pitchAttr}>${innerContent}</prosody>`;
+    // If rate/pitch/volume are set, wrap in prosody (skip for DragonHD voices — they handle it contextually)
+    if (finalRate || finalPitch || finalVolume) {
+      const rateAttr = finalRate ? ` rate="${finalRate}"` : "";
+      const pitchAttr = finalPitch ? ` pitch="${finalPitch}"` : "";
+      const volumeAttr = finalVolume ? ` volume="${finalVolume}"` : "";
+      innerContent = `<prosody${rateAttr}${pitchAttr}${volumeAttr}>${innerContent}</prosody>`;
     }
 
     // If a speaking style is requested, wrap in express-as

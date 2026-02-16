@@ -485,8 +485,9 @@ Keep it natural and brief — 1 sentence.`
       }
 
       // Parse expression tag and strip before TTS
-      reaction = handleNonStreamingTag(reaction, "vision reaction");
-      reaction = stripEmotionTags(reaction);
+      const visionTagResult = handleNonStreamingTag(reaction, "vision reaction");
+      reaction = stripEmotionTags(visionTagResult.text);
+      const visionEmotion = visionTagResult.emotion;
 
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
@@ -503,11 +504,18 @@ Keep it natural and brief — 1 sentence.`
 
       try {
         const sentences = reaction.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+        let visionSentIdx = 0;
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
+          // Emotional pacing between sentences
+          if (visionSentIdx > 0) {
+            const delay = EMOTION_SENTENCE_DELAY[visionEmotion] || 0;
+            if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          visionSentIdx++;
           await new Promise<void>((resolve) => {
-            const tts = new AzureTTSStreamer(currentVoiceConfig);
+            const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: visionEmotion });
             tts.on("audio_chunk", (chunk: Buffer) => {
               if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
             });
@@ -624,6 +632,26 @@ Keep it natural and brief — 1 sentence.`
   let tagSuccessCount = 0;
   let tagFallbackCount = 0;
 
+  // --- Emotion-based sentence pacing ---
+  // Delay in milliseconds BETWEEN sentences (not before the first one)
+  const EMOTION_SENTENCE_DELAY: Record<string, number> = {
+    neutral:     0,
+    happy:       0,
+    excited:     0,     // rapid-fire, no pauses
+    love:        200,   // gentle pacing
+    blush:       150,
+    sad:         300,   // deliberate, heavy pauses
+    angry:       50,    // quick but with slight beats
+    playful:     0,
+    thinking:    400,   // long pauses, pondering
+    speechless:  500,   // dramatic pauses
+    eyeroll:     100,
+    sleepy:      350,   // sleepy pauses
+    frustrated:  100,
+    confused:    250,   // uncertain pauses
+    surprised:   0,     // blurts out fast
+  };
+
   /**
    * Send expression data to client from a parsed tag, applying cooldowns.
    * Used by both streaming (tag parsed from stream) and non-streaming (tag parsed from complete text) paths.
@@ -662,26 +690,27 @@ Keep it natural and brief — 1 sentence.`
 
   /**
    * Parse expression tag from a complete (non-streaming) LLM response.
-   * Sends expression to client, returns clean text with tag stripped.
+   * Sends expression to client, returns clean text with tag stripped AND the parsed emotion.
    */
-  function handleNonStreamingTag(text: string, label: string): string {
+  function handleNonStreamingTag(text: string, label: string): { text: string; emotion: string } {
     const tagMatch = text.match(/^\[EMO:(\w+)(?:\|\w+:\w+)*\]/);
     if (tagMatch) {
       const parsed = parseExpressionTag(tagMatch[0]);
       if (parsed) {
         tagSuccessCount++;
         sendExpressionFromTag(parsed, label);
+        return { text: stripExpressionTag(text), emotion: parsed.emotion };
       } else {
         tagFallbackCount++;
         console.warn(`[Expression] Malformed tag: "${tagMatch[0]}" — defaulting to neutral (${label})`);
         ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
+        return { text: stripExpressionTag(text), emotion: "neutral" };
       }
-      return stripExpressionTag(text);
     } else {
       tagFallbackCount++;
       console.warn(`[Expression] No tag found in response — defaulting to neutral (${label}). Rate: ${tagSuccessCount}/${tagSuccessCount + tagFallbackCount}`);
       ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
-      return text;
+      return { text, emotion: "neutral" };
     }
   }
 
@@ -754,8 +783,9 @@ Keep it natural and brief — 1 sentence.`
         }
 
         // Parse expression tag and strip before TTS
-        responseText = handleNonStreamingTag(responseText, "silence initiated");
-        responseText = stripEmotionTags(responseText);
+        const silenceTagResult = handleNonStreamingTag(responseText, "silence initiated");
+        responseText = stripEmotionTags(silenceTagResult.text);
+        const silenceEmotion = silenceTagResult.emotion;
 
         // She has something to say — run the TTS pipeline
         chatHistory.push({ role: "assistant", content: responseText });
@@ -771,12 +801,19 @@ Keep it natural and brief — 1 sentence.`
 
         try {
           const sentences = responseText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+          let silSentIdx = 0;
           for (const sentence of sentences) {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
+            // Emotional pacing between sentences
+            if (silSentIdx > 0) {
+              const delay = EMOTION_SENTENCE_DELAY[silenceEmotion] || 0;
+              if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+            }
+            silSentIdx++;
             await new Promise<void>((resolve) => {
-              console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
-              const tts = new AzureTTSStreamer(currentVoiceConfig);
+              console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${silenceEmotion})`);
+              const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: silenceEmotion });
               tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
@@ -836,8 +873,9 @@ Keep it natural and brief — 1 sentence.`
       }
 
       // Parse expression tag and strip before TTS
-      llmResponse = handleNonStreamingTag(llmResponse, "runKira");
-      llmResponse = stripEmotionTags(llmResponse);
+      const runKiraTagResult = handleNonStreamingTag(llmResponse, "runKira");
+      llmResponse = stripEmotionTags(runKiraTagResult.text);
+      const runKiraEmotion = runKiraTagResult.emotion;
 
       chatHistory.push({ role: "assistant", content: llmResponse });
       advanceTimePhase(llmResponse);
@@ -848,12 +886,19 @@ Keep it natural and brief — 1 sentence.`
       ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
       const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+      let runKiraSentIdx = 0;
       for (const sentence of sentences) {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
+        // Emotional pacing between sentences
+        if (runKiraSentIdx > 0) {
+          const delay = EMOTION_SENTENCE_DELAY[runKiraEmotion] || 0;
+          if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        runKiraSentIdx++;
         await new Promise<void>((resolve) => {
-          console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
-          const tts = new AzureTTSStreamer(currentVoiceConfig);
+          console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${runKiraEmotion})`);
+          const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: runKiraEmotion });
           tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
@@ -942,8 +987,9 @@ Keep it natural and brief — 1 sentence.`
       const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
         // Parse expression tag and strip before TTS
-        let finalGoodbye = handleNonStreamingTag(goodbyeText, "goodbye");
-        finalGoodbye = stripEmotionTags(finalGoodbye);
+        const goodbyeTagResult = handleNonStreamingTag(goodbyeText, "goodbye");
+        const finalGoodbye = stripEmotionTags(goodbyeTagResult.text);
+        const goodbyeEmotion = goodbyeTagResult.emotion;
 
         console.log(`[Goodbye] Kira says: "${finalGoodbye}"`);
         chatHistory.push({ role: "assistant", content: finalGoodbye });
@@ -955,11 +1001,17 @@ Keep it natural and brief — 1 sentence.`
         await new Promise(resolve => setImmediate(resolve));
 
         const sentences = finalGoodbye.split(/(?<=[.!?\u2026])\s+(?=[A-Z"])/);
+        let goodbyeSentIdx = 0;
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
+          if (goodbyeSentIdx > 0) {
+            const delay = EMOTION_SENTENCE_DELAY[goodbyeEmotion] || 0;
+            if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          goodbyeSentIdx++;
           await new Promise<void>((resolve) => {
-            const tts = new AzureTTSStreamer(currentVoiceConfig);
+            const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: goodbyeEmotion });
             tts.on("audio_chunk", (chunk: Buffer) => {
               if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
             });
@@ -1475,8 +1527,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               if (!openerText || openerText.length < 3 || clientDisconnected) return;
 
               // Parse expression tag and strip before TTS
-              openerText = handleNonStreamingTag(openerText, "opener");
-              openerText = stripEmotionTags(openerText);
+              const openerTagResult = handleNonStreamingTag(openerText, "opener");
+              openerText = stripEmotionTags(openerTagResult.text);
+              const openerEmotion = openerTagResult.emotion;
 
               // Add to chat history (NOT the instruction — just the greeting)
               chatHistory.push({ role: "assistant", content: openerText });
@@ -1491,11 +1544,17 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               await new Promise(resolve => setImmediate(resolve));
 
               const sentences = openerText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+              let openerSentIdx = 0;
               for (const sentence of sentences) {
                 const trimmed = sentence.trim();
                 if (trimmed.length === 0) continue;
+                if (openerSentIdx > 0) {
+                  const delay = EMOTION_SENTENCE_DELAY[openerEmotion] || 0;
+                  if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                openerSentIdx++;
                 await new Promise<void>((resolve) => {
-                  const tts = new AzureTTSStreamer(currentVoiceConfig);
+                  const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: openerEmotion });
                   tts.on("audio_chunk", (chunk: Buffer) => {
                     if (!clientDisconnected) ws.send(chunk);
                   });
@@ -1738,6 +1797,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             // --- Inline expression tag parsing (Phase 1 buffering) ---
             let tagParsed = false;
             let tagBuffer = "";
+            let parsedEmotion = "neutral"; // will be set from [EMO:...] tag
+            let streamSentenceIndex = 0; // for inter-sentence pacing
 
             // --- Tool call accumulation ---
             let hasToolCalls = false;
@@ -1745,9 +1806,19 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             const speakSentence = async (text: string) => {
               if (!ttsStartedAt) ttsStartedAt = Date.now();
+
+              // Add emotional pacing delay between sentences (not before first)
+              if (streamSentenceIndex > 0) {
+                const delay = EMOTION_SENTENCE_DELAY[parsedEmotion] || 0;
+                if (delay > 0) {
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                }
+              }
+              streamSentenceIndex++;
+
               await new Promise<void>((resolve) => {
-                console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName})`);
-                const tts = new AzureTTSStreamer(currentVoiceConfig);
+                console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${parsedEmotion})`);
+                const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: parsedEmotion });
                 tts.on("audio_chunk", (chunk: Buffer) => {
                   if (!ttsFirstChunkLogged) {
                     ttsFirstChunkLogged = true;
@@ -1816,6 +1887,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   const remainder = tagBuffer.slice(closeBracket + 1);
                   const parsed = parseExpressionTag(rawTag);
                   if (parsed) {
+                    parsedEmotion = parsed.emotion;
                     sendExpressionFromTag(parsed, "stream tag");
                     tagSuccessCount++;
                     console.log(`[ExprTag] Parsed from stream: ${rawTag}`);
@@ -1910,6 +1982,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 // Reset tag parsing for the follow-up stream (new LLM call = new tag)
                 let followUpTagParsed = false;
                 let followUpTagBuffer = "";
+                // Reset sentence index for follow-up pacing
+                streamSentenceIndex = 0;
 
                 for await (const chunk of followUpStream) {
                   const content = chunk.choices[0]?.delta?.content || "";
@@ -1930,6 +2004,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                       const rawTag = followUpTagBuffer.slice(0, closeBracket + 1);
                       const parsed = parseExpressionTag(rawTag);
                       if (parsed) {
+                        parsedEmotion = parsed.emotion;
                         sendExpressionFromTag(parsed, "tool follow-up tag");
                         tagSuccessCount++;
                         console.log(`[ExprTag] Parsed from tool follow-up: ${rawTag}`);
@@ -1987,6 +2062,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             if (!tagParsed && llmResponse.trim().length > 0) {
               const fallbackParsed = parseExpressionTag(fullResponse);
               if (fallbackParsed) {
+                parsedEmotion = fallbackParsed.emotion;
                 sendExpressionFromTag(fallbackParsed, "full response fallback");
                 tagSuccessCount++;
               } else {
@@ -2154,8 +2230,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
 
                 // Parse expression tag and strip before TTS
-                reactionText = handleNonStreamingTag(reactionText, "scene reaction");
-                reactionText = stripEmotionTags(reactionText);
+                const sceneTagResult = handleNonStreamingTag(reactionText, "scene reaction");
+                reactionText = stripEmotionTags(sceneTagResult.text);
+                const sceneEmotion = sceneTagResult.emotion;
 
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
@@ -2169,11 +2246,17 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 await new Promise(resolve => setImmediate(resolve));
 
                 const sentences = reactionText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+                let sceneSentIdx = 0;
                 for (const sentence of sentences) {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
+                  if (sceneSentIdx > 0) {
+                    const delay = EMOTION_SENTENCE_DELAY[sceneEmotion] || 0;
+                    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+                  }
+                  sceneSentIdx++;
                   await new Promise<void>((resolve) => {
-                    const tts = new AzureTTSStreamer(currentVoiceConfig);
+                    const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: sceneEmotion });
                     tts.on("audio_chunk", (chunk: Buffer) => {
                       if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
                     });
@@ -2320,8 +2403,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             }
 
             // Parse expression tag and strip before sending
-            txtLlmResponse = handleNonStreamingTag(txtLlmResponse, "text chat");
-            txtLlmResponse = stripEmotionTags(txtLlmResponse);
+            const txtTagResult = handleNonStreamingTag(txtLlmResponse, "text chat");
+            txtLlmResponse = stripEmotionTags(txtTagResult.text);
+            const txtEmotion = txtTagResult.emotion;
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
             advanceTimePhase(txtLlmResponse);

@@ -67,6 +67,9 @@ const LONG_UTTERANCE_FRAMES = 800; // ~2s of speech = "long utterance" (each fra
 const MIN_SPEECH_FRAMES_FOR_EOU = 200; // Must have ~200 speech frames (~1-2s real speech) to prevent noise-triggered EOUs
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
+// Hair accessories managed by cycle timer in Live2DAvatar — block from server-sent changes
+const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails", "short_hair"]);
+
 export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null, guestId: string, voicePreference: string = "anime") => {
   // ─── Restore state from singleton if a live connection exists ───
   const [socketState, setSocketState] = useState<SocketState>(() => {
@@ -1211,12 +1214,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             setCurrentExpression(msg.expression || "neutral");
             // Handle action/accessory fields from context detection
             if (msg.action) setCurrentAction(msg.action);
-            if (msg.accessory) {
+            if (msg.accessory && !HAIR_ACCESSORIES.has(msg.accessory)) {
               setActiveAccessories(prev =>
                 prev.includes(msg.accessory) ? prev : [...prev, msg.accessory]
               );
             }
-            if (msg.removeAccessory) {
+            if (msg.removeAccessory && !HAIR_ACCESSORIES.has(msg.removeAccessory)) {
               setActiveAccessories(prev =>
                 prev.filter((a: string) => a !== msg.removeAccessory)
               );
@@ -1224,6 +1227,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             break;
           case "accessory": {
             const { accessory, action } = msg;
+            // Hair accessories are managed by the cycle timer — ignore server commands
+            if (HAIR_ACCESSORIES.has(accessory)) break;
             setActiveAccessories(prev => {
               if (action === "on") {
                 return prev.includes(accessory) ? prev : [...prev, accessory];

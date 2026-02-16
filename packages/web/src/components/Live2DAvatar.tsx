@@ -144,18 +144,19 @@ const ACCESSORY_CONFLICTS: Record<string, string[]> = {
   headphones_on: ["neck_headphones", "earbuds"],
   neck_headphones: ["headphones_on", "earbuds"],
   earbuds: ["headphones_on", "neck_headphones"],
-  clip_bangs: ["low_twintails", "short_hair"],
-  low_twintails: ["clip_bangs", "short_hair"],
-  short_hair: ["clip_bangs", "low_twintails"],
 };
 
-/** Session hairstyle options (null = default look) */
-const SESSION_HAIRSTYLES = [
-  null, null,          // 40% default
-  "clip_bangs",        // 20%
-  "low_twintails",     // 20%
-  "short_hair",        // 20%
+/** Session hairstyle cycle — rotates every 5 minutes */
+const HAIRSTYLE_CYCLE = [
+  null,              // Default look (no hairstyle expression)
+  "low_twintails",   // Twin tails
+  "short_hair",      // Short cut
+  "clip_bangs",      // Bangs clipped back
 ];
+const HAIRSTYLE_CYCLE_INTERVAL = 5 * 60 * 1000; // 5 minutes per style
+
+/** Hair accessory IDs — managed exclusively by the cycle timer, blocked from other systems */
+const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails", "short_hair"]);
 
 /** Log JS heap usage (Chrome only — no-op on Safari/Firefox) */
 function logMemory(label: string) {
@@ -209,6 +210,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     maxMouthOpen: 0.8,    // Don't go above 80% open (looks more natural)
   }));
 
+  // Hairstyle cycle — rotates through styles every 5 minutes
+  const hairstyleIndexRef = useRef(Math.floor(Math.random() * HAIRSTYLE_CYCLE.length));
+  const hairstyleCycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   /**
    * Full GPU + memory cleanup — must release ALL resources to prevent the
    * "second conversation crash" on mobile (iOS limits WebGL to ~2 contexts).
@@ -242,6 +247,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     if (expressionTimeoutRef.current) {
       clearTimeout(expressionTimeoutRef.current);
       expressionTimeoutRef.current = null;
+    }
+    if (hairstyleCycleTimerRef.current) {
+      clearInterval(hairstyleCycleTimerRef.current);
+      hairstyleCycleTimerRef.current = null;
     }
 
     // 2. Destroy the Live2D model (frees model buffers + child display objects)
@@ -647,18 +656,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                   });
                   pendingAccessories.current = [];
                 }
-
-                // Session hairstyle — random pick per conversation
-                if (modelRef.current) {
-                  const pick = SESSION_HAIRSTYLES[Math.floor(Math.random() * SESSION_HAIRSTYLES.length)];
-                  if (pick) {
-                    try {
-                      modelRef.current.expression(pick);
-                      activeAccessoriesRef.current.add(pick);
-                      debugLog(`[Live2D] Session hairstyle: ${pick}`);
-                    } catch {}
-                  }
-                }
               }, 2000);
             }
           });
@@ -717,6 +714,58 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
+
+  // Hairstyle cycle — rotates through styles every 5 minutes
+  // Single source of truth for hair; no other system should change hairstyle
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model || !modelStableRef.current) return;
+
+    // Apply a hairstyle (null = default, string = expression name)
+    function applyHairstyle(style: string | null) {
+      if (!modelRef.current) return;
+      // First, remove any currently active hair accessories
+      HAIR_ACCESSORIES.forEach(hair => {
+        if (activeAccessoriesRef.current.has(hair)) {
+          activeAccessoriesRef.current.delete(hair);
+        }
+      });
+      // Then apply the new one (null = default/no hair accessory)
+      if (style) {
+        try {
+          modelRef.current.expression(style);
+          activeAccessoriesRef.current.add(style);
+          debugLog(`[Hair] Applied: ${style}`);
+        } catch (e) {
+          console.warn(`[Hair] Failed to apply ${style}:`, e);
+        }
+      } else {
+        // Reset to default — clear all hair expressions
+        // The expression manager handles the visual reset when we don't set any hair expression
+        debugLog("[Hair] Applied: default");
+      }
+    }
+
+    // Apply initial hairstyle from the random start index
+    const initialStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
+    applyHairstyle(initialStyle);
+    debugLog(`[Hair] Initial style: ${initialStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
+
+    // Rotate every 5 minutes
+    hairstyleCycleTimerRef.current = setInterval(() => {
+      hairstyleIndexRef.current = (hairstyleIndexRef.current + 1) % HAIRSTYLE_CYCLE.length;
+      const nextStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
+      applyHairstyle(nextStyle);
+      debugLog(`[Hair] Cycled to: ${nextStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
+    }, HAIRSTYLE_CYCLE_INTERVAL);
+
+    return () => {
+      if (hairstyleCycleTimerRef.current) {
+        clearInterval(hairstyleCycleTimerRef.current);
+        hairstyleCycleTimerRef.current = null;
+      }
+    };
+  }, [modelReady]); // Re-run when model becomes ready
 
   // Lip sync via LipSyncEngine — smooth attack/release dynamics
   useEffect(() => {
@@ -960,16 +1009,13 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             console.warn(`[Live2D] Failed to apply accessory: ${acc}`, err);
           }
 
-          // Auto-remove after 60 seconds (skip hairstyles — those persist for session)
-          const isHairstyle = ["clip_bangs", "low_twintails", "short_hair"].includes(acc);
-          if (!isHairstyle) {
-            const timer = setTimeout(() => {
-              activeAccessoriesRef.current.delete(acc);
-              accessoryTimeoutRefs.current.delete(acc);
-              debugLog(`[Live2D] Accessory auto-removed (60s): ${acc}`);
-            }, 60000);
-            accessoryTimeoutRefs.current.set(acc, timer);
-          }
+          // Auto-remove after 60 seconds
+          const timer = setTimeout(() => {
+            activeAccessoriesRef.current.delete(acc);
+            accessoryTimeoutRefs.current.delete(acc);
+            debugLog(`[Live2D] Accessory auto-removed (60s): ${acc}`);
+          }, 60000);
+          accessoryTimeoutRefs.current.set(acc, timer);
         }
       });
 

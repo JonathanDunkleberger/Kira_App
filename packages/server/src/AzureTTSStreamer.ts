@@ -38,15 +38,15 @@ const EMOTION_PROSODY: Record<string, EmotionProsody> = {
   neutral:     {},
   happy:       { rate: "+3%",  pitch: "+3%"  },                // subtle uplift
   excited:     { rate: "+8%",  pitch: "+5%",  volume: "+5%" }, // noticeable but not insane
-  love:        { rate: "-8%",  pitch: "-3%",  volume: "soft" },// slow, warm, intimate
-  blush:       { rate: "-5%",  pitch: "+5%",  volume: "soft" },// shy, slightly higher
-  sad:         { rate: "-12%", pitch: "-6%",  volume: "soft" },// slow, lower, quiet
+  love:        { rate: "-8%",  pitch: "-3%",  volume: "-15%" },// slow, warm, intimate
+  blush:       { rate: "-5%",  pitch: "+5%",  volume: "-10%" },// shy, slightly higher
+  sad:         { rate: "-12%", pitch: "-6%",  volume: "-15%" },// slow, lower, quiet
   angry:       { rate: "+5%",  pitch: "-3%",  volume: "+10%" },// tight, lower, louder
   playful:     { rate: "+5%",  pitch: "+5%"  },                // bouncy, bright
   thinking:    { rate: "-8%",  pitch: "-2%"  },                // slower, deliberate
   speechless:  { rate: "-15%", pitch: "-5%"  },                // very slow, flat
   eyeroll:     { rate: "+3%",  pitch: "-2%"  },                // slightly faster, flat/bored
-  sleepy:      { rate: "-15%", pitch: "-8%",  volume: "soft" },// very slow, low, quiet
+  sleepy:      { rate: "-15%", pitch: "-8%",  volume: "-20%" },// very slow, low, quiet
   frustrated:  { rate: "+3%",  pitch: "-3%",  volume: "+5%" }, // slightly tight, harder
   confused:    { rate: "-5%",  pitch: "+3%"  },                // slower, rising inflection
   surprised:   { rate: "+5%",  pitch: "+8%",  volume: "+5%" }, // fast, high, loud

@@ -236,9 +236,22 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   // --- KEEP-ALIVE HEARTBEAT ---
   // Send a ping every 30 seconds to prevent load balancer timeouts (e.g. Render, Nginx)
+  // If client doesn't respond with pong within 45s, close the connection gracefully
+  let pongTimeoutTimer: NodeJS.Timeout | null = null;
+
   const keepAliveInterval = setInterval(() => {
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({ type: "ping" }));
+
+      // Set a 45s timeout to receive pong (30s ping interval + 15s grace period)
+      // If no pong received, the connection is likely stale (network issue, suspended tab, etc.)
+      if (pongTimeoutTimer) clearTimeout(pongTimeoutTimer);
+      pongTimeoutTimer = setTimeout(() => {
+        console.warn(`[WS] No pong received for 45s from ${userId || 'guest'} — closing stale connection`);
+        clientDisconnected = true;
+        // Use 4000 (custom code) so client can handle heartbeat timeouts distinctly
+        ws.close(4000, "Heartbeat timeout");
+      }, 45000);
     }
   }, 30000);
 
@@ -1425,18 +1438,19 @@ Keep it natural and brief — 1 sentence.`
           // --- 30-SECOND INTERVAL: Usage tracking + DB writes ONLY ---
           // Phase transitions are handled by the faster 5-second interval below.
           usageCheckInterval = setInterval(async () => {
-            if (!sessionStartTime) return;
+            try {
+              if (!sessionStartTime) return;
 
-            const elapsed = Math.floor(
-              (Date.now() - sessionStartTime) / 1000
-            );
+              const elapsed = Math.floor(
+                (Date.now() - sessionStartTime) / 1000
+              );
 
-            if (isGuest) {
-              guestUsageSeconds = guestUsageBase + elapsed;
+              if (isGuest) {
+                guestUsageSeconds = guestUsageBase + elapsed;
 
-              // Persist to database so usage survives restarts/deploys
-              await saveGuestUsage(userId!, guestUsageSeconds);
-              console.log(`[USAGE] Guest ${userId}: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
+                // Persist to database so usage survives restarts/deploys
+                await saveGuestUsage(userId!, guestUsageSeconds);
+                console.log(`[USAGE] Guest ${userId}: ${guestUsageSeconds}s / ${FREE_LIMIT_SECONDS}s`);
 
               const remainingSec = FREE_LIMIT_SECONDS - guestUsageSeconds;
 
@@ -1495,6 +1509,10 @@ Keep it natural and brief — 1 sentence.`
                   console.error("[Usage] DB update failed:", (err as Error).message);
                 }
               }
+            }
+            } catch (err) {
+              // Don't crash the server if usage persistence fails
+              console.error("[Usage] Interval error:", (err as Error).message);
             }
           }, 30000);
 
@@ -2450,6 +2468,13 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           console.log(`[Voice] Switched to: ${currentVoiceConfig.voiceName} (style: ${currentVoiceConfig.style || "default"})`);
         } else if (controlMessage.type === "vision_stop") {
           stopVision();
+        } else if (controlMessage.type === "pong") {
+          // Client responded to heartbeat ping — connection is alive
+          // Clear the timeout so we don't close the connection
+          if (pongTimeoutTimer) {
+            clearTimeout(pongTimeoutTimer);
+            pongTimeoutTimer = null;
+          }
         } else if (controlMessage.type === "text_message") {
           if (timeWarningPhase === 'done') return; // Don't process new messages after goodbye
 
@@ -2620,6 +2645,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     clearInterval(llmRateLimitInterval);
+    if (pongTimeoutTimer) clearTimeout(pongTimeoutTimer);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -2760,12 +2786,31 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
     clearInterval(keepAliveInterval);
     clearInterval(messageCountResetInterval);
     clearInterval(llmRateLimitInterval);
+    if (pongTimeoutTimer) clearTimeout(pongTimeoutTimer);
     if (usageCheckInterval) clearInterval(usageCheckInterval);
     if (timeCheckInterval) clearInterval(timeCheckInterval);
     if (silenceTimer) clearTimeout(silenceTimer);
     if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
     if (sttStreamer) sttStreamer.destroy();
   });
+});
+
+// --- GLOBAL ERROR HANDLERS ---
+// Prevent unhandled promise rejections from crashing the server and killing all WebSocket connections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Promise Rejection:', reason);
+  console.error('Promise:', promise);
+  // Don't crash - log and continue
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[FATAL] Uncaught Exception:', error);
+  // For uncaught exceptions, we should exit gracefully after logging
+  // But give existing connections time to finish
+  setTimeout(() => {
+    console.error('[FATAL] Exiting due to uncaught exception');
+    process.exit(1);
+  }, 5000);
 });
 
 // --- START THE SERVER ---

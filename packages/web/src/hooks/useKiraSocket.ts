@@ -1323,6 +1323,10 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           if (prev?.startsWith("limit_reached")) return prev;
           return isProRef.current ? "limit_reached_pro" : "limit_reached";
         });
+      } else if (event.code === 4000) {
+        // Heartbeat timeout — connection went stale (network issue, suspended tab, etc.)
+        debugLog("[WS] Heartbeat timeout — connection went stale");
+        setError("heartbeat_timeout");
       }
 
       stopAudioPipeline();
@@ -1334,7 +1338,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // Once a live voice session is active, reconnecting would create a fresh server session
       // (new chatHistory, new usage timer, new opener) — causing the "conversation loop" bug
       // where the same exchange replays and the usage counter goes backwards.
-      if (event.code !== 1000 && event.code !== 1008) {
+      if (event.code !== 1000 && event.code !== 1008 && event.code !== 4000) {
         if (conversationActive.current) {
           // Live session was interrupted — don't reconnect, show error
           debugLog("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");

@@ -56,7 +56,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 // --- SERVER-SIDE EMOTION DETECTION ---
-const EMOTION_TAG_STRIP = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy)\]\s*$/g;
+const EMOTION_TAG_STRIP = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy|frustrated|confused|surprised)\]\s*$/g;
 
 /** Strip any accidental LLM emotion tags from text before TTS. */
 function stripEmotionTags(text: string): string {
@@ -67,81 +67,74 @@ function stripEmotionTags(text: string): string {
 function detectEmotion(text: string): string {
   const lower = text.toLowerCase();
 
-  // Order matters — check more specific patterns first
+  // Order matters — more specific patterns come before broader ones.
+  // Priority: blush → excited → love → frustrated → confused → surprised →
+  //           sleepy → angry → speechless → eyeroll → thinking → playful →
+  //           sad → happy → neutral
 
-  // Blush: compliment responses, embarrassment, flattery
-  if (/\b(blush|flatter|you're (too |so )?(sweet|kind|nice)|stop it|making me)\b/.test(lower) ||
-      /\b(aww+|oh stop)\b/.test(lower)) {
-    return "blush";
-  }
+  // Blush — shy, flustered, flattered
+  const blushPatterns = /\b(stop it|you('re| are) (making me|too (sweet|kind|nice))|oh gosh|oh my|flattering|that's (so )?(sweet|kind|nice|cute)|aww|you('re| are) gonna make me|don't say that|I('m| am) (blushing|flattered|touched))\b/i;
+  if (blushPatterns.test(text)) return "blush";
 
-  // Excited: enthusiasm, amazement, strong interest
-  if (/\b(so (cool|awesome|amazing|exciting|fun)|can't wait|love (that|it|this)|no way|that's (amazing|awesome|incredible|fantastic))\b/.test(lower) ||
-      /!.*!/.test(text) || // Multiple exclamation marks
-      /\b(oh my (god|gosh)|whoa|wow)\b/.test(lower)) {
+  // Excited — strong positive energy, amazement
+  const excitedPatterns = /\b(oh my (god|gosh)|that's (so )?(cool|awesome|amazing|incredible|fantastic|epic|sick|fire|insane|wild)|no way!|yes!+|yay|heck yeah|let's go|I('m| am) (so |really )?(excited|pumped|hyped|stoked)|can't wait|this is (so |really )?(cool|great|awesome))\b/i;
+  if (excitedPatterns.test(text) ||
+      /!.*!/.test(text)) { // Multiple exclamation marks
     return "excited";
   }
 
-  // Love: adoring, deep affection
-  if (/\b(love love|adore|heart|so (beautiful|precious|adorable))\b/.test(lower) ||
-      /\b(that's .{0,20}beautiful|warms my heart)\b/.test(lower)) {
-    return "love";
+  // Love — warm affection, adoring
+  const lovePatterns = /\b(I (really )?(like|enjoy|love|adore|appreciate) (you|talking to you|our|this|hanging)|you('re| are) (amazing|wonderful|the best|awesome|incredible|special)|means (a lot|so much)|my heart|warm( and)? fuzzy|I('m| am) (glad|happy) (you('re| are)|we('re| are))|you make me)\b/i;
+  if (lovePatterns.test(text)) return "love";
+
+  // Frustrated — annoyed, exasperated
+  const frustratedPatterns = /\b(ugh|seriously|come on|annoying|frustrat|you('re| are) (impossible|ridiculous|unbelievable)|give me a break|I swear|don't even|smh|facepalm|oh my god|oh please|are you kidding|not this again|I can't with|you('re| are) (testing|pushing) (me|it|my))\b/i;
+  if (frustratedPatterns.test(text)) return "frustrated";
+
+  // Confused — lost, overwhelmed, brain broken
+  if (/\b(huh\??|what\?|I('m| am) (confused|lost|so confused)|doesn't make sense|wait what|brain (hurts|broke|is melting)|too much|overload|I don't (understand|get it|follow)|come again|you lost me|my head is spinning)\b/i.test(lower)) {
+    return "confused";
   }
 
-  // Sad: empathy, sadness, emotional pain
-  if (/\b(so sad|that's (tough|rough|hard)|i'm sorry|breaks my heart|that sucks|feel for you)\b/.test(lower) ||
-      (/\b(aw+|oh no)\b/.test(lower) && /\b(sorry|sad|tough|hard)\b/.test(lower))) {
-    return "sad";
+  // Surprised — cute shock (distinct from speechless which is more deadpan)
+  const surprisedPatterns = /\b(oh!|oh wow|no way!|seriously\?!|wait really|I did not expect|plot twist|you('re| are) kidding|that's (wild|insane|crazy)|holy (cow|moly)|whoa|gasp|for real\??|I('m| am) (shocked|shook)|did not see that coming|what\?!)\b/i;
+  if (surprisedPatterns.test(text)) return "surprised";
+
+  // Sleepy — tired, late night, winding down
+  if (/\b(sleep|tired|exhausted|yawn|bedtime|rest|winding down|so late)\b/.test(lower)) {
+    return "sleepy";
   }
 
-  // Playful: teasing, joking, banter
+  // Angry — real frustration/annoyance
+  if (/\b(so (annoying|frustrating|unfair)|that's (wrong|messed up)|can't (believe|stand))\b/.test(lower)) {
+    return "angry";
+  }
+
+  // Speechless — shock, disbelief, deadpan
+  const speechlessPatterns = /\b(I\.\.+|\.\.\.+|um+|uh+|well\.\.\.|I (don't|have no) (even )?know what to say|no words|no comment|wow\.+|okay\.+|that's\.\.\.|I mean\.\.\.)\b/i;
+  if (speechlessPatterns.test(text)) return "speechless";
+
+  // Eyeroll — dismissive, sarcastic, "over it"
+  const eyerollPatterns = /\b(oh please|sure(,| ) ?(whatever|okay|right|fine)|yeah yeah|okay then|if you say so|right\.\.\.|I mean|oh come on|so dramatic|here we go|not this again|you('re| are) (something|too much)|I can't even|oh brother)\b/i;
+  if (eyerollPatterns.test(text)) return "eyeroll";
+
+  // Thinking — pondering, considering, philosophical
+  const thinkingPatterns = /\b(hmm+|let me think|that's (a good|an interesting) (question|point)|I wonder|good question|tough (question|one|call)|let me see|I('d| would) have to|on one hand|it depends|well actually|come to think of it|now that you mention)\b/i;
+  if (thinkingPatterns.test(text)) return "thinking";
+
+  // Playful — teasing, joking, banter
   if (/\b(haha|hehe|lol|just (kidding|messing)|tease|cheeky|bet you|oh come on)\b/.test(lower) ||
       /\b(pfft|you wish)\b/.test(lower)) {
     return "playful";
   }
 
-  // Thinking: pondering, considering, philosophical
-  if (/\b(hmm+|let me think|that's a (good|great|tough|interesting) question|i wonder|tricky)\b/.test(lower) ||
-      /\b(honestly.{0,20}not sure|hard to say)\b/.test(lower)) {
-    return "thinking";
+  // Sad — empathy, sadness, emotional pain
+  if (/\b(so sad|that's (tough|rough|hard)|i'm sorry|breaks my heart|that sucks|feel for you)\b/.test(lower) ||
+      (/\b(aw+|oh no)\b/.test(lower) && /\b(sorry|sad|tough|hard)\b/.test(lower))) {
+    return "sad";
   }
 
-  // Speechless: shock, disbelief, overwhelmed
-  if (/\b(speechless|i (just )?can't|no words|that's .{0,10}(wild|insane|unreal|unbelievable))\b/.test(lower)) {
-    return "speechless";
-  }
-
-  // Eyeroll: sarcasm, exasperation, "really?"
-  if (/\b(oh (please|really|great|sure)|ugh|seriously|of course|typical|yeah right)\b/.test(lower)) {
-    return "eyeroll";
-  }
-
-  // Sleepy: tired, late night, winding down
-  if (/\b(sleep|tired|exhausted|yawn|bedtime|rest|winding down|so late)\b/.test(lower)) {
-    return "sleepy";
-  }
-
-  // Angry: frustration, annoyance
-  if (/\b(so (annoying|frustrating|unfair)|that's (wrong|messed up)|can't (believe|stand))\b/.test(lower)) {
-    return "angry";
-  }
-
-  // Frustrated / flustered / annoyed
-  if (/\b(ugh|seriously|come on|annoying|frustrat|you('re| are) (impossible|ridiculous|unbelievable)|give me a break|I swear|don't even|smh|facepalm|oh my god|oh please|are you kidding|not this again|I can't with)\b/i.test(lower)) {
-    return "frustrated";
-  }
-
-  // Confused / overwhelmed
-  if (/\b(huh\??|what\?|I('m| am) (confused|lost|so confused)|doesn't make sense|wait what|brain (hurts|broke|is melting)|too much|overload|I don't (understand|get it|follow)|come again|you lost me|my head is spinning)\b/i.test(lower)) {
-    return "confused";
-  }
-
-  // Surprised (cute shock — distinct from speechless which is more deadpan)
-  if (/\b(oh!|oh wow|no way!|seriously\?!|wait really|I did not expect|plot twist|you're kidding|that's (wild|insane|crazy)|holy (cow|moly)|whoa|gasp)\b/i.test(lower)) {
-    return "surprised";
-  }
-
-  // Happy: general positive vibes (broad catch — better than neutral)
+  // Happy — general positive vibes (broad catch — better than neutral)
   if (/\b(great|awesome|nice|sounds (like a plan|fun|good|perfect)|i'd love|totally|absolutely|let's do)\b/.test(lower) ||
       /!\s*$/.test(text.trim())) { // Ends with exclamation
     return "happy";
@@ -151,8 +144,9 @@ function detectEmotion(text: string): string {
 }
 
 // --- Context-Aware Actions & Accessories ---
-// detectContext runs on Kira's response text and returns optional action/accessory
-// changes. Unlike emotions (fire every message), context has cooldowns to prevent spam.
+// detectContext runs on BOTH Kira's response text AND the user's input to detect
+// action/accessory triggers. Unlike emotions (fire every message), context has
+// cooldowns to prevent spam.
 interface ContextResult {
   action?: string;
   accessory?: string;
@@ -160,7 +154,8 @@ interface ContextResult {
 }
 
 function detectContext(
-  text: string,
+  kiraText: string,
+  userText: string,
   cooldowns: { lastActionTime: number; lastAccessoryTime: number }
 ): ContextResult {
   const now = Date.now();
@@ -168,35 +163,39 @@ function detectContext(
   const ACTION_COOLDOWN = 45_000;      // 45s between actions
   const ACCESSORY_COOLDOWN = 120_000;  // 2min between accessory changes
 
+  // Combine both texts — the best signal for actions is often the user's message
+  // (e.g. user says "play Zelda" but Kira responds "That sounds like a blast!")
+  const combinedText = `${userText} ${kiraText}`;
+
   // --- ACTIONS (hold items — temporary, 8-12s) ---
   if (now - cooldowns.lastActionTime > ACTION_COOLDOWN) {
-    // Phone — social media, texting, calling, apps
-    if (/\b(phone|text(ing)?|call(ing)?|instagram|tiktok|twitter|snapchat|social media|selfie|DM|message me|app|scroll(ing)?|notification)\b/i.test(text)) {
-      result.action = "hold_phone";
-      cooldowns.lastActionTime = now;
-    }
-    // Lollipop — casual/chill, food, treats, just vibing
-    else if (/\b(snack|candy|treat|lollipop|sweet|sugar|yummy|delicious|hungry|craving|dessert|chocolate|bored|chill(ing)?|relax|vib(e|ing))\b/i.test(text)) {
-      result.action = "hold_lollipop";
-      cooldowns.lastActionTime = now;
-    }
-    // Pen — writing, notes, journaling, lists, planning
-    else if (/\b(writ(e|ing)|note|journal|list|plan(ning)?|schedule|organize|brainstorm|idea|draft|essay|homework|study)\b/i.test(text)) {
-      result.action = "hold_pen";
-      cooldowns.lastActionTime = now;
-    }
-    // Drawing board — creative, art, design, drawing
-    else if (/\b(draw(ing)?|sketch|art|paint(ing)?|design|creative|illustrat|doodle|canvas|masterpiece)\b/i.test(text)) {
-      result.action = "hold_drawing_board";
-      cooldowns.lastActionTime = now;
-    }
-    // Gaming — video games, gaming
-    else if (/\b(game|gaming|play(ing)? (a |the |some )?(game|video)|controller|console|PC gaming|steam|xbox|playstation|nintendo|switch|fortnite|minecraft|valorant|league|smash|mario|zelda|RPG|FPS|MMO|raid|boss fight|GG)\b/i.test(text)) {
+    // Gaming — broad game detection (user mentioning games is the main signal)
+    if (/\b(game|gaming|play(ing|ed)?|gamer|controller|console|PC gaming|steam|xbox|playstation|nintendo|switch|fortnite|minecraft|valorant|league|smash|mario|zelda|pokemon|elden ring|dark souls|call of duty|COD|apex|overwatch|roblox|among us|animal crossing|RPG|FPS|MMO|raid|boss fight|level up|GG|co-?op|multiplayer|singleplayer|speedrun|achievement|quest|dungeon|respawn|checkpoint)\b/i.test(combinedText)) {
       result.action = "gaming";
       cooldowns.lastActionTime = now;
     }
-    // Knife — mock threat, playful menace (rare — bratty Kira)
-    else if (/\b(I('ll| will) (end|destroy|fight) you|don't (test|try) me|say that again|I dare you|watch your(self)?|you('re| are) (dead|done|finished)|square up|catch these hands)\b/i.test(text)) {
+    // Phone — social media, texting, calling, apps
+    else if (/\b(phone|text(ing|ed)?|call(ing|ed)?|instagram|tiktok|twitter|snapchat|social media|selfie|DM|message|app|scroll(ing)?|notification|youtube|reddit|discord|tweet|post(ing|ed)?|viral|follow(ing|ers)?|story|reel|stream(ing)?)\b/i.test(combinedText)) {
+      result.action = "hold_phone";
+      cooldowns.lastActionTime = now;
+    }
+    // Drawing board — creative, art, design
+    else if (/\b(draw(ing|n)?|sketch(ing|ed)?|art(ist|istic)?|paint(ing|ed)?|design(ing|ed)?|creative|illustrat(e|ion|ing)|doodle|canvas|masterpiece|color(ing)?|portrait|watercolor|digital art|commission|anime art|manga|character design)\b/i.test(combinedText)) {
+      result.action = "hold_drawing_board";
+      cooldowns.lastActionTime = now;
+    }
+    // Pen — writing, notes, journaling, studying
+    else if (/\b(writ(e|ing|ten)|note(s|book)?|journal(ing)?|list|plan(ning|ner)?|schedule|organize|brainstorm(ing)?|idea|draft(ing)?|essay|homework|study(ing)?|research(ing)?|paper|assignment|thesis|report|blog|poem|story|chapter)\b/i.test(combinedText)) {
+      result.action = "hold_pen";
+      cooldowns.lastActionTime = now;
+    }
+    // Lollipop — snacks, food, chill vibes
+    else if (/\b(snack(s|ing)?|candy|treat|lollipop|sweet(s)?|sugar|yummy|delicious|hungry|craving|dessert|chocolate|bored|chill(ing)?|relax(ing)?|vib(e|ing|es)|ice cream|cookie|cake|pizza|food|eat(ing)?|meal|lunch|dinner|breakfast|cooking|recipe|bake|baking)\b/i.test(combinedText)) {
+      result.action = "hold_lollipop";
+      cooldowns.lastActionTime = now;
+    }
+    // Knife — mock threat, playful menace (ONLY Kira's text — not user input)
+    else if (/\b(I('ll| will) (end|destroy|fight) you|don't (test|try) me|say that again|I dare you|watch your(self)?|you('re| are) (dead|done|finished)|square up|catch these hands)\b/i.test(kiraText)) {
       result.action = "hold_knife";
       cooldowns.lastActionTime = now;
     }
@@ -204,18 +203,18 @@ function detectContext(
 
   // --- ACCESSORIES (worn items — persist until removed) ---
   if (now - cooldowns.lastAccessoryTime > ACCESSORY_COOLDOWN) {
-    // Glasses — analytical, serious, explaining something complex
-    if (/\b(actually|technically|let me explain|the (thing|key|important part) (is|about)|analysis|research|data|statistic|according to|evidence|hypothesis|theory|in my (expert )?opinion|breaking (it|this) down)\b/i.test(text)) {
+    // Glasses — analytical, explaining, factual
+    if (/\b(actually|technically|let me explain|the (thing|key|important part) (is|about)|analy(sis|ze|tical)|research|data|statistic|according to|evidence|hypothesis|theory|in my (expert )?opinion|breaking (it|this) down|fun fact|did you know|here's the thing|interesting(ly)?|basically|essentially|the science|the reason|because)\b/i.test(combinedText)) {
       result.accessory = "glasses";
       cooldowns.lastAccessoryTime = now;
     }
-    // Headphones — music, listening, vibing to something
-    else if (/\b(music|song|playlist|listen(ing)?|beat|melody|album|artist|band|concert|spotify|headphone|tune|lyric|rhythm|DJ|genre|pop|rock|rap|hip.?hop|jazz|lo.?fi)\b/i.test(text)) {
+    // Headphones — music, audio, listening
+    else if (/\b(music|song(s)?|playlist|listen(ing|ed)?|beat|melody|album|artist|band|concert|spotify|headphone|tune|lyric|rhythm|DJ|genre|pop|rock|rap|hip.?hop|jazz|lo.?fi|podcast|audio|radio|soundtrack|sing(ing)?|karaoke|favorite (song|track|album|artist|band))\b/i.test(combinedText)) {
       result.accessory = "headphones_on";
       cooldowns.lastAccessoryTime = now;
     }
     // Cat mic — storytelling, performing, dramatic moments
-    else if (/\b(let me tell you|story time|picture this|imagine|once upon|gather around|breaking news|announcement|attention|spotlight|performance|dramatic|ladies and gentlemen)\b/i.test(text)) {
+    else if (/\b(let me tell you|story time|picture this|imagine|once upon|gather around|breaking news|announcement|attention|spotlight|performance|dramatic|ladies and gentlemen|so basically what happened|okay so|get this|you won't believe)\b/i.test(combinedText)) {
       result.accessory = "cat_mic";
       cooldowns.lastAccessoryTime = now;
     }
@@ -440,6 +439,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let currentInterimTranscript = "";
   let transcriptClearedAt = 0;
   let lastProcessedTranscript = "";
+  let lastUserTranscript = ""; // Last user input — used by detectContext to scan user's words too
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
@@ -733,9 +733,9 @@ Keep it natural and brief — 1 sentence.`
   const contextCooldowns = { lastActionTime: 0, lastAccessoryTime: 0 };
 
   // Helper: detect emotion + context, send expression message with optional action/accessory
-  function sendExpressionWithContext(responseText: string, label: string) {
+  function sendExpressionWithContext(responseText: string, label: string, userText: string = lastUserTranscript) {
     const emotion = detectEmotion(responseText);
-    const context = detectContext(responseText, contextCooldowns);
+    const context = detectContext(responseText, userText, contextCooldowns);
     const msg: any = { type: "expression", expression: emotion };
     if (context.action) msg.action = context.action;
     if (context.accessory) msg.accessory = context.accessory;
@@ -1680,6 +1680,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             return;
           }
           lastProcessedTranscript = userMessage;
+          lastUserTranscript = userMessage; // Store for detectContext dual-input
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
@@ -2217,6 +2218,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           const userMessage = typeof controlMessage.text === "string" ? controlMessage.text.trim() : "";
           if (!userMessage || userMessage.length === 0) return;
           if (userMessage.length > 2000) return; // Prevent abuse
+          lastUserTranscript = userMessage; // Store for detectContext dual-input
 
           // LLM rate limit check
           llmCallCount++;

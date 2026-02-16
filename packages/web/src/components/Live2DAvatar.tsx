@@ -150,13 +150,12 @@ const ACCESSORY_CONFLICTS: Record<string, string[]> = {
 const HAIRSTYLE_CYCLE = [
   null,              // Default look (no hairstyle expression)
   "low_twintails",   // Twin tails
-  "short_hair",      // Short cut
   "clip_bangs",      // Bangs clipped back
 ];
 const HAIRSTYLE_CYCLE_INTERVAL = 5 * 60 * 1000; // 5 minutes per style
 
 /** Hair accessory IDs — managed exclusively by the cycle timer, blocked from other systems */
-const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails", "short_hair"]);
+const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails"]);
 
 /** Log JS heap usage (Chrome only — no-op on Safari/Firefox) */
 function logMemory(label: string) {

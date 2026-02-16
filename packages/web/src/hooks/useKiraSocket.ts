@@ -68,7 +68,7 @@ const MIN_SPEECH_FRAMES_FOR_EOU = 200; // Must have ~200 speech frames (~1-2s re
 const VAD_STABILITY_FRAMES = 5; // Need 5 consecutive speech frames before considering "speaking"
 
 // Hair accessories managed by cycle timer in Live2DAvatar — block from server-sent changes
-const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails", "short_hair"]);
+const HAIR_ACCESSORIES = new Set(["clip_bangs", "low_twintails"]);
 
 export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null, guestId: string, voicePreference: string = "anime") => {
   // ─── Restore state from singleton if a live connection exists ───

@@ -175,8 +175,8 @@ export default function ChatClient() {
     const dx = touch.clientX - pipDragRef.current.startX;
     const dy = touch.clientY - pipDragRef.current.startY;
     setPipPosition({
-      x: pipDragRef.current.origX - dx, // inverted because offset is from right
-      y: pipDragRef.current.origY + dy,  // inverted because offset is from bottom
+      x: pipDragRef.current.origX - dx, // right offset: drag right → decrease right → moves right ✓
+      y: pipDragRef.current.origY - dy,  // bottom offset: drag down → decrease bottom → moves down ✓
     });
   }, []);
 

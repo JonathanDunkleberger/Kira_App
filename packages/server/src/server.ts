@@ -126,6 +126,21 @@ function detectEmotion(text: string): string {
     return "angry";
   }
 
+  // Frustrated / flustered / annoyed
+  if (/\b(ugh|seriously|come on|annoying|frustrat|you('re| are) (impossible|ridiculous|unbelievable)|give me a break|I swear|don't even|smh|facepalm|oh my god|oh please|are you kidding|not this again|I can't with)\b/i.test(lower)) {
+    return "frustrated";
+  }
+
+  // Confused / overwhelmed
+  if (/\b(huh\??|what\?|I('m| am) (confused|lost|so confused)|doesn't make sense|wait what|brain (hurts|broke|is melting)|too much|overload|I don't (understand|get it|follow)|come again|you lost me|my head is spinning)\b/i.test(lower)) {
+    return "confused";
+  }
+
+  // Surprised (cute shock — distinct from speechless which is more deadpan)
+  if (/\b(oh!|oh wow|no way!|seriously\?!|wait really|I did not expect|plot twist|you're kidding|that's (wild|insane|crazy)|holy (cow|moly)|whoa|gasp)\b/i.test(lower)) {
+    return "surprised";
+  }
+
   // Happy: general positive vibes (broad catch — better than neutral)
   if (/\b(great|awesome|nice|sounds (like a plan|fun|good|perfect)|i'd love|totally|absolutely|let's do)\b/.test(lower) ||
       /!\s*$/.test(text.trim())) { // Ends with exclamation
@@ -133,6 +148,80 @@ function detectEmotion(text: string): string {
   }
 
   return "neutral";
+}
+
+// --- Context-Aware Actions & Accessories ---
+// detectContext runs on Kira's response text and returns optional action/accessory
+// changes. Unlike emotions (fire every message), context has cooldowns to prevent spam.
+interface ContextResult {
+  action?: string;
+  accessory?: string;
+  removeAccessory?: string;
+}
+
+function detectContext(
+  text: string,
+  cooldowns: { lastActionTime: number; lastAccessoryTime: number }
+): ContextResult {
+  const now = Date.now();
+  const result: ContextResult = {};
+  const ACTION_COOLDOWN = 45_000;      // 45s between actions
+  const ACCESSORY_COOLDOWN = 120_000;  // 2min between accessory changes
+
+  // --- ACTIONS (hold items — temporary, 8-12s) ---
+  if (now - cooldowns.lastActionTime > ACTION_COOLDOWN) {
+    // Phone — social media, texting, calling, apps
+    if (/\b(phone|text(ing)?|call(ing)?|instagram|tiktok|twitter|snapchat|social media|selfie|DM|message me|app|scroll(ing)?|notification)\b/i.test(text)) {
+      result.action = "hold_phone";
+      cooldowns.lastActionTime = now;
+    }
+    // Lollipop — casual/chill, food, treats, just vibing
+    else if (/\b(snack|candy|treat|lollipop|sweet|sugar|yummy|delicious|hungry|craving|dessert|chocolate|bored|chill(ing)?|relax|vib(e|ing))\b/i.test(text)) {
+      result.action = "hold_lollipop";
+      cooldowns.lastActionTime = now;
+    }
+    // Pen — writing, notes, journaling, lists, planning
+    else if (/\b(writ(e|ing)|note|journal|list|plan(ning)?|schedule|organize|brainstorm|idea|draft|essay|homework|study)\b/i.test(text)) {
+      result.action = "hold_pen";
+      cooldowns.lastActionTime = now;
+    }
+    // Drawing board — creative, art, design, drawing
+    else if (/\b(draw(ing)?|sketch|art|paint(ing)?|design|creative|illustrat|doodle|canvas|masterpiece)\b/i.test(text)) {
+      result.action = "hold_drawing_board";
+      cooldowns.lastActionTime = now;
+    }
+    // Gaming — video games, gaming
+    else if (/\b(game|gaming|play(ing)? (a |the |some )?(game|video)|controller|console|PC gaming|steam|xbox|playstation|nintendo|switch|fortnite|minecraft|valorant|league|smash|mario|zelda|RPG|FPS|MMO|raid|boss fight|GG)\b/i.test(text)) {
+      result.action = "gaming";
+      cooldowns.lastActionTime = now;
+    }
+    // Knife — mock threat, playful menace (rare — bratty Kira)
+    else if (/\b(I('ll| will) (end|destroy|fight) you|don't (test|try) me|say that again|I dare you|watch your(self)?|you('re| are) (dead|done|finished)|square up|catch these hands)\b/i.test(text)) {
+      result.action = "hold_knife";
+      cooldowns.lastActionTime = now;
+    }
+  }
+
+  // --- ACCESSORIES (worn items — persist until removed) ---
+  if (now - cooldowns.lastAccessoryTime > ACCESSORY_COOLDOWN) {
+    // Glasses — analytical, serious, explaining something complex
+    if (/\b(actually|technically|let me explain|the (thing|key|important part) (is|about)|analysis|research|data|statistic|according to|evidence|hypothesis|theory|in my (expert )?opinion|breaking (it|this) down)\b/i.test(text)) {
+      result.accessory = "glasses";
+      cooldowns.lastAccessoryTime = now;
+    }
+    // Headphones — music, listening, vibing to something
+    else if (/\b(music|song|playlist|listen(ing)?|beat|melody|album|artist|band|concert|spotify|headphone|tune|lyric|rhythm|DJ|genre|pop|rock|rap|hip.?hop|jazz|lo.?fi)\b/i.test(text)) {
+      result.accessory = "headphones_on";
+      cooldowns.lastAccessoryTime = now;
+    }
+    // Cat mic — storytelling, performing, dramatic moments
+    else if (/\b(let me tell you|story time|picture this|imagine|once upon|gather around|breaking news|announcement|attention|spotlight|performance|dramatic|ladies and gentlemen)\b/i.test(text)) {
+      result.accessory = "cat_mic";
+      cooldowns.lastAccessoryTime = now;
+    }
+  }
+
+  return result;
 }
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
@@ -513,9 +602,7 @@ Keep it natural and brief — 1 sentence.`
 
       // Detect emotion and strip any accidental tags before TTS
       reaction = stripEmotionTags(reaction);
-      const emotionVisionReaction = detectEmotion(reaction);
-      ws.send(JSON.stringify({ type: "expression", expression: emotionVisionReaction }));
-      console.log(`[Expression] ${emotionVisionReaction}`);
+      sendExpressionWithContext(reaction, "vision reaction");
 
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
@@ -642,6 +729,26 @@ Keep it natural and brief — 1 sentence.`
     { role: "system", content: KIRA_SYSTEM_PROMPT },
   ];
 
+  // --- Context detection cooldowns (per-connection) ---
+  const contextCooldowns = { lastActionTime: 0, lastAccessoryTime: 0 };
+
+  // Helper: detect emotion + context, send expression message with optional action/accessory
+  function sendExpressionWithContext(responseText: string, label: string) {
+    const emotion = detectEmotion(responseText);
+    const context = detectContext(responseText, contextCooldowns);
+    const msg: any = { type: "expression", expression: emotion };
+    if (context.action) msg.action = context.action;
+    if (context.accessory) msg.accessory = context.accessory;
+    if (context.removeAccessory) msg.removeAccessory = context.removeAccessory;
+    ws.send(JSON.stringify(msg));
+    const extras = [
+      context.action && `action: ${context.action}`,
+      context.accessory && `accessory: ${context.accessory}`,
+    ].filter(Boolean).join(", ");
+    console.log(`[Expression] ${emotion}${extras ? ` (${extras})` : ""} (${label})`);
+    return emotion;
+  }
+
   // --- L1: In-Conversation Memory ---
   let conversationSummary = "";
 
@@ -711,9 +818,7 @@ Keep it natural and brief — 1 sentence.`
 
         // Detect emotion and strip any accidental tags before TTS
         responseText = stripEmotionTags(responseText);
-        const emotionSilence = detectEmotion(responseText);
-        ws.send(JSON.stringify({ type: "expression", expression: emotionSilence }));
-        console.log(`[Expression] ${emotionSilence}`);
+        sendExpressionWithContext(responseText, "silence initiated");
 
         // She has something to say — run the TTS pipeline
         chatHistory.push({ role: "assistant", content: responseText });
@@ -795,9 +900,7 @@ Keep it natural and brief — 1 sentence.`
 
       // Detect emotion and strip any accidental tags before TTS
       llmResponse = stripEmotionTags(llmResponse);
-      const emotionRunKira = detectEmotion(llmResponse);
-      ws.send(JSON.stringify({ type: "expression", expression: emotionRunKira }));
-      console.log(`[Expression] ${emotionRunKira}`);
+      sendExpressionWithContext(llmResponse, "runKira");
 
       chatHistory.push({ role: "assistant", content: llmResponse });
       advanceTimePhase(llmResponse);
@@ -903,9 +1006,7 @@ Keep it natural and brief — 1 sentence.`
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
         // Detect emotion and strip any accidental tags before TTS
         const finalGoodbye = stripEmotionTags(goodbyeText);
-        const emotionGoodbye = detectEmotion(finalGoodbye);
-        ws.send(JSON.stringify({ type: "expression", expression: emotionGoodbye }));
-        console.log(`[Expression] ${emotionGoodbye}`);
+        sendExpressionWithContext(finalGoodbye, "goodbye");
 
         console.log(`[Goodbye] Kira says: "${finalGoodbye}"`);
         chatHistory.push({ role: "assistant", content: finalGoodbye });
@@ -1438,9 +1539,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
               // Detect emotion and strip any accidental tags before TTS
               openerText = stripEmotionTags(openerText);
-              const emotionOpener = detectEmotion(openerText);
-              ws.send(JSON.stringify({ type: "expression", expression: emotionOpener }));
-              console.log(`[Expression] ${emotionOpener}`);
+              sendExpressionWithContext(openerText, "opener");
 
               // Add to chat history (NOT the instruction — just the greeting)
               chatHistory.push({ role: "assistant", content: openerText });
@@ -1777,9 +1876,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   // Detect emotion from first sentence — sets expression while she starts talking
                   if (!emotionDetected) {
                     emotionDetected = true;
-                    const emotion = detectEmotion(sentence);
-                    ws.send(JSON.stringify({ type: "expression", expression: emotion }));
-                    console.log(`[Expression] ${emotion} (from first sentence)`);
+                    sendExpressionWithContext(sentence, "first sentence");
                   }
                   console.log(`[TTS] Streaming sentence: "${sentence}"`);
                   await speakSentence(sentence);
@@ -1861,9 +1958,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                     if (sentence.length > 0) {
                       if (!emotionDetected) {
                         emotionDetected = true;
-                        const emotion = detectEmotion(sentence);
-                        ws.send(JSON.stringify({ type: "expression", expression: emotion }));
-                        console.log(`[Expression] ${emotion} (from first sentence, tool follow-up)`);
+                        sendExpressionWithContext(sentence, "first sentence, tool follow-up");
                       }
                       console.log(`[TTS] Streaming sentence: "${sentence}"`);
                       await speakSentence(sentence);
@@ -1898,9 +1993,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             // If emotion wasn't detected from a sentence (very short response), detect now
             if (!emotionDetected && llmResponse.trim().length > 0) {
-              const emotion = detectEmotion(llmResponse);
-              ws.send(JSON.stringify({ type: "expression", expression: emotion }));
-              console.log(`[Expression] ${emotion} (from full response — no sentence boundary found)`);
+              sendExpressionWithContext(llmResponse, "full response fallback");
             }
 
             if (llmResponse.trim().length > 0) {
@@ -2063,9 +2156,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
                 // Detect emotion and strip any accidental tags before TTS
                 reactionText = stripEmotionTags(reactionText);
-                const emotionScene = detectEmotion(reactionText);
-                ws.send(JSON.stringify({ type: "expression", expression: emotionScene }));
-                console.log(`[Expression] ${emotionScene}`);
+                sendExpressionWithContext(reactionText, "scene reaction");
 
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
@@ -2231,9 +2322,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             // Detect emotion and strip any accidental tags
             txtLlmResponse = stripEmotionTags(txtLlmResponse);
-            const emotionTxt = detectEmotion(txtLlmResponse);
-            ws.send(JSON.stringify({ type: "expression", expression: emotionTxt }));
-            console.log(`[Expression] ${emotionTxt}`);
+            sendExpressionWithContext(txtLlmResponse, "text chat");
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
             advanceTimePhase(txtLlmResponse);

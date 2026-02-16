@@ -41,6 +41,9 @@ const EMOTION_MAP_STATIC: Record<string, string | null> = {
   speechless: "speechless",
   eyeroll: "eye_roll",
   sleepy: "sleeping",
+  frustrated: "dark_face",
+  confused: "spiral_eyes",
+  surprised: "donut_mouth",
 };
 
 /** Per-emotion parameter overrides (brows, head tilt, mouth shape) */
@@ -106,6 +109,23 @@ const EMOTION_PARAMS: Record<string, Record<string, number>> = {
     "ParamBrowRY": -0.1,
     "ParamAngle9": -3,         // Cheeky head tilt
   },
+  frustrated: {
+    "ParamBrowLY": -0.5,
+    "ParamBrowRY": -0.5,
+    "ParamBrowLForm": 0.7,
+    "ParamBrowRForm": 0.7,
+    "ParamAngle8": -3,         // Head down (menacing)
+  },
+  confused: {
+    "ParamBrowLY": 0.6,       // One brow way up
+    "ParamBrowRY": -0.3,      // Other down (asymmetric = confused)
+    "ParamAngle9": 5,          // Head tilt
+  },
+  surprised: {
+    "ParamBrowLY": 0.9,
+    "ParamBrowRY": 0.9,
+    "ParamAngle8": 2,          // Head back slightly
+  },
 };
 
 interface Live2DAvatarProps {
@@ -113,9 +133,28 @@ interface Live2DAvatarProps {
   analyserNode: AnalyserNode | null;
   emotion?: string | null;
   accessories?: string[];
+  action?: string | null;
   onModelReady?: () => void;
   onLoadError?: () => void;
 }
+
+/** Accessory conflict groups — applying one removes conflicting ones */
+const ACCESSORY_CONFLICTS: Record<string, string[]> = {
+  headphones_on: ["neck_headphones", "earbuds"],
+  neck_headphones: ["headphones_on", "earbuds"],
+  earbuds: ["headphones_on", "neck_headphones"],
+  clip_bangs: ["low_twintails", "short_hair"],
+  low_twintails: ["clip_bangs", "short_hair"],
+  short_hair: ["clip_bangs", "low_twintails"],
+};
+
+/** Session hairstyle options (null = default look) */
+const SESSION_HAIRSTYLES = [
+  null, null,          // 40% default
+  "clip_bangs",        // 20%
+  "low_twintails",     // 20%
+  "short_hair",        // 20%
+];
 
 /** Log JS heap usage (Chrome only — no-op on Safari/Firefox) */
 function logMemory(label: string) {
@@ -127,7 +166,7 @@ function logMemory(label: string) {
   } catch {}
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, onModelReady, onLoadError }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, action, onModelReady, onLoadError }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
@@ -142,6 +181,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const modelStableTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingEmotion = useRef<string | null>(null);
   const pendingAccessories = useRef<string[]>([]);
+  const actionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeActionRef = useRef<string | null>(null);
+  const accessoryTimeoutRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const webglCrashCount = useRef(0);
   const pixiCreatedAt = useRef(0); // timestamp for crash diagnostics
   const pixiResolutionRef = useRef(1); // store actual PIXI resolution for positioning math
@@ -594,6 +636,18 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                   });
                   pendingAccessories.current = [];
                 }
+
+                // Session hairstyle — random pick per conversation
+                if (modelRef.current) {
+                  const pick = SESSION_HAIRSTYLES[Math.floor(Math.random() * SESSION_HAIRSTYLES.length)];
+                  if (pick) {
+                    try {
+                      modelRef.current.expression(pick);
+                      activeAccessoriesRef.current.add(pick);
+                      debugLog(`[Live2D] Session hairstyle: ${pick}`);
+                    } catch {}
+                  }
+                }
               }, 2000);
             }
           });
@@ -842,6 +896,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   }, [emotion]);
 
   // Watch for accessory changes — accessories persist (unlike emotions which flash)
+  // Includes conflict resolution (e.g. headphones replaces earbuds) and 60s auto-removal
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
@@ -859,14 +914,45 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     if (accessories) {
       const newSet = new Set(accessories);
 
-      // Turn ON new accessories
+      // Turn ON new accessories (with conflict resolution)
       Array.from(newSet).forEach(acc => {
         if (!activeAccessoriesRef.current.has(acc)) {
+          // Remove conflicting accessories first
+          const conflicts = ACCESSORY_CONFLICTS[acc];
+          if (conflicts) {
+            conflicts.forEach(conflicting => {
+              if (activeAccessoriesRef.current.has(conflicting)) {
+                try {
+                  // Reset expression to clear it, then re-apply non-conflicting ones
+                  activeAccessoriesRef.current.delete(conflicting);
+                  debugLog(`[Live2D] Accessory conflict — removed ${conflicting} for ${acc}`);
+                  // Clear its auto-remove timer
+                  const timer = accessoryTimeoutRefs.current.get(conflicting);
+                  if (timer) {
+                    clearTimeout(timer);
+                    accessoryTimeoutRefs.current.delete(conflicting);
+                  }
+                } catch {}
+              }
+            });
+          }
+
           try {
             model.expression(acc);
             debugLog(`[Live2D] Accessory ON: ${acc}`);
           } catch (err) {
             console.warn(`[Live2D] Failed to apply accessory: ${acc}`, err);
+          }
+
+          // Auto-remove after 60 seconds (skip hairstyles — those persist for session)
+          const isHairstyle = ["clip_bangs", "low_twintails", "short_hair"].includes(acc);
+          if (!isHairstyle) {
+            const timer = setTimeout(() => {
+              activeAccessoriesRef.current.delete(acc);
+              accessoryTimeoutRefs.current.delete(acc);
+              debugLog(`[Live2D] Accessory auto-removed (60s): ${acc}`);
+            }, 60000);
+            accessoryTimeoutRefs.current.set(acc, timer);
           }
         }
       });
@@ -875,12 +961,65 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     }
   }, [accessories]);
 
-  // Clean up expression timeout on unmount
+  // Watch for action changes — actions are temporary (auto-clear after 10s)
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model || !action) return;
+    if (!modelStableRef.current) return;
+
+    // Remove previous action's visual
+    if (activeActionRef.current) {
+      try {
+        // Re-apply active accessories after clearing
+        Array.from(activeAccessoriesRef.current).forEach(acc => {
+          try { model.expression(acc); } catch {}
+        });
+      } catch {}
+      activeActionRef.current = null;
+    }
+
+    // Clear pending timeout
+    if (actionTimeoutRef.current) {
+      clearTimeout(actionTimeoutRef.current);
+    }
+
+    // Apply new action
+    try {
+      model.expression(action);
+      activeActionRef.current = action;
+      debugLog(`[Live2D] Action ON: ${action}`);
+    } catch (err) {
+      console.warn(`[Live2D] Failed to apply action: ${action}`, err);
+    }
+
+    // Auto-remove after 10 seconds
+    actionTimeoutRef.current = setTimeout(() => {
+      try {
+        // Re-apply accessories to clear the action expression
+        Array.from(activeAccessoriesRef.current).forEach(acc => {
+          try { model.expression(acc); } catch {}
+        });
+        activeActionRef.current = null;
+        debugLog(`[Live2D] Action OFF: ${action}`);
+      } catch {}
+    }, 10000);
+
+    return () => {
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    };
+  }, [action]);
+
+  // Clean up expression/action/accessory timeouts on unmount
   useEffect(() => {
     return () => {
       if (expressionTimeoutRef.current) {
         clearTimeout(expressionTimeoutRef.current);
       }
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+      }
+      accessoryTimeoutRefs.current.forEach(timer => clearTimeout(timer));
+      accessoryTimeoutRefs.current.clear();
     };
   }, []);
 

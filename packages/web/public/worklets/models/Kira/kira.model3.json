@@ -42,7 +42,10 @@
 			{ "Name": "photo_off", "File": "photo_off.exp3.json" },
 			{ "Name": "gaming", "File": "gaming.exp3.json" },
 			{ "Name": "remove_jacket", "File": "remove_jacket.exp3.json" },
-			{ "Name": "blood_stain", "File": "blood_stain.exp3.json" }
+			{ "Name": "blood_stain", "File": "blood_stain.exp3.json" },
+			{ "Name": "chibi", "File": "chibi.exp3.json" },
+			{ "Name": "flying_head", "File": "flying_head.exp3.json" },
+			{ "Name": "mouse_hairpin", "File": "mouse_hairpin.exp3.json" }
 		],
 		"Motions": {
 			"Idle": [

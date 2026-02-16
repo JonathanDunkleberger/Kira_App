@@ -128,6 +128,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
   const [currentExpression, setCurrentExpression] = useState<string>("neutral");
   const [activeAccessories, setActiveAccessories] = useState<string[]>([]);
+  const [currentAction, setCurrentAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -1208,6 +1209,18 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             break;
           case "expression":
             setCurrentExpression(msg.expression || "neutral");
+            // Handle action/accessory fields from context detection
+            if (msg.action) setCurrentAction(msg.action);
+            if (msg.accessory) {
+              setActiveAccessories(prev =>
+                prev.includes(msg.accessory) ? prev : [...prev, msg.accessory]
+              );
+            }
+            if (msg.removeAccessory) {
+              setActiveAccessories(prev =>
+                prev.filter((a: string) => a !== msg.removeAccessory)
+              );
+            }
             break;
           case "accessory": {
             const { accessory, action } = msg;
@@ -1447,5 +1460,6 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     playbackAnalyserNode: playbackAnalyser.current,
     currentExpression,
     activeAccessories,
+    currentAction,
   };
 };

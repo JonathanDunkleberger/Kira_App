@@ -143,7 +143,7 @@ export async function extractAndSaveMemories(
     const userMessages = conversationMessages.filter(
       (m) => m.role === "user"
     );
-    if (userMessages.length < 2) {
+    if (userMessages.length < 1) {
       console.log("[Memory] Conversation too short for extraction. Skipping.");
       return;
     }
@@ -154,44 +154,35 @@ export async function extractAndSaveMemories(
       messages: [
         {
           role: "system",
-          content: `You are a memory extraction system for Kira, an AI companion. Analyze this conversation and extract important facts about THE USER that Kira should remember for future conversations.
+          content: `You are a memory extraction system. Extract EVERY specific fact about the user from this conversation. Be thorough and literal — extract each individual detail as its own fact.
 
-CRITICAL RULES:
-- Every fact MUST be about the USER, written in third person. Always start with "User" or "Their" or "They".
-  CORRECT: "User's favorite anime is Attack on Titan"
-  CORRECT: "User is stressed about their job interview next Tuesday"
-  CORRECT: "They prefer being called Alex"
-  WRONG: "Loves Attack on Titan" (ambiguous — could be mistaken for Kira's preference)
-  WRONG: "Favorite movie is Interstellar" (missing subject)
-- NEVER extract facts about Kira or what Kira said/thinks. Only extract facts about the user.
-- Only extract facts the user explicitly stated or clearly implied. Do not infer personality traits.
-- Each fact should be a single, atomic statement.
-- Include emotional context where relevant.
-- If a fact UPDATES a previously known fact, mark is_update as true.
-- If the conversation was low-content (small talk, greetings only), return an empty array.
-- Max 10 facts per conversation.
+RULES:
+- Every fact MUST start with "User" or "Their" or "They"
+- Extract SPECIFIC details, not summaries. "User's cat Cartofel is missing a tail" NOT "User has a unique cat"
+- Extract EVERY preference mentioned: favorite book, song, artist, anime, movie, game, food, etc.
+- Extract EVERY personal detail: age, occupation, location, relationship status, pets, family members
+- Extract EVERY life event: what they're working on, upcoming plans, recent experiences
+- If someone says their cat is missing a tail, that is its own fact. If they also say the cat's name, that's another fact.
+- Prefer exact names/titles: "User's favorite book is Heretics of Dune" not "User likes a Dune book"
+- One atomic fact per entry. Do NOT combine multiple facts into one.
+- Mark is_update: true ONLY if this fact directly contradicts or updates a specific existing fact
+- Do NOT skip facts just because they seem minor. Friends remember small details.
+- Max 15 facts per conversation.
 
-Extract facts into these categories:
-- identity: Name, age, location, occupation, pronouns
-- preference: Their likes, dislikes, favorites, tastes, hobbies
-- relationship: People in their life, pets, relationship dynamics
-- emotional: Their emotional patterns, recurring feelings, sensitivities
-- experience: Shared moments with Kira, inside jokes, callbacks
-- context: Their ongoing life situations, upcoming events, current projects
-- opinion: Their views, beliefs, stances on topics
+Categories: identity, preference, relationship, emotional, experience, context, opinion
 
 Respond ONLY with a JSON array:
-[{"category": "identity", "content": "User's name is Alex", "emotional_weight": 0.8, "is_update": false}]
+[{"category": "preference", "content": "User's favorite anime is Steins;Gate", "emotional_weight": 0.7, "is_update": false}]
 
-emotional_weight: 0.0 to 1.0 — how personally important is this fact to the user.`,
+emotional_weight: 0.0-1.0 based on how personally important this seems to the user.`,
         },
         {
           role: "user",
-          content: `Conversation:\n${fullContext}\n\nExisting known facts (avoid duplicates):\n${existingText}`,
+          content: `Conversation:\n${fullContext}`,
         },
       ],
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 1500,
     });
 
     const raw = response.choices[0]?.message?.content?.trim() || "[]";
@@ -230,7 +221,7 @@ emotional_weight: 0.0 to 1.0 — how personally important is this fact to the us
         const overlapRatio = newKeywords.length > 0 ? overlap.length / newKeywords.length : 0;
 
         // If same category and >60% keyword overlap, it's a duplicate
-        if (newFact.category === existing.category && overlapRatio > 0.6) {
+        if (newFact.category === existing.category && overlapRatio > 0.75) {
           console.log(`[Memory] Dedup: "${newFact.content}" overlaps with existing "${existing.content}" (${Math.round(overlapRatio * 100)}%)`);
 
           // If marked as update, delete old and keep new

@@ -35,21 +35,21 @@ interface EmotionProsody {
 }
 
 const EMOTION_PROSODY: Record<string, EmotionProsody> = {
-  neutral:     {},                                              // no change
-  happy:       { rate: "+5%",  pitch: "+5%"  },                // slightly upbeat
-  excited:     { rate: "+15%", pitch: "+10%", volume: "+10%" },// fast, bright, louder
+  neutral:     {},
+  happy:       { rate: "+3%",  pitch: "+3%"  },                // subtle uplift
+  excited:     { rate: "+8%",  pitch: "+5%",  volume: "+5%" }, // noticeable but not insane
   love:        { rate: "-8%",  pitch: "-3%",  volume: "soft" },// slow, warm, intimate
-  blush:       { rate: "-5%",  pitch: "+8%",  volume: "soft" },// shy, slightly higher
-  sad:         { rate: "-15%", pitch: "-8%",  volume: "soft" },// slow, lower, quiet
-  angry:       { rate: "+8%",  pitch: "-5%",  volume: "+15%" },// tight, lower, louder
-  playful:     { rate: "+10%", pitch: "+8%"  },                // bouncy, bright
-  thinking:    { rate: "-12%", pitch: "-3%"  },                // slower, deliberate
-  speechless:  { rate: "-20%", pitch: "-5%"  },                // very slow, flat
-  eyeroll:     { rate: "+5%",  pitch: "-3%"  },                // slightly faster, flat/bored
-  sleepy:      { rate: "-20%", pitch: "-10%", volume: "soft" },// very slow, low, quiet
-  frustrated:  { rate: "+5%",  pitch: "-5%",  volume: "+5%" }, // slightly tight, harder
-  confused:    { rate: "-8%",  pitch: "+5%"  },                // slower, rising inflection
-  surprised:   { rate: "+10%", pitch: "+12%", volume: "+10%" },// fast, high, loud
+  blush:       { rate: "-5%",  pitch: "+5%",  volume: "soft" },// shy, slightly higher
+  sad:         { rate: "-12%", pitch: "-6%",  volume: "soft" },// slow, lower, quiet
+  angry:       { rate: "+5%",  pitch: "-3%",  volume: "+10%" },// tight, lower, louder
+  playful:     { rate: "+5%",  pitch: "+5%"  },                // bouncy, bright
+  thinking:    { rate: "-8%",  pitch: "-2%"  },                // slower, deliberate
+  speechless:  { rate: "-15%", pitch: "-5%"  },                // very slow, flat
+  eyeroll:     { rate: "+3%",  pitch: "-2%"  },                // slightly faster, flat/bored
+  sleepy:      { rate: "-15%", pitch: "-8%",  volume: "soft" },// very slow, low, quiet
+  frustrated:  { rate: "+3%",  pitch: "-3%",  volume: "+5%" }, // slightly tight, harder
+  confused:    { rate: "-5%",  pitch: "+3%"  },                // slower, rising inflection
+  surprised:   { rate: "+5%",  pitch: "+8%",  volume: "+5%" }, // fast, high, loud
 };
 
 /**

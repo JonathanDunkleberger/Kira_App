@@ -367,13 +367,13 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let isFirstVisionReaction = true;
 
   // --- Comfort Arc: timed accessory progression ---
-  let comfortStage = 0; // 0=default, 1=jacket off, 2=bangs clipped, 3=earbuds
+  let comfortStage = 0; // 0=default, 1=jacket off, 2=neck headphones, 3=earbuds
   let comfortTimer: NodeJS.Timeout | null = null;
 
   const COMFORT_STAGES = [
-    { delay: 60000, expression: "remove_jacket", label: "jacket off" },      // 1 min
-    { delay: 150000, expression: "clip_bangs", label: "bangs clipped" },     // 2.5 min after jacket (3.5 min total)
-    { delay: 240000, expression: "earbuds", label: "earbuds in" },           // 4 min after bangs (7.5 min total)
+    { delay: 60000, expression: "remove_jacket", label: "jacket off" },          // 1 min
+    { delay: 150000, expression: "neck_headphones", label: "neck headphones" },  // 2.5 min after jacket (3.5 min total) — was clip_bangs, changed to avoid hairstyle conflicts
+    { delay: 240000, expression: "earbuds", label: "earbuds in" },               // 4 min after bangs (7.5 min total)
   ];
 
   function startComfortProgression(ws: WebSocket) {

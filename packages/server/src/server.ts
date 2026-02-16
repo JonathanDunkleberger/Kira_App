@@ -163,6 +163,39 @@ const MOOD_INSTRUCTIONS: Record<SessionMood, string> = {
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+/**
+ * Retry wrapper for OpenAI API calls with error categorization.
+ * Retries transient errors (429, 500, 502, 503, 504, ECONNRESET, ETIMEDOUT) up to maxRetries.
+ * Throws immediately for non-transient errors (400, 401, 403, etc.).
+ */
+async function callOpenAIWithRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxRetries = 2
+): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status ?? 0;
+      const code = err?.code ?? "";
+      const isTransient =
+        status === 429 || status >= 500 ||
+        code === "ECONNRESET" || code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT";
+
+      if (!isTransient || attempt === maxRetries) {
+        console.error(`[OpenAI] ❌ ${label} failed (attempt ${attempt + 1}/${maxRetries + 1}, status=${status}, code=${code}):`, err?.message);
+        throw err;
+      }
+
+      const delay = Math.min(1000 * Math.pow(2, attempt), 4000) + Math.random() * 500;
+      console.warn(`[OpenAI] ⚠️ ${label} transient error (status=${status}, code=${code}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error(`[OpenAI] ${label} exhausted retries`); // unreachable, satisfies TS
+}
+
 const server = createServer((req, res) => {
   if (req.url === "/health" || req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -342,10 +375,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     // Clear any existing safety timer
     if (stateTimeoutTimer) { clearTimeout(stateTimeoutTimer); stateTimeoutTimer = null; }
 
-    // If not listening, set a 30s safety timeout
+    // If not listening, set a 12s safety timeout
     if (newState !== "listening") {
       stateTimeoutTimer = setTimeout(() => {
-        console.error(`[STATE] ⚠️ Safety timeout! Stuck in "${state}" for 30s. Forcing reset to listening.`);
+        console.error(`[STATE] ⚠️ Safety timeout! Stuck in "${state}" for 12s. Forcing reset to listening.`);
         state = "listening";
         stateTimeoutTimer = null;
         // Notify client so UI stays in sync
@@ -357,7 +390,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           console.log(`[EOU] Processing queued EOU after safety timeout: "${queued}"`);
           processEOU(queued);
         }
-      }, 30000);
+      }, 12000);
     } else {
       // Returning to listening — check for pending EOUs
       if (pendingEOU) {
@@ -398,6 +431,57 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
   let clientDisconnected = false;
+
+  /** Safe WebSocket send — silently drops if connection is dead */
+  function safeSend(data: string | Buffer) {
+    try {
+      if (!clientDisconnected && ws.readyState === ws.OPEN) {
+        ws.send(data);
+      }
+    } catch (e) {
+      // Connection died between the readyState check and send — ignore
+    }
+  }
+
+  const TTS_TIMEOUT_MS = 10000; // 10 seconds max per sentence
+
+  /** Synthesize a sentence with timeout. Resolves on completion, error, OR timeout. */
+  function ttsSentence(
+    text: string,
+    emotion: string,
+    onChunk: (chunk: Buffer) => void,
+  ): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => { if (!resolved) { resolved = true; resolve(); } };
+
+      const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion });
+
+      const timeout = setTimeout(() => {
+        console.error(`[TTS] ⏱ Timeout after ${TTS_TIMEOUT_MS}ms for: "${text.slice(0, 50)}..."`);
+        try { tts.stop(); } catch (_) {}
+        done();
+      }, TTS_TIMEOUT_MS);
+
+      tts.on("audio_chunk", (chunk: Buffer) => {
+        onChunk(chunk);
+      });
+
+      tts.on("tts_complete", () => {
+        clearTimeout(timeout);
+        done();
+      });
+
+      tts.on("error", (err: Error) => {
+        clearTimeout(timeout);
+        console.error(`[TTS] ❌ Synthesis error for: "${text.slice(0, 50)}..."`, err);
+        done();
+      });
+
+      tts.synthesize(text);
+    });
+  }
+
   let timeWarningPhase: 'normal' | 'final_goodbye' | 'done' = 'normal';
   let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
@@ -532,12 +616,12 @@ Keep it natural and brief — 1 sentence.`
     ];
 
     try {
-      const reactionResponse = await openai.chat.completions.create({
+      const reactionResponse = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: reactionMessages,
         max_tokens: 60,
         temperature: 0.95,
-      });
+      }), "vision reaction");
 
       let reaction = reactionResponse.choices[0]?.message?.content?.trim() || "";
       console.log(`[Latency] Vision LLM: ${Date.now() - visionStartAt}ms`);
@@ -582,13 +666,13 @@ Keep it natural and brief — 1 sentence.`
       chatHistory.push({ role: "assistant", content: reaction });
       lastKiraSpokeTimestamp = Date.now();
       isFirstVisionReaction = false;
-      ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reaction }));
+      safeSend(JSON.stringify({ type: "transcript", role: "ai", text: reaction }));
 
       // TTS pipeline
       const visionTtsStart = Date.now();
       setState("speaking");
-      ws.send(JSON.stringify({ type: "state_speaking" }));
-      ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+      safeSend(JSON.stringify({ type: "state_speaking" }));
+      safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
       await new Promise(resolve => setImmediate(resolve));
 
       try {
@@ -608,18 +692,9 @@ Keep it natural and brief — 1 sentence.`
             if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
           }
           visionSentIdx++;
-          await new Promise<void>((resolve) => {
-            const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: visionEmotion });
-            tts.on("audio_chunk", (chunk: Buffer) => {
-              if (interruptRequested || thisResponseId !== currentResponseId) return;
-              if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
-            });
-            tts.on("tts_complete", () => resolve());
-            tts.on("error", (err: Error) => {
-              console.error(`[Vision Reaction TTS] ❌ Chunk failed: "${trimmed}"`, err);
-              resolve();
-            });
-            tts.synthesize(trimmed);
+          await ttsSentence(trimmed, visionEmotion, (chunk) => {
+            if (interruptRequested || thisResponseId !== currentResponseId) return;
+            safeSend(chunk);
           });
         }
       } catch (ttsErr) {
@@ -627,9 +702,9 @@ Keep it natural and brief — 1 sentence.`
       } finally {
         console.log(`[Latency] Vision TTS: ${Date.now() - visionTtsStart}ms`);
         console.log(`[Latency] Vision total: ${Date.now() - visionStartAt}ms`);
-        ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+        safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
         setState("listening");
-        ws.send(JSON.stringify({ type: "state_listening" }));
+        safeSend(JSON.stringify({ type: "state_listening" }));
       }
     } catch (err) {
       console.error("[Vision Reaction] Error:", (err as Error).message);
@@ -780,7 +855,7 @@ Keep it natural and brief — 1 sentence.`
       }
     }
 
-    ws.send(JSON.stringify(msg));
+    safeSend(JSON.stringify(msg));
     const extras = [
       msg.action && `action: ${msg.action}`,
       msg.accessory && `accessory: ${msg.accessory}`,
@@ -803,13 +878,13 @@ Keep it natural and brief — 1 sentence.`
       } else {
         tagFallbackCount++;
         console.warn(`[Expression] Malformed tag: "${tagMatch[0]}" — defaulting to neutral (${label})`);
-        ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
+        safeSend(JSON.stringify({ type: "expression", expression: "neutral" }));
         return { text: stripExpressionTag(text), emotion: "neutral" };
       }
     } else {
       tagFallbackCount++;
       console.warn(`[Expression] No tag found in response — defaulting to neutral (${label}). Rate: ${tagSuccessCount}/${tagSuccessCount + tagFallbackCount}`);
-      ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
+      safeSend(JSON.stringify({ type: "expression", expression: "neutral" }));
       return { text, emotion: "neutral" };
     }
   }
@@ -824,7 +899,7 @@ Keep it natural and brief — 1 sentence.`
     try {
       // Take up to last 20 messages for context
       const recentMsgs = messages.slice(-20).map(m => `${m.role}: ${m.content}`).join("\n");
-      const response = await openai.chat.completions.create({
+      const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: [
           {
@@ -835,7 +910,7 @@ Keep it natural and brief — 1 sentence.`
         ],
         temperature: 0.3,
         max_tokens: 30,
-      });
+      }), "conversation summary");
       const summary = response.choices[0]?.message?.content?.trim() || "";
       console.log(`[Summary] Generated: "${summary}"`);
       return summary;
@@ -901,14 +976,14 @@ Keep it natural and brief — 1 sentence.`
 
       try {
         // Quick check: does the model have something to say?
-        const checkResponse = await openai.chat.completions.create({
+        const checkResponse = await callOpenAIWithRetry(() => openai.chat.completions.create({
           model: OPENAI_MODEL,
           messages: chatHistory,
           temperature: 0.9, // Slightly higher for more creative initiation
           max_tokens: 300,
           frequency_penalty: 0.3,
           presence_penalty: 0.3, // Higher to encourage novel topics
-        });
+        }), "silence check");
 
         let responseText = checkResponse.choices[0]?.message?.content?.trim() || "";
 
@@ -938,11 +1013,11 @@ Keep it natural and brief — 1 sentence.`
         console.log(`[Silence] Kira initiates: "${responseText}"`);
         lastKiraSpokeTimestamp = Date.now();
         // Don't reschedule vision timer from silence checker — these are separate systems
-        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
+        safeSend(JSON.stringify({ type: "transcript", role: "ai", text: responseText }));
 
         setState("speaking");
-        ws.send(JSON.stringify({ type: "state_speaking" }));
-        ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+        safeSend(JSON.stringify({ type: "state_speaking" }));
+        safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
 
         try {
@@ -962,30 +1037,20 @@ Keep it natural and brief — 1 sentence.`
               if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
             }
             silSentIdx++;
-            await new Promise<void>((resolve) => {
-              console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${silenceEmotion})`);
-              const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: silenceEmotion });
-              tts.on("audio_chunk", (chunk: Buffer) => {
-                if (interruptRequested || thisResponseId !== currentResponseId) return;
-                ws.send(chunk);
-              });
-              tts.on("tts_complete", () => resolve());
-              tts.on("error", (err: Error) => {
-                console.error(`[TTS] ❌ Silence chunk failed: "${trimmed}"`, err);
-                resolve();
-              });
-              tts.synthesize(trimmed);
+            await ttsSentence(trimmed, silenceEmotion, (chunk) => {
+              if (interruptRequested || thisResponseId !== currentResponseId) return;
+              safeSend(chunk);
             });
           }
         } catch (ttsErr) {
           console.error("[TTS] Silence turn TTS error:", ttsErr);
         } finally {
-          ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+          safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
           currentTurnTranscript = "";
           currentInterimTranscript = "";
           transcriptClearedAt = Date.now();
           setState("listening");
-          ws.send(JSON.stringify({ type: "state_listening" }));
+          safeSend(JSON.stringify({ type: "state_listening" }));
           // Do NOT reset silence timer here — Kira gets ONE unprompted turn.
           // Only the user speaking again (eou/text_message) resets it.
         }
@@ -1007,19 +1072,19 @@ Keep it natural and brief — 1 sentence.`
     currentResponseId++;
     const thisResponseId = currentResponseId;
     setState("speaking");
-    ws.send(JSON.stringify({ type: "state_speaking" }));
-    ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+    safeSend(JSON.stringify({ type: "state_speaking" }));
+    safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
     await new Promise(resolve => setImmediate(resolve));
 
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: getMessagesWithTimeContext(),
         temperature: 0.85,
         max_tokens: 300,
         frequency_penalty: 0.3,
         presence_penalty: 0.2,
-      });
+      }), "runKiraTurn");
 
       llmResponse = completion.choices[0]?.message?.content || "";
 
@@ -1039,7 +1104,7 @@ Keep it natural and brief — 1 sentence.`
       console.log(`[AI RESPONSE]: "${llmResponse}"`);
       lastKiraSpokeTimestamp = Date.now();
       if (visionActive) rescheduleVisionReaction();
-      ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+      safeSend(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
       const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
       let runKiraSentIdx = 0;
@@ -1057,30 +1122,20 @@ Keep it natural and brief — 1 sentence.`
           if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
         }
         runKiraSentIdx++;
-        await new Promise<void>((resolve) => {
-          console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${runKiraEmotion})`);
-          const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: runKiraEmotion });
-          tts.on("audio_chunk", (chunk: Buffer) => {
-            if (interruptRequested || thisResponseId !== currentResponseId) return;
-            ws.send(chunk);
-          });
-          tts.on("tts_complete", () => resolve());
-          tts.on("error", (err: Error) => {
-            console.error(`[TTS] ❌ Chunk failed: "${trimmed}"`, err);
-            resolve();
-          });
-          tts.synthesize(trimmed);
+        await ttsSentence(trimmed, runKiraEmotion, (chunk) => {
+          if (interruptRequested || thisResponseId !== currentResponseId) return;
+          safeSend(chunk);
         });
       }
     } catch (err) {
       console.error("[Pipeline] Error in runKiraTurn:", (err as Error).message);
     } finally {
-      ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+      safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
       currentTurnTranscript = "";
       currentInterimTranscript = "";
       transcriptClearedAt = Date.now();
       setState("listening");
-      ws.send(JSON.stringify({ type: "state_listening" }));
+      safeSend(JSON.stringify({ type: "state_listening" }));
       resetSilenceTimer();
     }
   }
@@ -1145,12 +1200,12 @@ Keep it natural and brief — 1 sentence.`
         { role: "user", content: "[Say a heartfelt goodbye — this conversation meant something to you]" },
       ];
 
-      const response = await openai.chat.completions.create({
+      const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: goodbyeMessages,
         max_tokens: 60,
         temperature: 0.9,
-      });
+      }), "proactive goodbye");
 
       const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
@@ -1161,11 +1216,11 @@ Keep it natural and brief — 1 sentence.`
 
         console.log(`[Goodbye] Kira says: "${finalGoodbye}"`);
         chatHistory.push({ role: "assistant", content: finalGoodbye });
-        ws.send(JSON.stringify({ type: "transcript", role: "ai", text: finalGoodbye }));
+        safeSend(JSON.stringify({ type: "transcript", role: "ai", text: finalGoodbye }));
 
         setState("speaking");
-        ws.send(JSON.stringify({ type: "state_speaking" }));
-        ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+        safeSend(JSON.stringify({ type: "state_speaking" }));
+        safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
         await new Promise(resolve => setImmediate(resolve));
 
         const sentences = finalGoodbye.split(/(?<=[.!?\u2026])\s+(?=[A-Z"])/);
@@ -1178,21 +1233,12 @@ Keep it natural and brief — 1 sentence.`
             if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
           }
           goodbyeSentIdx++;
-          await new Promise<void>((resolve) => {
-            const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: goodbyeEmotion });
-            tts.on("audio_chunk", (chunk: Buffer) => {
-              if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
-            });
-            tts.on("tts_complete", () => resolve());
-            tts.on("error", (err: Error) => {
-              console.error(`[Goodbye TTS] ❌ Chunk failed: "${trimmed}"`, err);
-              resolve();
-            });
-            tts.synthesize(trimmed);
+          await ttsSentence(trimmed, goodbyeEmotion, (chunk) => {
+            safeSend(chunk);
           });
         }
 
-        ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+        safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
 
         // Wait for TTS to finish playing on client, then disconnect
         const estimatedPlayTime = Math.max(2000, finalGoodbye.length * 80);
@@ -1751,7 +1797,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               currentResponseId++;
               const thisResponseId = currentResponseId;
               setState("thinking");
-              ws.send(JSON.stringify({ type: "state_thinking" }));
+              safeSend(JSON.stringify({ type: "state_thinking" }));
 
               const openerMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
                 ...chatHistory,
@@ -1761,7 +1807,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               ];
 
               // --- Streaming opener: send first sentence to TTS while LLM still generates ---
-              const openerStream = await openai.chat.completions.create({
+              const openerStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
                 model: OPENAI_MODEL,
                 messages: openerMessages,
                 stream: true,
@@ -1769,7 +1815,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 max_tokens: 100,
                 frequency_penalty: 0.6,
                 presence_penalty: 0.6,
-              });
+              }), "opener stream");
 
               let openerSentenceBuffer = "";
               let openerFullResponse = "";
@@ -1796,23 +1842,14 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 if (interruptRequested || thisResponseId !== currentResponseId) return;
                 openerSentIdx++;
 
-                await new Promise<void>((resolve) => {
-                  const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: openerEmotion });
-                  tts.on("audio_chunk", (chunk: Buffer) => {
-                    if (interruptRequested || thisResponseId !== currentResponseId) return;
-                    if (!openerTtsFirstChunkLogged) {
-                      openerTtsFirstChunkLogged = true;
-                      console.log(`[Latency] Opener TTS first audio: ${Date.now() - openerTtsStartedAt}ms`);
-                      console.log(`[Latency] Opener E2E (start → first audio): ${Date.now() - openerStart}ms`);
-                    }
-                    if (!clientDisconnected) ws.send(chunk);
-                  });
-                  tts.on("tts_complete", () => resolve());
-                  tts.on("error", (err: Error) => {
-                    console.error(`[Opener TTS] ❌ Chunk failed: "${text}"`, err);
-                    resolve();
-                  });
-                  tts.synthesize(text);
+                await ttsSentence(text, openerEmotion, (chunk) => {
+                  if (interruptRequested || thisResponseId !== currentResponseId) return;
+                  if (!openerTtsFirstChunkLogged) {
+                    openerTtsFirstChunkLogged = true;
+                    console.log(`[Latency] Opener TTS first audio: ${Date.now() - openerTtsStartedAt}ms`);
+                    console.log(`[Latency] Opener E2E (start → first audio): ${Date.now() - openerStart}ms`);
+                  }
+                  safeSend(chunk);
                 });
               };
 
@@ -1829,8 +1866,8 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 if (!openerTtsStarted) {
                   openerTtsStarted = true;
                   setState("speaking");
-                  ws.send(JSON.stringify({ type: "state_speaking" }));
-                  ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                  safeSend(JSON.stringify({ type: "state_speaking" }));
+                  safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
                   await new Promise(resolve => setImmediate(resolve));
                 }
 
@@ -1885,21 +1922,21 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               if (!openerText || openerText.length < 3) {
                 // LLM returned nothing useful
                 if (openerTtsStarted) {
-                  ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                  safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
                 }
                 setState("listening");
-                ws.send(JSON.stringify({ type: "state_listening" }));
+                safeSend(JSON.stringify({ type: "state_listening" }));
                 return;
               }
 
               chatHistory.push({ role: "assistant", content: openerText });
               console.log(`[Opener] Kira says: "${openerText}"`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
+              safeSend(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
 
               console.log(`[Latency] Opener total: ${Date.now() - openerStart}ms`);
-              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+              safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
               setState("listening");
-              ws.send(JSON.stringify({ type: "state_listening" }));
+              safeSend(JSON.stringify({ type: "state_listening" }));
               turnCount++; // Count the opener as a turn
               resetSilenceTimer();
 
@@ -1908,7 +1945,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             } catch (err) {
               console.error("[Opener] Error:", (err as Error).message);
               setState("listening");
-              ws.send(JSON.stringify({ type: "state_listening" }));
+              safeSend(JSON.stringify({ type: "state_listening" }));
             }
           }, 500);
         } else if (controlMessage.type === "eou") {
@@ -2020,7 +2057,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
-          ws.send(JSON.stringify({ type: "state_thinking" }));
+          safeSend(JSON.stringify({ type: "state_thinking" }));
 
           // Check if we have a recent image (within last 10 seconds)
           const imageCheckTime = Date.now();
@@ -2079,7 +2116,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 const messagesText = toCompress
                   .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
                   .join("\n");
-                const summaryResp = await openai.chat.completions.create({
+                const summaryResp = await callOpenAIWithRetry(() => openai.chat.completions.create({
                   model: "gpt-4o-mini",
                   messages: [
                     { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
@@ -2087,7 +2124,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                   ],
                   max_tokens: 200,
                   temperature: 0.3,
-                });
+                }), "EOU background summary");
                 conversationSummary = summaryResp.choices[0]?.message?.content || conversationSummary;
                 console.log(`[Memory:L1] Background summary updated (${conversationSummary.length} chars, ${Date.now() - contextStart}ms)`);
 
@@ -2115,7 +2152,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             // If the model calls a tool, we accumulate chunks, handle it, then do a
             // follow-up streaming call. If it responds with content, TTS starts on the
             // first complete sentence — cutting perceived latency nearly in half.
-            const mainStream = await openai.chat.completions.create({
+            const mainStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
               model: OPENAI_MODEL,
               messages: getMessagesWithTimeContext(),
               tools: tools,
@@ -2125,7 +2162,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               max_tokens: 300,
               frequency_penalty: 0.3,
               presence_penalty: 0.2,
-            });
+            }), "main EOU stream");
 
             // --- Shared state for streaming ---
             let sentenceBuffer = "";
@@ -2160,26 +2197,14 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               if (interruptRequested || thisResponseId !== currentResponseId) return; // Check again after pacing delay
               streamSentenceIndex++;
 
-              await new Promise<void>((resolve) => {
-                console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${parsedEmotion})`);
-                const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: parsedEmotion });
-                tts.on("audio_chunk", (chunk: Buffer) => {
-                  if (interruptRequested || thisResponseId !== currentResponseId) {
-                    return; // Don't send this chunk — interrupted or stale
-                  }
-                  if (!ttsFirstChunkLogged) {
-                    ttsFirstChunkLogged = true;
-                    console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartedAt}ms`);
-                    console.log(`[Latency] E2E (EOU → first audio): ${Date.now() - eouReceivedAt}ms`);
-                  }
-                  ws.send(chunk);
-                });
-                tts.on("tts_complete", () => resolve());
-                tts.on("error", (err: Error) => {
-                  console.error(`[TTS] ❌ Stream chunk failed: "${text}"`, err);
-                  resolve();
-                });
-                tts.synthesize(text);
+              await ttsSentence(text, parsedEmotion, (chunk) => {
+                if (interruptRequested || thisResponseId !== currentResponseId) return;
+                if (!ttsFirstChunkLogged) {
+                  ttsFirstChunkLogged = true;
+                  console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartedAt}ms`);
+                  console.log(`[Latency] E2E (EOU → first audio): ${Date.now() - eouReceivedAt}ms`);
+                }
+                safeSend(chunk);
               });
             };
 
@@ -2217,8 +2242,8 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 ttsStarted = true;
                 if (silenceTimer) clearTimeout(silenceTimer);
                 setState("speaking");
-                ws.send(JSON.stringify({ type: "state_speaking" }));
-                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                safeSend(JSON.stringify({ type: "state_speaking" }));
+                safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
               }
 
@@ -2317,12 +2342,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               // Follow-up streaming call after tool processing (tools omitted to prevent chaining)
               if (silenceTimer) clearTimeout(silenceTimer);
               setState("speaking");
-              ws.send(JSON.stringify({ type: "state_speaking" }));
-              ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+              safeSend(JSON.stringify({ type: "state_speaking" }));
+              safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
               await new Promise(resolve => setImmediate(resolve));
 
               try {
-                const followUpStream = await openai.chat.completions.create({
+                const followUpStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
                   model: OPENAI_MODEL,
                   messages: getMessagesWithTimeContext(),
                   stream: true,
@@ -2330,7 +2355,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                   max_tokens: 300,
                   frequency_penalty: 0.3,
                   presence_penalty: 0.2,
-                });
+                }), "tool follow-up stream");
 
                 // Reset tag parsing for the follow-up stream (new LLM call = new tag)
                 let followUpTagParsed = false;
@@ -2402,8 +2427,8 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 ttsStarted = true;
                 if (silenceTimer) clearTimeout(silenceTimer);
                 setState("speaking");
-                ws.send(JSON.stringify({ type: "state_speaking" }));
-                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                safeSend(JSON.stringify({ type: "state_speaking" }));
+                safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
               }
               const cleanFinal = stripEmotionTags(sentenceBuffer.trim());
@@ -2445,7 +2470,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             console.log(`[AI RESPONSE]: "${llmResponse}"`);
             lastKiraSpokeTimestamp = Date.now();
             if (visionActive) rescheduleVisionReaction();
-            ws.send(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
+            safeSend(JSON.stringify({ type: "transcript", role: "ai", text: llmResponse }));
 
             // Latency summary
             const ttsTotal = ttsStartedAt ? Date.now() - ttsStartedAt : 0;
@@ -2457,16 +2482,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             console.error("[Pipeline] ❌ OpenAI Error:", (err as Error).message);
           } finally {
             // Always return to listening state and clean up
-            try {
-              ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
-            } catch (_) { /* ws may be closed */ }
+            safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
             currentTurnTranscript = "";
             currentInterimTranscript = "";
             transcriptClearedAt = Date.now();
             setState("listening");
-            try {
-              ws.send(JSON.stringify({ type: "state_listening" }));
-            } catch (_) { /* ws may be closed */ }
+            safeSend(JSON.stringify({ type: "state_listening" }));
             console.log("[STATE] Back to listening, transcripts cleared.");
             resetSilenceTimer();
           }
@@ -2478,7 +2499,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             interruptRequested = true;
             currentResponseId++; // Invalidate any in-flight TTS callbacks
             setState("listening");
-            ws.send(JSON.stringify({ type: "state_listening" }));
+            safeSend(JSON.stringify({ type: "state_listening" }));
           }
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
@@ -2571,12 +2592,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               // (silence timer, vision reaction) from also starting a turn
               setState("thinking");
               try {
-                const reaction = await openai.chat.completions.create({
+                const reaction = await callOpenAIWithRetry(() => openai.chat.completions.create({
                   model: OPENAI_MODEL,
                   messages: sceneMessages,
                   max_tokens: 60,
                   temperature: 1.0,
-                });
+                }), "scene reaction");
 
                 let reactionText = reaction.choices[0]?.message?.content?.trim() || "";
 
@@ -2592,7 +2613,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 ) {
                   console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
                   setState("listening");
-                  ws.send(JSON.stringify({ type: "state_listening" }));
+                  safeSend(JSON.stringify({ type: "state_listening" }));
                   return;
                 }
 
@@ -2606,12 +2627,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
                 // Don't reschedule vision timer from scene reactions — already handled by scheduleNextReaction()
-                ws.send(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
+                safeSend(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
 
                 // TTS pipeline for scene reaction
                 setState("speaking");
-                ws.send(JSON.stringify({ type: "state_speaking" }));
-                ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                safeSend(JSON.stringify({ type: "state_speaking" }));
+                safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
                 await new Promise(resolve => setImmediate(resolve));
 
                 const sentences = reactionText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
@@ -2626,29 +2647,20 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
                   }
                   sceneSentIdx++;
-                  await new Promise<void>((resolve) => {
-                    const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: sceneEmotion });
-                    tts.on("audio_chunk", (chunk: Buffer) => {
-                      if (interruptRequested || thisResponseId !== currentResponseId) return;
-                      if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
-                    });
-                    tts.on("tts_complete", () => resolve());
-                    tts.on("error", (err: Error) => {
-                      console.error(`[Scene TTS] ❌ Chunk failed: "${trimmed}"`, err);
-                      resolve();
-                    });
-                    tts.synthesize(trimmed);
+                  await ttsSentence(trimmed, sceneEmotion, (chunk) => {
+                    if (interruptRequested || thisResponseId !== currentResponseId) return;
+                    safeSend(chunk);
                   });
                 }
 
-                ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
                 setState("listening");
-                ws.send(JSON.stringify({ type: "state_listening" }));
+                safeSend(JSON.stringify({ type: "state_listening" }));
                 resetSilenceTimer();
               } catch (err) {
                 console.error("[Scene] Reaction error:", (err as Error).message);
                 setState("listening");
-                try { ws.send(JSON.stringify({ type: "state_listening" })); } catch (_) {}
+                safeSend(JSON.stringify({ type: "state_listening" }));
               }
             })();
           }
@@ -2687,7 +2699,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
           }
 
           setState("thinking");
-          ws.send(JSON.stringify({ type: "state_thinking" }));
+          safeSend(JSON.stringify({ type: "state_thinking" }));
 
           chatHistory.push({ role: "user", content: userMessage });
 
@@ -2711,7 +2723,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 const txtMessagesText = txtToCompress
                   .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
                   .join("\n");
-                const txtSummaryResp = await openai.chat.completions.create({
+                const txtSummaryResp = await callOpenAIWithRetry(() => openai.chat.completions.create({
                   model: "gpt-4o-mini",
                   messages: [
                     { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
@@ -2719,7 +2731,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                   ],
                   max_tokens: 200,
                   temperature: 0.3,
-                });
+                }), "text chat background summary");
                 conversationSummary = txtSummaryResp.choices[0]?.message?.content || conversationSummary;
                 const txtSummaryContent = `[CONVERSATION SO FAR]: ${conversationSummary}`;
                 const txtExistingSummaryIdx = chatHistory.findIndex(
@@ -2738,7 +2750,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
           }
 
           try {
-            const txtCompletion = await openai.chat.completions.create({
+            const txtCompletion = await callOpenAIWithRetry(() => openai.chat.completions.create({
               model: OPENAI_MODEL,
               messages: getMessagesWithTimeContext(),
               tools: tools,
@@ -2747,7 +2759,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               max_tokens: 300,
               frequency_penalty: 0.3,
               presence_penalty: 0.2,
-            });
+            }), "text chat completion");
 
             const txtInitialMessage = txtCompletion.choices[0]?.message;
             let txtLlmResponse = "";
@@ -2770,12 +2782,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                   chatHistory.push({ role: "tool", tool_call_id: toolCall.id, content: `Context updated to: ${viewingContext}` });
                 }
               }
-              const txtFollowUp = await openai.chat.completions.create({
+              const txtFollowUp = await callOpenAIWithRetry(() => openai.chat.completions.create({
                 model: OPENAI_MODEL,
                 messages: getMessagesWithTimeContext(),
                 temperature: 0.85,
                 max_tokens: 300,
-              });
+              }), "text chat tool follow-up");
               txtLlmResponse = txtFollowUp.choices[0]?.message?.content || "";
             } else {
               txtLlmResponse = txtInitialMessage?.content || "";
@@ -2789,16 +2801,16 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
             advanceTimePhase(txtLlmResponse);
 
-            ws.send(JSON.stringify({
+            safeSend(JSON.stringify({
               type: "text_response",
               text: txtLlmResponse,
             }));
           } catch (err) {
             console.error("[TextChat] Error:", (err as Error).message);
-            ws.send(JSON.stringify({ type: "error", message: "Failed to get response" }));
+            safeSend(JSON.stringify({ type: "error", message: "Failed to get response" }));
           } finally {
             setState("listening");
-            ws.send(JSON.stringify({ type: "state_listening" }));
+            safeSend(JSON.stringify({ type: "state_listening" }));
             turnCount++;
             silenceInitiatedLast = false; // User spoke, allow future silence initiation
             resetSilenceTimer();

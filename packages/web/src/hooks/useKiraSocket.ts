@@ -257,6 +257,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const MAX_RECONNECT_ATTEMPTS = 5;
   const conversationActive = useRef(getConnectionStore()!.conversationActive); // True once start_stream sent — prevents reconnect loops
 
+  // --- Connection Health Check ---
+  const lastServerMessage = useRef<number>(0); // Timestamp of last message from server
+
   /**
    * Calculates adaptive EOU timeout based on how long the user has been speaking.
    * Short utterances ("yes") → fast 500ms cutoff for snappy responses.
@@ -310,6 +313,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const processAudioQueue = useCallback(async () => {
     if (isProcessingQueue.current) return;
     isProcessingQueue.current = true;
+
+    // Resume contexts if suspended (mobile tab-switch, iOS auto-suspend)
+    try {
+      if (audioContext.current?.state === "suspended") await audioContext.current.resume();
+      if (playbackContext.current?.state === "suspended") await playbackContext.current.resume();
+    } catch (_) { /* best-effort */ }
 
     // Ensure the playback audio context is running (and is 16kHz for Azure's output)
     if (
@@ -1065,6 +1074,59 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   }, [initializeAudio]);
 
   /**
+   * Resume both AudioContexts if they were suspended (e.g. mobile tab-switch, iOS auto-suspend).
+   * Lightweight — safe to call frequently from processAudioQueue and visibility handlers.
+   */
+  const resumeAudioContext = useCallback(async () => {
+    try {
+      if (audioContext.current?.state === "suspended") {
+        debugLog("[Audio] Resuming suspended capture AudioContext");
+        await audioContext.current.resume();
+      }
+      if (playbackContext.current?.state === "suspended") {
+        debugLog("[Audio] Resuming suspended playback AudioContext");
+        await playbackContext.current.resume();
+      }
+    } catch (err) {
+      debugLog("[Audio] ⚠️ Failed to resume AudioContext:", err);
+    }
+  }, []);
+
+  // ─── Mobile tab-switch recovery: resume AudioContexts when page becomes visible again ───
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && conversationActive.current) {
+        debugLog("[Visibility] Page became visible — resuming AudioContexts");
+        resumeAudioContext();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [resumeAudioContext]);
+
+  // ─── Connection health check: detect silently dead WebSocket connections ───
+  // Server sends heartbeat pings every 25s. If we haven't received ANY message in 45s,
+  // the connection is likely dead (network change, server crash, etc.). Close and show error.
+  useEffect(() => {
+    const HEALTH_CHECK_INTERVAL = 15_000; // Check every 15s
+    const HEALTH_CHECK_TIMEOUT = 45_000;  // Dead if no message in 45s
+
+    const timer = setInterval(() => {
+      if (
+        conversationActive.current &&
+        lastServerMessage.current > 0 &&
+        ws.current?.readyState === WebSocket.OPEN &&
+        Date.now() - lastServerMessage.current > HEALTH_CHECK_TIMEOUT
+      ) {
+        debugLog(`[HealthCheck] No server message in ${Math.round((Date.now() - lastServerMessage.current) / 1000)}s — closing connection`);
+        ws.current.close(4001, "Client health check timeout");
+      }
+    }, HEALTH_CHECK_INTERVAL);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  /**
    * Main connection logic
    */
   const connect = useCallback(async () => {
@@ -1150,6 +1212,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
     // ─── Wire handlers through refs so remounts get fresh closures ───
     onMessageRef.current = (event: MessageEvent) => {
+      lastServerMessage.current = Date.now(); // Track for health check
       if (typeof event.data === "string") {
         // This is a JSON control message
         const msg = JSON.parse(event.data);
@@ -1327,6 +1390,10 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         // Heartbeat timeout — connection went stale (network issue, suspended tab, etc.)
         debugLog("[WS] Heartbeat timeout — connection went stale");
         setError("heartbeat_timeout");
+      } else if (event.code === 4001) {
+        // Health check triggered close — server was unresponsive
+        debugLog("[WS] Health check timeout — server unresponsive");
+        setError("heartbeat_timeout"); // Reuse same UI treatment
       }
 
       stopAudioPipeline();
@@ -1338,7 +1405,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // Once a live voice session is active, reconnecting would create a fresh server session
       // (new chatHistory, new usage timer, new opener) — causing the "conversation loop" bug
       // where the same exchange replays and the usage counter goes backwards.
-      if (event.code !== 1000 && event.code !== 1008 && event.code !== 4000) {
+      if (event.code !== 1000 && event.code !== 1008 && event.code !== 4000 && event.code !== 4001) {
         if (conversationActive.current) {
           // Live session was interrupted — don't reconnect, show error
           debugLog("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");

@@ -24,6 +24,13 @@ export class DeepgramSTTStreamer extends EventEmitter {
         smart_format: true,
         endpointing: 300,
         utterance_end_ms: 1000,
+        // --- [ROBUSTNESS FIX] Lenient VAD for mobile/noisy connections ---
+        vad_events: true,
+        // Increase silence threshold to prevent premature stream closure
+        // Default is ~150ms, increased to 250ms for better mobile support
+        endpointing_config: {
+          silence_threshold: 250
+        }
       });
 
       if (this.connection) {

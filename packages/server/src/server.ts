@@ -1786,6 +1786,16 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
           setState("thinking");
           if (silenceTimer) clearTimeout(silenceTimer);
 
+          // --- [CRITICAL FIX] Force Deepgram to finalize and produce final transcript ---
+          try {
+            if (sttStreamer) {
+              sttStreamer.finalize();
+              console.log("[EOU] Forced Deepgram finalize to flush pending transcripts");
+            }
+          } catch (e) {
+            console.error("[EOU] Failed to finalize Deepgram:", e);
+          }
+
           // If no final transcript, immediately use interim (no waiting needed)
           if (currentTurnTranscript.trim().length === 0 && currentInterimTranscript.trim().length > 0) {
             console.log(`[EOU] Using interim transcript: "${currentInterimTranscript}"`);

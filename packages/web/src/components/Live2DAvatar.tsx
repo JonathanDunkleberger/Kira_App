@@ -656,6 +656,37 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                   });
                   pendingAccessories.current = [];
                 }
+
+                // Apply random initial hairstyle NOW — model is confirmed stable
+                if (modelRef.current) {
+                  const initialStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
+                  if (initialStyle) {
+                    try {
+                      modelRef.current.expression(initialStyle);
+                      activeAccessoriesRef.current.add(initialStyle);
+                    } catch (e) {
+                      console.warn(`[Hair] Failed to apply initial: ${initialStyle}`, e);
+                    }
+                  }
+                  debugLog(`[Hair] Initial style (random): ${initialStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
+
+                  // Start 5-minute cycle timer
+                  hairstyleCycleTimerRef.current = setInterval(() => {
+                    hairstyleIndexRef.current = (hairstyleIndexRef.current + 1) % HAIRSTYLE_CYCLE.length;
+                    const nextStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
+                    // Remove previous hair accessory
+                    HAIR_ACCESSORIES.forEach(hair => activeAccessoriesRef.current.delete(hair));
+                    if (nextStyle && modelRef.current) {
+                      try {
+                        modelRef.current.expression(nextStyle);
+                        activeAccessoriesRef.current.add(nextStyle);
+                      } catch (e) {
+                        console.warn(`[Hair] Failed to apply: ${nextStyle}`, e);
+                      }
+                    }
+                    debugLog(`[Hair] Cycled to: ${nextStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
+                  }, HAIRSTYLE_CYCLE_INTERVAL);
+                }
               }, 2000);
             }
           });
@@ -714,58 +745,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
-
-  // Hairstyle cycle — rotates through styles every 5 minutes
-  // Single source of truth for hair; no other system should change hairstyle
-  useEffect(() => {
-    const model = modelRef.current;
-    if (!model || !modelStableRef.current) return;
-
-    // Apply a hairstyle (null = default, string = expression name)
-    function applyHairstyle(style: string | null) {
-      if (!modelRef.current) return;
-      // First, remove any currently active hair accessories
-      HAIR_ACCESSORIES.forEach(hair => {
-        if (activeAccessoriesRef.current.has(hair)) {
-          activeAccessoriesRef.current.delete(hair);
-        }
-      });
-      // Then apply the new one (null = default/no hair accessory)
-      if (style) {
-        try {
-          modelRef.current.expression(style);
-          activeAccessoriesRef.current.add(style);
-          debugLog(`[Hair] Applied: ${style}`);
-        } catch (e) {
-          console.warn(`[Hair] Failed to apply ${style}:`, e);
-        }
-      } else {
-        // Reset to default — clear all hair expressions
-        // The expression manager handles the visual reset when we don't set any hair expression
-        debugLog("[Hair] Applied: default");
-      }
-    }
-
-    // Apply initial hairstyle from the random start index
-    const initialStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
-    applyHairstyle(initialStyle);
-    debugLog(`[Hair] Initial style: ${initialStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
-
-    // Rotate every 5 minutes
-    hairstyleCycleTimerRef.current = setInterval(() => {
-      hairstyleIndexRef.current = (hairstyleIndexRef.current + 1) % HAIRSTYLE_CYCLE.length;
-      const nextStyle = HAIRSTYLE_CYCLE[hairstyleIndexRef.current];
-      applyHairstyle(nextStyle);
-      debugLog(`[Hair] Cycled to: ${nextStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
-    }, HAIRSTYLE_CYCLE_INTERVAL);
-
-    return () => {
-      if (hairstyleCycleTimerRef.current) {
-        clearInterval(hairstyleCycleTimerRef.current);
-        hairstyleCycleTimerRef.current = null;
-      }
-    };
-  }, [modelReady]); // Re-run when model becomes ready
 
   // Lip sync via LipSyncEngine — smooth attack/release dynamics
   useEffect(() => {

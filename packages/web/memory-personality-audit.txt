@@ -1583,7 +1583,7 @@ Keep it natural and brief — 1 sentence.`
 
   // --- USAGE TRACKING ---
   const FREE_LIMIT_SECONDS = parseInt(process.env.FREE_TRIAL_SECONDS || "900"); // 15 min/day
-  const PRO_MONTHLY_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "360000"); // 100 hrs/month
+  const PRO_MONTHLY_SECONDS = parseInt(process.env.PRO_MONTHLY_SECONDS || "144000"); // 40 hrs/month
   let sessionStartTime: number | null = null;
   let usageCheckInterval: NodeJS.Timeout | null = null;
   let timeCheckInterval: NodeJS.Timeout | null = null;

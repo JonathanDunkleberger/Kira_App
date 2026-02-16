@@ -132,7 +132,7 @@ Audio Playback Queue                      → Users, Conversations, Messages
 | In-conversation memory | ✓ | ✓ | ✓ |
 | Cross-session memory | — | ✓ | ✓ |
 | Conversation history | — | ✓ | ✓ |
-| Daily limit | 15 min | 15 min | 100 hrs/mo |
+| Daily limit | 15 min | 15 min | 40 hrs/mo |
 
 Guest conversations are buffered in-memory for 24 hours. Returning guests get their recent history loaded for continuity. If a guest creates an account, their conversation and extracted memories are automatically migrated via a Clerk webhook.
 

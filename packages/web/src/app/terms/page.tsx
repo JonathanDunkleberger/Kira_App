@@ -209,7 +209,7 @@ export default function TermsPage() {
         <p style={paragraph}>
           Pro subscriptions are marketed as &quot;unlimited&quot; and are intended for generous
           personal use. To ensure service quality for all users, Pro accounts are subject to a soft
-          monthly cap of approximately <strong style={bold}>100 hours</strong> of conversation time
+          monthly cap of approximately <strong style={bold}>40 hours</strong> of conversation time
           per calendar month. If you reach this limit, access will resume on the 1st of the
           following month.
         </p>

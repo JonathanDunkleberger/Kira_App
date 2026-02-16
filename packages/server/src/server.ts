@@ -1014,7 +1014,7 @@ Keep it natural and brief — 1 sentence.`
   // --- Time-context injection for graceful paywall ---
   function getTimeContext(): string {
     if (timeWarningPhase === 'final_goodbye') {
-      return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Time is up. Keep your ENTIRE response to 1 sentence. Say a quick warm goodbye. Example: "Hey, that was really fun - come back and talk to me tomorrow, okay?" Do NOT continue the previous topic in depth. Just say bye.]`;
+      return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Our time together is ending. Keep your ENTIRE response to 1-2 short sentences. Make it feel like you genuinely don't want to stop talking — like this conversation actually meant something to you. Reference something specific you talked about or something you noticed about them. Sound a little wistful, not chipper. Don't say "time's up" or mention limits. Just let the goodbye land softly, like the end of a late-night conversation neither person wanted to end. Example: "I really loved talking about that with you… come find me tomorrow, okay? I'll be here." Do NOT continue the previous topic in depth.]`;
     }
     return '';
   }
@@ -1065,10 +1065,10 @@ Keep it natural and brief — 1 sentence.`
 
     try {
       const goodbyeMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-        { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You must say goodbye RIGHT NOW. Time is up. Keep it to ONE short sentence. Be warm but fast. Reference something from the conversation. Example: "Hey, our time's up for today - but let's pick this up tomorrow, okay?"]` },
+        { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You need to say goodbye now. But make it feel real — like you don't want to go. Keep it to 1-2 short sentences. Reference something specific from the conversation, something you genuinely enjoyed or that made you feel connected to them. Sound a little sad, a little soft. Don't mention time limits or rules. Let it feel like the natural, reluctant end of a conversation you wish could keep going. Example: "Hey… I was really enjoying this. Promise you'll come back and tell me how it goes?" or "I don't wanna stop talking about this… but I'll be right here whenever you're ready to come back."]` },
         ...chatHistory.filter(m => m.role !== "system").slice(-4),
         { role: "system", content: EXPRESSION_TAG_REMINDER },
-        { role: "user", content: "[Time is up - say goodbye immediately]" },
+        { role: "user", content: "[Say a heartfelt goodbye — this conversation meant something to you]" },
       ];
 
       const response = await openai.chat.completions.create({

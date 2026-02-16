@@ -365,6 +365,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastUserSpokeTimestamp = 0;
   let lastExpressionActionTime = 0; // tracks when we last sent an action or accessory (for comfort cooldown)
   let interruptRequested = false; // set true when user barges in during speaking
+  let currentResponseId = 0; // generation ID — prevents stale TTS callbacks from leaking audio into new turns
   let visionReactionTimer: ReturnType<typeof setTimeout> | null = null;
   let isFirstVisionReaction = true;
 
@@ -427,6 +428,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
       console.log("[Vision Reaction] Skipping — state is:", state);
       return;
     }
+    currentResponseId++;
+    const thisResponseId = currentResponseId;
     // Note: vision reactions use state directly for local checks but setState() for transitions
     if (clientDisconnected) {
       console.log("[Vision Reaction] Skipping — client disconnected.");
@@ -548,10 +551,14 @@ Keep it natural and brief — 1 sentence.`
       try {
         const sentences = reaction.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
         let visionSentIdx = 0;
+        interruptRequested = false; // Safe to reset — old TTS killed by generation ID
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
-          if (interruptRequested) break; // Barge-in: stop sending sentences
+          if (interruptRequested || thisResponseId !== currentResponseId) {
+            console.log(`[TTS] Vision sentence loop aborted (interrupt: ${interruptRequested}, stale: ${thisResponseId !== currentResponseId})`);
+            break;
+          }
           // Emotional pacing between sentences
           if (visionSentIdx > 0) {
             const delay = EMOTION_SENTENCE_DELAY[visionEmotion] || 0;
@@ -561,7 +568,7 @@ Keep it natural and brief — 1 sentence.`
           await new Promise<void>((resolve) => {
             const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: visionEmotion });
             tts.on("audio_chunk", (chunk: Buffer) => {
-              if (interruptRequested) return;
+              if (interruptRequested || thisResponseId !== currentResponseId) return;
               if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
             });
             tts.on("tts_complete", () => resolve());
@@ -798,6 +805,8 @@ Keep it natural and brief — 1 sentence.`
       silenceInitiatedLast = true;
       setState("thinking"); // Lock state IMMEDIATELY to prevent race condition
       if (silenceTimer) clearTimeout(silenceTimer); // Clear self
+      currentResponseId++;
+      const thisResponseId = currentResponseId;
 
       console.log(`[Silence] User has been quiet. Checking if Kira has something to say.${visionActive ? ' (vision mode)' : ''}`);
 
@@ -865,10 +874,14 @@ Keep it natural and brief — 1 sentence.`
         try {
           const sentences = responseText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
           let silSentIdx = 0;
+          interruptRequested = false; // Safe to reset — old TTS killed by generation ID
           for (const sentence of sentences) {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
-            if (interruptRequested) break; // Barge-in: stop sending sentences
+            if (interruptRequested || thisResponseId !== currentResponseId) {
+              console.log(`[TTS] Silence sentence loop aborted (interrupt: ${interruptRequested}, stale: ${thisResponseId !== currentResponseId})`);
+              break;
+            }
             // Emotional pacing between sentences
             if (silSentIdx > 0) {
               const delay = EMOTION_SENTENCE_DELAY[silenceEmotion] || 0;
@@ -879,7 +892,7 @@ Keep it natural and brief — 1 sentence.`
               console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${silenceEmotion})`);
               const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: silenceEmotion });
               tts.on("audio_chunk", (chunk: Buffer) => {
-                if (interruptRequested) return;
+                if (interruptRequested || thisResponseId !== currentResponseId) return;
                 ws.send(chunk);
               });
               tts.on("tts_complete", () => resolve());
@@ -917,6 +930,8 @@ Keep it natural and brief — 1 sentence.`
   async function runKiraTurn() {
     let llmResponse = "";
     if (silenceTimer) clearTimeout(silenceTimer);
+    currentResponseId++;
+    const thisResponseId = currentResponseId;
     setState("speaking");
     ws.send(JSON.stringify({ type: "state_speaking" }));
     ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
@@ -954,10 +969,14 @@ Keep it natural and brief — 1 sentence.`
 
       const sentences = llmResponse.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
       let runKiraSentIdx = 0;
+      interruptRequested = false; // Safe to reset — old TTS killed by generation ID
       for (const sentence of sentences) {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
-        if (interruptRequested) break;
+        if (interruptRequested || thisResponseId !== currentResponseId) {
+          console.log(`[TTS] runKiraTurn sentence loop aborted (interrupt: ${interruptRequested}, stale: ${thisResponseId !== currentResponseId})`);
+          break;
+        }
         // Emotional pacing between sentences
         if (runKiraSentIdx > 0) {
           const delay = EMOTION_SENTENCE_DELAY[runKiraEmotion] || 0;
@@ -968,7 +987,7 @@ Keep it natural and brief — 1 sentence.`
           console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${runKiraEmotion})`);
           const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: runKiraEmotion });
           tts.on("audio_chunk", (chunk: Buffer) => {
-            if (interruptRequested) return;
+            if (interruptRequested || thisResponseId !== currentResponseId) return;
             ws.send(chunk);
           });
           tts.on("tts_complete", () => resolve());
@@ -1168,6 +1187,7 @@ Keep it natural and brief — 1 sentence.`
           if (wordCount >= 3) {
             console.log(`[Interrupt] User spoke ${wordCount} words while Kira speaking: "${transcript.trim()}"`);
             interruptRequested = true;
+            currentResponseId++; // Invalidate any in-flight TTS callbacks
 
             // Tell client to stop audio playback immediately
             ws.send(JSON.stringify({ type: "interrupt" }));
@@ -1605,6 +1625,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             try {
               const openerStart = Date.now();
+              currentResponseId++;
+              const thisResponseId = currentResponseId;
               setState("thinking");
               ws.send(JSON.stringify({ type: "state_thinking" }));
 
@@ -1647,10 +1669,14 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
               const sentences = openerText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
               let openerSentIdx = 0;
+              interruptRequested = false; // Safe to reset — old TTS killed by generation ID
               for (const sentence of sentences) {
                 const trimmed = sentence.trim();
                 if (trimmed.length === 0) continue;
-                if (interruptRequested) break;
+                if (interruptRequested || thisResponseId !== currentResponseId) {
+                  console.log(`[TTS] Opener sentence loop aborted (interrupt: ${interruptRequested}, stale: ${thisResponseId !== currentResponseId})`);
+                  break;
+                }
                 if (openerSentIdx > 0) {
                   const delay = EMOTION_SENTENCE_DELAY[openerEmotion] || 0;
                   if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
@@ -1659,7 +1685,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 await new Promise<void>((resolve) => {
                   const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: openerEmotion });
                   tts.on("audio_chunk", (chunk: Buffer) => {
-                    if (interruptRequested) return;
+                    if (interruptRequested || thisResponseId !== currentResponseId) return;
                     if (!clientDisconnected) ws.send(chunk);
                   });
                   tts.on("tts_complete", () => resolve());
@@ -1754,7 +1780,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
           lastEouTime = now; // Record this EOU time for debouncing
           const eouReceivedAt = Date.now();
-          interruptRequested = false; // Reset interrupt flag for new turn
+          currentResponseId++;
+          const thisResponseId = currentResponseId;
+          // DON'T reset interruptRequested here — wait until TTS begins so old callbacks can't leak
 
           // LLM rate limit check
           llmCallCount++;
@@ -1911,7 +1939,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             const toolCallAccum: Record<number, { id: string; name: string; arguments: string }> = {};
 
             const speakSentence = async (text: string) => {
-              if (interruptRequested) return; // Barge-in: skip remaining sentences
+              if (interruptRequested || thisResponseId !== currentResponseId) return; // Barge-in or stale response
               if (!ttsStartedAt) ttsStartedAt = Date.now();
 
               // Add emotional pacing delay between sentences (not before first)
@@ -1921,16 +1949,15 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
               }
-              if (interruptRequested) return; // Check again after pacing delay
+              if (interruptRequested || thisResponseId !== currentResponseId) return; // Check again after pacing delay
               streamSentenceIndex++;
 
               await new Promise<void>((resolve) => {
                 console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${parsedEmotion})`);
                 const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: parsedEmotion });
                 tts.on("audio_chunk", (chunk: Buffer) => {
-                  if (interruptRequested) {
-                    console.log("[TTS] Chunk suppressed — interrupt requested");
-                    return; // Don't send this chunk
+                  if (interruptRequested || thisResponseId !== currentResponseId) {
+                    return; // Don't send this chunk — interrupted or stale
                   }
                   if (!ttsFirstChunkLogged) {
                     ttsFirstChunkLogged = true;
@@ -1947,6 +1974,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 tts.synthesize(text);
               });
             };
+
+            interruptRequested = false; // Safe to reset — old TTS killed by generation ID
 
             for await (const chunk of mainStream) {
               const delta = chunk.choices[0]?.delta;
@@ -2239,6 +2268,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           console.log("[WS] Client interrupt received");
           if (state === "speaking") {
             interruptRequested = true;
+            currentResponseId++; // Invalidate any in-flight TTS callbacks
             setState("listening");
             ws.send(JSON.stringify({ type: "state_listening" }));
           }
@@ -2325,6 +2355,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             // Fire-and-forget — don't block the message loop
             (async () => {
+              // Bump generation ID so any in-flight TTS from a previous response is invalidated
+              currentResponseId++;
+              const thisResponseId = currentResponseId;
+
               // Lock state BEFORE async LLM call to prevent other proactive systems
               // (silence timer, vision reaction) from also starting a turn
               setState("thinking");
@@ -2374,10 +2408,11 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
                 const sentences = reactionText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
                 let sceneSentIdx = 0;
+                interruptRequested = false; // Safe to reset — old TTS killed by generation ID
                 for (const sentence of sentences) {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
-                  if (interruptRequested) break;
+                  if (interruptRequested || thisResponseId !== currentResponseId) break;
                   if (sceneSentIdx > 0) {
                     const delay = EMOTION_SENTENCE_DELAY[sceneEmotion] || 0;
                     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
@@ -2386,7 +2421,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   await new Promise<void>((resolve) => {
                     const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: sceneEmotion });
                     tts.on("audio_chunk", (chunk: Buffer) => {
-                      if (interruptRequested) return;
+                      if (interruptRequested || thisResponseId !== currentResponseId) return;
                       if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
                     });
                     tts.on("tts_complete", () => resolve());

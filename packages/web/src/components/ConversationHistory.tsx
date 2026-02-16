@@ -5,6 +5,7 @@ import { X, MessageCircle, ChevronRight, ArrowLeft } from "lucide-react";
 interface ConversationPreview {
   id: string;
   createdAt: string;
+  summary?: string | null;
   messages: Array<{ role: string; content: string }>;
   _count: { messages: number };
 }
@@ -46,7 +47,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [selectedConvo, setSelectedConvo] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set(["Today"]));
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set(["Today", "Yesterday"]));
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,7 +80,18 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
     return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   };
 
+  /** Estimate conversation duration from message count and show as time range. */
+  const formatTimeRange = (convo: ConversationPreview) => {
+    const start = new Date(convo.createdAt);
+    const startStr = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    // Rough estimate: ~20s per message exchange
+    const estimatedMinutes = Math.max(1, Math.round(convo._count.messages * 20 / 60));
+    return `${startStr} · ${estimatedMinutes} min`;
+  };
+
   const getPreview = (convo: ConversationPreview) => {
+    // Prefer AI-generated summary over raw first message
+    if (convo.summary) return convo.summary;
     const userMsg = convo.messages.find((m) => m.role === "user");
     if (userMsg)
       return (
@@ -338,7 +350,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                             marginTop: 2,
                           }}
                         >
-                          {convo._count.messages} messages · {formatDate(convo.createdAt)}
+                          {convo._count.messages} messages · {formatTimeRange(convo)}
                         </div>
                       </div>
                       <ChevronRight

@@ -784,6 +784,34 @@ Keep it natural and brief — 1 sentence.`
   // --- L1: In-Conversation Memory ---
   let conversationSummary = "";
 
+  /** Generate a short 5-10 word summary of the conversation for history previews. */
+  async function generateConversationSummary(
+    messages: Array<{ role: string; content: string }>
+  ): Promise<string> {
+    try {
+      // Take up to last 20 messages for context
+      const recentMsgs = messages.slice(-20).map(m => `${m.role}: ${m.content}`).join("\n");
+      const response = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "Summarize this conversation in 5-10 words. Focus on the main topic or vibe. No quotes, no punctuation at the end. Examples: 'Talked about favorite movies and childhood', 'Late night chat about life goals', 'Helped with coding project anxiety'",
+          },
+          { role: "user", content: recentMsgs },
+        ],
+        temperature: 0.3,
+        max_tokens: 30,
+      });
+      const summary = response.choices[0]?.message?.content?.trim() || "";
+      console.log(`[Summary] Generated: "${summary}"`);
+      return summary;
+    } catch (err) {
+      console.error("[Summary] Generation failed:", (err as Error).message);
+      return "";
+    }
+  }
+
   // --- SILENCE-INITIATED TURNS ---
   let silenceTimer: NodeJS.Timeout | null = null;
   const SILENCE_MIN_MS = 18000; // Minimum 18s of quiet before Kira might speak
@@ -1681,67 +1709,142 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 { role: "user", content: "[User just connected — say hi]" },
               ];
 
-              const completion = await openai.chat.completions.create({
+              // --- Streaming opener: send first sentence to TTS while LLM still generates ---
+              const openerStream = await openai.chat.completions.create({
                 model: OPENAI_MODEL,
                 messages: openerMessages,
+                stream: true,
                 temperature: 1.0,
                 max_tokens: 100,
                 frequency_penalty: 0.6,
                 presence_penalty: 0.6,
               });
 
-              let openerText = completion.choices[0]?.message?.content?.trim() || "";
-              console.log(`[Latency] Opener LLM: ${Date.now() - openerStart}ms`);
-              if (!openerText || openerText.length < 3 || clientDisconnected) return;
-
-              // Parse expression tag and strip before TTS
-              const openerTagResult = handleNonStreamingTag(openerText, "opener");
-              openerText = stripEmotionTags(openerTagResult.text);
-              const openerEmotion = openerTagResult.emotion;
-
-              // Add to chat history (NOT the instruction — just the greeting)
-              chatHistory.push({ role: "assistant", content: openerText });
-              console.log(`[Opener] Kira says: "${openerText}"`);
-              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
-
-              // --- TTS pipeline for opener ---
-              const openerTtsStart = Date.now();
-              setState("speaking");
-              ws.send(JSON.stringify({ type: "state_speaking" }));
-              ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
-              await new Promise(resolve => setImmediate(resolve));
-
-              const sentences = openerText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
+              let openerSentenceBuffer = "";
+              let openerFullResponse = "";
+              let openerTtsStarted = false;
+              let openerFirstTokenLogged = false;
+              let openerTtsFirstChunkLogged = false;
+              let openerTtsStartedAt = 0;
               let openerSentIdx = 0;
-              interruptRequested = false; // Safe to reset — old TTS killed by generation ID
-              for (const sentence of sentences) {
-                const trimmed = sentence.trim();
-                if (trimmed.length === 0) continue;
-                if (interruptRequested || thisResponseId !== currentResponseId) {
-                  console.log(`[TTS] Opener sentence loop aborted (interrupt: ${interruptRequested}, stale: ${thisResponseId !== currentResponseId})`);
-                  break;
-                }
+              interruptRequested = false;
+
+              // --- Tag parsing (buffer initial tokens for [EMO:...]) ---
+              let openerTagParsed = false;
+              let openerTagBuffer = "";
+              let openerEmotion = "neutral";
+
+              const speakOpenerSentence = async (text: string) => {
+                if (interruptRequested || thisResponseId !== currentResponseId) return;
+                if (!openerTtsStartedAt) openerTtsStartedAt = Date.now();
+
                 if (openerSentIdx > 0) {
                   const delay = EMOTION_SENTENCE_DELAY[openerEmotion] || 0;
                   if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
                 }
+                if (interruptRequested || thisResponseId !== currentResponseId) return;
                 openerSentIdx++;
+
                 await new Promise<void>((resolve) => {
                   const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: openerEmotion });
                   tts.on("audio_chunk", (chunk: Buffer) => {
                     if (interruptRequested || thisResponseId !== currentResponseId) return;
+                    if (!openerTtsFirstChunkLogged) {
+                      openerTtsFirstChunkLogged = true;
+                      console.log(`[Latency] Opener TTS first audio: ${Date.now() - openerTtsStartedAt}ms`);
+                      console.log(`[Latency] Opener E2E (start → first audio): ${Date.now() - openerStart}ms`);
+                    }
                     if (!clientDisconnected) ws.send(chunk);
                   });
                   tts.on("tts_complete", () => resolve());
                   tts.on("error", (err: Error) => {
-                    console.error(`[Opener TTS] ❌ Chunk failed: "${trimmed}"`, err);
+                    console.error(`[Opener TTS] ❌ Chunk failed: "${text}"`, err);
                     resolve();
                   });
-                  tts.synthesize(trimmed);
+                  tts.synthesize(text);
                 });
+              };
+
+              for await (const chunk of openerStream) {
+                const content = chunk.choices[0]?.delta?.content || "";
+                if (!content) continue;
+
+                if (!openerFirstTokenLogged) {
+                  openerFirstTokenLogged = true;
+                  console.log(`[Latency] Opener LLM first token: ${Date.now() - openerStart}ms`);
+                }
+
+                // Lazily start TTS pipeline on first content
+                if (!openerTtsStarted) {
+                  openerTtsStarted = true;
+                  setState("speaking");
+                  ws.send(JSON.stringify({ type: "state_speaking" }));
+                  ws.send(JSON.stringify({ type: "tts_chunk_starts" }));
+                  await new Promise(resolve => setImmediate(resolve));
+                }
+
+                openerSentenceBuffer += content;
+                openerFullResponse += content;
+
+                // Phase 1: Buffer to parse expression tag
+                if (!openerTagParsed) {
+                  openerTagBuffer += content;
+                  const closeBracket = openerTagBuffer.indexOf("]");
+                  if (closeBracket !== -1) {
+                    openerTagParsed = true;
+                    const rawTag = openerTagBuffer.slice(0, closeBracket + 1);
+                    const parsed = parseExpressionTag(rawTag);
+                    if (parsed) {
+                      openerEmotion = parsed.emotion;
+                      sendExpressionFromTag(parsed, "opener stream tag");
+                      tagSuccessCount++;
+                    } else {
+                      tagFallbackCount++;
+                      sendExpressionFromTag({ emotion: "neutral" }, "opener stream fallback");
+                    }
+                    openerSentenceBuffer = openerSentenceBuffer.replace(rawTag, "").trimStart();
+                  } else if (openerTagBuffer.length > 50) {
+                    openerTagParsed = true;
+                    tagFallbackCount++;
+                    sendExpressionFromTag({ emotion: "neutral" }, "opener no-tag fallback");
+                  } else {
+                    continue; // Still buffering tag
+                  }
+                }
+
+                // Flush complete sentences to TTS immediately
+                const match = openerSentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
+                if (match) {
+                  const sentence = stripEmotionTags(match[1].trim());
+                  openerSentenceBuffer = openerSentenceBuffer.slice(match[0].length);
+                  if (sentence.length > 0) {
+                    await speakOpenerSentence(sentence);
+                  }
+                }
               }
 
-              console.log(`[Latency] Opener TTS: ${Date.now() - openerTtsStart}ms`);
+              // Flush any remaining text after stream ends
+              const remainingOpener = stripEmotionTags(openerSentenceBuffer.trim());
+              if (remainingOpener.length > 0) {
+                await speakOpenerSentence(remainingOpener);
+              }
+
+              // Strip tags from full response for history
+              let openerText = stripEmotionTags(openerFullResponse).trim();
+              if (!openerText || openerText.length < 3) {
+                // LLM returned nothing useful
+                if (openerTtsStarted) {
+                  ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
+                }
+                setState("listening");
+                ws.send(JSON.stringify({ type: "state_listening" }));
+                return;
+              }
+
+              chatHistory.push({ role: "assistant", content: openerText });
+              console.log(`[Opener] Kira says: "${openerText}"`);
+              ws.send(JSON.stringify({ type: "transcript", role: "ai", text: openerText }));
+
               console.log(`[Latency] Opener total: ${Date.now() - openerStart}ms`);
               ws.send(JSON.stringify({ type: "tts_chunk_ends" }));
               setState("listening");
@@ -2772,9 +2875,13 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
           // 1. Save conversation to DB (signed-in users only — guests don't have a User row)
           if (!isGuest) {
             try {
+              // Generate a short summary for conversation history previews
+              const summary = await generateConversationSummary(userMsgs);
+
               const conversation = await prisma.conversation.create({
                 data: {
                   userId: userId,
+                  summary: summary || null,
                   messages: {
                     create: userMsgs.map(m => ({
                       role: m.role,
@@ -2784,7 +2891,7 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 },
               });
               console.log(
-                `[Memory] Saved conversation ${conversation.id} (${userMsgs.length} messages)`
+                `[Memory] Saved conversation ${conversation.id} (${userMsgs.length} messages, summary: "${summary}")`
               );
             } catch (convErr) {
               console.error(

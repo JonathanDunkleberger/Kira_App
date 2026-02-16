@@ -13,9 +13,12 @@ export async function GET() {
       where: { userId },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: {
+      select: {
+        id: true,
+        createdAt: true,
+        summary: true,
         messages: {
-          take: 4, // First few messages for preview
+          take: 4, // First few messages for preview (fallback if no summary)
           orderBy: { createdAt: "asc" },
           select: {
             role: true,

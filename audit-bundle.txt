@@ -1,3 +1,229 @@
+===== packages/server/src/DeepgramSTTStreamer.ts =====
+import { EventEmitter } from "events";
+import type { LiveClient } from "@deepgram/sdk";
+import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY!;
+
+export class DeepgramSTTStreamer extends EventEmitter {
+  private connection: LiveClient | null = null;
+  private keepAliveInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    super();
+  }
+
+  public async start() {
+    try {
+      const deepgram = createClient(DEEPGRAM_API_KEY);
+      this.connection = await deepgram.listen.live({
+        model: "nova-2",
+        encoding: "linear16",
+        sample_rate: 16000,
+        channels: 1,
+        interim_results: true,
+        smart_format: true,
+        endpointing: 300,
+        utterance_end_ms: 1000,
+      });
+
+      if (this.connection) {
+        this.keepAliveInterval = setInterval(() => {
+          if (this.connection && this.connection.getReadyState() === 1) {
+            this.connection.keepAlive();
+          }
+        }, 3000);
+      }
+
+      this.connection.on(LiveTranscriptionEvents.Open, () => {
+        console.log("[Deepgram] Connection opened.");
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+        try {
+          const channel =
+            data.channel || data.channel_index || data.data?.channel;
+          const alt =
+            data.channel?.alternatives?.[0] ||
+            data.alternatives?.[0] ||
+            channel?.alternatives?.[0];
+          const transcript: string | undefined = alt?.transcript;
+          const isFinal: boolean = Boolean(
+            data.is_final ?? data.speech_final ?? alt?.is_final
+          );
+          
+          if (transcript && transcript.trim().length > 0) {
+            // console.log(`[Deepgram] Transcript: "${transcript}" (Final: ${isFinal})`);
+            this.emit("transcript", transcript, isFinal);
+          }
+        } catch (err) {
+          console.error("[Deepgram] Error processing transcript:", err);
+          this.emit("error", err);
+        }
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Error, (e: any) => {
+        console.error("[Deepgram] Error:", e);
+        this.emit("error", e);
+      });
+
+      this.connection.on(LiveTranscriptionEvents.Close, () => {
+        console.log("[Deepgram] Connection closed.");
+        this.emit("close");
+      });
+    } catch (err) {
+      this.emit("error", err);
+    }
+  }
+
+  public write(audioChunk: Buffer) {
+    if (!this.connection) return;
+    try {
+      // Deepgram expects raw PCM LINEAR16 at 16kHz as ArrayBuffer/Blob
+      const ab = audioChunk.buffer.slice(
+        audioChunk.byteOffset,
+        audioChunk.byteOffset + audioChunk.byteLength
+      );
+      this.connection.send(ab);
+    } catch (err) {
+      this.emit("error", err);
+    }
+  }
+
+  public finalize() {
+    try {
+      // Send a finalize message to flush pending transcripts
+      // Do NOT call finish() as that closes the connection
+      if (this.connection && this.connection.getReadyState() === 1) {
+        this.connection.finalize();
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  public destroy() {
+    try {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = null;
+      }
+      this.connection?.finalize?.();
+      this.connection?.finish?.();
+    } catch (err) {
+      // ignore
+    } finally {
+      this.connection = null;
+    }
+  }
+}
+
+===== packages/web/public/worklets/AudioWorkletProcessor.js =====
+// This runs in a separate, high-priority audio thread.
+// Its only job is to capture audio, downsample it, convert it to 16-bit PCM,
+// and send it back to the main app.
+
+class Linear16Processor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.targetSampleRate = options.processorOptions.targetSampleRate || 16000;
+    this.frameCount = 0;
+  }
+
+  /**
+   * Converts 32-bit Float audio to 16-bit PCM audio (LINEAR16).
+   */
+  floatTo16BitPCM(input) {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return output;
+  }
+
+  /**
+   * A simple (but fast) downsampler.
+   */
+  downsample(buffer, inputSampleRate, outputSampleRate) {
+    if (inputSampleRate === outputSampleRate) {
+      return buffer;
+    }
+    const sampleRateRatio = inputSampleRate / outputSampleRate;
+    const newLength = Math.round(buffer.length / sampleRateRatio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+      let accum = 0,
+        count = 0;
+      for (
+        let i = offsetBuffer;
+        i < nextOffsetBuffer && i < buffer.length;
+        i++
+      ) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = accum / count;
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+
+  process(inputs) {
+    // We only care about the first input (the microphone)
+    const input = inputs[0];
+    if (input.length === 0 || !input[0]) {
+      return true; // Keep the node alive
+    }
+
+    // inputs[0][0] is the Float32Array of raw audio data
+    const audioData = input[0];
+
+    // 1. Downsample from browser's native rate (sampleRate) to 16000
+    const downsampled = this.downsample(
+      audioData,
+      sampleRate, // This is a global var in the AudioWorklet scope
+      this.targetSampleRate
+    );
+
+    // 2. Convert to 16-bit PCM (this is the crucial step)
+    const pcmData = this.floatTo16BitPCM(downsampled);
+
+    // 3. Calculate RMS BEFORE transferring the buffer
+    //    (postMessage with transferable detaches the ArrayBuffer, making pcmData empty)
+    this.frameCount++;
+    let rms = 0;
+    if (this.frameCount % 1000 === 0) {
+      let sum = 0;
+      for (let i = 0; i < pcmData.length; i++) {
+        sum += pcmData[i] * pcmData[i];
+      }
+      rms = pcmData.length > 0 ? Math.sqrt(sum / pcmData.length) : 0;
+    }
+
+    // 4. Send the raw PCM ArrayBuffer back to the main thread (transfers ownership)
+    this.port.postMessage(pcmData.buffer, [pcmData.buffer]);
+
+    // 5. Send debug info AFTER transfer (uses pre-computed rms)
+    // Only log every 1000 frames (~2.7s) to avoid flooding console in production
+    if (this.frameCount % 1000 === 0) {
+      this.port.postMessage({
+        type: "debug",
+        message: `RMS: ${rms.toFixed(0)} | Frame: ${this.frameCount} | VAD threshold: 300`
+      });
+    }
+
+    return true; // Tell the browser we're still processing
+  }
+}
+
+registerProcessor("audio-worklet-processor", Linear16Processor);
+
+===== packages/web/src/components/Live2DAvatar.tsx =====
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -176,8 +402,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const contextLostHandlerRef = useRef<((e: Event) => void) | null>(null); // stored for removal
   const animFrameRef = useRef<number>(0);
   const expressionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const expressionWaitingForSpeechEnd = useRef(false);
-  const currentEmotionRef = useRef<string | null>(null);
   const activeAccessoriesRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const modelStableRef = useRef(false);
@@ -200,11 +424,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const onLoadErrorRef = useRef(onLoadError);
   onLoadErrorRef.current = onLoadError;
   const [modelReady, setModelReady] = useState(false);
-
-  // Emotion blending — smoothly interpolate param overrides each frame
-  const targetEmotionParams = useRef<Record<string, number>>({});
-  const currentEmotionParams = useRef<Record<string, number>>({});
-  const emotionBlendSpeed = useRef(0.08); // lerp factor per frame (~60fps → ~5 frame blend)
 
   // Lip sync engine — smooth mouth movement with attack/release dynamics
   const lipSyncEngine = useRef(new LipSyncEngine({
@@ -616,31 +835,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
               coreModel.setParameterValueById("Param77", Math.sin(t * 1.3) * 0.5);
             } catch {}
 
-            // --- Smooth emotion param blending ---
-            // Lerp currentEmotionParams toward targetEmotionParams each frame.
-            // This prevents hard snaps when emotions change and blends smoothly with idle sway.
-            try {
-              const target = targetEmotionParams.current;
-              const current = currentEmotionParams.current;
-              const speed = emotionBlendSpeed.current;
-
-              // Collect all param keys from both target and current
-              const allKeys = Array.from(new Set([...Object.keys(target), ...Object.keys(current)]));
-              for (const key of allKeys) {
-                const targetVal = target[key] ?? 0; // missing from target = blend to 0
-                const currentVal = current[key] ?? 0;
-                const blended = currentVal + (targetVal - currentVal) * speed;
-                // Snap to target if close enough (avoid infinite micro-lerp)
-                current[key] = Math.abs(blended - targetVal) < 0.001 ? targetVal : blended;
-                // Clean up keys that have fully returned to 0
-                if (current[key] === 0 && (target[key] ?? 0) === 0) {
-                  delete current[key];
-                  continue;
-                }
-                coreModel.setParameterValueById(key, current[key]);
-              }
-            } catch {}
-
             // NOW do mesh deformation with our values applied
             origCoreUpdate();
           };
@@ -822,13 +1016,10 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           core.setParameterValueById("ParamMouthForm", 0.15 + smoothMouth * 0.2);
 
           // Subtle head movement while speaking — nods with speech rhythm
-          // ADDITIVE: read current value (from idle sway + emotion blend) and add lip-sync movement
           const speakNod = smoothMouth * 2; // 0 to 2 degrees based on mouth open
           const speakSway = Math.sin(Date.now() / 400) * smoothMouth * 1.5; // Gentle side-to-side
-          const currentAngle8 = core.getParameterValueById?.("ParamAngle8") ?? 0;
-          const currentAngle9 = core.getParameterValueById?.("ParamAngle9") ?? 0;
-          core.setParameterValueById("ParamAngle8", currentAngle8 + speakNod);
-          core.setParameterValueById("ParamAngle9", currentAngle9 + speakSway);
+          core.setParameterValueById("ParamAngle8", speakNod);
+          core.setParameterValueById("ParamAngle9", speakSway);
         }
       } catch {}
 
@@ -912,10 +1103,6 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
       expressionTimeoutRef.current = null;
     }
 
-    // Track current emotion for speech-end logic
-    currentEmotionRef.current = emotion;
-    expressionWaitingForSpeechEnd.current = false;
-
     const expressionName = EMOTION_MAP[emotion];
 
     if (expressionName) {
@@ -927,62 +1114,55 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         console.warn(`[Live2D] Failed to set expression: ${expressionName}`, err);
       }
 
-      // Set target params — the blend loop in coreModel.update will lerp to these smoothly
+      // Apply emotion-specific parameter overrides (brows, head tilt)
       const paramOverrides = EMOTION_PARAMS[emotion];
       if (paramOverrides) {
-        targetEmotionParams.current = { ...paramOverrides };
-        debugLog(`[Live2D] Emotion params targeted: ${Object.keys(paramOverrides).join(", ")}`);
+        try {
+          const core = model.internalModel?.coreModel;
+          if (core) {
+            for (const [param, value] of Object.entries(paramOverrides)) {
+              core.setParameterValueById(param, value);
+            }
+            debugLog(`[Live2D] Emotion params applied: ${Object.keys(paramOverrides).join(", ")}`);
+          }
+        } catch (err) {
+          console.warn("[Live2D] Failed to set emotion params:", err);
+        }
       }
 
-      // Speech-aware auto-reset: if speaking, defer reset until speech ends
-      if (isSpeaking) {
-        expressionWaitingForSpeechEnd.current = true;
-        debugLog(`[Live2D] Expression held while speaking`);
-      } else {
-        // Not speaking — auto-reset after 4 seconds
-        expressionTimeoutRef.current = setTimeout(() => {
-          resetExpression(model);
-          targetEmotionParams.current = {};
-        }, 4000);
-      }
+      // Auto-reset to neutral after 4 seconds
+      expressionTimeoutRef.current = setTimeout(() => {
+        resetExpression(model);
+        // Reset param overrides to defaults
+        try {
+          const core = model.internalModel?.coreModel;
+          if (core) {
+            core.setParameterValueById("ParamBrowLY", 0);
+            core.setParameterValueById("ParamBrowRY", 0);
+            core.setParameterValueById("ParamBrowLForm", 0);
+            core.setParameterValueById("ParamBrowRForm", 0);
+            core.setParameterValueById("ParamEyeRSmile", 0);
+            core.setParameterValueById("ParamEyeLSmile", 0);
+          }
+        } catch {}
+      }, 4000);
     } else {
       // neutral/happy — clear any active expression
       resetExpression(model);
-      // Apply happy params via blending if happy (subtle difference from neutral)
+      // Apply happy params if happy (subtle difference from neutral)
       if (emotion === "happy") {
         const paramOverrides = EMOTION_PARAMS.happy;
-        if (paramOverrides) {
-          targetEmotionParams.current = { ...paramOverrides };
-        }
-      } else {
-        targetEmotionParams.current = {};
+        try {
+          const core = model.internalModel?.coreModel;
+          if (core && paramOverrides) {
+            for (const [param, value] of Object.entries(paramOverrides)) {
+              core.setParameterValueById(param, value);
+            }
+          }
+        } catch {}
       }
     }
-  }, [emotion, isSpeaking]);
-
-  // Post-speech expression reset — when speech ends while an expression is held,
-  // wait 2s then gracefully reset to neutral (allows expression to linger naturally)
-  useEffect(() => {
-    if (isSpeaking || !expressionWaitingForSpeechEnd.current) return;
-
-    // Speech just ended and we were holding an expression — start 2s countdown
-    expressionWaitingForSpeechEnd.current = false;
-    const model = modelRef.current;
-    if (!model) return;
-
-    expressionTimeoutRef.current = setTimeout(() => {
-      resetExpression(model);
-      targetEmotionParams.current = {};
-      debugLog("[Live2D] Post-speech expression reset (2s after speech ended)");
-    }, 2000);
-
-    return () => {
-      if (expressionTimeoutRef.current) {
-        clearTimeout(expressionTimeoutRef.current);
-        expressionTimeoutRef.current = null;
-      }
-    };
-  }, [isSpeaking]);
+  }, [emotion]);
 
   // Watch for accessory changes — accessories persist (unlike emotions which flash)
   // Includes conflict resolution (e.g. headphones replaces earbuds) and 60s auto-removal
@@ -1188,3 +1368,610 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     </div>
   );
 }
+
+===== packages/web/src/components/ConversationHistory.tsx =====
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { X, MessageCircle, ChevronRight, ArrowLeft } from "lucide-react";
+
+interface ConversationPreview {
+  id: string;
+  createdAt: string;
+  messages: Array<{ role: string; content: string }>;
+  _count: { messages: number };
+}
+
+interface ConversationDetail {
+  id: string;
+  createdAt: string;
+  messages: Array<{ role: string; content: string }>;
+}
+
+interface ConversationHistoryProps {
+  onClose: () => void;
+}
+
+// Group conversations by day label
+function groupByDay(convos: ConversationPreview[]): [string, ConversationPreview[]][] {
+  const groups: Record<string, ConversationPreview[]> = {};
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  for (const c of convos) {
+    const d = new Date(c.createdAt);
+    let label: string;
+    if (d.toDateString() === today.toDateString()) {
+      label = "Today";
+    } else if (d.toDateString() === yesterday.toDateString()) {
+      label = "Yesterday";
+    } else {
+      label = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    }
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(c);
+  }
+  return Object.entries(groups);
+}
+
+export default function ConversationHistory({ onClose }: ConversationHistoryProps) {
+  const [conversations, setConversations] = useState<ConversationPreview[]>([]);
+  const [selectedConvo, setSelectedConvo] = useState<ConversationDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set(["Today"]));
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/conversations")
+      .then((r) => r.json())
+      .then((data) => {
+        setConversations(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const loadConversation = async (id: string) => {
+    const res = await fetch(`/api/conversations/${id}`);
+    const data = await res.json();
+    setSelectedConvo(data);
+  };
+
+  const toggleDay = (label: string) => {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  };
+
+  const getPreview = (convo: ConversationPreview) => {
+    const userMsg = convo.messages.find((m) => m.role === "user");
+    if (userMsg)
+      return (
+        userMsg.content.slice(0, 80) +
+        (userMsg.content.length > 80 ? "..." : "")
+      );
+    return "Conversation";
+  };
+
+  // Detail view
+  if (selectedConvo) {
+    const detailDate = new Date(selectedConvo.createdAt);
+    const detailLabel = detailDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "#0D1117",
+          zIndex: 1000,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 20px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <button
+            onClick={() => setSelectedConvo(null)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#8B9DC3",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 14,
+              fontFamily: "'DM Sans', sans-serif",
+              padding: 0,
+            }}
+          >
+            <ArrowLeft size={18} /> Back
+          </button>
+          <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
+            {detailLabel}
+          </span>
+        </div>
+        <div
+          className="scrollbar-discreet"
+          style={{ flex: 1, overflowY: "auto", padding: 20 }}
+        >
+          {selectedConvo.messages.map((msg, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                marginBottom: 12,
+                justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: "80%",
+                  padding: "10px 16px",
+                  borderRadius: 14,
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  color: "#C9D1D9",
+                  background:
+                    msg.role === "user"
+                      ? "rgba(107,125,179,0.15)"
+                      : "rgba(255,255,255,0.04)",
+                }}
+              >
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+    );
+  }
+
+  // List view — grouped by day
+  const grouped = groupByDay(conversations);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "#0D1117",
+        zIndex: 1000,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 18,
+            fontFamily: "'Playfair Display', serif",
+            fontWeight: 400,
+            color: "#E2E8F0",
+          }}
+        >
+          Past Conversations
+        </span>
+        <button
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#8B9DC3",
+            cursor: "pointer",
+            padding: 4,
+          }}
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div
+        className="scrollbar-discreet"
+        style={{ flex: 1, overflowY: "auto", padding: "4px 16px" }}
+      >
+        {loading ? (
+          <div style={{ textAlign: "center", color: "rgba(201,209,217,0.25)", paddingTop: 60, fontSize: 14 }}>
+            Loading...
+          </div>
+        ) : conversations.length === 0 ? (
+          <div style={{ textAlign: "center", color: "rgba(201,209,217,0.25)", paddingTop: 60, fontSize: 14 }}>
+            No conversations yet. Start talking to Kira!
+          </div>
+        ) : (
+          grouped.map(([dayLabel, convos]) => (
+            <div key={dayLabel}>
+              {/* Day header — clickable */}
+              <button
+                onClick={() => toggleDay(dayLabel)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 12px",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "#8B9DC3",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {dayLabel}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "rgba(201,209,217,0.25)",
+                      fontWeight: 300,
+                    }}
+                  >
+                    {convos.length} {convos.length === 1 ? "conversation" : "conversations"}
+                  </span>
+                  <ChevronRight
+                    size={14}
+                    style={{
+                      color: "rgba(201,209,217,0.2)",
+                      transform: expandedDays.has(dayLabel) ? "rotate(90deg)" : "rotate(0deg)",
+                      transition: "transform 0.2s ease",
+                    }}
+                  />
+                </div>
+              </button>
+
+              {/* Conversation rows — collapsible */}
+              {expandedDays.has(dayLabel) && (
+                <div style={{ paddingLeft: 8 }}>
+                  {convos.map((convo) => (
+                    <button
+                      key={convo.id}
+                      onClick={() => loadConversation(convo.id)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "12px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderBottom: "1px solid rgba(255,255,255,0.02)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "background 0.15s",
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <MessageCircle
+                        size={16}
+                        style={{ color: "rgba(201,209,217,0.15)", flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            color: "#C9D1D9",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {getPreview(convo)}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "rgba(201,209,217,0.2)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {convo._count.messages} messages · {formatDate(convo.createdAt)}
+                        </div>
+                      </div>
+                      <ChevronRight
+                        size={14}
+                        style={{ color: "rgba(201,209,217,0.1)", flexShrink: 0 }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+===== packages/web/src/lib/LipSyncEngine.ts =====
+/**
+ * LipSyncEngine — converts raw audio amplitude into smooth, natural mouth movement
+ *
+ * Key techniques:
+ * 1. Separate attack/release smoothing (mouth opens fast, closes slowly — like real speech)
+ * 2. Noise gate (ignores low-level noise so mouth stays closed during silence)
+ * 3. Amplitude range mapping (maps usable range to 0.0–1.0)
+ * 4. Frame-rate independent (uses deltaTime, works at any refresh rate)
+ */
+export class LipSyncEngine {
+  // Smoothing parameters
+  private attackSpeed = 0.4; // How fast mouth OPENS (0–1, higher = faster). 0.4 = ~3 frames to open
+  private releaseSpeed = 0.12; // How fast mouth CLOSES (0–1, higher = faster). 0.12 = ~8 frames to close
+
+  // Noise gate
+  private noiseGate = 0.05; // Amplitude below this = silence (0.0–1.0 scale)
+
+  // Range mapping — raw amplitude range that maps to 0.0–1.0 mouth openness
+  // These may need tuning based on your TTS volume levels
+  private ampFloor = 0.08; // Amplitude below this = mouth barely open
+  private ampCeiling = 0.55; // Amplitude at/above this = mouth fully open
+
+  // Max mouth openness (prevent unnatural wide-open jaw)
+  private maxMouthOpen = 0.85;
+
+  // State
+  private currentValue = 0; // The smoothed output value (0.0–1.0)
+  private targetValue = 0; // Where we're heading
+  private lastTime = 0;
+
+  constructor(options?: {
+    attackSpeed?: number;
+    releaseSpeed?: number;
+    noiseGate?: number;
+    ampFloor?: number;
+    ampCeiling?: number;
+    maxMouthOpen?: number;
+  }) {
+    if (options) {
+      if (options.attackSpeed !== undefined) this.attackSpeed = options.attackSpeed;
+      if (options.releaseSpeed !== undefined)
+        this.releaseSpeed = options.releaseSpeed;
+      if (options.noiseGate !== undefined) this.noiseGate = options.noiseGate;
+      if (options.ampFloor !== undefined) this.ampFloor = options.ampFloor;
+      if (options.ampCeiling !== undefined)
+        this.ampCeiling = options.ampCeiling;
+      if (options.maxMouthOpen !== undefined)
+        this.maxMouthOpen = options.maxMouthOpen;
+    }
+  }
+
+  /**
+   * Feed raw amplitude (0.0–1.0) and get smooth mouth value back.
+   * Call this every animation frame.
+   *
+   * @param rawAmplitude - Current audio amplitude, normalized to 0.0–1.0
+   * @param timestamp - Performance.now() or similar timestamp in ms
+   * @returns Smoothed mouth openness value (0.0–1.0)
+   */
+  update(rawAmplitude: number, timestamp: number): number {
+    // Calculate deltaTime for frame-rate independence
+    const deltaTime =
+      this.lastTime === 0
+        ? 16.67
+        : Math.min(timestamp - this.lastTime, 50); // Cap at 50ms to prevent jumps
+    this.lastTime = timestamp;
+    const dtFactor = deltaTime / 16.67; // Normalize to ~60fps
+
+    // Apply noise gate
+    if (rawAmplitude < this.noiseGate) {
+      this.targetValue = 0;
+    } else {
+      // Map amplitude from [ampFloor, ampCeiling] to [0, maxMouthOpen]
+      const normalized = Math.max(
+        0,
+        Math.min(
+          1,
+          (rawAmplitude - this.ampFloor) / (this.ampCeiling - this.ampFloor)
+        )
+      );
+      this.targetValue = normalized * this.maxMouthOpen;
+    }
+
+    // Apply asymmetric smoothing — fast attack, slow release
+    const isOpening = this.targetValue > this.currentValue;
+    const speed = isOpening ? this.attackSpeed : this.releaseSpeed;
+
+    // Exponential interpolation (frame-rate independent)
+    const smoothingFactor = 1 - Math.pow(1 - speed, dtFactor);
+    this.currentValue +=
+      (this.targetValue - this.currentValue) * smoothingFactor;
+
+    // Snap to zero if very close (prevent infinite tiny oscillations)
+    if (this.currentValue < 0.01) this.currentValue = 0;
+
+    return this.currentValue;
+  }
+
+  /** Reset state (call when audio stops) */
+  reset(): void {
+    this.currentValue = 0;
+    this.targetValue = 0;
+    this.lastTime = 0;
+  }
+
+  /** Get current smoothed value without updating */
+  getValue(): number {
+    return this.currentValue;
+  }
+}
+
+===== packages/web/src/hooks/useSceneDetection.ts =====
+import { useEffect, useRef, useState } from "react";
+
+interface UseSceneDetectionProps {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  enabled: boolean;
+  checkInterval?: number; // ms, default 2000
+  threshold?: number; // percentage 0-100, default 15
+  onSceneChange?: (frames: string[]) => void; // Called when a significant scene change is detected
+}
+
+export const useSceneDetection = ({
+  videoRef,
+  enabled,
+  checkInterval = 2000,
+  threshold = 15,
+  onSceneChange,
+}: UseSceneDetectionProps) => {
+  const onSceneChangeRef = useRef(onSceneChange);
+  useEffect(() => { onSceneChangeRef.current = onSceneChange; }, [onSceneChange]);
+  const [sceneBuffer, setSceneBuffer] = useState<string[]>([]);
+  const lastFrameData = useRef<Uint8ClampedArray | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fullCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sceneChangeDetected = useRef(false);
+
+  // Reset buffer when disabled
+  useEffect(() => {
+    if (!enabled) {
+      setSceneBuffer([]);
+      lastFrameData.current = null;
+    }
+  }, [enabled]);
+
+  // Fire onSceneChange callback when buffer updates from a scene change
+  useEffect(() => {
+    if (sceneChangeDetected.current && sceneBuffer.length > 0 && onSceneChangeRef.current) {
+      sceneChangeDetected.current = false;
+      onSceneChangeRef.current(sceneBuffer.slice(-2));
+    }
+  }, [sceneBuffer]);
+
+  useEffect(() => {
+    if (!enabled || !videoRef.current) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+
+    const detectSceneChange = () => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) return;
+
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement("canvas");
+        canvasRef.current.width = 64;
+        canvasRef.current.height = 64;
+      }
+
+      const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+
+      // Draw small frame for comparison
+      ctx.drawImage(video, 0, 0, 64, 64);
+      const currentFrameData = ctx.getImageData(0, 0, 64, 64).data;
+
+      if (lastFrameData.current) {
+        let diffPixels = 0;
+        const totalPixels = 64 * 64;
+
+        for (let i = 0; i < currentFrameData.length; i += 4) {
+          const rDiff = Math.abs(currentFrameData[i] - lastFrameData.current[i]);
+          const gDiff = Math.abs(currentFrameData[i + 1] - lastFrameData.current[i + 1]);
+          const bDiff = Math.abs(currentFrameData[i + 2] - lastFrameData.current[i + 2]);
+
+          // Simple difference threshold per pixel (sensitivity)
+          if (rDiff + gDiff + bDiff > 100) {
+            diffPixels++;
+          }
+        }
+
+        const changePercentage = (diffPixels / totalPixels) * 100;
+
+        if (changePercentage > threshold) {
+          // Significant change detected! Capture full res frame.
+          // console.log(`[SceneDetection] Change detected: ${changePercentage.toFixed(2)}%`);
+          captureFullResFrame(video);
+          sceneChangeDetected.current = true;
+        }
+      } else {
+        // First run, just capture to start the buffer
+        captureFullResFrame(video);
+      }
+
+      lastFrameData.current = currentFrameData;
+    };
+
+    const captureFullResFrame = (video: HTMLVideoElement) => {
+      if (!fullCanvasRef.current) {
+        fullCanvasRef.current = document.createElement("canvas");
+      }
+      const fullCanvas = fullCanvasRef.current;
+
+      // Downscale to max 512px on longest side (matches GPT-4o "low" detail)
+      const MAX_DIM = 512;
+      const scale = Math.min(MAX_DIM / video.videoWidth, MAX_DIM / video.videoHeight, 1);
+      fullCanvas.width = Math.round(video.videoWidth * scale);
+      fullCanvas.height = Math.round(video.videoHeight * scale);
+
+      const fullCtx = fullCanvas.getContext("2d");
+      if (fullCtx) {
+        fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+        const base64 = fullCanvas.toDataURL("image/jpeg", 0.5);
+        
+        setSceneBuffer((prev) => {
+          // Keep last 3 distinct frames
+          const newBuffer = [...prev, base64];
+          if (newBuffer.length > 3) {
+            return newBuffer.slice(newBuffer.length - 3);
+          }
+          return newBuffer;
+        });
+      }
+    };
+
+    intervalRef.current = setInterval(detectSceneChange, checkInterval);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [enabled, videoRef, checkInterval, threshold]);
+
+  return sceneBuffer;
+};

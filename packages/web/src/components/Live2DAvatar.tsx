@@ -139,6 +139,25 @@ interface Live2DAvatarProps {
   onLoadError?: () => void;
 }
 
+/** Per-accessory auto-remove durations (seconds). Default: 60s for unlisted items. */
+const ACCESSORY_DURATIONS: Record<string, number> = {
+  // Wearables — persist longer (user expects these to stay)
+  glasses: 180,
+  sunglasses: 180,
+  headphones_on: 120,
+  neck_headphones: 120,
+  earbuds: 120,
+
+  // Props — shorter (momentary actions)
+  coffee: 45,
+  tea: 45,
+  boba: 45,
+  energy_drink: 45,
+  pocky: 30,
+
+  // Default for anything not listed: 60s (handled in code below)
+};
+
 /** Accessory conflict groups — applying one removes conflicting ones */
 const ACCESSORY_CONFLICTS: Record<string, string[]> = {
   headphones_on: ["neck_headphones", "earbuds"],
@@ -1033,12 +1052,13 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             console.warn(`[Live2D] Failed to apply accessory: ${acc}`, err);
           }
 
-          // Auto-remove after 60 seconds
+          // Auto-remove after per-accessory duration (default 60s)
+          const durationSec = ACCESSORY_DURATIONS[acc] ?? 60;
           const timer = setTimeout(() => {
             activeAccessoriesRef.current.delete(acc);
             accessoryTimeoutRefs.current.delete(acc);
-            debugLog(`[Live2D] Accessory auto-removed (60s): ${acc}`);
-          }, 60000);
+            debugLog(`[Live2D] Accessory auto-removed (${durationSec}s): ${acc}`);
+          }, durationSec * 1000);
           accessoryTimeoutRefs.current.set(acc, timer);
         }
       });

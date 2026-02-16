@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { X, MessageCircle, ChevronRight, ArrowLeft } from "lucide-react";
+import { X, MessageCircle, ChevronRight, ArrowLeft, Trash2 } from "lucide-react";
 
 interface ConversationPreview {
   id: string;
@@ -13,7 +13,7 @@ interface ConversationPreview {
 interface ConversationDetail {
   id: string;
   createdAt: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: string; createdAt?: string }>;
 }
 
 interface ConversationHistoryProps {
@@ -66,6 +66,21 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
     setSelectedConvo(data);
   };
 
+  const deleteConversation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't open the conversation
+
+    if (!window.confirm("Delete this conversation? This can't be undone.")) return;
+
+    try {
+      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setConversations(prev => prev.filter(c => c.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+    }
+  };
+
   const toggleDay = (label: string) => {
     setExpandedDays((prev) => {
       const next = new Set(prev);
@@ -87,6 +102,19 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
     // Rough estimate: ~20s per message exchange
     const estimatedMinutes = Math.max(1, Math.round(convo._count.messages * 20 / 60));
     return `${startStr} · ${estimatedMinutes} min`;
+  };
+
+  /** Relative timestamp for messages within a conversation (e.g. +2m, +1h 5m). */
+  const formatRelativeTime = (msgDate: string, convoStart: string) => {
+    const msgTime = new Date(msgDate).getTime();
+    const startTime = new Date(convoStart).getTime();
+    const diffMin = Math.round((msgTime - startTime) / 60000);
+
+    if (diffMin <= 0) return "";
+    if (diffMin < 60) return `+${diffMin}m`;
+    const hrs = Math.floor(diffMin / 60);
+    const mins = diffMin % 60;
+    return `+${hrs}h${mins > 0 ? ` ${mins}m` : ""}`;
   };
 
   const getPreview = (convo: ConversationPreview) => {
@@ -149,41 +177,90 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
           >
             <ArrowLeft size={18} /> Back
           </button>
-          <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
-            {detailLabel}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
+              {detailLabel}
+            </span>
+            <button
+              onClick={async () => {
+                if (!window.confirm("Delete this conversation? This can't be undone.")) return;
+                try {
+                  const res = await fetch(`/api/conversations/${selectedConvo.id}`, { method: "DELETE" });
+                  if (res.ok) {
+                    setConversations(prev => prev.filter(c => c.id !== selectedConvo.id));
+                    setSelectedConvo(null); // Go back to list
+                  }
+                } catch (err) {
+                  console.error("Failed to delete:", err);
+                }
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 4,
+                color: "rgba(201,209,217,0.3)",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#e55"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(201,209,217,0.3)"; }}
+              title="Delete conversation"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         </div>
         <div
           className="scrollbar-discreet"
           style={{ flex: 1, overflowY: "auto", padding: 20 }}
         >
-          {selectedConvo.messages.map((msg, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                marginBottom: 12,
-                justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: "80%",
-                  padding: "10px 16px",
-                  borderRadius: 14,
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: "#C9D1D9",
-                  background:
-                    msg.role === "user"
-                      ? "rgba(107,125,179,0.15)"
-                      : "rgba(255,255,255,0.04)",
-                }}
-              >
-                {msg.content}
-              </div>
-            </div>
-          ))}
+          {selectedConvo.messages.map((msg, i) => {
+              const relTime = msg.createdAt
+                ? formatRelativeTime(msg.createdAt, selectedConvo.createdAt)
+                : "";
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    marginBottom: 12,
+                    alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: "80%",
+                      padding: "10px 16px",
+                      borderRadius: 14,
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      color: "#C9D1D9",
+                      background:
+                        msg.role === "user"
+                          ? "rgba(107,125,179,0.15)"
+                          : "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                  {relTime && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "rgba(201,209,217,0.15)",
+                        marginTop: 2,
+                        paddingLeft: msg.role === "user" ? 0 : 8,
+                        paddingRight: msg.role === "user" ? 8 : 0,
+                      }}
+                    >
+                      {relTime}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -353,10 +430,31 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                           {convo._count.messages} messages · {formatTimeRange(convo)}
                         </div>
                       </div>
-                      <ChevronRight
-                        size={14}
-                        style={{ color: "rgba(201,209,217,0.1)", flexShrink: 0 }}
-                      />
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        <button
+                          onClick={(e) => deleteConversation(convo.id, e)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: 4,
+                            borderRadius: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            opacity: 0.3,
+                            transition: "opacity 0.15s",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.3"; }}
+                          title="Delete conversation"
+                        >
+                          <Trash2 size={14} style={{ color: "#e55" }} />
+                        </button>
+                        <ChevronRight
+                          size={14}
+                          style={{ color: "rgba(201,209,217,0.1)" }}
+                        />
+                      </div>
                     </button>
                   ))}
                 </div>

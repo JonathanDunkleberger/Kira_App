@@ -1240,6 +1240,24 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
             // The server is done sending audio for this turn
             ttsChunksDone.current = true; // Visualizer can now self-terminate when queue drains
             break;
+          case "interrupt":
+            // Server detected barge-in — immediately stop all audio playback
+            scheduledSources.current.forEach((source) => {
+              try { source.stop(); } catch (e) { /* already stopped */ }
+            });
+            scheduledSources.current = [];
+            playbackSource.current = null;
+            audioQueue.current = [];
+            if (playbackContext.current) {
+              nextStartTime.current = playbackContext.current.currentTime;
+            }
+            if (audioPlayingTimeout.current) {
+              clearTimeout(audioPlayingTimeout.current);
+              audioPlayingTimeout.current = null;
+            }
+            ttsChunksDone.current = true;
+            console.log("[WS] Interrupt received — audio stopped");
+            break;
           case "text_response":
             setTranscript({ role: "ai", text: msg.text });
             // Orb goes to "speaking" briefly to visually acknowledge

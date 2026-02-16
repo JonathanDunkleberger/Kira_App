@@ -363,6 +363,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastVisionTimestamp = 0;
   let lastKiraSpokeTimestamp = 0;
   let lastUserSpokeTimestamp = 0;
+  let lastExpressionActionTime = 0; // tracks when we last sent an action or accessory (for comfort cooldown)
+  let interruptRequested = false; // set true when user barges in during speaking
   let visionReactionTimer: ReturnType<typeof setTimeout> | null = null;
   let isFirstVisionReaction = true;
 
@@ -372,9 +374,11 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   const COMFORT_STAGES = [
     { delay: 60000, expression: "remove_jacket", label: "jacket off" },          // 1 min
-    { delay: 150000, expression: "neck_headphones", label: "neck headphones" },  // 2.5 min after jacket (3.5 min total) — was clip_bangs, changed to avoid hairstyle conflicts
-    { delay: 240000, expression: "earbuds", label: "earbuds in" },               // 4 min after bangs (7.5 min total)
+    { delay: 300000, expression: "neck_headphones", label: "neck headphones" },  // 5 min after jacket (6 min total)
+    { delay: 600000, expression: "earbuds", label: "earbuds in" },               // 10 min after headphones (16 min total)
   ];
+
+  const COMFORT_ACTION_COOLDOWN = 15000; // Don't send comfort accessory if action/accessory sent within 15s
 
   function startComfortProgression(ws: WebSocket) {
     // Check if late night (10pm-4am) — skip to stage 1 immediately
@@ -394,6 +398,22 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     const stage = COMFORT_STAGES[comfortStage];
     comfortTimer = setTimeout(() => {
       if (clientDisconnected || ws.readyState !== ws.OPEN) return;
+
+      // Don't overwrite a recent action/accessory — retry in 15s
+      const timeSinceAction = Date.now() - lastExpressionActionTime;
+      if (timeSinceAction < COMFORT_ACTION_COOLDOWN) {
+        const retryIn = COMFORT_ACTION_COOLDOWN - timeSinceAction + 1000; // +1s buffer
+        console.log(`[Comfort] Stage ${comfortStage + 1} (${stage.label}) deferred — recent action/accessory (retry in ${(retryIn / 1000).toFixed(0)}s)`);
+        comfortTimer = setTimeout(() => {
+          if (clientDisconnected || ws.readyState !== ws.OPEN) return;
+          ws.send(JSON.stringify({ type: "accessory", accessory: stage.expression, action: "on" }));
+          console.log(`[Comfort] Stage ${comfortStage + 1}: ${stage.label} (deferred)`);
+          comfortStage++;
+          scheduleNextComfort(ws);
+        }, retryIn);
+        return;
+      }
+
       ws.send(JSON.stringify({ type: "accessory", accessory: stage.expression, action: "on" }));
       console.log(`[Comfort] Stage ${comfortStage + 1}: ${stage.label}`);
       comfortStage++;
@@ -531,6 +551,7 @@ Keep it natural and brief — 1 sentence.`
         for (const sentence of sentences) {
           const trimmed = sentence.trim();
           if (trimmed.length === 0) continue;
+          if (interruptRequested) break; // Barge-in: stop sending sentences
           // Emotional pacing between sentences
           if (visionSentIdx > 0) {
             const delay = EMOTION_SENTENCE_DELAY[visionEmotion] || 0;
@@ -540,6 +561,7 @@ Keep it natural and brief — 1 sentence.`
           await new Promise<void>((resolve) => {
             const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: visionEmotion });
             tts.on("audio_chunk", (chunk: Buffer) => {
+              if (interruptRequested) return;
               if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
             });
             tts.on("tts_complete", () => resolve());
@@ -687,6 +709,7 @@ Keep it natural and brief — 1 sentence.`
       if (now - lastActionTime >= ACTION_COOLDOWN) {
         msg.action = parsed.action;
         lastActionTime = now;
+        lastExpressionActionTime = now;
         console.log(`[Context] Action: ${parsed.action}`);
       } else {
         console.log(`[Context] Action ${parsed.action} suppressed (cooldown: ${((ACTION_COOLDOWN - (now - lastActionTime)) / 1000).toFixed(0)}s remaining)`);
@@ -697,6 +720,7 @@ Keep it natural and brief — 1 sentence.`
       if (now - lastAccessoryTime >= ACCESSORY_COOLDOWN) {
         msg.accessory = parsed.accessory;
         lastAccessoryTime = now;
+        lastExpressionActionTime = now;
         console.log(`[Context] Accessory: ${parsed.accessory}`);
       } else {
         console.log(`[Context] Accessory ${parsed.accessory} suppressed (cooldown)`);
@@ -742,7 +766,9 @@ Keep it natural and brief — 1 sentence.`
 
   // --- SILENCE-INITIATED TURNS ---
   let silenceTimer: NodeJS.Timeout | null = null;
-  const SILENCE_THRESHOLD_MS = 25000; // 25 seconds of quiet before Kira might speak
+  const SILENCE_MIN_MS = 18000; // Minimum 18s of quiet before Kira might speak
+  const SILENCE_MAX_MS = 25000; // Maximum 25s — randomized to avoid feeling mechanical
+  const SILENCE_POST_KIRA_GAP = 5000; // Minimum 5s after Kira stops speaking before timer starts
   let turnCount = 0; // Track conversation depth for silence behavior
   let silenceInitiatedLast = false; // Prevents monologue loops — Kira gets ONE unprompted turn
 
@@ -751,6 +777,13 @@ Keep it natural and brief — 1 sentence.`
 
     // Don't initiate during first 2 turns (let the user settle in)
     if (turnCount < 2) return;
+
+    // Randomize between 18-25s so it doesn't feel mechanical
+    const baseDelay = SILENCE_MIN_MS + Math.random() * (SILENCE_MAX_MS - SILENCE_MIN_MS);
+
+    // Ensure at least 5s gap after Kira stops speaking
+    const timeSinceKiraSpoke = Date.now() - lastKiraSpokeTimestamp;
+    const delay = Math.max(baseDelay, baseDelay + (SILENCE_POST_KIRA_GAP - timeSinceKiraSpoke));
 
     silenceTimer = setTimeout(async () => {
       if (state !== "listening" || clientDisconnected) return;
@@ -835,6 +868,7 @@ Keep it natural and brief — 1 sentence.`
           for (const sentence of sentences) {
             const trimmed = sentence.trim();
             if (trimmed.length === 0) continue;
+            if (interruptRequested) break; // Barge-in: stop sending sentences
             // Emotional pacing between sentences
             if (silSentIdx > 0) {
               const delay = EMOTION_SENTENCE_DELAY[silenceEmotion] || 0;
@@ -844,7 +878,10 @@ Keep it natural and brief — 1 sentence.`
             await new Promise<void>((resolve) => {
               console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${silenceEmotion})`);
               const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: silenceEmotion });
-              tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+              tts.on("audio_chunk", (chunk: Buffer) => {
+                if (interruptRequested) return;
+                ws.send(chunk);
+              });
               tts.on("tts_complete", () => resolve());
               tts.on("error", (err: Error) => {
                 console.error(`[TTS] ❌ Silence chunk failed: "${trimmed}"`, err);
@@ -873,7 +910,7 @@ Keep it natural and brief — 1 sentence.`
         if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
       }
 
-    }, SILENCE_THRESHOLD_MS);
+    }, delay);
   }
 
   // --- Reusable LLM → TTS pipeline ---
@@ -920,6 +957,7 @@ Keep it natural and brief — 1 sentence.`
       for (const sentence of sentences) {
         const trimmed = sentence.trim();
         if (trimmed.length === 0) continue;
+        if (interruptRequested) break;
         // Emotional pacing between sentences
         if (runKiraSentIdx > 0) {
           const delay = EMOTION_SENTENCE_DELAY[runKiraEmotion] || 0;
@@ -929,7 +967,10 @@ Keep it natural and brief — 1 sentence.`
         await new Promise<void>((resolve) => {
           console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${runKiraEmotion})`);
           const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: runKiraEmotion });
-          tts.on("audio_chunk", (chunk: Buffer) => ws.send(chunk));
+          tts.on("audio_chunk", (chunk: Buffer) => {
+            if (interruptRequested) return;
+            ws.send(chunk);
+          });
           tts.on("tts_complete", () => resolve());
           tts.on("error", (err: Error) => {
             console.error(`[TTS] ❌ Chunk failed: "${trimmed}"`, err);
@@ -1120,6 +1161,32 @@ Keep it natural and brief — 1 sentence.`
           console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
           return;
         }
+
+        // --- Barge-in detection: user speaks 3+ words while Kira is speaking ---
+        if (state === "speaking" && isFinal && transcript.trim().length > 0) {
+          const wordCount = transcript.trim().split(/\s+/).length;
+          if (wordCount >= 3) {
+            console.log(`[Interrupt] User spoke ${wordCount} words while Kira speaking: "${transcript.trim()}"`);
+            interruptRequested = true;
+
+            // Tell client to stop audio playback immediately
+            ws.send(JSON.stringify({ type: "interrupt" }));
+
+            // Transition to listening — pendingEOU will trigger response after current turn cleans up
+            currentTurnTranscript = transcript.trim();
+            currentInterimTranscript = "";
+            setState("listening");
+            ws.send(JSON.stringify({ type: "state_listening" }));
+
+            // Queue as pending EOU — it will be picked up when the current pipeline finishes
+            pendingEOU = transcript.trim();
+            console.log(`[Interrupt] Queued barge-in transcript as pending EOU: "${transcript.trim()}"`);
+            return;
+          }
+        }
+
+        // During speaking state (non-interrupt), ignore transcripts entirely
+        if (state !== "listening") return;
 
         if (isFinal) {
           currentTurnTranscript += transcript + " ";
@@ -1583,6 +1650,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               for (const sentence of sentences) {
                 const trimmed = sentence.trim();
                 if (trimmed.length === 0) continue;
+                if (interruptRequested) break;
                 if (openerSentIdx > 0) {
                   const delay = EMOTION_SENTENCE_DELAY[openerEmotion] || 0;
                   if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
@@ -1591,6 +1659,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 await new Promise<void>((resolve) => {
                   const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: openerEmotion });
                   tts.on("audio_chunk", (chunk: Buffer) => {
+                    if (interruptRequested) return;
                     if (!clientDisconnected) ws.send(chunk);
                   });
                   tts.on("tts_complete", () => resolve());
@@ -1685,6 +1754,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
           lastEouTime = now; // Record this EOU time for debouncing
           const eouReceivedAt = Date.now();
+          interruptRequested = false; // Reset interrupt flag for new turn
 
           // LLM rate limit check
           llmCallCount++;
@@ -1841,6 +1911,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             const toolCallAccum: Record<number, { id: string; name: string; arguments: string }> = {};
 
             const speakSentence = async (text: string) => {
+              if (interruptRequested) return; // Barge-in: skip remaining sentences
               if (!ttsStartedAt) ttsStartedAt = Date.now();
 
               // Add emotional pacing delay between sentences (not before first)
@@ -1850,12 +1921,17 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   await new Promise(resolve => setTimeout(resolve, delay));
                 }
               }
+              if (interruptRequested) return; // Check again after pacing delay
               streamSentenceIndex++;
 
               await new Promise<void>((resolve) => {
                 console.log(`[TTS] Creating Azure TTS instance (${currentVoiceConfig.voiceName}, emotion: ${parsedEmotion})`);
                 const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: parsedEmotion });
                 tts.on("audio_chunk", (chunk: Buffer) => {
+                  if (interruptRequested) {
+                    console.log("[TTS] Chunk suppressed — interrupt requested");
+                    return; // Don't send this chunk
+                  }
                   if (!ttsFirstChunkLogged) {
                     ttsFirstChunkLogged = true;
                     console.log(`[Latency] TTS first audio: ${Date.now() - ttsStartedAt}ms`);
@@ -2158,9 +2234,14 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             resetSilenceTimer();
           }
         } else if (controlMessage.type === "interrupt") {
-          // Interrupt disabled — too sensitive (desk taps, coughs break conversation)
-          // Kira finishes her response, then listens
-          console.log("[WS] Interrupt received but ignored (feature disabled)");
+          // Client-initiated interrupt (e.g. user clicks stop button)
+          // Server-side barge-in is handled in the transcript handler instead
+          console.log("[WS] Client interrupt received");
+          if (state === "speaking") {
+            interruptRequested = true;
+            setState("listening");
+            ws.send(JSON.stringify({ type: "state_listening" }));
+          }
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array
@@ -2296,6 +2377,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 for (const sentence of sentences) {
                   const trimmed = sentence.trim();
                   if (trimmed.length === 0) continue;
+                  if (interruptRequested) break;
                   if (sceneSentIdx > 0) {
                     const delay = EMOTION_SENTENCE_DELAY[sceneEmotion] || 0;
                     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
@@ -2304,6 +2386,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   await new Promise<void>((resolve) => {
                     const tts = new AzureTTSStreamer({ ...currentVoiceConfig, emotion: sceneEmotion });
                     tts.on("audio_chunk", (chunk: Buffer) => {
+                      if (interruptRequested) return;
                       if (!clientDisconnected && ws.readyState === ws.OPEN) ws.send(chunk);
                     });
                     tts.on("tts_complete", () => resolve());
@@ -2473,8 +2556,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
         }
       } else if (message instanceof Buffer) {
         if (!isAcceptingAudio) return; // Don't forward audio after goodbye or before pipeline ready
-        if (state === "listening" && sttStreamer) {
-          sttStreamer.write(message); // Only forward audio when listening
+        if ((state === "listening" || state === "speaking") && sttStreamer) {
+          sttStreamer.write(message); // Forward audio during listening (normal) and speaking (for barge-in detection)
         }
       }
     } catch (err) {

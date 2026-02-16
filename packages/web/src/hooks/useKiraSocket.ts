@@ -327,7 +327,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       playbackGain.current = playbackContext.current.createGain();
       playbackAnalyser.current = playbackContext.current.createAnalyser();
       playbackAnalyser.current.fftSize = 256;
-      playbackAnalyser.current.smoothingTimeConstant = 0.1; // Very low — reacts instantly to silence between syllables
+      playbackAnalyser.current.smoothingTimeConstant = 0.3; // Moderate pre-smoothing — LipSyncEngine handles the rest
       playbackAnalyser.current.minDecibels = -90;
       playbackAnalyser.current.maxDecibels = -10;
       playbackGain.current.connect(playbackAnalyser.current);

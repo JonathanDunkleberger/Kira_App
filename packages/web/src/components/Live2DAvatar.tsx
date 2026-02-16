@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { LipSyncEngine } from "../lib/LipSyncEngine";
 
 // Silent in production unless ?debug is in the URL
 const isDebug = typeof window !== 'undefined' && (process.env.NODE_ENV !== 'production' || window.location.search.includes('debug'));
@@ -197,6 +198,16 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const onLoadErrorRef = useRef(onLoadError);
   onLoadErrorRef.current = onLoadError;
   const [modelReady, setModelReady] = useState(false);
+
+  // Lip sync engine — smooth mouth movement with attack/release dynamics
+  const lipSyncEngine = useRef(new LipSyncEngine({
+    attackSpeed: 0.45,    // Mouth opens quickly
+    releaseSpeed: 0.10,   // Mouth closes gently (prevents snapping shut)
+    noiseGate: 0.04,      // Ignore very quiet audio
+    ampFloor: 0.06,       // Start opening mouth here
+    ampCeiling: 0.45,     // Fully open at this amplitude
+    maxMouthOpen: 0.8,    // Don't go above 80% open (looks more natural)
+  }));
 
   /**
    * Full GPU + memory cleanup — must release ALL resources to prevent the
@@ -707,72 +718,77 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     };
   }, []);
 
-  // Lip sync with instant open + rapid multiplicative decay
+  // Lip sync via LipSyncEngine — smooth attack/release dynamics
   useEffect(() => {
     const model = modelRef.current;
+    if (!model) return;
 
-    if (!isSpeaking || !analyserNode || !model) {
-      // Close mouth when not speaking
-      try {
-        model?.internalModel?.coreModel?.setParameterValueById("ParamMouthOpenY", 0);
-        model?.internalModel?.coreModel?.setParameterValueById("ParamMouthForm", 0.15);
-      } catch {}
-      cancelAnimationFrame(animFrameRef.current);
-      return;
-    }
-
-    const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-    let smoothedVolume = 0;
-
-    function animateMouth() {
-      if (!modelRef.current || !analyserNode) return;
-
+    // Helper: extract RMS amplitude from analyser (speech frequency bins only)
+    function getAmplitude(): number {
+      if (!analyserNode) return 0;
+      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
       analyserNode.getByteFrequencyData(dataArray);
 
-      // Sample speech frequency bins (roughly 100-1000Hz range)
-      // Skip bin 0 (DC offset), bins 1-5 carry most speech energy
+      // Use lower frequency bins (speech is mostly 85Hz–1kHz)
+      // With fftSize=256 at 16kHz sample rate, each bin ≈ 62.5Hz
+      // Bins 1-6 ≈ 62–375Hz (fundamental speech range)
+      const speechBins = Math.min(40, dataArray.length);
       let sum = 0;
-      const startBin = 1;
-      const endBin = Math.min(6, dataArray.length);
-      for (let i = startBin; i < endBin; i++) sum += dataArray[i];
-      const rawVolume = sum / (endBin - startBin);
-
-      // Normalize to 0-1 range
-      const normalizedVolume = Math.min(rawVolume / 80, 1.0);
-
-      // Two-speed: instant open, rapid multiplicative close
-      if (normalizedVolume > smoothedVolume) {
-        smoothedVolume = normalizedVolume; // Instant open — no smoothing up
-      } else {
-        smoothedVolume *= 0.6; // Rapid decay — drops to near-zero in ~3-4 frames
+      for (let i = 1; i < speechBins; i++) {
+        const normalized = dataArray[i] / 255;
+        sum += normalized * normalized;
       }
+      return Math.sqrt(sum / (speechBins - 1)); // RMS, 0.0–1.0
+    }
 
-      // Hard cutoff for near-silence
-      if (smoothedVolume < 0.03) smoothedVolume = 0;
+    function animateMouth() {
+      if (!modelRef.current) return;
 
-      // Square root curve — makes quiet speech more visible
-      const mouthOpen = Math.sqrt(smoothedVolume);
+      const now = performance.now();
+      let smoothMouth: number;
+
+      if (isSpeaking && analyserNode) {
+        // Speaking — feed real amplitude through the engine
+        const rawAmplitude = getAmplitude();
+        smoothMouth = lipSyncEngine.current.update(rawAmplitude, now);
+      } else {
+        // Not speaking — feed zero so mouth closes via release curve (no snap)
+        smoothMouth = lipSyncEngine.current.update(0, now);
+      }
 
       try {
         const core = modelRef.current.internalModel?.coreModel;
         if (core) {
-          core.setParameterValueById("ParamMouthOpenY", mouthOpen);
-          core.setParameterValueById("ParamMouthForm", 0.15 + mouthOpen * 0.2);
+          core.setParameterValueById("ParamMouthOpenY", smoothMouth);
+          core.setParameterValueById("ParamMouthForm", 0.15 + smoothMouth * 0.2);
 
           // Subtle head movement while speaking — nods with speech rhythm
-          const speakNod = mouthOpen * 2; // 0 to 2 degrees based on mouth open
-          const speakSway = Math.sin(Date.now() / 400) * mouthOpen * 1.5; // Gentle side-to-side
+          const speakNod = smoothMouth * 2; // 0 to 2 degrees based on mouth open
+          const speakSway = Math.sin(Date.now() / 400) * smoothMouth * 1.5; // Gentle side-to-side
           core.setParameterValueById("ParamAngle8", speakNod);
           core.setParameterValueById("ParamAngle9", speakSway);
         }
       } catch {}
 
+      // Keep running even when not speaking — release curve needs frames to close smoothly
+      // Stop only when fully closed and not speaking
+      if (!isSpeaking && smoothMouth === 0) {
+        animFrameRef.current = 0;
+        return;
+      }
+
       animFrameRef.current = requestAnimationFrame(animateMouth);
     }
 
+    // Start the animation loop
     animateMouth();
 
-    return () => cancelAnimationFrame(animFrameRef.current);
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = 0;
+      }
+    };
   }, [isSpeaking, analyserNode]);
 
   // Use module-level emotion map

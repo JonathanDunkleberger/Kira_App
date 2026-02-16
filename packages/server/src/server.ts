@@ -130,6 +130,36 @@ Yes! Which game?
 
 You MUST start with the tag. The user cannot see it.`;
 
+// --- Session mood picker ---
+// Each session gets a subtle mood "flavor" that colors Kira's personality.
+// Only applied to returning users who have memories loaded.
+type SessionMood = "playful" | "chill" | "curious" | "hyper" | "soft";
+
+function pickSessionMood(): SessionMood {
+  const moods: { mood: SessionMood; weight: number }[] = [
+    { mood: "playful", weight: 30 },
+    { mood: "chill",   weight: 25 },
+    { mood: "curious", weight: 20 },
+    { mood: "hyper",   weight: 15 },
+    { mood: "soft",    weight: 10 },
+  ];
+  const total = moods.reduce((sum, m) => sum + m.weight, 0);
+  let roll = Math.random() * total;
+  for (const m of moods) {
+    roll -= m.weight;
+    if (roll <= 0) return m.mood;
+  }
+  return "playful"; // fallback
+}
+
+const MOOD_INSTRUCTIONS: Record<SessionMood, string> = {
+  playful: "You're in a playful, teasing mood this session. Lean into jokes, gentle ribbing, and witty banter. Still be warm, but bring the fun.",
+  chill: "You're in a chill, laid-back mood this session. Be relaxed and easygoing. Take things slow, don't push energy. Cozy vibes.",
+  curious: "You're in a curious, inquisitive mood this session. Ask more follow-up questions than usual. Dig deeper into what they share. Be genuinely fascinated.",
+  hyper: "You're in a hyper, high-energy mood this session. Be extra enthusiastic and excitable. Use more expressive language. Your energy is contagious.",
+  soft: "You're in a soft, gentle mood this session. Be extra warm and caring. Listen deeply. Your tone is quieter and more intimate.",
+};
+
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
@@ -696,6 +726,9 @@ Keep it natural and brief — 1 sentence.`
   // Tag success tracking
   let tagSuccessCount = 0;
   let tagFallbackCount = 0;
+
+  // --- Session mood (set once after memories load) ---
+  let sessionMood: SessionMood | null = null;
 
   // --- Emotion-based sentence pacing ---
   // Delay in milliseconds BETWEEN sentences (not before the first one)
@@ -1359,6 +1392,19 @@ Keep it natural and brief — 1 sentence.`
             }
           }
 
+          // --- Session mood: pick a mood flavor for returning users ---
+          const hasMemoriesLoaded = chatHistory.some(
+            (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU KNOW ABOUT THIS USER]")
+          );
+          if (hasMemoriesLoaded) {
+            sessionMood = pickSessionMood();
+            chatHistory.push({
+              role: "system",
+              content: `[SESSION MOOD — ${sessionMood.toUpperCase()}]\n${MOOD_INSTRUCTIONS[sessionMood]}\nThis is a subtle flavor for this session only. Don't announce your mood or mention it explicitly. Just let it color your tone naturally.`,
+            });
+            console.log(`[Mood] Session mood: ${sessionMood} for ${isGuest ? 'guest' : 'user'} ${userId}`);
+          }
+
           // --- USAGE: Check limits on connect ---
           if (!isGuest && userId) {
             try {
@@ -1693,7 +1739,12 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
                 break;
             }
 
-            console.log(`[Opener] User type: ${userType}, hasMemories: ${hasMemories}`);
+            // Inject mood hint into opener for returning users with memories
+            if (sessionMood && hasMemories) {
+              openerInstruction += `\n[Your current mood is ${sessionMood}. Let that subtly color your opener tone — don't mention the mood directly.]`;
+            }
+
+            console.log(`[Opener] User type: ${userType}, hasMemories: ${hasMemories}, mood: ${sessionMood ?? "none"}`);
 
             try {
               const openerStart = Date.now();

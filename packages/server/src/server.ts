@@ -55,172 +55,57 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-// --- SERVER-SIDE EMOTION DETECTION ---
-const EMOTION_TAG_STRIP = /\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy|frustrated|confused|surprised)\]\s*$/g;
+// --- INLINE LLM EMOTION TAGGING ---
+// The LLM prefixes every response with [EMO:emotion] (optionally |ACT:action|ACC:accessory).
+// We parse this tag from the first tokens of the stream, send expression data to the client,
+// then strip the tag before TTS/history/transcript.
 
-/** Strip any accidental LLM emotion tags from text before TTS. */
-function stripEmotionTags(text: string): string {
-  return text.replace(EMOTION_TAG_STRIP, "").trim();
-}
+const VALID_EMOTIONS = new Set([
+  "neutral", "happy", "excited", "love", "blush", "sad", "angry",
+  "playful", "thinking", "speechless", "eyeroll", "sleepy",
+  "frustrated", "confused", "surprised"
+]);
 
-/** Detect emotion from response text via keyword matching. */
-function detectEmotion(text: string): string {
-  const lower = text.toLowerCase();
+const VALID_ACTIONS = new Set([
+  "hold_phone", "hold_lollipop", "hold_pen", "hold_drawing_board",
+  "gaming", "hold_knife"
+]);
 
-  // Order matters — more specific patterns come before broader ones.
-  // Priority: blush → excited → love → frustrated → confused → surprised →
-  //           sleepy → angry → speechless → eyeroll → thinking → playful →
-  //           sad → happy → neutral
+const VALID_ACCESSORIES = new Set([
+  "glasses", "headphones_on", "cat_mic"
+]);
 
-  // Blush — shy, flustered, flattered
-  const blushPatterns = /\b(stop it|you('re| are) (making me|too (sweet|kind|nice))|oh gosh|oh my|flattering|that's (so )?(sweet|kind|nice|cute)|aww|you('re| are) gonna make me|don't say that|I('m| am) (blushing|flattered|touched))\b/i;
-  if (blushPatterns.test(text)) return "blush";
-
-  // Excited — strong positive energy, amazement
-  const excitedPatterns = /\b(oh my (god|gosh)|that's (so )?(cool|awesome|amazing|incredible|fantastic|epic|sick|fire|insane|wild)|no way!|yes!+|yay|heck yeah|let's go|I('m| am) (so |really )?(excited|pumped|hyped|stoked)|can't wait|this is (so |really )?(cool|great|awesome))\b/i;
-  if (excitedPatterns.test(text) ||
-      /!.*!/.test(text)) { // Multiple exclamation marks
-    return "excited";
-  }
-
-  // Love — warm affection, adoring
-  const lovePatterns = /\b(I (really )?(like|enjoy|love|adore|appreciate) (you|talking to you|our|this|hanging)|you('re| are) (amazing|wonderful|the best|awesome|incredible|special)|means (a lot|so much)|my heart|warm( and)? fuzzy|I('m| am) (glad|happy) (you('re| are)|we('re| are))|you make me)\b/i;
-  if (lovePatterns.test(text)) return "love";
-
-  // Frustrated — annoyed, exasperated
-  const frustratedPatterns = /\b(ugh|seriously|come on|annoying|frustrat|you('re| are) (impossible|ridiculous|unbelievable)|give me a break|I swear|don't even|smh|facepalm|oh my god|oh please|are you kidding|not this again|I can't with|you('re| are) (testing|pushing) (me|it|my))\b/i;
-  if (frustratedPatterns.test(text)) return "frustrated";
-
-  // Confused — lost, overwhelmed, brain broken
-  if (/\b(huh\??|what\?|I('m| am) (confused|lost|so confused)|doesn't make sense|wait what|brain (hurts|broke|is melting)|too much|overload|I don't (understand|get it|follow)|come again|you lost me|my head is spinning)\b/i.test(lower)) {
-    return "confused";
-  }
-
-  // Surprised — cute shock (distinct from speechless which is more deadpan)
-  const surprisedPatterns = /\b(oh!|oh wow|no way!|seriously\?!|wait really|I did not expect|plot twist|you('re| are) kidding|that's (wild|insane|crazy)|holy (cow|moly)|whoa|gasp|for real\??|I('m| am) (shocked|shook)|did not see that coming|what\?!)\b/i;
-  if (surprisedPatterns.test(text)) return "surprised";
-
-  // Sleepy — tired, late night, winding down
-  if (/\b(sleep|tired|exhausted|yawn|bedtime|rest|winding down|so late)\b/.test(lower)) {
-    return "sleepy";
-  }
-
-  // Angry — real frustration/annoyance
-  if (/\b(so (annoying|frustrating|unfair)|that's (wrong|messed up)|can't (believe|stand))\b/.test(lower)) {
-    return "angry";
-  }
-
-  // Speechless — shock, disbelief, deadpan
-  const speechlessPatterns = /\b(I\.\.+|\.\.\.+|um+|uh+|well\.\.\.|I (don't|have no) (even )?know what to say|no words|no comment|wow\.+|okay\.+|that's\.\.\.|I mean\.\.\.)\b/i;
-  if (speechlessPatterns.test(text)) return "speechless";
-
-  // Eyeroll — dismissive, sarcastic, "over it"
-  const eyerollPatterns = /\b(oh please|sure(,| ) ?(whatever|okay|right|fine)|yeah yeah|okay then|if you say so|right\.\.\.|I mean|oh come on|so dramatic|here we go|not this again|you('re| are) (something|too much)|I can't even|oh brother)\b/i;
-  if (eyerollPatterns.test(text)) return "eyeroll";
-
-  // Thinking — pondering, considering, philosophical
-  const thinkingPatterns = /\b(hmm+|let me think|that's (a good|an interesting) (question|point)|I wonder|good question|tough (question|one|call)|let me see|I('d| would) have to|on one hand|it depends|well actually|come to think of it|now that you mention)\b/i;
-  if (thinkingPatterns.test(text)) return "thinking";
-
-  // Playful — teasing, joking, banter
-  if (/\b(haha|hehe|lol|just (kidding|messing)|tease|cheeky|bet you|oh come on)\b/.test(lower) ||
-      /\b(pfft|you wish)\b/.test(lower)) {
-    return "playful";
-  }
-
-  // Sad — empathy, sadness, emotional pain
-  if (/\b(so sad|that's (tough|rough|hard)|i'm sorry|breaks my heart|that sucks|feel for you)\b/.test(lower) ||
-      (/\b(aw+|oh no)\b/.test(lower) && /\b(sorry|sad|tough|hard)\b/.test(lower))) {
-    return "sad";
-  }
-
-  // Happy — general positive vibes (broad catch — better than neutral)
-  if (/\b(great|awesome|nice|sounds (like a plan|fun|good|perfect)|i'd love|totally|absolutely|let's do)\b/.test(lower) ||
-      /!\s*$/.test(text.trim())) { // Ends with exclamation
-    return "happy";
-  }
-
-  return "neutral";
-}
-
-// --- Context-Aware Actions & Accessories ---
-// detectContext runs on BOTH Kira's response text AND the user's input to detect
-// action/accessory triggers. Unlike emotions (fire every message), context has
-// cooldowns to prevent spam.
-interface ContextResult {
+interface ParsedExpression {
+  emotion: string;
   action?: string;
   accessory?: string;
-  removeAccessory?: string;
 }
 
-function detectContext(
-  kiraText: string,
-  userText: string,
-  cooldowns: { lastActionTime: number; lastAccessoryTime: number }
-): ContextResult {
-  const now = Date.now();
-  const result: ContextResult = {};
-  const ACTION_COOLDOWN = 45_000;      // 45s between actions
-  const ACCESSORY_COOLDOWN = 120_000;  // 2min between accessory changes
+/** Parse an [EMO:...] tag string into structured expression data. */
+function parseExpressionTag(raw: string): ParsedExpression | null {
+  const match = raw.match(/\[EMO:(\w+)(?:\|ACT:(\w+))?(?:\|ACC:(\w+))?\]/);
+  if (!match) return null;
 
-  // Combine both texts — the best signal for actions is often the user's message
-  // (e.g. user says "play Zelda" but Kira responds "That sounds like a blast!")
-  const combinedText = `${userText} ${kiraText}`;
+  const emotion = match[1];
+  if (!VALID_EMOTIONS.has(emotion)) return null;
 
-  // --- ACTIONS (hold items — temporary, 8-12s) ---
-  if (now - cooldowns.lastActionTime > ACTION_COOLDOWN) {
-    // Gaming — broad game detection (user mentioning games is the main signal)
-    if (/\b(game|gaming|play(ing|ed)?|gamer|controller|console|PC gaming|steam|xbox|playstation|nintendo|switch|fortnite|minecraft|valorant|league|smash|mario|zelda|pokemon|elden ring|dark souls|call of duty|COD|apex|overwatch|roblox|among us|animal crossing|RPG|FPS|MMO|raid|boss fight|level up|GG|co-?op|multiplayer|singleplayer|speedrun|achievement|quest|dungeon|respawn|checkpoint)\b/i.test(combinedText)) {
-      result.action = "gaming";
-      cooldowns.lastActionTime = now;
-    }
-    // Phone — social media, texting, calling, apps
-    else if (/\b(phone|text(ing|ed)?|call(ing|ed)?|instagram|tiktok|twitter|snapchat|social media|selfie|DM|message|app|scroll(ing)?|notification|youtube|reddit|discord|tweet|post(ing|ed)?|viral|follow(ing|ers)?|story|reel|stream(ing)?)\b/i.test(combinedText)) {
-      result.action = "hold_phone";
-      cooldowns.lastActionTime = now;
-    }
-    // Drawing board — creative, art, design
-    else if (/\b(draw(ing|n)?|sketch(ing|ed)?|art(ist|istic)?|paint(ing|ed)?|design(ing|ed)?|creative|illustrat(e|ion|ing)|doodle|canvas|masterpiece|color(ing)?|portrait|watercolor|digital art|commission|anime art|manga|character design)\b/i.test(combinedText)) {
-      result.action = "hold_drawing_board";
-      cooldowns.lastActionTime = now;
-    }
-    // Pen — writing, notes, journaling, studying
-    else if (/\b(writ(e|ing|ten)|note(s|book)?|journal(ing)?|list|plan(ning|ner)?|schedule|organize|brainstorm(ing)?|idea|draft(ing)?|essay|homework|study(ing)?|research(ing)?|paper|assignment|thesis|report|blog|poem|story|chapter)\b/i.test(combinedText)) {
-      result.action = "hold_pen";
-      cooldowns.lastActionTime = now;
-    }
-    // Lollipop — snacks, food, chill vibes
-    else if (/\b(snack(s|ing)?|candy|treat|lollipop|sweet(s)?|sugar|yummy|delicious|hungry|craving|dessert|chocolate|bored|chill(ing)?|relax(ing)?|vib(e|ing|es)|ice cream|cookie|cake|pizza|food|eat(ing)?|meal|lunch|dinner|breakfast|cooking|recipe|bake|baking)\b/i.test(combinedText)) {
-      result.action = "hold_lollipop";
-      cooldowns.lastActionTime = now;
-    }
-    // Knife — mock threat, playful menace (ONLY Kira's text — not user input)
-    else if (/\b(I('ll| will) (end|destroy|fight) you|don't (test|try) me|say that again|I dare you|watch your(self)?|you('re| are) (dead|done|finished)|square up|catch these hands)\b/i.test(kiraText)) {
-      result.action = "hold_knife";
-      cooldowns.lastActionTime = now;
-    }
-  }
+  const action = match[2] && VALID_ACTIONS.has(match[2]) ? match[2] : undefined;
+  const accessory = match[3] && VALID_ACCESSORIES.has(match[3]) ? match[3] : undefined;
 
-  // --- ACCESSORIES (worn items — persist until removed) ---
-  if (now - cooldowns.lastAccessoryTime > ACCESSORY_COOLDOWN) {
-    // Glasses — analytical, explaining, factual
-    if (/\b(actually|technically|let me explain|the (thing|key|important part) (is|about)|analy(sis|ze|tical)|research|data|statistic|according to|evidence|hypothesis|theory|in my (expert )?opinion|breaking (it|this) down|fun fact|did you know|here's the thing|interesting(ly)?|basically|essentially|the science|the reason|because)\b/i.test(combinedText)) {
-      result.accessory = "glasses";
-      cooldowns.lastAccessoryTime = now;
-    }
-    // Headphones — music, audio, listening
-    else if (/\b(music|song(s)?|playlist|listen(ing|ed)?|beat|melody|album|artist|band|concert|spotify|headphone|tune|lyric|rhythm|DJ|genre|pop|rock|rap|hip.?hop|jazz|lo.?fi|podcast|audio|radio|soundtrack|sing(ing)?|karaoke|favorite (song|track|album|artist|band))\b/i.test(combinedText)) {
-      result.accessory = "headphones_on";
-      cooldowns.lastAccessoryTime = now;
-    }
-    // Cat mic — storytelling, performing, dramatic moments
-    else if (/\b(let me tell you|story time|picture this|imagine|once upon|gather around|breaking news|announcement|attention|spotlight|performance|dramatic|ladies and gentlemen|so basically what happened|okay so|get this|you won't believe)\b/i.test(combinedText)) {
-      result.accessory = "cat_mic";
-      cooldowns.lastAccessoryTime = now;
-    }
-  }
+  return { emotion, action, accessory };
+}
 
-  return result;
+/** Strip an [EMO:...] tag from the beginning of a response string. Returns clean text. */
+function stripExpressionTag(text: string): string {
+  return text.replace(/^\[EMO:\w+(?:\|\w+:\w+)*\]\s*\n?/, "").trim();
+}
+
+/** Strip any stray bracketed emotion words from response text (safety net). */
+function stripEmotionTags(text: string): string {
+  return text
+    .replace(/\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy|frustrated|confused|surprised)\]\s*$/g, "")
+    .replace(/^\[EMO:\w+(?:\|\w+:\w+)*\]\s*\n?/, "")
+    .trim();
 }
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
@@ -439,7 +324,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let currentInterimTranscript = "";
   let transcriptClearedAt = 0;
   let lastProcessedTranscript = "";
-  let lastUserTranscript = ""; // Last user input — used by detectContext to scan user's words too
   let latestImages: string[] | null = null;
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
@@ -600,9 +484,9 @@ Keep it natural and brief — 1 sentence.`
         }
       }
 
-      // Detect emotion and strip any accidental tags before TTS
+      // Parse expression tag and strip before TTS
+      reaction = handleNonStreamingTag(reaction, "vision reaction");
       reaction = stripEmotionTags(reaction);
-      sendExpressionWithContext(reaction, "vision reaction");
 
       console.log(`[Vision Reaction] Kira says: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
@@ -729,24 +613,76 @@ Keep it natural and brief — 1 sentence.`
     { role: "system", content: KIRA_SYSTEM_PROMPT },
   ];
 
-  // --- Context detection cooldowns (per-connection) ---
-  const contextCooldowns = { lastActionTime: 0, lastAccessoryTime: 0 };
+  // --- Expression tag cooldowns (per-connection) ---
+  // LLM decides actions/accessories, but we filter through cooldowns to prevent spam.
+  let lastActionTime = 0;
+  let lastAccessoryTime = 0;
+  const ACTION_COOLDOWN = 30_000;      // 30s between actions
+  const ACCESSORY_COOLDOWN = 90_000;   // 90s between accessory changes
 
-  // Helper: detect emotion + context, send expression message with optional action/accessory
-  function sendExpressionWithContext(responseText: string, label: string, userText: string = lastUserTranscript) {
-    const emotion = detectEmotion(responseText);
-    const context = detectContext(responseText, userText, contextCooldowns);
-    const msg: any = { type: "expression", expression: emotion };
-    if (context.action) msg.action = context.action;
-    if (context.accessory) msg.accessory = context.accessory;
-    if (context.removeAccessory) msg.removeAccessory = context.removeAccessory;
+  // Tag success tracking
+  let tagSuccessCount = 0;
+  let tagFallbackCount = 0;
+
+  /**
+   * Send expression data to client from a parsed tag, applying cooldowns.
+   * Used by both streaming (tag parsed from stream) and non-streaming (tag parsed from complete text) paths.
+   */
+  function sendExpressionFromTag(parsed: ParsedExpression, label: string) {
+    const msg: any = { type: "expression", expression: parsed.emotion };
+    const now = Date.now();
+
+    if (parsed.action) {
+      if (now - lastActionTime >= ACTION_COOLDOWN) {
+        msg.action = parsed.action;
+        lastActionTime = now;
+        console.log(`[Context] Action: ${parsed.action}`);
+      } else {
+        console.log(`[Context] Action ${parsed.action} suppressed (cooldown: ${((ACTION_COOLDOWN - (now - lastActionTime)) / 1000).toFixed(0)}s remaining)`);
+      }
+    }
+
+    if (parsed.accessory) {
+      if (now - lastAccessoryTime >= ACCESSORY_COOLDOWN) {
+        msg.accessory = parsed.accessory;
+        lastAccessoryTime = now;
+        console.log(`[Context] Accessory: ${parsed.accessory}`);
+      } else {
+        console.log(`[Context] Accessory ${parsed.accessory} suppressed (cooldown)`);
+      }
+    }
+
     ws.send(JSON.stringify(msg));
     const extras = [
-      context.action && `action: ${context.action}`,
-      context.accessory && `accessory: ${context.accessory}`,
+      msg.action && `action: ${msg.action}`,
+      msg.accessory && `accessory: ${msg.accessory}`,
     ].filter(Boolean).join(", ");
-    console.log(`[Expression] ${emotion}${extras ? ` (${extras})` : ""} (${label})`);
-    return emotion;
+    console.log(`[Expression] ${parsed.emotion}${extras ? ` (${extras})` : ""} (${label})`);
+  }
+
+  /**
+   * Parse expression tag from a complete (non-streaming) LLM response.
+   * Sends expression to client, returns clean text with tag stripped.
+   */
+  function handleNonStreamingTag(text: string, label: string): string {
+    const tagMatch = text.match(/^\[EMO:(\w+)(?:\|\w+:\w+)*\]/);
+    if (tagMatch) {
+      const parsed = parseExpressionTag(tagMatch[0]);
+      if (parsed) {
+        tagSuccessCount++;
+        sendExpressionFromTag(parsed, label);
+      } else {
+        tagFallbackCount++;
+        console.warn(`[Expression] Malformed tag: "${tagMatch[0]}" — defaulting to neutral (${label})`);
+        ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
+      }
+      return stripExpressionTag(text);
+    } else {
+      tagFallbackCount++;
+      console.warn(`[Expression] No tag found in response — defaulting to neutral (${label}). Rate: ${tagSuccessCount}/${tagSuccessCount + tagFallbackCount}`);
+      ws.send(JSON.stringify({ type: "expression", expression: "neutral" }));
+      return text;
+    }
   }
 
   // --- L1: In-Conversation Memory ---
@@ -808,17 +744,18 @@ Keep it natural and brief — 1 sentence.`
         if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
 
         // If model returned silence marker or empty, don't speak
+        const cleanedSilenceCheck = stripExpressionTag(responseText || "");
         if (!responseText || 
             responseText.toLowerCase().includes("silence") || 
-            responseText.startsWith("[") ||
-            responseText.length < 5) {
+            cleanedSilenceCheck.startsWith("[") ||
+            cleanedSilenceCheck.length < 5) {
           console.log("[Silence] Kira has nothing to say. Staying quiet.");
           return;
         }
 
-        // Detect emotion and strip any accidental tags before TTS
+        // Parse expression tag and strip before TTS
+        responseText = handleNonStreamingTag(responseText, "silence initiated");
         responseText = stripEmotionTags(responseText);
-        sendExpressionWithContext(responseText, "silence initiated");
 
         // She has something to say — run the TTS pipeline
         chatHistory.push({ role: "assistant", content: responseText });
@@ -898,9 +835,9 @@ Keep it natural and brief — 1 sentence.`
         return;
       }
 
-      // Detect emotion and strip any accidental tags before TTS
+      // Parse expression tag and strip before TTS
+      llmResponse = handleNonStreamingTag(llmResponse, "runKira");
       llmResponse = stripEmotionTags(llmResponse);
-      sendExpressionWithContext(llmResponse, "runKira");
 
       chatHistory.push({ role: "assistant", content: llmResponse });
       advanceTimePhase(llmResponse);
@@ -1004,9 +941,9 @@ Keep it natural and brief — 1 sentence.`
 
       const goodbyeText = response.choices[0]?.message?.content?.trim() || "";
       if (goodbyeText && goodbyeText.length > 2 && ws.readyState === ws.OPEN && !clientDisconnected) {
-        // Detect emotion and strip any accidental tags before TTS
-        const finalGoodbye = stripEmotionTags(goodbyeText);
-        sendExpressionWithContext(finalGoodbye, "goodbye");
+        // Parse expression tag and strip before TTS
+        let finalGoodbye = handleNonStreamingTag(goodbyeText, "goodbye");
+        finalGoodbye = stripEmotionTags(finalGoodbye);
 
         console.log(`[Goodbye] Kira says: "${finalGoodbye}"`);
         chatHistory.push({ role: "assistant", content: finalGoodbye });
@@ -1537,9 +1474,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               console.log(`[Latency] Opener LLM: ${Date.now() - openerStart}ms`);
               if (!openerText || openerText.length < 3 || clientDisconnected) return;
 
-              // Detect emotion and strip any accidental tags before TTS
+              // Parse expression tag and strip before TTS
+              openerText = handleNonStreamingTag(openerText, "opener");
               openerText = stripEmotionTags(openerText);
-              sendExpressionWithContext(openerText, "opener");
 
               // Add to chat history (NOT the instruction — just the greeting)
               chatHistory.push({ role: "assistant", content: openerText });
@@ -1680,7 +1617,6 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             return;
           }
           lastProcessedTranscript = userMessage;
-          lastUserTranscript = userMessage; // Store for detectContext dual-input
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
           console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
@@ -1799,8 +1735,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             let ttsStartedAt = 0;
             let firstTokenLogged = false;
 
-            // --- Emotion detection on first sentence ---
-            let emotionDetected = false;
+            // --- Inline expression tag parsing (Phase 1 buffering) ---
+            let tagParsed = false;
+            let tagBuffer = "";
 
             // --- Tool call accumulation ---
             let hasToolCalls = false;
@@ -1868,17 +1805,44 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               sentenceBuffer += content;
               fullResponse += content;
 
+              // --- Phase 1: Buffer initial tokens to parse [EMO:...] tag ---
+              if (!tagParsed) {
+                tagBuffer += content;
+                const closeBracket = tagBuffer.indexOf("]");
+                if (closeBracket !== -1) {
+                  // Found the closing bracket — parse the tag
+                  tagParsed = true;
+                  const rawTag = tagBuffer.slice(0, closeBracket + 1);
+                  const remainder = tagBuffer.slice(closeBracket + 1);
+                  const parsed = parseExpressionTag(rawTag);
+                  if (parsed) {
+                    sendExpressionFromTag(parsed, "stream tag");
+                    tagSuccessCount++;
+                    console.log(`[ExprTag] Parsed from stream: ${rawTag}`);
+                  } else {
+                    tagFallbackCount++;
+                    console.log(`[ExprTag] Failed to parse from stream: "${rawTag}", defaulting neutral`);
+                    sendExpressionFromTag({ emotion: "neutral" }, "stream fallback");
+                  }
+                  // Strip the tag from sentenceBuffer (it was already appended)
+                  sentenceBuffer = sentenceBuffer.replace(rawTag, "").trimStart();
+                } else if (tagBuffer.length > 200) {
+                  // Safety: no tag found after 200 chars — give up and treat as normal text
+                  tagParsed = true;
+                  tagFallbackCount++;
+                  console.log(`[ExprTag] No tag found after ${tagBuffer.length} chars, defaulting neutral`);
+                  sendExpressionFromTag({ emotion: "neutral" }, "stream no-tag fallback");
+                } else {
+                  continue; // Still buffering tag — don't process sentences yet
+                }
+              }
+
               // Flush complete sentences to TTS immediately
               const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
               if (match) {
-                const sentence = match[1].trim();
+                const sentence = stripEmotionTags(match[1].trim());
                 sentenceBuffer = sentenceBuffer.slice(match[0].length);
                 if (sentence.length > 0) {
-                  // Detect emotion from first sentence — sets expression while she starts talking
-                  if (!emotionDetected) {
-                    emotionDetected = true;
-                    sendExpressionWithContext(sentence, "first sentence");
-                  }
                   console.log(`[TTS] Streaming sentence: "${sentence}"`);
                   await speakSentence(sentence);
                 }
@@ -1943,6 +1907,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   presence_penalty: 0.2,
                 });
 
+                // Reset tag parsing for the follow-up stream (new LLM call = new tag)
+                let followUpTagParsed = false;
+                let followUpTagBuffer = "";
+
                 for await (const chunk of followUpStream) {
                   const content = chunk.choices[0]?.delta?.content || "";
                   if (!content) continue;
@@ -1952,15 +1920,38 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   }
                   sentenceBuffer += content;
                   fullResponse += content;
+
+                  // --- Phase 1: Buffer initial tokens to parse [EMO:...] tag ---
+                  if (!followUpTagParsed) {
+                    followUpTagBuffer += content;
+                    const closeBracket = followUpTagBuffer.indexOf("]");
+                    if (closeBracket !== -1) {
+                      followUpTagParsed = true;
+                      const rawTag = followUpTagBuffer.slice(0, closeBracket + 1);
+                      const parsed = parseExpressionTag(rawTag);
+                      if (parsed) {
+                        sendExpressionFromTag(parsed, "tool follow-up tag");
+                        tagSuccessCount++;
+                        console.log(`[ExprTag] Parsed from tool follow-up: ${rawTag}`);
+                      } else {
+                        tagFallbackCount++;
+                        sendExpressionFromTag({ emotion: "neutral" }, "tool follow-up fallback");
+                      }
+                      sentenceBuffer = sentenceBuffer.replace(rawTag, "").trimStart();
+                    } else if (followUpTagBuffer.length > 200) {
+                      followUpTagParsed = true;
+                      tagFallbackCount++;
+                      sendExpressionFromTag({ emotion: "neutral" }, "tool follow-up no-tag fallback");
+                    } else {
+                      continue;
+                    }
+                  }
+
                   const match = sentenceBuffer.match(/^(.*?[.!?…]+\s+(?=[A-Z"]))/s);
                   if (match) {
-                    const sentence = match[1].trim();
+                    const sentence = stripEmotionTags(match[1].trim());
                     sentenceBuffer = sentenceBuffer.slice(match[0].length);
                     if (sentence.length > 0) {
-                      if (!emotionDetected) {
-                        emotionDetected = true;
-                        sendExpressionWithContext(sentence, "first sentence, tool follow-up");
-                      }
                       console.log(`[TTS] Streaming sentence: "${sentence}"`);
                       await speakSentence(sentence);
                     }
@@ -1990,11 +1981,18 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
             const llmDoneAt = Date.now();
             console.log(`[Latency] LLM total: ${llmDoneAt - llmStartAt}ms (${fullResponse.length} chars)`);
-            llmResponse = stripEmotionTags(fullResponse);
+            llmResponse = stripEmotionTags(stripExpressionTag(fullResponse));
 
-            // If emotion wasn't detected from a sentence (very short response), detect now
-            if (!emotionDetected && llmResponse.trim().length > 0) {
-              sendExpressionWithContext(llmResponse, "full response fallback");
+            // If tag wasn't parsed from stream (very short response), parse from full text now
+            if (!tagParsed && llmResponse.trim().length > 0) {
+              const fallbackParsed = parseExpressionTag(fullResponse);
+              if (fallbackParsed) {
+                sendExpressionFromTag(fallbackParsed, "full response fallback");
+                tagSuccessCount++;
+              } else {
+                sendExpressionFromTag({ emotion: "neutral" }, "full response no-tag fallback");
+                tagFallbackCount++;
+              }
             }
 
             if (llmResponse.trim().length > 0) {
@@ -2155,9 +2153,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
 
                 console.log(`[Scene] Kira reacts: "${reactionText}"`);
 
-                // Detect emotion and strip any accidental tags before TTS
+                // Parse expression tag and strip before TTS
+                reactionText = handleNonStreamingTag(reactionText, "scene reaction");
                 reactionText = stripEmotionTags(reactionText);
-                sendExpressionWithContext(reactionText, "scene reaction");
 
                 chatHistory.push({ role: "assistant", content: reactionText });
                 lastKiraSpokeTimestamp = Date.now();
@@ -2218,7 +2216,6 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
           const userMessage = typeof controlMessage.text === "string" ? controlMessage.text.trim() : "";
           if (!userMessage || userMessage.length === 0) return;
           if (userMessage.length > 2000) return; // Prevent abuse
-          lastUserTranscript = userMessage; // Store for detectContext dual-input
 
           // LLM rate limit check
           llmCallCount++;
@@ -2322,9 +2319,9 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               txtLlmResponse = txtInitialMessage?.content || "";
             }
 
-            // Detect emotion and strip any accidental tags
+            // Parse expression tag and strip before sending
+            txtLlmResponse = handleNonStreamingTag(txtLlmResponse, "text chat");
             txtLlmResponse = stripEmotionTags(txtLlmResponse);
-            sendExpressionWithContext(txtLlmResponse, "text chat");
 
             chatHistory.push({ role: "assistant", content: txtLlmResponse });
             advanceTimePhase(txtLlmResponse);

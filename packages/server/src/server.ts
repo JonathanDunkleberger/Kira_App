@@ -81,32 +81,54 @@ interface ParsedExpression {
   accessory?: string;
 }
 
-/** Parse an [EMO:...] tag string into structured expression data. */
+/** Parse an [EMO:...] tag string into structured expression data.
+ *  Lenient: case-insensitive, flexible whitespace, ignores unknown fields. */
 function parseExpressionTag(raw: string): ParsedExpression | null {
-  const match = raw.match(/\[EMO:(\w+)(?:\|ACT:(\w+))?(?:\|ACC:(\w+))?\]/);
+  const match = raw.match(/\[\s*EMO\s*:\s*(\w+)(?:\s*\|\s*ACT\s*:\s*(\w+))?(?:\s*\|\s*ACC\s*:\s*(\w+))?[^\]]*\]/i);
   if (!match) return null;
 
-  const emotion = match[1];
+  const emotion = match[1].toLowerCase();
   if (!VALID_EMOTIONS.has(emotion)) return null;
 
-  const action = match[2] && VALID_ACTIONS.has(match[2]) ? match[2] : undefined;
-  const accessory = match[3] && VALID_ACCESSORIES.has(match[3]) ? match[3] : undefined;
+  const action = match[2] ? (VALID_ACTIONS.has(match[2].toLowerCase()) ? match[2].toLowerCase() : undefined) : undefined;
+  const accessory = match[3] ? (VALID_ACCESSORIES.has(match[3].toLowerCase()) ? match[3].toLowerCase() : undefined) : undefined;
 
   return { emotion, action, accessory };
 }
 
-/** Strip an [EMO:...] tag from the beginning of a response string. Returns clean text. */
+/** Strip an [EMO:...] tag from the beginning of a response string. Returns clean text.
+ *  Lenient: case-insensitive, flexible whitespace, handles unknown fields. */
 function stripExpressionTag(text: string): string {
-  return text.replace(/^\[EMO:\w+(?:\|\w+:\w+)*\]\s*\n?/, "").trim();
+  return text.replace(/^\[\s*EMO\s*:\s*\w+(?:\s*\|[^\]]*)*\]\s*\n?/i, "").trim();
 }
 
 /** Strip any stray bracketed emotion words from response text (safety net). */
 function stripEmotionTags(text: string): string {
   return text
-    .replace(/\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy|frustrated|confused|surprised)\]\s*$/g, "")
-    .replace(/^\[EMO:\w+(?:\|\w+:\w+)*\]\s*\n?/, "")
+    .replace(/\s*\[(neutral|happy|excited|love|blush|sad|angry|playful|thinking|speechless|eyeroll|sleepy|frustrated|confused|surprised)\]\s*$/gi, "")
+    .replace(/^\[\s*EMO\s*:\s*\w+(?:\s*\|[^\]]*)*\]\s*\n?/i, "")
     .trim();
 }
+
+// --- Expression tag reminder (injected as last system message before user message) ---
+// This is sent as a SEPARATE system message right at the end of the messages array,
+// close to the model's attention window, to maximize tag compliance with smaller models.
+const EXPRESSION_TAG_REMINDER = `IMPORTANT: Your VERY FIRST line must be an expression tag. Do NOT skip this.
+Format: [EMO:<emotion>] or [EMO:<emotion>|ACT:<action>] or [EMO:<emotion>|ACC:<accessory>]
+
+Emotions: neutral, happy, excited, love, blush, sad, angry, playful, thinking, speechless, eyeroll, sleepy, frustrated, confused, surprised
+Actions (optional, only when relevant): hold_phone, hold_lollipop, hold_pen, hold_drawing_board, gaming, hold_knife
+Accessories (optional, only when shifting mode): glasses, headphones_on, cat_mic
+
+Example — if user says something sad:
+[EMO:sad]
+Oh no, that sounds rough...
+
+Example — if user asks about games:
+[EMO:excited|ACT:gaming]
+Yes! Which game?
+
+You MUST start with the tag. The user cannot see it.`;
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -439,6 +461,7 @@ Keep it natural and brief — 1 sentence.`
         content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are seeing the user's world right now through shared images (screen share or camera).\nLook at the current frames and react like a friend sitting next to them.\n\nYou MUST react to something. Find ANYTHING worth commenting on:\n- The art style, animation quality, lighting, colors\n- A character's expression or body language\n- The setting or background details (like "why does he have so many books?")\n- The mood or atmosphere of the scene\n- A plot moment ("wait is she about to...?")\n- Subtitles or dialogue you can read ("that line hit different")\n- Something funny, weird, beautiful, or emotional\n- If camera: the user's surroundings, something they're showing you, their vibe\n\nGood examples:\n- "the lighting in this scene is so warm"\n- "why does he have so many books though"\n- "her expression right there... she knows"\n- "this soundtrack is doing all the heavy lifting"\n- "the detail in this background is insane"\n- "wait what did he just say??"\n- "ok this is getting intense"\n- "I love how they animated the rain here"\n- "oh is that your cat??"\n- "that looks so cozy"\n- "where are you right now? it looks nice"\n\nRules:\n- 1-2 short sentences MAX (under 15 words total)\n- Be specific about what you see — reference actual visual details\n- Sound natural, like thinking out loud\n- Do NOT ask the user questions\n- Do NOT narrate the plot ("and then he walks to...")\n- Only respond with [SILENT] if the screen is literally a black/loading screen or a static menu with nothing happening. If there is ANY visual content, react to it.\nCRITICAL: Your response must be under 15 words. One short sentence only. No questions.\n` + firstReactionExtra,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
+      { role: "system", content: EXPRESSION_TAG_REMINDER },
       { role: "user", content: reactionImageContent },
     ];
 
@@ -446,7 +469,7 @@ Keep it natural and brief — 1 sentence.`
       const reactionResponse = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: reactionMessages,
-        max_tokens: 40,
+        max_tokens: 60,
         temperature: 0.95,
       });
 
@@ -753,6 +776,11 @@ Keep it natural and brief — 1 sentence.`
           : `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.]`
       };
 
+      const tagReminder: OpenAI.Chat.ChatCompletionMessageParam = {
+        role: "system",
+        content: EXPRESSION_TAG_REMINDER,
+      };
+      chatHistory.push(tagReminder);
       chatHistory.push(nudge);
 
       try {
@@ -768,9 +796,11 @@ Keep it natural and brief — 1 sentence.`
 
         let responseText = checkResponse.choices[0]?.message?.content?.trim() || "";
 
-        // Remove the nudge from history regardless of outcome
+        // Remove the nudge + tag reminder from history regardless of outcome
         const nudgeIdx = chatHistory.indexOf(nudge);
         if (nudgeIdx >= 0) chatHistory.splice(nudgeIdx, 1);
+        const reminderIdx = chatHistory.indexOf(tagReminder);
+        if (reminderIdx >= 0) chatHistory.splice(reminderIdx, 1);
 
         // If model returned silence marker or empty, don't speak
         const cleanedSilenceCheck = stripExpressionTag(responseText || "");
@@ -933,14 +963,17 @@ Keep it natural and brief — 1 sentence.`
   function getMessagesWithTimeContext(): OpenAI.Chat.ChatCompletionMessageParam[] {
     const timeCtx = getTimeContext();
     const visionCtx = visionActive ? VISION_CONTEXT_PROMPT : '';
-    if (!timeCtx && !visionCtx) return chatHistory;
     // Clone and inject time + vision context into the system prompt
-    return chatHistory.map((msg, i) => {
+    const messages = chatHistory.map((msg, i) => {
       if (i === 0 && msg.role === 'system' && typeof msg.content === 'string') {
         return { ...msg, content: msg.content + visionCtx + timeCtx };
       }
       return msg;
     });
+    // Inject expression tag reminder as the last system message (right before user's message)
+    // This keeps it at the edge of the model's attention window for maximum compliance.
+    messages.push({ role: "system", content: EXPRESSION_TAG_REMINDER });
+    return messages;
   }
 
   /** Advance timeWarningPhase after a response is sent during a warning phase. */
@@ -974,13 +1007,14 @@ Keep it natural and brief — 1 sentence.`
       const goodbyeMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
         { role: "system", content: KIRA_SYSTEM_PROMPT + `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: You must say goodbye RIGHT NOW. Time is up. Keep it to ONE short sentence. Be warm but fast. Reference something from the conversation. Example: "Hey, our time's up for today - but let's pick this up tomorrow, okay?"]` },
         ...chatHistory.filter(m => m.role !== "system").slice(-4),
+        { role: "system", content: EXPRESSION_TAG_REMINDER },
         { role: "user", content: "[Time is up - say goodbye immediately]" },
       ];
 
       const response = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: goodbyeMessages,
-        max_tokens: 40,
+        max_tokens: 60,
         temperature: 0.9,
       });
 
@@ -1510,6 +1544,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               const openerMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
                 ...chatHistory,
                 { role: "system", content: openerInstruction },
+                { role: "system", content: EXPRESSION_TAG_REMINDER },
                 { role: "user", content: "[User just connected — say hi]" },
               ];
 
@@ -1799,6 +1834,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
             let tagBuffer = "";
             let parsedEmotion = "neutral"; // will be set from [EMO:...] tag
             let streamSentenceIndex = 0; // for inter-sentence pacing
+            let firstCharsLogged = false; // debug: log first chars of LLM response
 
             // --- Tool call accumulation ---
             let hasToolCalls = false;
@@ -1879,6 +1915,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
               // --- Phase 1: Buffer initial tokens to parse [EMO:...] tag ---
               if (!tagParsed) {
                 tagBuffer += content;
+                if (!firstCharsLogged && tagBuffer.length >= 30) {
+                  firstCharsLogged = true;
+                  console.log(`[ExprTag] First 60 chars of LLM response: "${tagBuffer.slice(0, 60)}"`);
+                }
                 const closeBracket = tagBuffer.indexOf("]");
                 if (closeBracket !== -1) {
                   // Found the closing bracket — parse the tag
@@ -1898,8 +1938,8 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   }
                   // Strip the tag from sentenceBuffer (it was already appended)
                   sentenceBuffer = sentenceBuffer.replace(rawTag, "").trimStart();
-                } else if (tagBuffer.length > 200) {
-                  // Safety: no tag found after 200 chars — give up and treat as normal text
+                } else if (tagBuffer.length > 50) {
+                  // Safety: no tag found after 50 chars — give up and treat as normal text
                   tagParsed = true;
                   tagFallbackCount++;
                   console.log(`[ExprTag] No tag found after ${tagBuffer.length} chars, defaulting neutral`);
@@ -1982,6 +2022,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 // Reset tag parsing for the follow-up stream (new LLM call = new tag)
                 let followUpTagParsed = false;
                 let followUpTagBuffer = "";
+                let followUpFirstCharsLogged = false;
                 // Reset sentence index for follow-up pacing
                 streamSentenceIndex = 0;
 
@@ -1998,6 +2039,10 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                   // --- Phase 1: Buffer initial tokens to parse [EMO:...] tag ---
                   if (!followUpTagParsed) {
                     followUpTagBuffer += content;
+                    if (!followUpFirstCharsLogged && followUpTagBuffer.length >= 30) {
+                      followUpFirstCharsLogged = true;
+                      console.log(`[ExprTag] First 60 chars of follow-up LLM response: "${followUpTagBuffer.slice(0, 60)}"`);
+                    }
                     const closeBracket = followUpTagBuffer.indexOf("]");
                     if (closeBracket !== -1) {
                       followUpTagParsed = true;
@@ -2013,7 +2058,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                         sendExpressionFromTag({ emotion: "neutral" }, "tool follow-up fallback");
                       }
                       sentenceBuffer = sentenceBuffer.replace(rawTag, "").trimStart();
-                    } else if (followUpTagBuffer.length > 200) {
+                    } else if (followUpTagBuffer.length > 50) {
                       followUpTagParsed = true;
                       tagFallbackCount++;
                       sendExpressionFromTag({ emotion: "neutral" }, "tool follow-up no-tag fallback");
@@ -2193,6 +2238,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 content: `${KIRA_SYSTEM_PROMPT}\n\nYou're watching ${viewingContext} together with the user. You just noticed something change on screen. Give a brief, natural reaction — like a friend sitting next to someone watching. This should be SHORT: a gasp, a laugh, a quick comment, 1 sentence MAX. Examples of good reactions: "Oh no...", "Wait, is that—", "Ha! I love this part.", "Whoa.", "Okay that was intense." Don't narrate or describe what you see. Just react emotionally. If the moment isn't noteworthy, respond with exactly "[SKIP]" and nothing else.`,
               },
               ...chatHistory.filter(m => m.role !== "system").slice(-4),
+              { role: "system", content: EXPRESSION_TAG_REMINDER },
               { role: "user", content: imageContent },
             ];
 
@@ -2205,7 +2251,7 @@ Bad: Mentioning the same movie/anime/fact every single time.]`;
                 const reaction = await openai.chat.completions.create({
                   model: OPENAI_MODEL,
                   messages: sceneMessages,
-                  max_tokens: 30,
+                  max_tokens: 60,
                   temperature: 1.0,
                 });
 

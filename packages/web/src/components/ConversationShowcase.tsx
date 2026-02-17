@@ -137,7 +137,7 @@ export default function ConversationShowcase() {
           borderRadius: 20,
           padding: "32px 28px",
           textAlign: "left",
-          height: 420,
+          minHeight: 420,
           overflow: "hidden",
           opacity: isAnimating ? 0 : 1,
           transform: isAnimating
@@ -178,6 +178,24 @@ export default function ConversationShowcase() {
               {msg.content}
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* Pagination dots */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 20 }}>
+        {CONVERSATIONS.map((_, i) => (
+          <div
+            key={i}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: i === activeIndex
+                ? "rgba(107,125,179,0.5)"
+                : "rgba(255,255,255,0.08)",
+              transition: "background 0.3s ease",
+            }}
+          />
         ))}
       </div>
     </section>

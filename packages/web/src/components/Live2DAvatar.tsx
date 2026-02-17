@@ -38,7 +38,7 @@ const EMOTION_MAP_STATIC: Record<string, string | null> = {
   sad: "tears",
   angry: "angry",
   playful: "tongue_out",
-  thinking: "dazed",
+  thinking: null,
   speechless: "speechless",
   eyeroll: "eye_roll",
   sleepy: "sleeping",

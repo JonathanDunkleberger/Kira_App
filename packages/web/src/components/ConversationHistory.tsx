@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { X, MessageCircle, ChevronRight, ArrowLeft, Trash2, Search } from "lucide-react";
 
+/* ── Types ─────────────────────────────────────────────────────── */
 interface ConversationPreview {
   id: string;
   createdAt: string;
@@ -20,7 +21,27 @@ interface ConversationHistoryProps {
   onClose: () => void;
 }
 
-// Group conversations by day label
+/* ── Shared styles ─────────────────────────────────────────────── */
+const containerStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "#0D1117",
+  zIndex: 1000,
+  display: "flex",
+  flexDirection: "column",
+  overflow: "hidden",
+  fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+};
+
+const headerBarStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "16px 20px",
+  borderBottom: "1px solid rgba(255,255,255,0.06)",
+};
+
+/* ── Helpers ───────────────────────────────────────────────────── */
 function groupByDay(convos: ConversationPreview[]): [string, ConversationPreview[]][] {
   const groups: Record<string, ConversationPreview[]> = {};
   const today = new Date();
@@ -30,73 +51,80 @@ function groupByDay(convos: ConversationPreview[]): [string, ConversationPreview
   for (const c of convos) {
     const d = new Date(c.createdAt);
     let label: string;
-    if (d.toDateString() === today.toDateString()) {
-      label = "Today";
-    } else if (d.toDateString() === yesterday.toDateString()) {
-      label = "Yesterday";
-    } else {
-      label = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-    }
+    if (d.toDateString() === today.toDateString()) label = "Today";
+    else if (d.toDateString() === yesterday.toDateString()) label = "Yesterday";
+    else label = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
     if (!groups[label]) groups[label] = [];
     groups[label].push(c);
   }
   return Object.entries(groups);
 }
 
+/* ── Component ─────────────────────────────────────────────────── */
 export default function ConversationHistory({ onClose }: ConversationHistoryProps) {
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [selectedConvo, setSelectedConvo] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set(["Today", "Yesterday"]));
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch conversations (with optional search)
-  const fetchConversations = (query?: string) => {
+  /* ── Data fetching ───────────────────────────────────────────── */
+  const fetchConversations = useCallback((query?: string) => {
     setLoading(true);
-    const url = query && query.length >= 2
-      ? `/api/conversations?q=${encodeURIComponent(query)}`
-      : "/api/conversations";
+    const url =
+      query && query.length >= 2
+        ? `/api/conversations?q=${encodeURIComponent(query)}`
+        : "/api/conversations";
     fetch(url)
       .then((r) => r.json())
       .then((data) => {
-        if (Array.isArray(data)) {
-          setConversations(data);
-        }
-        setLoading(false);
+        if (Array.isArray(data)) setConversations(data);
       })
-      .catch(() => setLoading(false));
-  };
+      .catch((err) => console.error("[ConvoHistory] fetch error:", err))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     fetchConversations();
-  }, []);
+  }, [fetchConversations]);
 
-  // Debounced search
   const handleSearch = (value: string) => {
     setSearchQuery(value);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(() => {
-      fetchConversations(value);
-    }, 300); // 300ms debounce
+    searchTimeout.current = setTimeout(() => fetchConversations(value), 300);
   };
 
   const loadConversation = async (id: string) => {
-    const res = await fetch(`/api/conversations/${id}`);
-    const data = await res.json();
-    setSelectedConvo(data);
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setSelectedConvo(data);
+      // Scroll to bottom after render
+      requestAnimationFrame(() => {
+        scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" });
+      });
+    } catch (err) {
+      console.error("[ConvoHistory] Failed to load conversation:", err);
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const deleteConversation = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't open the conversation
-
+    e.stopPropagation();
     if (!window.confirm("Delete this conversation? This can't be undone.")) return;
-
     try {
       const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setConversations(prev => prev.filter(c => c.id !== id));
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        if (selectedConvo?.id === id) setSelectedConvo(null);
       }
     } catch (err) {
       console.error("Failed to delete conversation:", err);
@@ -112,26 +140,16 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
     });
   };
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  };
-
-  /** Estimate conversation duration from message count and show as time range. */
+  /* ── Formatting helpers ──────────────────────────────────────── */
   const formatTimeRange = (convo: ConversationPreview) => {
     const start = new Date(convo.createdAt);
     const startStr = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    // Rough estimate: ~20s per message exchange
-    const estimatedMinutes = Math.max(1, Math.round(convo._count.messages * 20 / 60));
+    const estimatedMinutes = Math.max(1, Math.round((convo._count.messages * 20) / 60));
     return `${startStr} · ${estimatedMinutes} min`;
   };
 
-  /** Relative timestamp for messages within a conversation (e.g. +2m, +1h 5m). */
   const formatRelativeTime = (msgDate: string, convoStart: string) => {
-    const msgTime = new Date(msgDate).getTime();
-    const startTime = new Date(convoStart).getTime();
-    const diffMin = Math.round((msgTime - startTime) / 60000);
-
+    const diffMin = Math.round((new Date(msgDate).getTime() - new Date(convoStart).getTime()) / 60000);
     if (diffMin <= 0) return "";
     if (diffMin < 60) return `+${diffMin}m`;
     const hrs = Math.floor(diffMin / 60);
@@ -140,18 +158,15 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
   };
 
   const getPreview = (convo: ConversationPreview) => {
-    // Prefer AI-generated summary over raw first message
     if (convo.summary) return convo.summary;
     const userMsg = convo.messages.find((m) => m.role === "user");
-    if (userMsg)
-      return (
-        userMsg.content.slice(0, 80) +
-        (userMsg.content.length > 80 ? "..." : "")
-      );
+    if (userMsg) return userMsg.content.slice(0, 80) + (userMsg.content.length > 80 ? "…" : "");
     return "Conversation";
   };
 
-  // Detail view
+  /* ═══════════════════════════════════════════════════════════════
+     DETAIL VIEW
+     ═══════════════════════════════════════════════════════════════ */
   if (selectedConvo) {
     const detailDate = new Date(selectedConvo.createdAt);
     const detailLabel = detailDate.toLocaleDateString("en-US", {
@@ -161,27 +176,9 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
     });
 
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "#0D1117",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
+      <div style={containerStyle}>
+        {/* Header bar */}
+        <div style={headerBarStyle}>
           <button
             onClick={() => setSelectedConvo(null)}
             style={{
@@ -199,6 +196,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
           >
             <ArrowLeft size={18} /> Back
           </button>
+
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 13, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
               {detailLabel}
@@ -209,8 +207,8 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                 try {
                   const res = await fetch(`/api/conversations/${selectedConvo.id}`, { method: "DELETE" });
                   if (res.ok) {
-                    setConversations(prev => prev.filter(c => c.id !== selectedConvo.id));
-                    setSelectedConvo(null); // Go back to list
+                    setConversations((prev) => prev.filter((c) => c.id !== selectedConvo.id));
+                    setSelectedConvo(null);
                   }
                 } catch (err) {
                   console.error("Failed to delete:", err);
@@ -232,86 +230,91 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
             </button>
           </div>
         </div>
+
+        {/* Messages */}
         <div
+          ref={scrollContainerRef}
           className="scrollbar-discreet"
-          style={{ flex: 1, overflowY: "auto", padding: 20 }}
+          style={{ flex: 1, overflowY: "auto", padding: "20px 20px 40px" }}
         >
           {selectedConvo.messages.map((msg, i) => {
-              const relTime = msg.createdAt
-                ? formatRelativeTime(msg.createdAt, selectedConvo.createdAt)
-                : "";
+            const isUser = msg.role === "user";
+            const relTime = msg.createdAt
+              ? formatRelativeTime(msg.createdAt, selectedConvo.createdAt)
+              : "";
 
-              return (
-                <div
-                  key={i}
+            return (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  marginBottom: 16,
+                  alignItems: isUser ? "flex-end" : "flex-start",
+                }}
+              >
+                {/* Role label */}
+                <span
                   style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    marginBottom: 12,
-                    alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: isUser ? "rgba(107,125,179,0.5)" : "rgba(201,209,217,0.3)",
+                    marginBottom: 4,
+                    paddingLeft: isUser ? 0 : 4,
+                    paddingRight: isUser ? 4 : 0,
                   }}
                 >
-                  <div
+                  {isUser ? "You" : "Kira"}
+                </span>
+
+                {/* Bubble — asymmetric radius */}
+                <div
+                  style={{
+                    maxWidth: "80%",
+                    padding: "10px 16px",
+                    borderRadius: isUser ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: "#C9D1D9",
+                    background: isUser
+                      ? "rgba(107,125,179,0.15)"
+                      : "rgba(255,255,255,0.04)",
+                  }}
+                >
+                  {msg.content}
+                </div>
+
+                {relTime && (
+                  <span
                     style={{
-                      maxWidth: "80%",
-                      padding: "10px 16px",
-                      borderRadius: 14,
-                      fontSize: 14,
-                      lineHeight: 1.6,
-                      color: "#C9D1D9",
-                      background:
-                        msg.role === "user"
-                          ? "rgba(107,125,179,0.15)"
-                          : "rgba(255,255,255,0.04)",
+                      fontSize: 11,
+                      color: "rgba(201,209,217,0.15)",
+                      marginTop: 2,
+                      paddingLeft: isUser ? 0 : 8,
+                      paddingRight: isUser ? 8 : 0,
                     }}
                   >
-                    {msg.content}
-                  </div>
-                  {relTime && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "rgba(201,209,217,0.15)",
-                        marginTop: 2,
-                        paddingLeft: msg.role === "user" ? 0 : 8,
-                        paddingRight: msg.role === "user" ? 8 : 0,
-                      }}
-                    >
-                      {relTime}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                    {relTime}
+                  </span>
+                )}
+              </div>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
       </div>
     );
   }
 
-  // List view — grouped by day
+  /* ═══════════════════════════════════════════════════════════════
+     LIST VIEW — grouped by day
+     ═══════════════════════════════════════════════════════════════ */
   const grouped = groupByDay(conversations);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "#0D1117",
-        zIndex: 1000,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
-      }}
-    >
+    <div style={containerStyle}>
       {/* Header */}
-      <div
-        style={{
-          padding: "16px 20px 12px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
+      <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <span
             style={{
@@ -325,17 +328,12 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
           </span>
           <button
             onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "#8B9DC3",
-              cursor: "pointer",
-              padding: 4,
-            }}
+            style={{ background: "transparent", border: "none", color: "#8B9DC3", cursor: "pointer", padding: 4 }}
           >
             <X size={20} />
           </button>
         </div>
+
         {/* Search bar */}
         <div style={{ position: "relative" }}>
           <Search
@@ -401,7 +399,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
       >
         {loading ? (
           <div style={{ textAlign: "center", color: "rgba(201,209,217,0.25)", paddingTop: 60, fontSize: 14 }}>
-            Loading...
+            Loading…
           </div>
         ) : conversations.length === 0 ? (
           <div style={{ textAlign: "center", color: "rgba(201,209,217,0.25)", paddingTop: 60, fontSize: 14 }}>
@@ -412,7 +410,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
         ) : (
           grouped.map(([dayLabel, convos]) => (
             <div key={dayLabel}>
-              {/* Day header — clickable */}
+              {/* Day header */}
               <button
                 onClick={() => toggleDay(dayLabel)}
                 style={{
@@ -428,24 +426,11 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                   fontFamily: "'DM Sans', sans-serif",
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "#8B9DC3",
-                    letterSpacing: "0.02em",
-                  }}
-                >
+                <span style={{ fontSize: 13, fontWeight: 500, color: "#8B9DC3", letterSpacing: "0.02em" }}>
                   {dayLabel}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: "rgba(201,209,217,0.25)",
-                      fontWeight: 300,
-                    }}
-                  >
+                  <span style={{ fontSize: 12, color: "rgba(201,209,217,0.25)", fontWeight: 300 }}>
                     {convos.length} {convos.length === 1 ? "conversation" : "conversations"}
                   </span>
                   <ChevronRight
@@ -459,7 +444,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                 </div>
               </button>
 
-              {/* Conversation rows — collapsible */}
+              {/* Conversation rows */}
               {expandedDays.has(dayLabel) && (
                 <div style={{ paddingLeft: 8 }}>
                   {convos.map((convo) => (
@@ -479,14 +464,12 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                         textAlign: "left",
                         transition: "background 0.15s",
                         fontFamily: "'DM Sans', sans-serif",
+                        borderRadius: 8,
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                     >
-                      <MessageCircle
-                        size={16}
-                        style={{ color: "rgba(201,209,217,0.15)", flexShrink: 0 }}
-                      />
+                      <MessageCircle size={16} style={{ color: "rgba(201,209,217,0.15)", flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
@@ -499,13 +482,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                         >
                           {getPreview(convo)}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: "rgba(201,209,217,0.2)",
-                            marginTop: 2,
-                          }}
-                        >
+                        <div style={{ fontSize: 12, color: "rgba(201,209,217,0.2)", marginTop: 2 }}>
                           {convo._count.messages} messages · {formatTimeRange(convo)}
                         </div>
                       </div>
@@ -529,10 +506,7 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
                         >
                           <Trash2 size={14} style={{ color: "#e55" }} />
                         </button>
-                        <ChevronRight
-                          size={14}
-                          style={{ color: "rgba(201,209,217,0.1)" }}
-                        />
+                        <ChevronRight size={14} style={{ color: "rgba(201,209,217,0.1)" }} />
                       </div>
                     </button>
                   ))}

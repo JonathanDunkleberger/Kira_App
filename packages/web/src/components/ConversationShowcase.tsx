@@ -161,7 +161,7 @@ export default function ConversationShowcase() {
             borderRadius: 20,
             padding: "32px 28px",
             textAlign: "left",
-            height: 320,
+            height: 380,
             overflow: "hidden",
             opacity: isAnimating ? 0 : 1,
             transform: isAnimating
@@ -236,20 +236,6 @@ export default function ConversationShowcase() {
         >
           <ChevronRight size={18} />
         </button>
-      </div>
-
-      {/* Counter */}
-      <div
-        style={{
-          marginTop: 16,
-          fontSize: 12,
-          color: "rgba(201,209,217,0.15)",
-          fontFamily: "'DM Sans', sans-serif",
-          fontWeight: 300,
-          letterSpacing: "0.05em",
-        }}
-      >
-        {activeIndex + 1} / {CONVERSATIONS.length}
       </div>
     </section>
   );

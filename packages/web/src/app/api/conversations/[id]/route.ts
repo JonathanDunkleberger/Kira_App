@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const { userId } = auth();
@@ -12,14 +12,20 @@ export async function GET(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const { id } = await Promise.resolve(params);
+
     const conversation = await prisma.conversation.findFirst({
-      where: {
-        id: params.id,
-        userId, // Ensure user can only access their own
-      },
-      include: {
+      where: { id, userId },
+      select: {
+        id: true,
+        createdAt: true,
         messages: {
           orderBy: { createdAt: "asc" },
+          select: {
+            role: true,
+            content: true,
+            createdAt: true,
+          },
         },
       },
     });
@@ -30,14 +36,15 @@ export async function GET(
 
     return NextResponse.json(conversation);
   } catch (error) {
-    console.error("[CONVERSATION_GET]", error);
+    console.error("[CONVERSATION_GET] Full error:", error);
+    console.error("[CONVERSATION_GET] Stack:", (error as Error).stack);
     return new NextResponse("Internal Error", { status: 500 });
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     const { userId } = auth();
@@ -45,7 +52,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const conversationId = params.id;
+    const { id: conversationId } = await Promise.resolve(params);
 
     // Verify the conversation belongs to this user
     const conversation = await prisma.conversation.findFirst({
@@ -64,6 +71,7 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[API] Delete conversation error:", err);
+    console.error("[API] Delete conversation stack:", (err as Error).stack);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

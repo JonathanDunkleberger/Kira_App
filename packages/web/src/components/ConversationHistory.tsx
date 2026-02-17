@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { X, MessageCircle, ChevronRight, ArrowLeft, Trash2 } from "lucide-react";
+import { X, MessageCircle, ChevronRight, ArrowLeft, Trash2, Search } from "lucide-react";
 
 interface ConversationPreview {
   id: string;
@@ -49,16 +49,38 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
   const [loading, setLoading] = useState(true);
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set(["Today", "Yesterday"]));
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    fetch("/api/conversations")
+  // Fetch conversations (with optional search)
+  const fetchConversations = (query?: string) => {
+    setLoading(true);
+    const url = query && query.length >= 2
+      ? `/api/conversations?q=${encodeURIComponent(query)}`
+      : "/api/conversations";
+    fetch(url)
       .then((r) => r.json())
       .then((data) => {
-        setConversations(data);
+        if (Array.isArray(data)) {
+          setConversations(data);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchConversations();
   }, []);
+
+  // Debounced search
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      fetchConversations(value);
+    }, 300); // 300ms debounce
+  };
 
   const loadConversation = async (id: string) => {
     const res = await fetch(`/api/conversations/${id}`);
@@ -286,35 +308,90 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
       {/* Header */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
+          padding: "16px 20px 12px",
           borderBottom: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-        <span
-          style={{
-            fontSize: 18,
-            fontFamily: "'Playfair Display', serif",
-            fontWeight: 400,
-            color: "#E2E8F0",
-          }}
-        >
-          Past Conversations
-        </span>
-        <button
-          onClick={onClose}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#8B9DC3",
-            cursor: "pointer",
-            padding: 4,
-          }}
-        >
-          <X size={20} />
-        </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span
+            style={{
+              fontSize: 18,
+              fontFamily: "'Playfair Display', serif",
+              fontWeight: 400,
+              color: "#E2E8F0",
+            }}
+          >
+            Past Conversations
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#8B9DC3",
+              cursor: "pointer",
+              padding: 4,
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {/* Search bar */}
+        <div style={{ position: "relative" }}>
+          <Search
+            size={14}
+            style={{
+              position: "absolute",
+              left: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "rgba(201,209,217,0.2)",
+              pointerEvents: "none",
+            }}
+          />
+          <input
+            type="text"
+            placeholder="Search conversations..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 12px 8px 32px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.06)",
+              background: "rgba(255,255,255,0.03)",
+              color: "#C9D1D9",
+              fontSize: 13,
+              fontFamily: "'DM Sans', sans-serif",
+              fontWeight: 300,
+              outline: "none",
+              transition: "border-color 0.15s",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(107,125,179,0.3)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(""); fetchConversations(); }}
+              style={{
+                position: "absolute",
+                right: 8,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "transparent",
+                border: "none",
+                color: "rgba(201,209,217,0.3)",
+                cursor: "pointer",
+                padding: 2,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -328,7 +405,9 @@ export default function ConversationHistory({ onClose }: ConversationHistoryProp
           </div>
         ) : conversations.length === 0 ? (
           <div style={{ textAlign: "center", color: "rgba(201,209,217,0.25)", paddingTop: 60, fontSize: 14 }}>
-            No conversations yet. Start talking to Kira!
+            {searchQuery
+              ? `No conversations matching "${searchQuery}"`
+              : "No conversations yet. Start talking to Kira!"}
           </div>
         ) : (
           grouped.map(([dayLabel, convos]) => (

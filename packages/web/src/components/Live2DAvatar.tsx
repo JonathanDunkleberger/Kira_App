@@ -236,7 +236,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   }));
 
   // Hairstyle cycle — rotates through styles every 5 minutes
-  const hairstyleIndexRef = useRef(Math.floor(Math.random() * HAIRSTYLE_CYCLE.length));
+  const hairstyleIndexRef = useRef(0); // Always start with default look — first visible change at 5-min mark
   const hairstyleCycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /**
@@ -718,7 +718,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
                       console.warn(`[Hair] Failed to apply initial: ${initialStyle}`, e);
                     }
                   }
-                  debugLog(`[Hair] Initial style (random): ${initialStyle ?? "default"} (index ${hairstyleIndexRef.current})`);
+                  debugLog(`[Hair] Initial style: default (cycle starts at 5min)`);
 
                   // Start 5-minute cycle timer
                   hairstyleCycleTimerRef.current = setInterval(() => {

@@ -1,6 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 interface Message {
   role: "user" | "kira";
@@ -40,9 +39,10 @@ export default function ConversationShowcase() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState<"left" | "right">("right");
   const [isAnimating, setIsAnimating] = useState(false);
-  const isPaused = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const touchStartX = useRef(0);
 
-  const go = (newIndex: number, dir: "left" | "right") => {
+  const go = useCallback((newIndex: number, dir: "left" | "right") => {
     if (isAnimating) return;
     setDirection(dir);
     setIsAnimating(true);
@@ -50,29 +50,43 @@ export default function ConversationShowcase() {
       setActiveIndex(newIndex);
       setTimeout(() => setIsAnimating(false), 30);
     }, 250);
-  };
+  }, [isAnimating]);
 
-  const goNext = () => {
-    const next = (activeIndex + 1) % CONVERSATIONS.length;
-    go(next, "right");
-  };
+  const goNext = useCallback(() => {
+    setActiveIndex((prev) => {
+      const next = (prev + 1) % CONVERSATIONS.length;
+      go(next, "right");
+      return prev; // go() handles the actual update
+    });
+  }, [go]);
 
-  const goPrev = () => {
-    const prev = (activeIndex - 1 + CONVERSATIONS.length) % CONVERSATIONS.length;
-    go(prev, "left");
-  };
+  const goPrev = useCallback(() => {
+    setActiveIndex((prev) => {
+      const prevIdx = (prev - 1 + CONVERSATIONS.length) % CONVERSATIONS.length;
+      go(prevIdx, "left");
+      return prev;
+    });
+  }, [go]);
+
+  // Reset auto-advance timer
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setActiveIndex((prev) => {
+        const next = (prev + 1) % CONVERSATIONS.length;
+        go(next, "right");
+        return prev;
+      });
+    }, AUTO_ADVANCE_MS);
+  }, [go]);
 
   // Auto-advance
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (isPaused.current || isAnimating) return;
-      goNext();
-    }, AUTO_ADVANCE_MS);
-    return () => clearInterval(timer);
-  }, [activeIndex, isAnimating]);
+    resetTimer();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [resetTimer]);
 
   const active = CONVERSATIONS[activeIndex];
-
   const exitTranslate = direction === "right" ? "-12px" : "12px";
 
   return (
@@ -109,133 +123,62 @@ export default function ConversationShowcase() {
         Real conversations. Real personality. Not scripted.
       </p>
 
-      {/* Carousel container */}
+      {/* Card — swipeable, auto-rotating */}
       <div
-        style={{
-          position: "relative",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
+        onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+        onTouchEnd={(e) => {
+          const delta = touchStartX.current - e.changedTouches[0].clientX;
+          if (delta > 50) { goNext(); resetTimer(); }
+          else if (delta < -50) { goPrev(); resetTimer(); }
         }}
-        onMouseEnter={() => { isPaused.current = true; }}
-        onMouseLeave={() => { isPaused.current = false; }}
+        style={{
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 20,
+          padding: "32px 28px",
+          textAlign: "left",
+          height: 420,
+          overflow: "hidden",
+          opacity: isAnimating ? 0 : 1,
+          transform: isAnimating
+            ? `translateX(${exitTranslate})`
+            : "translateX(0px)",
+          transition: "opacity 0.25s ease, transform 0.25s ease",
+        }}
       >
-        {/* Left arrow */}
-        <button
-          onClick={goPrev}
-          aria-label="Previous conversation"
-          style={{
-            background: "transparent",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: "50%",
-            width: 40,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "rgba(201,209,217,0.25)",
-            flexShrink: 0,
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "rgba(107,125,179,0.3)";
-            e.currentTarget.style.color = "rgba(201,209,217,0.6)";
-            e.currentTarget.style.background = "rgba(107,125,179,0.05)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
-            e.currentTarget.style.color = "rgba(201,209,217,0.25)";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <ChevronLeft size={18} />
-        </button>
-
-        {/* Card */}
-        <div
-          style={{
-            flex: 1,
-            background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: 20,
-            padding: "32px 28px",
-            textAlign: "left",
-            height: 420,
-            overflow: "hidden",
-            opacity: isAnimating ? 0 : 1,
-            transform: isAnimating
-              ? `translateX(${exitTranslate})`
-              : "translateX(0px)",
-            transition: "opacity 0.25s ease, transform 0.25s ease",
-          }}
-        >
-          {active.map((msg, i) => (
-            <div key={i} style={{ marginBottom: i < active.length - 1 ? 20 : 0 }}>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  color: msg.role === "kira"
-                    ? "rgba(107,125,179,0.5)"
-                    : "rgba(201,209,217,0.25)",
-                  marginBottom: 6,
-                  fontFamily: "'DM Sans', sans-serif",
-                  textTransform: "uppercase",
-                }}
-              >
-                {msg.role === "kira" ? "Kira" : "You"}
-              </div>
-              <div
-                style={{
-                  fontSize: 15,
-                  lineHeight: 1.7,
-                  fontWeight: msg.role === "kira" ? 400 : 300,
-                  fontStyle: msg.role === "user" ? "italic" : "normal",
-                  color: msg.role === "kira"
-                    ? "rgba(201,209,217,0.7)"
-                    : "rgba(201,209,217,0.4)",
-                  fontFamily: "'DM Sans', sans-serif",
-                }}
-              >
-                {msg.content}
-              </div>
+        {active.map((msg, i) => (
+          <div key={i} style={{ marginBottom: i < active.length - 1 ? 20 : 0 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                color: msg.role === "kira"
+                  ? "rgba(107,125,179,0.5)"
+                  : "rgba(201,209,217,0.25)",
+                marginBottom: 6,
+                fontFamily: "'DM Sans', sans-serif",
+                textTransform: "uppercase",
+              }}
+            >
+              {msg.role === "kira" ? "Kira" : "You"}
             </div>
-          ))}
-        </div>
-
-        {/* Right arrow */}
-        <button
-          onClick={goNext}
-          aria-label="Next conversation"
-          style={{
-            background: "transparent",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: "50%",
-            width: 40,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "rgba(201,209,217,0.25)",
-            flexShrink: 0,
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "rgba(107,125,179,0.3)";
-            e.currentTarget.style.color = "rgba(201,209,217,0.6)";
-            e.currentTarget.style.background = "rgba(107,125,179,0.05)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
-            e.currentTarget.style.color = "rgba(201,209,217,0.25)";
-            e.currentTarget.style.background = "transparent";
-          }}
-        >
-          <ChevronRight size={18} />
-        </button>
+            <div
+              style={{
+                fontSize: 15,
+                lineHeight: 1.7,
+                fontWeight: msg.role === "kira" ? 400 : 300,
+                fontStyle: msg.role === "user" ? "italic" : "normal",
+                color: msg.role === "kira"
+                  ? "rgba(201,209,217,0.7)"
+                  : "rgba(201,209,217,0.4)",
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {msg.content}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

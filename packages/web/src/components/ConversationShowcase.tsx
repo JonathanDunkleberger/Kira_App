@@ -161,7 +161,8 @@ export default function ConversationShowcase() {
             borderRadius: 20,
             padding: "32px 28px",
             textAlign: "left",
-            minHeight: 260,
+            height: 320,
+            overflow: "hidden",
             opacity: isAnimating ? 0 : 1,
             transform: isAnimating
               ? `translateX(${exitTranslate})`

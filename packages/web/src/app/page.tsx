@@ -8,6 +8,7 @@ import { useSubscription } from "@/hooks/use-subscription";
 import { useState, useEffect, useRef, useCallback } from "react";
 import ProfileModal from "@/components/ProfileModal";
 import { KiraLogo } from "@/components/KiraLogo";
+import ConversationShowcase from "@/components/ConversationShowcase";
 // KiraOrb removed from hero — replaced with character image
 
 /* ─── Animated Counter ─── */
@@ -680,96 +681,7 @@ export default function HomePage() {
           {/* ═══════════════════════════════════════════════════════ */}
           {/*  CONVERSATION EXAMPLE                                   */}
           {/* ═══════════════════════════════════════════════════════ */}
-          <section
-            id="demo"
-            data-animate=""
-            style={{
-              padding: "80px 24px",
-              maxWidth: 560,
-              margin: "0 auto",
-              opacity: isVisible("demo") ? 1 : 0,
-              transform: isVisible("demo") ? "translateY(0)" : "translateY(30px)",
-              transition: "all 0.8s ease",
-            }}
-          >
-            <h2
-              style={{
-                textAlign: "center",
-                fontSize: "clamp(22px, 3vw, 30px)",
-                fontFamily: "'Playfair Display', serif",
-                fontWeight: 400,
-                color: "#E2E8F0",
-                marginBottom: 40,
-              }}
-            >
-              What six months with Kira sounds like.
-            </h2>
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 0,
-                background: "rgba(255,255,255,0.02)",
-                borderRadius: 16,
-                border: "1px solid rgba(255,255,255,0.04)",
-                padding: "32px 28px",
-              }}
-            >
-              {[
-                {
-                  role: "user" as const,
-                  text: "I think I'm actually going to apply for that design lead role.",
-                  delay: 0,
-                },
-                {
-                  role: "ai" as const,
-                  text: "Wait, seriously? Six months ago you told me you never wanted to manage people. What changed?",
-                  delay: 0.15,
-                },
-                { role: "user" as const, text: "I don't know, I guess I grew into it.", delay: 0.3 },
-                {
-                  role: "ai" as const,
-                  text: "I mean, you did completely turn that project around last quarter. And you've been mentoring Jake for like two months now even though nobody asked you to. I think you've been a lead for a while, you just didn't have the title.",
-                  delay: 0.45,
-                },
-              ].map((msg, i) => (
-                <div
-                  key={i}
-                  style={{
-                    padding: "12px 0",
-                    borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.03)" : "none",
-                    animation: isVisible("demo") ? `fadeIn 0.6s ease ${msg.delay + 0.3}s both` : "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      marginBottom: 6,
-                      color: msg.role === "ai" ? "rgba(107,125,179,0.5)" : "rgba(201,209,217,0.3)",
-                    }}
-                  >
-                    {msg.role === "ai" ? "Kira" : "You"}
-                  </div>
-                  <p
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 300,
-                      lineHeight: 1.6,
-                      margin: 0,
-                      color: msg.role === "ai" ? "rgba(201,209,217,0.8)" : "rgba(201,209,217,0.5)",
-                      fontStyle: msg.role === "user" ? "italic" : "normal",
-                    }}
-                  >
-                    {msg.text}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
+          <ConversationShowcase />
 
           {/* ═══════════════════════════════════════════════════════ */}
           {/*  PRICING                                                */}

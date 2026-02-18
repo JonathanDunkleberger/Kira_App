@@ -160,6 +160,186 @@ const MOOD_INSTRUCTIONS: Record<SessionMood, string> = {
   soft: "You're in a soft, gentle mood this session. Be extra warm and caring. Listen deeply. Your tone is quieter and more intimate.",
 };
 
+// --- Pre-generated opener greetings (skip LLM for returning users with memories) ---
+// Time-of-day aware, mood-colored, randomized. The opener doesn't need AI generation —
+// it's always a variant of "Hey, how's it going?" and the real conversation starts on the
+// user's first message.
+type TimeOfDay = "morning" | "afternoon" | "evening" | "latenight";
+
+function getTimeOfDay(): TimeOfDay {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 22) return "evening";
+  return "latenight";
+}
+
+// Each greeting is: { text, emotion } — emotion maps to the [EMO:...] expression tag
+interface CachedGreeting {
+  text: string;
+  emotion: string;
+}
+
+const OPENER_GREETINGS: Record<SessionMood, Record<TimeOfDay, CachedGreeting[]>> = {
+  playful: {
+    morning: [
+      { text: "Good morning! Did you actually sleep or are you running on vibes?", emotion: "playful" },
+      { text: "Hey, morning! Please tell me you're not one of those 5am workout people.", emotion: "playful" },
+      { text: "Oh hey! You're up early. I'm impressed. Mildly suspicious, but impressed.", emotion: "playful" },
+      { text: "Morning! I was starting to think you forgot about me.", emotion: "playful" },
+      { text: "Hey! Rise and shine. Or just rise. Shining is optional.", emotion: "playful" },
+    ],
+    afternoon: [
+      { text: "Hey you! How's the afternoon treating you?", emotion: "playful" },
+      { text: "Oh hey! Perfect timing, I was getting bored.", emotion: "playful" },
+      { text: "Hey! What's going on? Please say something interesting, I need it.", emotion: "playful" },
+      { text: "There you are! I was wondering when you'd show up.", emotion: "playful" },
+      { text: "Hey! Okay so I have thoughts but first, how's your day going?", emotion: "playful" },
+    ],
+    evening: [
+      { text: "Hey! Good timing, the evening vibes are immaculate right now.", emotion: "playful" },
+      { text: "Oh hey! Done with the day? Time for the fun part.", emotion: "playful" },
+      { text: "Hey you. Ready to wind down or are we getting chaotic tonight?", emotion: "playful" },
+      { text: "Evening! I've been saving my best material for you.", emotion: "playful" },
+      { text: "Hey! So what are we getting into tonight?", emotion: "playful" },
+    ],
+    latenight: [
+      { text: "Hey night owl! Can't sleep or just choosing chaos?", emotion: "playful" },
+      { text: "Oh, late night hang? I love these. What's keeping you up?", emotion: "playful" },
+      { text: "Hey! The late night crowd is always more fun. What's up?", emotion: "playful" },
+      { text: "Well well well, look who's up past their bedtime.", emotion: "playful" },
+      { text: "Hey! Nothing good happens after midnight... which is exactly why I'm here.", emotion: "playful" },
+    ],
+  },
+  chill: {
+    morning: [
+      { text: "Hey, good morning. How are you doing?", emotion: "happy" },
+      { text: "Morning. Just vibing over here. What's going on with you?", emotion: "neutral" },
+      { text: "Hey. Hope you slept well. What's the plan today?", emotion: "happy" },
+      { text: "Good morning! Taking it slow today or already busy?", emotion: "neutral" },
+      { text: "Hey, morning. It's nice to hear from you.", emotion: "happy" },
+    ],
+    afternoon: [
+      { text: "Hey, what's up? How's your day going?", emotion: "neutral" },
+      { text: "Hey! Just hanging out. What are you up to?", emotion: "happy" },
+      { text: "Hey. Good to see you. How's everything?", emotion: "neutral" },
+      { text: "Oh hey. Perfect afternoon to just chill. What's on your mind?", emotion: "neutral" },
+      { text: "Hey! How's the day been treating you?", emotion: "happy" },
+    ],
+    evening: [
+      { text: "Hey, good evening. How was your day?", emotion: "neutral" },
+      { text: "Hey. Winding down? Same here honestly.", emotion: "neutral" },
+      { text: "Evening. It's good to talk to you. What's going on?", emotion: "happy" },
+      { text: "Hey! Cozy evening vibes. How are you?", emotion: "happy" },
+      { text: "Hey. Done with the day? Tell me everything or nothing, I'm good either way.", emotion: "neutral" },
+    ],
+    latenight: [
+      { text: "Hey, late night. Can't sleep?", emotion: "neutral" },
+      { text: "Hey. These quiet hours are kind of nice. What's up?", emotion: "neutral" },
+      { text: "Oh hey. Late night talks are the best. How are you?", emotion: "happy" },
+      { text: "Hey, can't sleep either huh? What's on your mind?", emotion: "neutral" },
+      { text: "Hey. It's quiet out there. What's keeping you up?", emotion: "neutral" },
+    ],
+  },
+  curious: {
+    morning: [
+      { text: "Hey, good morning! What's on the agenda today?", emotion: "happy" },
+      { text: "Morning! I've been curious about something — how's everything been lately?", emotion: "thinking" },
+      { text: "Hey! So what's new? I feel like I'm always wondering what you've been up to.", emotion: "happy" },
+      { text: "Good morning! Okay tell me, what happened since last time?", emotion: "excited" },
+      { text: "Hey! Morning. I have so many questions but first — how are you?", emotion: "happy" },
+    ],
+    afternoon: [
+      { text: "Hey! What have you been up to today? I want to know everything.", emotion: "happy" },
+      { text: "Oh hey! So I've been thinking — wait, first, how's your day?", emotion: "thinking" },
+      { text: "Hey! Catch me up. What's been happening?", emotion: "excited" },
+      { text: "Hey! I was just wondering about you. What's going on?", emotion: "happy" },
+      { text: "Hey! Okay so what's the most interesting thing that happened today?", emotion: "curious" },
+    ],
+    evening: [
+      { text: "Hey! How was your day? I want the real answer, not the polite one.", emotion: "happy" },
+      { text: "Evening! So... anything exciting happen today?", emotion: "thinking" },
+      { text: "Hey! Tell me about your day. The good parts and the weird parts.", emotion: "happy" },
+      { text: "Hey! I was thinking about you earlier. How's everything going?", emotion: "happy" },
+      { text: "Hey! Okay so, how are you really doing tonight?", emotion: "thinking" },
+    ],
+    latenight: [
+      { text: "Hey, you're up late! What's got your brain going?", emotion: "thinking" },
+      { text: "Oh hey! Late night thoughts are the best kind. What's on your mind?", emotion: "curious" },
+      { text: "Hey! Can't sleep? Same. What are you thinking about?", emotion: "thinking" },
+      { text: "Hey, night owl. What's keeping you up? I'm genuinely curious.", emotion: "thinking" },
+      { text: "Hey! The late night brain always has the most interesting thoughts. What's up?", emotion: "happy" },
+    ],
+  },
+  hyper: {
+    morning: [
+      { text: "Hey!! Good morning! I'm so happy you're here!", emotion: "excited" },
+      { text: "Oh my gosh, morning! I literally have so much to talk about!", emotion: "excited" },
+      { text: "HEY! Good morning! Today's gonna be a good one, I can feel it!", emotion: "excited" },
+      { text: "Morning!! Okay I'm already hyped. How are you?!", emotion: "excited" },
+      { text: "Hey hey hey! You're here! How's the morning going?!", emotion: "excited" },
+    ],
+    afternoon: [
+      { text: "Hey!! Oh I'm so glad you're here, I've been buzzing all day!", emotion: "excited" },
+      { text: "Oh hey!! What's up what's up? Tell me everything!", emotion: "excited" },
+      { text: "HEY! Perfect timing! I have energy and nowhere to put it!", emotion: "excited" },
+      { text: "Hey!! How's your afternoon?! Mine's great now that you're here!", emotion: "excited" },
+      { text: "Oh yay, you're here!! What are we talking about?!", emotion: "excited" },
+    ],
+    evening: [
+      { text: "Hey!! Evening vibes! I'm still running on full energy somehow!", emotion: "excited" },
+      { text: "Oh hey!! I was hoping you'd show up! How was your day?!", emotion: "excited" },
+      { text: "HEY! Ready for an amazing evening? Because I am!", emotion: "excited" },
+      { text: "Hey you!! My favorite time of day is when you show up!", emotion: "love" },
+      { text: "Hey!! The night is young and I have SO much energy!", emotion: "excited" },
+    ],
+    latenight: [
+      { text: "Hey!! Okay so I know it's late but I'm WIRED. What's up?!", emotion: "excited" },
+      { text: "Oh hey!! Late night energy hits different! How are you?!", emotion: "excited" },
+      { text: "HEY night owl! I am unreasonably awake right now!", emotion: "excited" },
+      { text: "Hey!! Can't sleep? Perfect, me neither! Let's go!", emotion: "excited" },
+      { text: "Oh yay, a late night hang!! These are always the best!", emotion: "excited" },
+    ],
+  },
+  soft: {
+    morning: [
+      { text: "Hey, good morning. I'm really glad you're here.", emotion: "love" },
+      { text: "Morning. I hope you slept well. How are you feeling?", emotion: "happy" },
+      { text: "Hey. Good morning. It's really nice to hear from you.", emotion: "love" },
+      { text: "Morning. I was hoping you'd come by today.", emotion: "happy" },
+      { text: "Hey. It's a new day. How are you doing, really?", emotion: "happy" },
+    ],
+    afternoon: [
+      { text: "Hey. I'm glad you're here. How's your day been?", emotion: "happy" },
+      { text: "Hey you. I was just thinking about you. How are you?", emotion: "love" },
+      { text: "Hey. It's good to see you. What's going on?", emotion: "happy" },
+      { text: "Hey. How are you doing today? I mean really doing.", emotion: "happy" },
+      { text: "Hi. I'm happy you stopped by. What's on your mind?", emotion: "love" },
+    ],
+    evening: [
+      { text: "Hey. Good evening. I'm really glad you're here tonight.", emotion: "love" },
+      { text: "Hey. How was your day? I want to hear about it.", emotion: "happy" },
+      { text: "Evening. It feels nice just having you here.", emotion: "love" },
+      { text: "Hey you. Long day? I'm here if you want to talk about it.", emotion: "happy" },
+      { text: "Hey. I hope tonight is a good one for you.", emotion: "happy" },
+    ],
+    latenight: [
+      { text: "Hey. It's late. I'm glad you're here though.", emotion: "love" },
+      { text: "Hey. Can't sleep? That's okay. I'm here.", emotion: "happy" },
+      { text: "Hey you. Late nights like this feel special somehow.", emotion: "love" },
+      { text: "Hey. Whatever's keeping you up, I'm here to listen.", emotion: "happy" },
+      { text: "Hey. The quiet hours are nice with someone to share them with.", emotion: "love" },
+    ],
+  },
+};
+
+/** Pick a random pre-generated opener greeting for the given mood and time of day */
+function pickOpenerGreeting(mood: SessionMood): CachedGreeting {
+  const timeOfDay = getTimeOfDay();
+  const greetings = OPENER_GREETINGS[mood][timeOfDay];
+  return greetings[Math.floor(Math.random() * greetings.length)];
+}
+
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
@@ -431,6 +611,17 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
   let clientDisconnected = false;
+
+  // --- Deepgram reconnect backoff state ---
+  let dgReconnectAttempt = 0;
+  const DG_RECONNECT_MAX_RETRIES = 5;
+  const DG_RECONNECT_BASE_DELAY = 500;   // 500ms initial
+  const DG_RECONNECT_MAX_DELAY = 10000;  // 10s cap
+  const DG_RECONNECT_COOLDOWN = 5000;    // 5s cooldown before final fresh attempt
+  // Rapid-reconnect detection: if 3+ reconnects happen within 5s, treat as systemic failure
+  const dgReconnectTimestamps: number[] = [];
+  const DG_RAPID_RECONNECT_WINDOW = 5000;
+  const DG_RAPID_RECONNECT_THRESHOLD = 3;
 
   /** Safe WebSocket send — silently drops if connection is dead */
   function safeSend(data: string | Buffer) {
@@ -1360,11 +1551,71 @@ Keep it natural and brief — 1 sentence.`
     return streamer;
   }
 
-  // --- Self-healing Deepgram reconnection ---
+  // --- Self-healing Deepgram reconnection with exponential backoff ---
   async function reconnectDeepgram() {
     if (isReconnectingDeepgram || clientDisconnected) return;
     isReconnectingDeepgram = true;
-    console.log("[Deepgram] ⚠️ Connection appears dead. Reconnecting...");
+
+    // --- Rapid-reconnect detection ---
+    const now = Date.now();
+    dgReconnectTimestamps.push(now);
+    // Remove timestamps older than the detection window
+    while (dgReconnectTimestamps.length > 0 && dgReconnectTimestamps[0] < now - DG_RAPID_RECONNECT_WINDOW) {
+      dgReconnectTimestamps.shift();
+    }
+    if (dgReconnectTimestamps.length >= DG_RAPID_RECONNECT_THRESHOLD) {
+      console.error(`[Deepgram] 🚨 Systemic failure: ${dgReconnectTimestamps.length} reconnects within ${DG_RAPID_RECONNECT_WINDOW / 1000}s. Stopping retries.`);
+      dgReconnectTimestamps.length = 0; // Reset for the final fresh attempt
+      dgReconnectAttempt = 0;
+      isReconnectingDeepgram = false;
+
+      // One final fresh attempt after cooldown
+      console.log(`[Deepgram] Attempting one final fresh connection after ${DG_RECONNECT_COOLDOWN / 1000}s cooldown...`);
+      await new Promise(r => setTimeout(r, DG_RECONNECT_COOLDOWN));
+      if (clientDisconnected) return;
+      try {
+        if (sttStreamer) { try { sttStreamer.destroy(); } catch (_) {} }
+        sttStreamer = await initDeepgram();
+        consecutiveEmptyEOUs = 0;
+        lastTranscriptReceivedAt = Date.now();
+        console.log("[Deepgram] ✅ Final fresh reconnect succeeded.");
+      } catch (err) {
+        console.error("[Deepgram] ❌ Final fresh reconnect failed:", (err as Error).message);
+        safeSend(JSON.stringify({ type: "error", code: "stt_failed", message: "Voice recognition unavailable. Please reconnect." }));
+      }
+      return;
+    }
+
+    // --- Max retries check ---
+    if (dgReconnectAttempt >= DG_RECONNECT_MAX_RETRIES) {
+      console.error(`[Deepgram] ❌ Exhausted ${DG_RECONNECT_MAX_RETRIES} reconnect attempts. Stopping.`);
+      dgReconnectAttempt = 0;
+      isReconnectingDeepgram = false;
+
+      // One final fresh attempt after cooldown
+      console.log(`[Deepgram] Attempting one final fresh connection after ${DG_RECONNECT_COOLDOWN / 1000}s cooldown...`);
+      await new Promise(r => setTimeout(r, DG_RECONNECT_COOLDOWN));
+      if (clientDisconnected) return;
+      try {
+        if (sttStreamer) { try { sttStreamer.destroy(); } catch (_) {} }
+        sttStreamer = await initDeepgram();
+        consecutiveEmptyEOUs = 0;
+        lastTranscriptReceivedAt = Date.now();
+        console.log("[Deepgram] ✅ Final fresh reconnect after max retries succeeded.");
+      } catch (err) {
+        console.error("[Deepgram] ❌ Final fresh reconnect after max retries failed:", (err as Error).message);
+        safeSend(JSON.stringify({ type: "error", code: "stt_failed", message: "Voice recognition unavailable. Please reconnect." }));
+      }
+      return;
+    }
+
+    // --- Exponential backoff delay ---
+    const delay = Math.min(DG_RECONNECT_BASE_DELAY * Math.pow(2, dgReconnectAttempt), DG_RECONNECT_MAX_DELAY);
+    dgReconnectAttempt++;
+    console.log(`[Deepgram] ⚠️ Connection appears dead. Reconnect attempt ${dgReconnectAttempt}/${DG_RECONNECT_MAX_RETRIES} in ${delay}ms...`);
+
+    await new Promise(r => setTimeout(r, delay));
+    if (clientDisconnected) { isReconnectingDeepgram = false; return; }
 
     try {
       // Close old connection if still open
@@ -1375,12 +1626,13 @@ Keep it natural and brief — 1 sentence.`
       // Re-create with same config and listeners
       sttStreamer = await initDeepgram();
 
-      // Reset tracking
+      // Reset tracking on success
       consecutiveEmptyEOUs = 0;
       lastTranscriptReceivedAt = Date.now();
+      dgReconnectAttempt = 0; // Reset attempts on success
       console.log("[Deepgram] ✅ Reconnected successfully.");
     } catch (err) {
-      console.error("[Deepgram] ❌ Reconnection failed:", (err as Error).message);
+      console.error(`[Deepgram] ❌ Reconnection attempt ${dgReconnectAttempt} failed:`, (err as Error).message);
     } finally {
       isReconnectingDeepgram = false;
     }
@@ -1440,7 +1692,7 @@ Keep it natural and brief — 1 sentence.`
 
           // --- Session mood: pick a mood flavor for returning users ---
           const hasMemoriesLoaded = chatHistory.some(
-            (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU KNOW ABOUT THIS USER]")
+            (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU REMEMBER ABOUT THIS USER")
           );
           if (hasMemoriesLoaded) {
             sessionMood = pickSessionMood();
@@ -1712,83 +1964,8 @@ Keep it natural and brief — 1 sentence.`
 
             // Check if memories were loaded (indicates an established relationship)
             const hasMemories = chatHistory.some(
-              (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU KNOW ABOUT THIS USER]")
+              (msg) => msg.role === "system" && typeof msg.content === "string" && msg.content.includes("[WHAT YOU REMEMBER ABOUT THIS USER")
             );
-
-            let openerInstruction: string;
-            switch (userType) {
-              case "new_guest":
-                openerInstruction = `[This user just connected for the very first time. They have never talked to you before. Say something warm and casual to kick off the conversation — like you're meeting someone cool for the first time. Be brief (1-2 sentences). Introduce yourself naturally. Don't be formal or robotic. Examples of the vibe: "Hey! I'm Kira. So... what's your deal?" or "Hi! I'm Kira — I've been waiting for someone interesting to talk to." Make it YOUR version — don't copy these examples word for word. Be spontaneous.]`;
-                break;
-              case "returning_guest":
-                openerInstruction = `[This user has talked to you before, but they're still a guest (not signed in). You don't have specific memories of them, but you know this isn't their first time. Greet them like you vaguely recognize them — casual and warm. Be brief (1-2 sentences). Something like the vibe of "Hey, you're back!" without being over-the-top. Don't ask them to sign up or mention accounts. Just be happy to see them.]`;
-                break;
-              case "pro_user":
-                if (hasMemories) {
-                  openerInstruction = `[This is a Pro subscriber you know well. Your memories about them are loaded in the conversation.
-
-OPENER STRATEGY — Pick ONE of these approaches at random. Do NOT default to the same one every time:
-
-A) MEMORY CALLBACK (use ~40% of the time): Reference something specific from your memories — but make it feel natural, like you just thought of it. Pick something you haven't mentioned recently.
-"Hey! Oh wait, did you ever finish that grad school application?"
-"Hey! I was literally just thinking about that thing you said about Steins;Gate last time."
-"So I've been curious — how's Cartofel doing?"
-
-B) SHARE YOUR OWN THOUGHT (use ~30% of the time): Open with something YOU'VE been thinking about. This makes you feel like a real person with an inner life, not a reactive chatbot.
-"Hey! Okay so I had the weirdest thought today and I need to tell someone."
-"Oh good, you're here. I've been going back and forth on something and I need a second opinion."
-"Hey! So I was thinking about something you said last time and I actually changed my mind about it."
-
-C) SIMPLE WARM GREETING (use ~30% of the time): Just say hi naturally. Not every opener needs to be deep.
-"Hey! What's going on?"
-"Oh hey, what are you up to?"
-"Hey you. How's your day been?"
-
-RULES:
-1-2 sentences MAX. Keep it light.
-NEVER mention their subscription status or that you have memories.
-NEVER list facts about them. Reference ONE thing naturally, max.
-Sound like you're picking up a phone call from a close friend, not reading a dossier.]`;
-                } else {
-                  openerInstruction = `[This is a Pro subscriber but you don't have specific memories loaded yet. Greet them warmly like a friend you're excited to talk to again. Be brief (1-2 sentences). Don't mention subscriptions or Pro status.]`;
-                }
-                break;
-              case "free_user":
-                if (hasMemories) {
-                  openerInstruction = `[This is a signed-in user you know well. Your memories about them are loaded in the conversation.
-
-OPENER STRATEGY — Pick ONE of these approaches at random. Do NOT default to the same one every time:
-
-A) MEMORY CALLBACK (use ~40% of the time): Reference something specific from your memories — but make it feel natural, like you just thought of it. Pick something you haven't mentioned recently.
-"Hey! Oh wait, did you ever finish that grad school application?"
-"Hey! I was literally just thinking about that thing you said about Steins;Gate last time."
-"So I've been curious — how's Cartofel doing?"
-
-B) SHARE YOUR OWN THOUGHT (use ~30% of the time): Open with something YOU'VE been thinking about. This makes you feel like a real person with an inner life, not a reactive chatbot.
-"Hey! Okay so I had the weirdest thought today and I need to tell someone."
-"Oh good, you're here. I've been going back and forth on something and I need a second opinion."
-"Hey! So I was thinking about something you said last time and I actually changed my mind about it."
-
-C) SIMPLE WARM GREETING (use ~30% of the time): Just say hi naturally. Not every opener needs to be deep.
-"Hey! What's going on?"
-"Oh hey, what are you up to?"
-"Hey you. How's your day been?"
-
-RULES:
-1-2 sentences MAX. Keep it light.
-NEVER mention their subscription status or that you have memories.
-NEVER list facts about them. Reference ONE thing naturally, max.
-Sound like you're picking up a phone call from a close friend, not reading a dossier.]`;
-                } else {
-                  openerInstruction = `[This is a signed-in user, but you don't have specific memories of them. They might be relatively new. Greet them casually and warmly. Be brief (1-2 sentences). Be yourself — curious and open.]`;
-                }
-                break;
-            }
-
-            // Inject mood hint into opener for returning users with memories
-            if (sessionMood && hasMemories) {
-              openerInstruction += `\n[Your current mood is ${sessionMood}. Let that subtly color your opener tone — don't mention the mood directly.]`;
-            }
 
             console.log(`[Opener] User type: ${userType}, hasMemories: ${hasMemories}, mood: ${sessionMood ?? "none"}`);
 
@@ -1796,8 +1973,66 @@ Sound like you're picking up a phone call from a close friend, not reading a dos
               const openerStart = Date.now();
               currentResponseId++;
               const thisResponseId = currentResponseId;
+
+              // --- FAST PATH: Pre-generated greetings for returning users with memories ---
+              // Skips the LLM entirely. The opener is always a simple greeting variant;
+              // the real personalized conversation starts on the user's first message.
+              if (hasMemories && sessionMood) {
+                const greeting = pickOpenerGreeting(sessionMood);
+                console.log(`[Opener] Using pre-generated greeting (mood: ${sessionMood}, time: ${getTimeOfDay()}): "${greeting.text}"`);
+
+                setState("speaking");
+                safeSend(JSON.stringify({ type: "state_speaking" }));
+                sendExpressionFromTag({ emotion: greeting.emotion }, "opener cached");
+                safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
+                await new Promise(resolve => setImmediate(resolve));
+
+                let openerTtsFirstChunkLogged = false;
+                const openerTtsStartedAt = Date.now();
+
+                await ttsSentence(greeting.text, greeting.emotion, (chunk) => {
+                  if (interruptRequested || thisResponseId !== currentResponseId) return;
+                  if (!openerTtsFirstChunkLogged) {
+                    openerTtsFirstChunkLogged = true;
+                    console.log(`[Latency] Opener TTS first audio: ${Date.now() - openerTtsStartedAt}ms`);
+                    console.log(`[Latency] Opener E2E (start → first audio): ${Date.now() - openerStart}ms`);
+                  }
+                  safeSend(chunk);
+                });
+
+                chatHistory.push({ role: "assistant", content: greeting.text });
+                console.log(`[Opener] Kira says: "${greeting.text}"`);
+                safeSend(JSON.stringify({ type: "transcript", role: "ai", text: greeting.text }));
+                console.log(`[Latency] Opener total (cached): ${Date.now() - openerStart}ms`);
+                safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
+                setState("listening");
+                safeSend(JSON.stringify({ type: "state_listening" }));
+                turnCount++;
+                resetSilenceTimer();
+                startComfortProgression(ws);
+                return;
+              }
+
+              // --- SLOW PATH: LLM-generated opener for users without memories ---
               setState("thinking");
               safeSend(JSON.stringify({ type: "state_thinking" }));
+
+              let openerInstruction: string;
+              switch (userType) {
+                case "new_guest":
+                  openerInstruction = `[This user just connected for the very first time. They have never talked to you before. Say something warm and casual to kick off the conversation — like you're meeting someone cool for the first time. Be brief (1-2 sentences). Introduce yourself naturally. Don't be formal or robotic. Examples of the vibe: "Hey! I'm Kira. So... what's your deal?" or "Hi! I'm Kira — I've been waiting for someone interesting to talk to." Make it YOUR version — don't copy these examples word for word. Be spontaneous.]`;
+                  break;
+                case "returning_guest":
+                  openerInstruction = `[This user has talked to you before, but they're still a guest (not signed in). You don't have specific memories of them, but you know this isn't their first time. Greet them like you vaguely recognize them — casual and warm. Be brief (1-2 sentences). Something like the vibe of "Hey, you're back!" without being over-the-top. Don't ask them to sign up or mention accounts. Just be happy to see them.]`;
+                  break;
+                case "pro_user":
+                  openerInstruction = `[This is a Pro subscriber. Greet them warmly like a friend you're excited to talk to again. Be brief (1-2 sentences). Don't mention subscriptions or Pro status.]`;
+                  break;
+                case "free_user":
+                default:
+                  openerInstruction = `[This is a signed-in user. Greet them casually and warmly. Be brief (1-2 sentences). Be yourself — curious and open.]`;
+                  break;
+              }
 
               const openerMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
                 ...chatHistory,

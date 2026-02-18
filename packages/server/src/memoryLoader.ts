@@ -50,7 +50,36 @@ export async function loadUserMemories(
     }
   }
 
-  memoryBlock += `\nREMEMBER: These are facts about THE USER, not about you. You are Kira with your own opinions. Reference these memories naturally — "didn't you say...", "how's that thing with...", "wait, isn't your cat...". If the user asks "do you remember X?" and the answer is in this list, say YES confidently and share the detail. Do NOT say "I don't think you've told me" if the information IS listed above.`;
+  memoryBlock += `\n---\nCRITICAL MEMORY INSTRUCTIONS:
+• These are facts about THE USER that you learned in previous conversations.
+• If the user asks "do you remember X?" — scan the list above. If the answer is there, say YES confidently and share the specific detail. Do NOT say "I don't remember" or "I don't think you've told me" if the fact IS listed above.
+• Reference memories naturally: "oh right, didn't you say...", "how's Cartofel doing?", "still working on that song?"
+• You can bring up relevant memories proactively when they're related to what the user is talking about.
+• These are YOUR memories of the user. Own them confidently like a real friend would.`;
+
+  // Load recent conversation summaries for narrative context
+  try {
+    const recentConversations = await prisma.conversation.findMany({
+      where: { userId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: { summary: true, createdAt: true },
+    });
+
+    const withSummaries = recentConversations.filter(c => c.summary);
+    if (withSummaries.length > 0) {
+      memoryBlock += `\n\nRECENT CONVERSATION HISTORY:\n`;
+      for (const conv of withSummaries.reverse()) {
+        const date = conv.createdAt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        memoryBlock += `• ${date}: ${conv.summary}\n`;
+      }
+    }
+  } catch (e) {
+    console.warn('[Memory] Failed to load conversation summaries:', e);
+    // Non-fatal — continue without summaries
+  }
+
+  console.log(`[Memory] Loaded ${memories.length} facts (${memoryBlock.length} chars) for ${userId}`);
 
   return memoryBlock;
 }

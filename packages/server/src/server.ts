@@ -1083,24 +1083,30 @@ Keep it natural and brief — 1 sentence.`
   // --- L1: In-Conversation Memory ---
   let conversationSummary = "";
 
-  /** Generate a short 5-10 word summary of the conversation for history previews. */
+  // --- Mid-session extraction: periodic fact extraction during long conversations ---
+  let messagesSinceLastExtraction = 0;
+  let lastMidSessionExtraction = Date.now();
+  const MID_SESSION_EXTRACTION_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  const MID_SESSION_MESSAGE_THRESHOLD = 20;
+
+  /** Generate a conversation summary for history previews and memory continuity. */
   async function generateConversationSummary(
     messages: Array<{ role: string; content: string }>
   ): Promise<string> {
     try {
-      // Take up to last 20 messages for context
-      const recentMsgs = messages.slice(-20).map(m => `${m.role}: ${m.content}`).join("\n");
+      // Take up to last 30 messages for context
+      const recentMsgs = messages.slice(-30).map(m => `${m.role}: ${m.content}`).join("\n");
       const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: [
           {
             role: "system",
-            content: "Summarize this conversation in 5-10 words. Focus on the main topic or vibe. No quotes, no punctuation at the end. Examples: 'Talked about favorite movies and childhood', 'Late night chat about life goals', 'Helped with coding project anxiety'",
+            content: "Summarize this conversation in 1-2 sentences. Focus on what topics were discussed and any key facts shared. Be specific. Example: 'Talked about their cat Cartofel and discussed the Dune book series. User mentioned they are 28 and applying to grad school.'",
           },
           { role: "user", content: recentMsgs },
         ],
         temperature: 0.3,
-        max_tokens: 30,
+        max_tokens: 150,
       }), "conversation summary");
       const summary = response.choices[0]?.message?.content?.trim() || "";
       console.log(`[Summary] Generated: "${summary}"`);
@@ -2277,6 +2283,31 @@ Keep it natural and brief — 1 sentence.`
           silenceInitiatedLast = false; // User spoke, allow future silence initiation
           lastUserSpokeTimestamp = Date.now();
           resetSilenceTimer();
+
+          // --- Mid-session extraction: capture facts before context window truncation ---
+          messagesSinceLastExtraction++;
+          const timeSinceExtraction = Date.now() - lastMidSessionExtraction;
+          if (userId && (messagesSinceLastExtraction >= MID_SESSION_MESSAGE_THRESHOLD ||
+              timeSinceExtraction >= MID_SESSION_EXTRACTION_INTERVAL)) {
+            // Build snapshot of current messages for extraction
+            const midSessionMsgs = chatHistory
+              .filter(m => m.role === "user" || m.role === "assistant")
+              .map(m => ({
+                role: m.role as string,
+                content: typeof m.content === "string" ? m.content : "[media message]",
+              }));
+            if (midSessionMsgs.length >= 4) {
+              // Fire-and-forget — don't block the conversation
+              extractAndSaveMemories(openai, prisma, userId, midSessionMsgs, conversationSummary)
+                .then(() => {
+                  console.log('[Memory] Mid-session extraction complete');
+                  messagesSinceLastExtraction = 0;
+                  lastMidSessionExtraction = Date.now();
+                })
+                .catch(err => console.warn('[Memory] Mid-session extraction failed:', (err as Error).message));
+            }
+          }
+
           const userMessage = currentTurnTranscript.trim();
           currentTurnTranscript = ""; // Reset for next turn
           currentInterimTranscript = ""; // Reset interim too

@@ -154,27 +154,28 @@ export async function extractAndSaveMemories(
       messages: [
         {
           role: "system",
-          content: `You are a memory extraction system. Extract EVERY specific fact about the user from this conversation. Be thorough and literal — extract each individual detail as its own fact.
+          content: `You are a memory extraction system. Extract EVERY specific fact about the user from this conversation. Be thorough and greedy — capture everything. A good friend remembers small details.
 
 RULES:
 - Every fact MUST start with "User" or "Their" or "They"
 - Extract SPECIFIC details, not summaries. "User's cat Cartofel is missing a tail" NOT "User has a unique cat"
-- Extract EVERY preference mentioned: favorite book, song, artist, anime, movie, game, food, etc.
-- Extract EVERY personal detail: age, occupation, location, relationship status, pets, family members
-- Extract EVERY life event: what they're working on, upcoming plans, recent experiences
-- If someone says their cat is missing a tail, that is its own fact. If they also say the cat's name, that's another fact.
-- Prefer exact names/titles: "User's favorite book is Heretics of Dune" not "User likes a Dune book"
-- One atomic fact per entry. Do NOT combine multiple facts into one.
-- Mark is_update: true ONLY if this fact directly contradicts or updates a specific existing fact
-- Do NOT skip facts just because they seem minor. Friends remember small details.
-- Max 15 facts per conversation.
+- Extract EVERY preference mentioned: favorite book, song, artist, anime, movie, game, food, color, etc.
+- Extract EVERY personal detail: age, name, occupation, location, relationship status, pets and pet details, family members
+- Extract EVERY life event or project: what they're working on, what they're reading, upcoming plans, recent experiences
+- Extract EVERY opinion they express: likes, dislikes, things they find interesting or boring
+- Prefer exact names/titles over generalizations: "User's favorite book is Heretics of Dune" NOT "User likes sci-fi books"
+- One atomic fact per entry. Do NOT combine multiple facts into one entry.
+- If someone mentions their cat is missing a tail AND is jealous of another cat's tail, those are TWO separate facts.
+- Mark is_update: true ONLY if this fact directly contradicts or replaces an existing fact (e.g., "I moved to LA" updates a previous city)
+- Do NOT skip facts because they seem minor. "User had tacos for lunch" is worth remembering.
+- Extract up to 20 facts per conversation. More is better than fewer.
 
 Categories: identity, preference, relationship, emotional, experience, context, opinion
 
-Respond ONLY with a JSON array:
-[{"category": "preference", "content": "User's favorite anime is Steins;Gate", "emotional_weight": 0.7, "is_update": false}]
+Respond ONLY with a JSON array. No markdown, no backticks, no explanation:
+[{"category": "preference", "content": "User's favorite book series is Dune", "emotional_weight": 0.7, "is_update": false}]
 
-emotional_weight: 0.0-1.0 based on how personally important this seems to the user.`,
+emotional_weight: 0.0-1.0 based on how personally important this seems to the user. Identity facts (age, name) = 0.9. Preferences = 0.6-0.8. Passing mentions = 0.3-0.5.`,
         },
         {
           role: "user",
@@ -187,16 +188,24 @@ emotional_weight: 0.0-1.0 based on how personally important this seems to the us
 
     const raw = response.choices[0]?.message?.content?.trim() || "[]";
 
-    // 5. Parse response (handle markdown fences)
+    // 5. Parse response — robust handling of markdown fences and extra text
     let facts: ExtractedFact[];
     try {
-      const cleaned = raw
-        .replace(/```json\n?/g, "")
-        .replace(/```\n?/g, "")
-        .trim();
-      facts = JSON.parse(cleaned);
+      let factsText = raw;
+
+      // Strip markdown code fences if present
+      factsText = factsText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+      // Try to extract JSON array if there's extra text around it
+      const arrayMatch = factsText.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        factsText = arrayMatch[0];
+      }
+
+      facts = JSON.parse(factsText);
     } catch (parseErr) {
-      console.error("[Memory] Failed to parse extraction response:", raw);
+      console.error("[Memory] Failed to parse extraction JSON:", parseErr);
+      console.error("[Memory] Raw response:", raw);
       return;
     }
 
@@ -204,6 +213,8 @@ emotional_weight: 0.0-1.0 based on how personally important this seems to the us
       console.log("[Memory] No new facts extracted.");
       return;
     }
+
+    console.log(`[Memory] Extracted ${facts.length} raw facts:`, facts.map((f: ExtractedFact) => f.content));
 
     // Deduplicate against existing memories
     const deduplicatedFacts = facts.filter(newFact => {
@@ -220,8 +231,8 @@ emotional_weight: 0.0-1.0 based on how personally important this seems to the us
         const overlap = newKeywords.filter(k => existingKeywords.includes(k));
         const overlapRatio = newKeywords.length > 0 ? overlap.length / newKeywords.length : 0;
 
-        // If same category and >60% keyword overlap, it's a duplicate
-        if (newFact.category === existing.category && overlapRatio > 0.75) {
+        // If same category and >80% keyword overlap, it's a near-exact duplicate
+        if (newFact.category === existing.category && overlapRatio > 0.80) {
           console.log(`[Memory] Dedup: "${newFact.content}" overlaps with existing "${existing.content}" (${Math.round(overlapRatio * 100)}%)`);
 
           // If marked as update, delete old and keep new
@@ -238,6 +249,7 @@ emotional_weight: 0.0-1.0 based on how personally important this seems to the us
 
     // Replace facts with deduplicated version
     facts.splice(0, facts.length, ...deduplicatedFacts);
+    console.log(`[Memory] After dedup: ${facts.length} new facts to save`);
 
     // 6. Save to database
     const validCategories = [

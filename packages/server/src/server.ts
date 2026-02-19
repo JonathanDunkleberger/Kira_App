@@ -822,8 +822,14 @@ Keep it natural and brief — 1 sentence.`
       console.log(`[Latency] Vision LLM: ${Date.now() - visionStartAt}ms`);
 
       // Check for actual silence tokens FIRST
-      if (!reaction || reaction.includes("[SILENT]") || reaction.includes("[SKIP]") || reaction.startsWith("[") || reaction.length < 2) {
-        console.log(`[Vision Reaction] LLM explicitly chose silence. Raw: "${reaction}"`);
+      // Strip EMO tags before checking — they start with "[" but are NOT silence markers
+      const reactionTextOnly = reaction.replace(/\[EMO:[^\]]*\]/gi, "").trim();
+      const isSilence = !reaction || !reactionTextOnly || reactionTextOnly.length < 2
+        || reaction.includes("[SILENT]") || reaction.includes("[SILENCE]")
+        || reaction.includes("[NOTHING]") || reaction.includes("[SKIP]");
+
+      if (isSilence) {
+        console.log(`[Vision Reaction] Chose silence (no comment). Raw: "${reaction}"`);
         console.log("[Vision Reaction] Scheduling retry in 30-45 seconds instead of full cooldown.");
         setState("listening");
 
@@ -857,7 +863,7 @@ Keep it natural and brief — 1 sentence.`
       reaction = stripEmotionTags(visionTagResult.text);
       const visionEmotion = visionTagResult.emotion;
 
-      console.log(`[Vision Reaction] Kira says: "${reaction}"`);
+      console.log(`[Vision Reaction] Speaking: "${reaction}"`);
       chatHistory.push({ role: "assistant", content: reaction });
       lastKiraSpokeTimestamp = Date.now();
       isFirstVisionReaction = false;

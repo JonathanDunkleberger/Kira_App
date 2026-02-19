@@ -168,6 +168,7 @@ RULES:
 - If someone mentions their cat is missing a tail AND is jealous of another cat's tail, those are TWO separate facts.
 - Mark is_update: true ONLY if this fact directly contradicts or replaces an existing fact (e.g., "I moved to LA" updates a previous city)
 - Do NOT skip facts because they seem minor. "User had tacos for lunch" is worth remembering.
+- Do NOT extract meta-relationship facts about the AI/Kira relationship itself. No facts like "User enjoys talking to Kira" or "User considers Kira a friend" — those are about the relationship with the AI, not about the user.
 - Extract up to 20 facts per conversation. More is better than fewer.
 
 Categories: identity, preference, relationship, emotional, experience, context, opinion

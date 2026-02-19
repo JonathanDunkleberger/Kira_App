@@ -5,6 +5,7 @@ import { URL } from "url";
 import prisma from "./prismaClient.js";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
+import Groq from "groq-sdk";
 import { DeepgramSTTStreamer } from "./DeepgramSTTStreamer.js";
 import { AzureTTSStreamer } from "./AzureTTSStreamer.js";
 import type { AzureVoiceConfig } from "./AzureTTSStreamer.js";
@@ -54,6 +55,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const GROQ_API_KEY = process.env.GROQ_API_KEY!;
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 // --- INLINE LLM EMOTION TAGGING ---
 // The LLM prefixes every response with [EMO:emotion] (optionally |ACT:action|ACC:accessory).
@@ -342,13 +345,14 @@ function pickOpenerGreeting(mood: SessionMood): CachedGreeting {
 
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const groq = new Groq({ apiKey: GROQ_API_KEY });
 
 /**
- * Retry wrapper for OpenAI API calls with error categorization.
+ * Retry wrapper for LLM API calls (OpenAI or Groq) with error categorization.
  * Retries transient errors (429, 500, 502, 503, 504, ECONNRESET, ETIMEDOUT) up to maxRetries.
  * Throws immediately for non-transient errors (400, 401, 403, etc.).
  */
-async function callOpenAIWithRetry<T>(
+async function callLLMWithRetry<T>(
   fn: () => Promise<T>,
   label: string,
   maxRetries = 2
@@ -364,16 +368,16 @@ async function callOpenAIWithRetry<T>(
         code === "ECONNRESET" || code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT";
 
       if (!isTransient || attempt === maxRetries) {
-        console.error(`[OpenAI] ❌ ${label} failed (attempt ${attempt + 1}/${maxRetries + 1}, status=${status}, code=${code}):`, err?.message);
+        console.error(`[LLM] ❌ ${label} failed (attempt ${attempt + 1}/${maxRetries + 1}, status=${status}, code=${code}):`, err?.message);
         throw err;
       }
 
       const delay = Math.min(1000 * Math.pow(2, attempt), 4000) + Math.random() * 500;
-      console.warn(`[OpenAI] ⚠️ ${label} transient error (status=${status}, code=${code}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+      console.warn(`[LLM] ⚠️ ${label} transient error (status=${status}, code=${code}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
-  throw new Error(`[OpenAI] ${label} exhausted retries`); // unreachable, satisfies TS
+  throw new Error(`[LLM] ${label} exhausted retries`); // unreachable, satisfies TS
 }
 
 const server = createServer((req, res) => {
@@ -555,10 +559,10 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     // Clear any existing safety timer
     if (stateTimeoutTimer) { clearTimeout(stateTimeoutTimer); stateTimeoutTimer = null; }
 
-    // If not listening, set a 12s safety timeout
+    // If not listening, set a 18s safety timeout
     if (newState !== "listening") {
       stateTimeoutTimer = setTimeout(() => {
-        console.error(`[STATE] ⚠️ Safety timeout! Stuck in "${state}" for 12s. Forcing reset to listening.`);
+        console.error(`[STATE] ⚠️ Safety timeout! Stuck in "${state}" for 18s. Forcing reset to listening.`);
         state = "listening";
         stateTimeoutTimer = null;
         // Notify client so UI stays in sync
@@ -570,7 +574,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
           console.log(`[EOU] Processing queued EOU after safety timeout: "${queued}"`);
           processEOU(queued);
         }
-      }, 12000);
+      }, 18000);
     } else {
       // Returning to listening — check for pending EOUs
       if (pendingEOU) {
@@ -807,7 +811,7 @@ Keep it natural and brief — 1 sentence.`
     ];
 
     try {
-      const reactionResponse = await callOpenAIWithRetry(() => openai.chat.completions.create({
+      const reactionResponse = await callLLMWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: reactionMessages,
         max_tokens: 60,
@@ -1096,7 +1100,7 @@ Keep it natural and brief — 1 sentence.`
     try {
       // Take up to last 30 messages for context
       const recentMsgs = messages.slice(-30).map(m => `${m.role}: ${m.content}`).join("\n");
-      const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
+      const response = await callLLMWithRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: [
           {
@@ -1173,9 +1177,9 @@ Keep it natural and brief — 1 sentence.`
 
       try {
         // Quick check: does the model have something to say?
-        const checkResponse = await callOpenAIWithRetry(() => openai.chat.completions.create({
-          model: OPENAI_MODEL,
-          messages: chatHistory,
+        const checkResponse: any = await callLLMWithRetry(() => groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: chatHistory as any,
           temperature: 0.9, // Slightly higher for more creative initiation
           max_tokens: 300,
           frequency_penalty: 0.3,
@@ -1197,6 +1201,8 @@ Keep it natural and brief — 1 sentence.`
             cleanedSilenceCheck.startsWith("[") ||
             cleanedSilenceCheck.length < 5) {
           console.log("[Silence] Kira has nothing to say. Staying quiet.");
+          setState("listening");
+          safeSend(JSON.stringify({ type: "state_listening" }));
           return;
         }
 
@@ -1274,9 +1280,9 @@ Keep it natural and brief — 1 sentence.`
     await new Promise(resolve => setImmediate(resolve));
 
     try {
-      const completion = await callOpenAIWithRetry(() => openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        messages: getMessagesWithTimeContext(),
+      const completion: any = await callLLMWithRetry(() => groq.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: getMessagesWithTimeContext() as any,
         temperature: 0.85,
         max_tokens: 300,
         frequency_penalty: 0.3,
@@ -1397,9 +1403,9 @@ Keep it natural and brief — 1 sentence.`
         { role: "user", content: "[Say a heartfelt goodbye — this conversation meant something to you]" },
       ];
 
-      const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        messages: goodbyeMessages,
+      const response: any = await callLLMWithRetry(() => groq.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: goodbyeMessages as any,
         max_tokens: 60,
         temperature: 0.9,
       }), "proactive goodbye");
@@ -2048,9 +2054,9 @@ Keep it natural and brief — 1 sentence.`
               ];
 
               // --- Streaming opener: send first sentence to TTS while LLM still generates ---
-              const openerStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
-                model: OPENAI_MODEL,
-                messages: openerMessages,
+              const openerStream: any = await callLLMWithRetry(() => groq.chat.completions.create({
+                model: GROQ_MODEL,
+                messages: openerMessages as any,
                 stream: true,
                 temperature: 1.0,
                 max_tokens: 100,
@@ -2382,7 +2388,7 @@ Keep it natural and brief — 1 sentence.`
                 const messagesText = toCompress
                   .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
                   .join("\n");
-                const summaryResp = await callOpenAIWithRetry(() => openai.chat.completions.create({
+                const summaryResp = await callLLMWithRetry(() => openai.chat.completions.create({
                   model: "gpt-4o-mini",
                   messages: [
                     { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
@@ -2418,11 +2424,11 @@ Keep it natural and brief — 1 sentence.`
             // If the model calls a tool, we accumulate chunks, handle it, then do a
             // follow-up streaming call. If it responds with content, TTS starts on the
             // first complete sentence — cutting perceived latency nearly in half.
-            const mainStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
-              model: OPENAI_MODEL,
-              messages: getMessagesWithTimeContext(),
-              tools: tools,
-              tool_choice: "auto",
+            const mainStream: any = await callLLMWithRetry(() => groq.chat.completions.create({
+              model: GROQ_MODEL,
+              messages: getMessagesWithTimeContext() as any,
+              tools: tools as any,
+              tool_choice: "auto" as any,
               stream: true,
               temperature: 0.85,
               max_tokens: 300,
@@ -2613,9 +2619,9 @@ Keep it natural and brief — 1 sentence.`
               await new Promise(resolve => setImmediate(resolve));
 
               try {
-                const followUpStream = await callOpenAIWithRetry(() => openai.chat.completions.create({
-                  model: OPENAI_MODEL,
-                  messages: getMessagesWithTimeContext(),
+                const followUpStream: any = await callLLMWithRetry(() => groq.chat.completions.create({
+                  model: GROQ_MODEL,
+                  messages: getMessagesWithTimeContext() as any,
                   stream: true,
                   temperature: 0.85,
                   max_tokens: 300,
@@ -2858,7 +2864,7 @@ Keep it natural and brief — 1 sentence.`
               // (silence timer, vision reaction) from also starting a turn
               setState("thinking");
               try {
-                const reaction = await callOpenAIWithRetry(() => openai.chat.completions.create({
+                const reaction = await callLLMWithRetry(() => openai.chat.completions.create({
                   model: OPENAI_MODEL,
                   messages: sceneMessages,
                   max_tokens: 60,
@@ -2989,7 +2995,7 @@ Keep it natural and brief — 1 sentence.`
                 const txtMessagesText = txtToCompress
                   .map(m => `${m.role}: ${typeof m.content === "string" ? m.content : "[media]"}`)
                   .join("\n");
-                const txtSummaryResp = await callOpenAIWithRetry(() => openai.chat.completions.create({
+                const txtSummaryResp = await callLLMWithRetry(() => openai.chat.completions.create({
                   model: "gpt-4o-mini",
                   messages: [
                     { role: "system", content: "Summarize this conversation segment in under 150 words. Preserve: names, key facts, emotional context, topics, plans. Third person present tense. Be concise." },
@@ -3016,11 +3022,11 @@ Keep it natural and brief — 1 sentence.`
           }
 
           try {
-            const txtCompletion = await callOpenAIWithRetry(() => openai.chat.completions.create({
-              model: OPENAI_MODEL,
-              messages: getMessagesWithTimeContext(),
-              tools: tools,
-              tool_choice: "auto",
+            const txtCompletion: any = await callLLMWithRetry(() => groq.chat.completions.create({
+              model: GROQ_MODEL,
+              messages: getMessagesWithTimeContext() as any,
+              tools: tools as any,
+              tool_choice: "auto" as any,
               temperature: 0.85,
               max_tokens: 300,
               frequency_penalty: 0.3,
@@ -3048,9 +3054,9 @@ Keep it natural and brief — 1 sentence.`
                   chatHistory.push({ role: "tool", tool_call_id: toolCall.id, content: `Context updated to: ${viewingContext}` });
                 }
               }
-              const txtFollowUp = await callOpenAIWithRetry(() => openai.chat.completions.create({
-                model: OPENAI_MODEL,
-                messages: getMessagesWithTimeContext(),
+              const txtFollowUp: any = await callLLMWithRetry(() => groq.chat.completions.create({
+                model: GROQ_MODEL,
+                messages: getMessagesWithTimeContext() as any,
                 temperature: 0.85,
                 max_tokens: 300,
               }), "text chat tool follow-up");

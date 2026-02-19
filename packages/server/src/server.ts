@@ -2430,8 +2430,8 @@ Keep it natural and brief — 1 sentence.`
               tools: tools as any,
               tool_choice: "auto" as any,
               stream: true,
-              temperature: 0.85,
-              max_tokens: 300,
+              temperature: 0.75,
+              max_tokens: 150,
               frequency_penalty: 0.3,
               presence_penalty: 0.2,
             }), "main EOU stream");

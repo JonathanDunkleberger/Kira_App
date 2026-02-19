@@ -2328,7 +2328,6 @@ Keep it natural and brief — 1 sentence.`
           lastProcessedTranscript = userMessage;
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
-          console.log(`[LLM] Sending to Groq: "${userMessage}"`);
           safeSend(JSON.stringify({ type: "state_thinking" }));
 
           // Check if we have a recent image (within last 10 seconds)
@@ -2424,9 +2423,21 @@ Keep it natural and brief — 1 sentence.`
             // If the model calls a tool, we accumulate chunks, handle it, then do a
             // follow-up streaming call. If it responds with content, TTS starts on the
             // first complete sentence — cutting perceived latency nearly in half.
-            const mainStream: any = await callLLMWithRetry(() => groq.chat.completions.create({
-              model: GROQ_MODEL,
-              messages: getMessagesWithTimeContext() as any,
+
+            // Check if any message in the conversation has image content (array format).
+            // Groq/Llama 3.3 doesn't support multimodal — fall back to OpenAI for vision.
+            const messagesForLLM = getMessagesWithTimeContext();
+            const hasImages = messagesForLLM.some((m: any) =>
+              Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url")
+            );
+
+            const mainClient: any = hasImages ? openai : groq;
+            const mainModel = hasImages ? "gpt-4o-mini" : GROQ_MODEL;
+            console.log(`[LLM] Sending to ${hasImages ? "OpenAI (vision fallback)" : "Groq"}: "${userMessage}"`);
+
+            const mainStream: any = await callLLMWithRetry(() => mainClient.chat.completions.create({
+              model: mainModel,
+              messages: messagesForLLM as any,
               tools: tools as any,
               tool_choice: "auto" as any,
               stream: true,

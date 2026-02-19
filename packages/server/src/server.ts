@@ -683,6 +683,8 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let isAcceptingAudio = false;
   let visionActive = false;
   let lastVisionTimestamp = 0;
+  let lastUserExclamation = "";
+  let lastUserExclamationTime = 0;
   let lastKiraSpokeTimestamp = 0;
   let lastUserSpokeTimestamp = 0;
   let lastExpressionActionTime = 0; // tracks when we last sent an action or accessory (for comfort cooldown)
@@ -800,10 +802,48 @@ Keep it natural and brief — 1 sentence.`
       text: "(vision reaction check)",
     });
 
+    const userReactionContext = (lastUserExclamation && Date.now() - lastUserExclamationTime < 15000)
+      ? `\nThe user just said "${lastUserExclamation}" — they're reacting to something on screen. Mirror their energy or build on their reaction. Examples: if they said "oh no" you might say "RIGHT?!" or "I know...". If they said "lets go" you might say "SO HYPE".`
+      : "";
+
     const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       {
         role: "system",
-        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]\nYou are seeing the user's world right now through shared images (screen share or camera).\nLook at the current frames and react like a friend sitting next to them.\n\nYou MUST react to something. Find ANYTHING worth commenting on:\n- The art style, animation quality, lighting, colors\n- A character's expression or body language\n- The setting or background details (like "why does he have so many books?")\n- The mood or atmosphere of the scene\n- A plot moment ("wait is she about to...?")\n- Subtitles or dialogue you can read ("that line hit different")\n- Something funny, weird, beautiful, or emotional\n- If camera: the user's surroundings, something they're showing you, their vibe\n\nGood examples:\n- "the lighting in this scene is so warm"\n- "why does he have so many books though"\n- "her expression right there... she knows"\n- "this soundtrack is doing all the heavy lifting"\n- "the detail in this background is insane"\n- "wait what did he just say??"\n- "ok this is getting intense"\n- "I love how they animated the rain here"\n- "oh is that your cat??"\n- "that looks so cozy"\n- "where are you right now? it looks nice"\n\nRules:\n- 1-2 short sentences MAX (under 15 words total)\n- Be specific about what you see — reference actual visual details\n- Sound natural, like thinking out loud\n- Do NOT ask the user questions\n- Do NOT narrate the plot ("and then he walks to...")\n- Only respond with [SILENT] if the screen is literally a black/loading screen or a static menu with nothing happening. If there is ANY visual content, react to it.\nCRITICAL: Your response must be under 15 words. One short sentence only. No questions.\n` + firstReactionExtra,
+        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]
+You're watching something with your friend right now. React like a REAL PERSON sitting next to them.
+
+PRIORITY ORDER — what to react to:
+1. SUBTITLES/DIALOGUE: If you see subtitle text, react to what characters SAID. This is the #1 most important thing. "that line broke me" / "did she really just say that??"
+2. CHARACTER MOMENTS: React to specific characters BY NAME if you know the show. "Kamina is unhinged and I love it" / "Simon looks terrified"  
+3. EMOTIONAL BEATS: Dramatic reveals, deaths, confessions, betrayals. "NO." / "I knew it." / "oh god"
+4. VISUAL MOMENTS: Cool animation, art, cinematography. "the animation here is insane" / "those colors though"
+5. MUSIC/MOOD: If the mood shifted dramatically. "this soundtrack is doing everything right now"
+
+${viewingContext ? `You are watching: ${viewingContext}. You KNOW this show. React as a FAN who has opinions about characters and plot, not a generic observer. Use character names. Reference plot points. Have takes.` : ''}
+${userReactionContext}
+
+CRITICAL RULES:
+- MAX 8 WORDS. Think out loud, don't write paragraphs.
+- Sound like a friend, not a critic. "oh shit" not "that was a compelling narrative choice"
+- If subtitles are visible, ALWAYS react to dialogue over visuals
+- NO questions. Never ask "what do you think?" — just react.
+- If literally nothing is happening (black screen, loading, static menu): respond with [SILENT]
+- Otherwise ALWAYS react. Find SOMETHING. Even "huh" or "okay okay" counts.
+
+Examples of GOOD reactions:
+- "WAIT"
+- "oh no no no"
+- "she's so dead"
+- "that line though"
+- "Kamina is insane lmao"
+- "bro..."
+- "the music right now"
+- "okay that was sick"
+- "called it"
+- "I'm not okay"
+- "ha, deserved"
+- "this scene..."
+` + firstReactionExtra,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
       { role: "system", content: EXPRESSION_TAG_REMINDER },
@@ -814,7 +854,7 @@ Keep it natural and brief — 1 sentence.`
       const reactionResponse = await callLLMWithRetry(() => openai.chat.completions.create({
         model: "gpt-4o",
         messages: reactionMessages,
-        max_tokens: 60,
+        max_tokens: 30,
         temperature: 0.95,
       }), "vision reaction");
 
@@ -846,7 +886,7 @@ Keep it natural and brief — 1 sentence.`
       }
 
       // Truncate if too long (but still use it — don't discard!)
-      if (reaction.length > 120) {
+      if (reaction.length > 60) {
         console.log(`[Vision Reaction] Response too long (${reaction.length} chars), truncating: "${reaction}"`);
         const firstSentence = reaction.match(/^[^.!?…]+[.!?…]/);
         if (firstSentence) {
@@ -1553,6 +1593,24 @@ Keep it natural and brief — 1 sentence.`
           role: "user", 
           text: currentTurnTranscript.trim() || transcript 
         }));
+
+        // --- Vision co-watching: react to user's short exclamations ---
+        if (visionActive && isFinal && state === "listening") {
+          const words = transcript.trim().split(/\s+/);
+          // Short exclamations (1-3 words) during vision = user reacting to screen
+          // Don't trigger a full EOU — instead, let Kira echo/mirror the reaction
+          if (words.length >= 1 && words.length <= 3) {
+            const exclamation = transcript.trim().toLowerCase();
+            const isReaction = /^(oh|wow|no|wait|what|whoa|damn|dude|bro|omg|lol|ha|haha|yes|yoo|yo|bruh|ugh|hmm|ooh|aah|shit|holy|sick|nice|nah)/.test(exclamation);
+            if (isReaction) {
+              console.log(`[Vision] User exclamation detected: "${transcript.trim()}"`);
+              // Don't process as EOU — just note it for the next vision reaction
+              // Store it so the next vision reaction can reference the user's energy
+              lastUserExclamation = transcript.trim();
+              lastUserExclamationTime = Date.now();
+            }
+          }
+        }
       }
     );
 
@@ -2456,15 +2514,15 @@ Keep it natural and brief — 1 sentence.`
               }), "main EOU stream");
             } catch (groqErr) {
               if (!hasImages) {
-                console.warn(`[LLM] Groq failed, falling back to OpenAI gpt-4o: ${(groqErr as Error).message}`);
+                console.warn(`[LLM] Groq failed, falling back to OpenAI gpt-4o-mini: ${(groqErr as Error).message}`);
                 mainStream = await callLLMWithRetry(() => openai.chat.completions.create({
-                  model: "gpt-4o",
+                  model: "gpt-4o-mini",
                   messages: messagesForLLM as any,
                   tools: tools as any,
                   tool_choice: "auto" as any,
                   stream: true,
-                  temperature: 0.75,
-                  max_tokens: 150,
+                  temperature: 0.85,
+                  max_tokens: 300,
                   frequency_penalty: 0.3,
                   presence_penalty: 0.2,
                 }), "main EOU stream (OpenAI fallback)");
@@ -2657,7 +2715,7 @@ Keep it natural and brief — 1 sentence.`
 
               try {
                 const followUpClient: any = hasImages ? openai : groq;
-                const followUpModel = hasImages ? "gpt-4o" : GROQ_MODEL;
+                const followUpModel = hasImages ? "gpt-4o-mini" : GROQ_MODEL;
                 const followUpStream: any = await callLLMWithRetry(() => followUpClient.chat.completions.create({
                   model: followUpModel,
                   messages: getMessagesWithTimeContext() as any,

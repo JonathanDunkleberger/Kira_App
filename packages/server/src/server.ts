@@ -2328,7 +2328,7 @@ Keep it natural and brief — 1 sentence.`
           lastProcessedTranscript = userMessage;
 
           console.log(`[USER TRANSCRIPT]: "${userMessage}"`);
-          console.log(`[LLM] Sending to OpenAI: "${userMessage}"`);
+          console.log(`[LLM] Sending to Groq: "${userMessage}"`);
           safeSend(JSON.stringify({ type: "state_thinking" }));
 
           // Check if we have a recent image (within last 10 seconds)

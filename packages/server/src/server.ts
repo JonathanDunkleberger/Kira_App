@@ -346,6 +346,7 @@ function pickOpenerGreeting(mood: SessionMood): CachedGreeting {
 const clerkClient = createClerkClient({ secretKey: CLERK_SECRET_KEY });
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const groq = new Groq({ apiKey: GROQ_API_KEY });
+console.log(`[Groq] Client initialized (model: ${GROQ_MODEL})`);
 
 /**
  * Retry wrapper for LLM API calls (OpenAI or Groq) with error categorization.
@@ -610,7 +611,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let lastImageTimestamp = 0;
   let viewingContext = ""; // Track the current media context
   let lastEouTime = 0;
-  const EOU_DEBOUNCE_MS = 600; // Ignore EOU if within 600ms of last one
+  const EOU_DEBOUNCE_MS = 300; // Ignore EOU if within 300ms of last one
   let consecutiveEmptyEOUs = 0;
   let lastTranscriptReceivedAt = Date.now();
   let isReconnectingDeepgram = false;
@@ -680,7 +681,6 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let timeWarningPhase: 'normal' | 'final_goodbye' | 'done' = 'normal';
   let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
-  let lastSceneReactionTime = 0;
   let visionActive = false;
   let lastVisionTimestamp = 0;
   let lastKiraSpokeTimestamp = 0;
@@ -812,7 +812,7 @@ Keep it natural and brief — 1 sentence.`
 
     try {
       const reactionResponse = await callLLMWithRetry(() => openai.chat.completions.create({
-        model: OPENAI_MODEL,
+        model: "gpt-4o",
         messages: reactionMessages,
         max_tokens: 60,
         temperature: 0.95,
@@ -840,7 +840,7 @@ Keep it natural and brief — 1 sentence.`
             if (!visionActive || clientDisconnected) return;
             await triggerVisionReaction();
             if (visionActive && !clientDisconnected) scheduleNextReaction();
-          }, 30000 + Math.random() * 15000); // 30-45 second retry after silence
+          }, 15000 + Math.random() * 10000); // 15-25s retry after silence
         }
         return;
       }
@@ -914,7 +914,7 @@ Keep it natural and brief — 1 sentence.`
   }
 
   function scheduleNextReaction() {
-    const delay = 75000 + Math.random() * 45000; // 75-120 seconds
+    const delay = 30000 + Math.random() * 30000; // 30-60 seconds
     console.log(`[Vision] Next reaction scheduled in ${Math.round(delay / 1000)}s`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
@@ -957,7 +957,7 @@ Keep it natural and brief — 1 sentence.`
   function rescheduleVisionReaction() {
     if (!visionReactionTimer) return;
     clearTimeout(visionReactionTimer);
-    const delay = 75000 + Math.random() * 45000; // 75-120 seconds after Kira speaks
+    const delay = 30000 + Math.random() * 30000; // 30-60s after Kira speaks
     console.log(`[Vision] Kira spoke — rescheduling next reaction in ${Math.round(delay / 1000)}s`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
@@ -1183,11 +1183,11 @@ Keep it natural and brief — 1 sentence.`
 
       try {
         // Quick check: does the model have something to say?
-        const checkResponse = await callLLMWithRetry(() => openai.chat.completions.create({
-          model: "gpt-4o-mini",
+        const checkResponse: any = await callLLMWithRetry(() => groq.chat.completions.create({
+          model: GROQ_MODEL,
           messages: chatHistory as any,
-          temperature: 0.9, // Slightly higher for more creative initiation
-          max_tokens: 300,
+          temperature: 0.75,
+          max_tokens: 150,
           frequency_penalty: 0.3,
           presence_penalty: 0.3, // Higher to encourage novel topics
         }), "silence check");
@@ -1286,11 +1286,11 @@ Keep it natural and brief — 1 sentence.`
     await new Promise(resolve => setImmediate(resolve));
 
     try {
-      const completion = await callLLMWithRetry(() => openai.chat.completions.create({
-        model: "gpt-4o-mini",
+      const completion: any = await callLLMWithRetry(() => groq.chat.completions.create({
+        model: GROQ_MODEL,
         messages: getMessagesWithTimeContext() as any,
-        temperature: 0.85,
-        max_tokens: 300,
+        temperature: 0.75,
+        max_tokens: 150,
         frequency_penalty: 0.3,
         presence_penalty: 0.2,
       }), "runKiraTurn");
@@ -1409,8 +1409,8 @@ Keep it natural and brief — 1 sentence.`
         { role: "user", content: "[Say a heartfelt goodbye — this conversation meant something to you]" },
       ];
 
-      const response = await callLLMWithRetry(() => openai.chat.completions.create({
-        model: "gpt-4o-mini",
+      const response: any = await callLLMWithRetry(() => groq.chat.completions.create({
+        model: GROQ_MODEL,
         messages: goodbyeMessages as any,
         max_tokens: 60,
         temperature: 0.9,
@@ -1505,7 +1505,7 @@ Keep it natural and brief — 1 sentence.`
 
         // Ignore stale transcripts that arrive within 500ms of clearing
         // These are from Deepgram's pipeline processing old audio from the previous turn
-        if (Date.now() - transcriptClearedAt < 1500) {
+        if (Date.now() - transcriptClearedAt < 500) {
           console.log(`[STT] Ignoring stale transcript (${Date.now() - transcriptClearedAt}ms after clear): "${transcript}"`);
           return;
         }
@@ -2066,8 +2066,8 @@ Keep it natural and brief — 1 sentence.`
                 stream: true,
                 temperature: 1.0,
                 max_tokens: 100,
-                frequency_penalty: 0.6,
-                presence_penalty: 0.6,
+                frequency_penalty: 0.3,
+                presence_penalty: 0.3,
               }), "opener stream");
 
               let openerSentenceBuffer = "";
@@ -2438,20 +2438,40 @@ Keep it natural and brief — 1 sentence.`
             );
 
             const mainClient: any = hasImages ? openai : groq;
-            const mainModel = hasImages ? "gpt-4o-mini" : GROQ_MODEL;
-            console.log(`[LLM] Sending to ${hasImages ? "OpenAI (vision fallback)" : "Groq"}: "${userMessage}"`);
+            const mainModel = hasImages ? "gpt-4o" : GROQ_MODEL;
+            console.log(`[LLM] Sending to ${hasImages ? "OpenAI gpt-4o (vision fallback)" : "Groq"}: "${userMessage}"`);
 
-            const mainStream: any = await callLLMWithRetry(() => mainClient.chat.completions.create({
-              model: mainModel,
-              messages: messagesForLLM as any,
-              tools: tools as any,
-              tool_choice: "auto" as any,
-              stream: true,
-              temperature: 0.75,
-              max_tokens: 150,
-              frequency_penalty: 0.3,
-              presence_penalty: 0.2,
-            }), "main EOU stream");
+            let mainStream: any;
+            try {
+              mainStream = await callLLMWithRetry(() => mainClient.chat.completions.create({
+                model: mainModel,
+                messages: messagesForLLM as any,
+                tools: tools as any,
+                tool_choice: "auto" as any,
+                stream: true,
+                temperature: 0.75,
+                max_tokens: 150,
+                frequency_penalty: 0.3,
+                presence_penalty: 0.2,
+              }), "main EOU stream");
+            } catch (groqErr) {
+              if (!hasImages) {
+                console.warn(`[LLM] Groq failed, falling back to OpenAI gpt-4o: ${(groqErr as Error).message}`);
+                mainStream = await callLLMWithRetry(() => openai.chat.completions.create({
+                  model: "gpt-4o",
+                  messages: messagesForLLM as any,
+                  tools: tools as any,
+                  tool_choice: "auto" as any,
+                  stream: true,
+                  temperature: 0.75,
+                  max_tokens: 150,
+                  frequency_penalty: 0.3,
+                  presence_penalty: 0.2,
+                }), "main EOU stream (OpenAI fallback)");
+              } else {
+                throw groqErr;
+              }
+            }
 
             // --- Shared state for streaming ---
             let sentenceBuffer = "";
@@ -2636,12 +2656,14 @@ Keep it natural and brief — 1 sentence.`
               await new Promise(resolve => setImmediate(resolve));
 
               try {
-                const followUpStream = await callLLMWithRetry(() => openai.chat.completions.create({
-                  model: "gpt-4o-mini",
+                const followUpClient: any = hasImages ? openai : groq;
+                const followUpModel = hasImages ? "gpt-4o" : GROQ_MODEL;
+                const followUpStream: any = await callLLMWithRetry(() => followUpClient.chat.completions.create({
+                  model: followUpModel,
                   messages: getMessagesWithTimeContext() as any,
                   stream: true,
-                  temperature: 0.85,
-                  max_tokens: 300,
+                  temperature: 0.75,
+                  max_tokens: 150,
                   frequency_penalty: 0.3,
                   presence_penalty: 0.2,
                 }), "tool follow-up stream");
@@ -2836,123 +2858,6 @@ Keep it natural and brief — 1 sentence.`
             lastImageTimestamp = Date.now();
           }
           lastVisionTimestamp = Date.now();
-
-          // --- WATCH-TOGETHER: Occasional scene reactions ---
-          const now = Date.now();
-          const SCENE_REACTION_COOLDOWN = 45000; // Max once per 45 seconds
-          const SCENE_REACTION_CHANCE = 0.3;      // 30% chance to react
-
-          if (
-            viewingContext &&
-            state === "listening" &&
-            timeWarningPhase !== 'done' && timeWarningPhase !== 'final_goodbye' &&
-            now - lastSceneReactionTime > SCENE_REACTION_COOLDOWN &&
-            Math.random() < SCENE_REACTION_CHANCE
-          ) {
-            lastSceneReactionTime = now;
-            console.log(`[Scene] Evaluating scene reaction (watching: ${viewingContext})`);
-
-            const imageContent: OpenAI.Chat.ChatCompletionContentPart[] = validSceneImages.map((img: string) => ({
-              type: "image_url" as const,
-              image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
-            }));
-            imageContent.push({
-              type: "text" as const,
-              text: "[Screen changed — react if something interesting happened, or say nothing]",
-            });
-
-            const sceneMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-              {
-                role: "system",
-                content: `${KIRA_SYSTEM_PROMPT}\n\nYou're watching ${viewingContext} together with the user. You just noticed something change on screen. Give a brief, natural reaction — like a friend sitting next to someone watching. This should be SHORT: a gasp, a laugh, a quick comment, 1 sentence MAX. Examples of good reactions: "Oh no...", "Wait, is that—", "Ha! I love this part.", "Whoa.", "Okay that was intense." Don't narrate or describe what you see. Just react emotionally. If the moment isn't noteworthy, respond with exactly "[SKIP]" and nothing else.`,
-              },
-              ...chatHistory.filter(m => m.role !== "system").slice(-4),
-              { role: "system", content: EXPRESSION_TAG_REMINDER },
-              { role: "user", content: imageContent },
-            ];
-
-            // Fire-and-forget — don't block the message loop
-            (async () => {
-              // Bump generation ID so any in-flight TTS from a previous response is invalidated
-              currentResponseId++;
-              const thisResponseId = currentResponseId;
-
-              // Lock state BEFORE async LLM call to prevent other proactive systems
-              // (silence timer, vision reaction) from also starting a turn
-              setState("thinking");
-              try {
-                const reaction = await callLLMWithRetry(() => openai.chat.completions.create({
-                  model: OPENAI_MODEL,
-                  messages: sceneMessages,
-                  max_tokens: 60,
-                  temperature: 1.0,
-                }), "scene reaction");
-
-                let reactionText = reaction.choices[0]?.message?.content?.trim() || "";
-
-                // Only speak if there's real content and we're still in a valid state
-                if (
-                  !reactionText ||
-                  reactionText.length < 2 ||
-                  reactionText.includes("[SKIP]") ||
-                  reactionText === '""' ||
-                  reactionText === "''" ||
-                  clientDisconnected ||
-                  timeWarningPhase as string === 'done' || timeWarningPhase as string === 'final_goodbye'
-                ) {
-                  console.log(`[Scene] No reaction (text: "${reactionText}", state: ${state})`);
-                  setState("listening");
-                  safeSend(JSON.stringify({ type: "state_listening" }));
-                  return;
-                }
-
-                console.log(`[Scene] Kira reacts: "${reactionText}"`);
-
-                // Parse expression tag and strip before TTS
-                const sceneTagResult = handleNonStreamingTag(reactionText, "scene reaction");
-                reactionText = stripEmotionTags(sceneTagResult.text);
-                const sceneEmotion = sceneTagResult.emotion;
-
-                chatHistory.push({ role: "assistant", content: reactionText });
-                lastKiraSpokeTimestamp = Date.now();
-                // Don't reschedule vision timer from scene reactions — already handled by scheduleNextReaction()
-                safeSend(JSON.stringify({ type: "transcript", role: "ai", text: reactionText }));
-
-                // TTS pipeline for scene reaction
-                setState("speaking");
-                safeSend(JSON.stringify({ type: "state_speaking" }));
-                safeSend(JSON.stringify({ type: "tts_chunk_starts" }));
-                await new Promise(resolve => setImmediate(resolve));
-
-                const sentences = reactionText.split(/(?<=[.!?…])\s+(?=[A-Z"])/);
-                let sceneSentIdx = 0;
-                interruptRequested = false; // Safe to reset — old TTS killed by generation ID
-                for (const sentence of sentences) {
-                  const trimmed = sentence.trim();
-                  if (trimmed.length === 0) continue;
-                  if (interruptRequested || thisResponseId !== currentResponseId) break;
-                  if (sceneSentIdx > 0) {
-                    const delay = EMOTION_SENTENCE_DELAY[sceneEmotion] || 0;
-                    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
-                  }
-                  sceneSentIdx++;
-                  await ttsSentence(trimmed, sceneEmotion, (chunk) => {
-                    if (interruptRequested || thisResponseId !== currentResponseId) return;
-                    safeSend(chunk);
-                  });
-                }
-
-                safeSend(JSON.stringify({ type: "tts_chunk_ends" }));
-                setState("listening");
-                safeSend(JSON.stringify({ type: "state_listening" }));
-                resetSilenceTimer();
-              } catch (err) {
-                console.error("[Scene] Reaction error:", (err as Error).message);
-                setState("listening");
-                safeSend(JSON.stringify({ type: "state_listening" }));
-              }
-            })();
-          }
         } else if (controlMessage.type === "voice_change") {
           const newVoice = controlMessage.voice as "anime" | "natural";
           currentVoiceConfig = VOICE_CONFIGS[newVoice] || VOICE_CONFIGS.natural;
@@ -3039,13 +2944,13 @@ Keep it natural and brief — 1 sentence.`
           }
 
           try {
-            const txtCompletion = await callLLMWithRetry(() => openai.chat.completions.create({
-              model: "gpt-4o-mini",
+            const txtCompletion: any = await callLLMWithRetry(() => groq.chat.completions.create({
+              model: GROQ_MODEL,
               messages: getMessagesWithTimeContext() as any,
               tools: tools as any,
               tool_choice: "auto" as any,
-              temperature: 0.85,
-              max_tokens: 300,
+              temperature: 0.75,
+              max_tokens: 150,
               frequency_penalty: 0.3,
               presence_penalty: 0.2,
             }), "text chat completion");
@@ -3071,11 +2976,11 @@ Keep it natural and brief — 1 sentence.`
                   chatHistory.push({ role: "tool", tool_call_id: toolCall.id, content: `Context updated to: ${viewingContext}` });
                 }
               }
-              const txtFollowUp = await callLLMWithRetry(() => openai.chat.completions.create({
-                model: "gpt-4o-mini",
+              const txtFollowUp: any = await callLLMWithRetry(() => groq.chat.completions.create({
+                model: GROQ_MODEL,
                 messages: getMessagesWithTimeContext() as any,
-                temperature: 0.85,
-                max_tokens: 300,
+                temperature: 0.75,
+                max_tokens: 150,
               }), "text chat tool follow-up");
               txtLlmResponse = txtFollowUp.choices[0]?.message?.content || "";
             } else {

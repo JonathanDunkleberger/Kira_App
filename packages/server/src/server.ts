@@ -1177,8 +1177,8 @@ Keep it natural and brief — 1 sentence.`
 
       try {
         // Quick check: does the model have something to say?
-        const checkResponse: any = await callLLMWithRetry(() => groq.chat.completions.create({
-          model: GROQ_MODEL,
+        const checkResponse = await callLLMWithRetry(() => openai.chat.completions.create({
+          model: "gpt-4o-mini",
           messages: chatHistory as any,
           temperature: 0.9, // Slightly higher for more creative initiation
           max_tokens: 300,
@@ -1280,8 +1280,8 @@ Keep it natural and brief — 1 sentence.`
     await new Promise(resolve => setImmediate(resolve));
 
     try {
-      const completion: any = await callLLMWithRetry(() => groq.chat.completions.create({
-        model: GROQ_MODEL,
+      const completion = await callLLMWithRetry(() => openai.chat.completions.create({
+        model: "gpt-4o-mini",
         messages: getMessagesWithTimeContext() as any,
         temperature: 0.85,
         max_tokens: 300,
@@ -1403,8 +1403,8 @@ Keep it natural and brief — 1 sentence.`
         { role: "user", content: "[Say a heartfelt goodbye — this conversation meant something to you]" },
       ];
 
-      const response: any = await callLLMWithRetry(() => groq.chat.completions.create({
-        model: GROQ_MODEL,
+      const response = await callLLMWithRetry(() => openai.chat.completions.create({
+        model: "gpt-4o-mini",
         messages: goodbyeMessages as any,
         max_tokens: 60,
         temperature: 0.9,
@@ -2619,8 +2619,8 @@ Keep it natural and brief — 1 sentence.`
               await new Promise(resolve => setImmediate(resolve));
 
               try {
-                const followUpStream: any = await callLLMWithRetry(() => groq.chat.completions.create({
-                  model: GROQ_MODEL,
+                const followUpStream = await callLLMWithRetry(() => openai.chat.completions.create({
+                  model: "gpt-4o-mini",
                   messages: getMessagesWithTimeContext() as any,
                   stream: true,
                   temperature: 0.85,
@@ -3022,8 +3022,8 @@ Keep it natural and brief — 1 sentence.`
           }
 
           try {
-            const txtCompletion: any = await callLLMWithRetry(() => groq.chat.completions.create({
-              model: GROQ_MODEL,
+            const txtCompletion = await callLLMWithRetry(() => openai.chat.completions.create({
+              model: "gpt-4o-mini",
               messages: getMessagesWithTimeContext() as any,
               tools: tools as any,
               tool_choice: "auto" as any,
@@ -3054,8 +3054,8 @@ Keep it natural and brief — 1 sentence.`
                   chatHistory.push({ role: "tool", tool_call_id: toolCall.id, content: `Context updated to: ${viewingContext}` });
                 }
               }
-              const txtFollowUp: any = await callLLMWithRetry(() => groq.chat.completions.create({
-                model: GROQ_MODEL,
+              const txtFollowUp = await callLLMWithRetry(() => openai.chat.completions.create({
+                model: "gpt-4o-mini",
                 messages: getMessagesWithTimeContext() as any,
                 temperature: 0.85,
                 max_tokens: 300,

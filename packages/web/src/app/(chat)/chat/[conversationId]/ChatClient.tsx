@@ -630,7 +630,7 @@ export default function ChatClient() {
         {/* Animated scene background — behind everything */}
         {isSceneActive && visualMode === "avatar" && (
           <video
-            src="/models/Suki/粉夜晚.mp4"
+            src="/models/Suki/pink-night.mp4"
             autoPlay
             loop
             muted

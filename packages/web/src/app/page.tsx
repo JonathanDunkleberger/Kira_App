@@ -395,7 +395,18 @@ export default function HomePage() {
                 animation: "heroFadeUp 0.8s ease both",
               }}
             >
-              Not an assistant. A presence.
+              Not an assistant. A{" "}
+              <span
+                style={{
+                  fontStyle: "italic",
+                  background: "linear-gradient(135deg, #e879a8, #b064d4)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
+                presence.
+              </span>
             </h1>
 
             <p

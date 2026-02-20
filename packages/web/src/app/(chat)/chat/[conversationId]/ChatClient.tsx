@@ -548,7 +548,16 @@ export default function ChatClient() {
   return (
     <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif", height: "100dvh" }} className="flex flex-col items-center justify-center w-full">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
+      <div
+        className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center"
+        style={{
+          zIndex: 20,
+          background: isSceneActive ? "rgba(0,0,0,0.3)" : "transparent",
+          backdropFilter: isSceneActive ? "blur(6px)" : undefined,
+          WebkitBackdropFilter: isSceneActive ? "blur(6px)" : undefined,
+          transition: "background 0.3s ease",
+        }}
+      >
         <a href="/">
           <span className="font-medium text-lg flex items-center gap-2" style={{ color: "#C9D1D9" }}>
             <KiraLogo size={24} id="chatXO" />
@@ -625,29 +634,30 @@ export default function ChatClient() {
         isPro={isPro}
       />
 
+      {/* Animated scene background — fullscreen behind everything */}
+      {isSceneActive && visualMode === "avatar" && (
+        <video
+          src="/models/Suki/pink-night.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            objectFit: "cover",
+            zIndex: 0,
+            opacity: 0.85,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
       {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden", zIndex: 1 }}>
-        {/* Animated scene background — time-of-day aware */}
-        {isSceneActive && visualMode === "avatar" && (
-          <video
-            src="/models/Suki/pink-night.mp4"
-            autoPlay
-            loop
-            muted
-            playsInline
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              zIndex: 0,
-              opacity: 0.85,
-              pointerEvents: "none",
-              borderRadius: 0,
-            }}
-          />
-        )}
         {/* Visual — absolutely centered */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 140 : 160 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
@@ -787,7 +797,20 @@ export default function ChatClient() {
           )}
         </div>
         {/* Voice Controls */}
-        <div className="flex items-center gap-4 relative z-[1]">
+        <div
+          className="flex items-center gap-4 relative z-[1]"
+          style={{
+            ...(isSceneActive ? {
+              background: "rgba(0,0,0,0.5)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              borderRadius: 24,
+              padding: "8px 16px",
+              border: "1px solid rgba(255,255,255,0.08)",
+            } : {}),
+            transition: "all 0.3s ease",
+          }}
+        >
         {/* Avatar/Orb Toggle */}
         <button
           onClick={() => {

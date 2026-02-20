@@ -459,6 +459,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             autoDensity: true,
             antialias: !isMobile,
             powerPreference: isMobile ? "low-power" : "default",
+            preserveDrawingBuffer: true, // Required for clip recorder to read canvas via drawImage
           });
           containerRef.current.appendChild(app.view as unknown as HTMLCanvasElement);
         } catch (pixiErr) {

@@ -35,20 +35,25 @@ export function useClipRecorder() {
 
       if (backgroundVideo) {
         // Create a composite canvas that draws the background video + Live2D canvas
+        // NOTE: The Live2D canvas MUST have preserveDrawingBuffer:true for drawImage to work
         const compositeCanvas = document.createElement("canvas");
-        compositeCanvas.width = canvasElement.width || 1920;
-        compositeCanvas.height = canvasElement.height || 1080;
+        // Match the on-screen canvas dimensions (CSS pixels, not backing store)
+        compositeCanvas.width = canvasElement.clientWidth || canvasElement.width || 1920;
+        compositeCanvas.height = canvasElement.clientHeight || canvasElement.height || 1080;
         compositeCanvasRef.current = compositeCanvas;
-        const ctx = compositeCanvas.getContext("2d")!;
+        const ctx = compositeCanvas.getContext("2d", { willReadFrequently: false })!;
 
         const drawFrame = () => {
-          // Draw background video first (cover the canvas)
+          const cw = compositeCanvas.width;
+          const ch = compositeCanvas.height;
+
+          // Clear frame
+          ctx.clearRect(0, 0, cw, ch);
+
+          // Draw background video first (cover-fit to match CSS object-fit: cover)
           if (backgroundVideo && !backgroundVideo.paused && backgroundVideo.readyState >= 2) {
-            // Calculate cover-fit dimensions
-            const vw = backgroundVideo.videoWidth || compositeCanvas.width;
-            const vh = backgroundVideo.videoHeight || compositeCanvas.height;
-            const cw = compositeCanvas.width;
-            const ch = compositeCanvas.height;
+            const vw = backgroundVideo.videoWidth || cw;
+            const vh = backgroundVideo.videoHeight || ch;
             const scale = Math.max(cw / vw, ch / vh);
             const sw = vw * scale;
             const sh = vh * scale;
@@ -60,11 +65,15 @@ export function useClipRecorder() {
           } else {
             // No video frame ready — fill with dark background
             ctx.fillStyle = "#0D1117";
-            ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+            ctx.fillRect(0, 0, cw, ch);
           }
 
-          // Draw Live2D canvas on top
-          ctx.drawImage(canvasElement, 0, 0, compositeCanvas.width, compositeCanvas.height);
+          // Draw Live2D canvas on top (preserveDrawingBuffer must be true on the WebGL context)
+          try {
+            ctx.drawImage(canvasElement, 0, 0, cw, ch);
+          } catch {
+            // Silently skip if canvas is lost (WebGL context loss)
+          }
 
           compositeAnimFrameRef.current = requestAnimationFrame(drawFrame);
         };

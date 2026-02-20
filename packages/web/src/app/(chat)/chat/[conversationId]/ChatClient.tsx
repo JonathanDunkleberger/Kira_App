@@ -627,10 +627,10 @@ export default function ChatClient() {
 
       {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden", zIndex: 1 }}>
-        {/* Animated scene background — behind everything */}
+        {/* Animated scene background — time-of-day aware */}
         {isSceneActive && visualMode === "avatar" && (
           <video
-            src="/models/Suki/pink-night.mp4"
+            src={new Date().getHours() >= 6 && new Date().getHours() < 18 ? "/models/Suki/pink-day.mp4" : "/models/Suki/pink-night.mp4"}
             autoPlay
             loop
             muted

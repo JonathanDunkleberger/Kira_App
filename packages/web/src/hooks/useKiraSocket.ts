@@ -367,9 +367,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     }
 
     // Build persistent audio chain once:
-    // Source → GainNode → AnalyserNode → MediaStreamDest → hidden <audio> element
-    // Routing through a hidden <audio> element ensures iOS screen recording captures
-    // Kira's voice. Raw AudioContext.destination is NOT captured by iOS screen recording.
+    // Build persistent audio chain once:
+    // Source → GainNode → AnalyserNode → destination (primary) + MediaStreamDest (secondary)
     if (!playbackGain.current) {
       playbackGain.current = playbackContext.current.createGain();
       playbackAnalyser.current = playbackContext.current.createAnalyser();
@@ -378,20 +377,28 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       playbackAnalyser.current.minDecibels = -90;
       playbackAnalyser.current.maxDecibels = -10;
 
-      // Create MediaStreamDestination for screen recording capture
-      mediaStreamDest.current = playbackContext.current.createMediaStreamDestination();
-
       playbackGain.current.connect(playbackAnalyser.current);
-      playbackAnalyser.current.connect(mediaStreamDest.current);
 
-      // Create hidden <audio> element to play the MediaStream
-      // iOS screen recording captures <audio> elements but NOT raw AudioContext output
-      if (!screenCaptureAudio.current) {
-        screenCaptureAudio.current = document.createElement("audio");
-        screenCaptureAudio.current.setAttribute("playsinline", "true");
+      // PRIMARY output: direct to speakers
+      playbackAnalyser.current.connect(playbackContext.current.destination);
+
+      // SECONDARY output: MediaStreamDest → hidden <audio> as fallback for screen recording
+      try {
+        mediaStreamDest.current = playbackContext.current.createMediaStreamDestination();
+        playbackAnalyser.current.connect(mediaStreamDest.current);
+
+        if (!screenCaptureAudio.current) {
+          screenCaptureAudio.current = document.createElement("audio");
+          screenCaptureAudio.current.setAttribute("playsinline", "true");
+          screenCaptureAudio.current.style.display = "none";
+          document.body.appendChild(screenCaptureAudio.current); // MUST be in DOM for iOS
+        }
+        screenCaptureAudio.current.srcObject = mediaStreamDest.current.stream;
+        screenCaptureAudio.current.volume = 0; // Mute to prevent double audio — screen recording still captures it
+        screenCaptureAudio.current.play().catch(() => {});
+      } catch (e) {
+        console.warn("[Audio] MediaStreamDest fallback failed (non-fatal):", e);
       }
-      screenCaptureAudio.current.srcObject = mediaStreamDest.current.stream;
-      screenCaptureAudio.current.play().catch(() => {});
     }
 
     while (audioQueue.current.length > 0) {
@@ -485,6 +492,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     if (screenCaptureAudio.current) {
       screenCaptureAudio.current.pause();
       screenCaptureAudio.current.srcObject = null;
+      screenCaptureAudio.current.remove(); // Remove from DOM
+      screenCaptureAudio.current = null;
     }
     mediaStreamDest.current = null;
 
@@ -1402,6 +1411,18 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           case "state_speaking":
             kiraStateRef.current = "speaking";
             setKiraState("speaking");
+            // ─── iOS screen recording fix: pause mic tracks during speech ───
+            // iOS puts Safari into PlayAndRecord audio session when getUserMedia is active.
+            // iOS screen recording does NOT capture PlayAndRecord sessions (Apple privacy).
+            // Disabling mic tracks drops iOS into Playback mode, which IS captured.
+            // Trade-off: voice barge-in is disabled during Kira's speech.
+            // Users can still tap the interrupt button to stop her.
+            if (audioStream.current) {
+              audioStream.current.getAudioTracks().forEach(track => {
+                track.enabled = false;
+              });
+              debugLog("[Audio] Mic tracks paused for speaking state (enables screen recording capture)");
+            }
             // CRITICAL: Stop any audio still playing from a previous turn
             // This prevents double-speak when a proactive comment overlaps with a user response
             scheduledSources.current.forEach((source) => {
@@ -1424,6 +1445,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           case "state_listening":
             kiraStateRef.current = "listening";
             setKiraState("listening");
+            // ─── iOS screen recording fix: resume mic tracks when listening ───
+            // Re-enables mic input so Deepgram STT can capture user speech again.
+            if (audioStream.current) {
+              audioStream.current.getAudioTracks().forEach(track => {
+                track.enabled = true;
+              });
+              debugLog("[Audio] Mic tracks resumed for listening state");
+            }
             break;
           case "transcript":
             setTranscript({ role: msg.role, text: msg.text });

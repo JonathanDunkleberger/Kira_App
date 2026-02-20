@@ -661,6 +661,7 @@ export default function ChatClient() {
                       emotion={currentExpression}
                       accessories={activeAccessories}
                       action={currentAction}
+                      isSceneActive={isSceneActive}
                       onModelReady={() => {
                         setLive2dReady(true);
                         signalVisualReady();

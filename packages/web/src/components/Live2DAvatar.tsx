@@ -138,6 +138,7 @@ interface Live2DAvatarProps {
   onModelReady?: () => void;
   onLoadError?: () => void;
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+  isSceneActive?: boolean;
 }
 
 /** Per-accessory auto-remove durations (seconds). Default: 60s for unlisted items. */
@@ -187,7 +188,7 @@ function logMemory(label: string) {
   } catch {}
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, action, onModelReady, onLoadError, onCanvasReady }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, action, onModelReady, onLoadError, onCanvasReady, isSceneActive }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
@@ -468,6 +469,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         appRef.current = app;
         // Store canvas ref for cleanup (PIXI.view is the <canvas>)
         canvasRef.current = app.view as unknown as HTMLCanvasElement;
+        // Ensure canvas is CSS-transparent too (not just WebGL framebuffer)
+        canvasRef.current.style.background = "transparent";
         pixiCreatedAt.current = Date.now();
         pixiResolutionRef.current = resolution;
         debugLog(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);

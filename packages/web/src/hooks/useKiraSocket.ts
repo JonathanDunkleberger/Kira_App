@@ -382,22 +382,16 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // PRIMARY output: direct to speakers
       playbackAnalyser.current.connect(playbackContext.current.destination);
 
-      // SECONDARY output: MediaStreamDest → hidden <audio> as fallback for screen recording
+      // SECONDARY output: MediaStreamDest for clip recording (no <audio> element — avoids iOS echo)
       try {
         mediaStreamDest.current = playbackContext.current.createMediaStreamDestination();
         playbackAnalyser.current.connect(mediaStreamDest.current);
-
-        if (!screenCaptureAudio.current) {
-          screenCaptureAudio.current = document.createElement("audio");
-          screenCaptureAudio.current.setAttribute("playsinline", "true");
-          screenCaptureAudio.current.style.display = "none";
-          document.body.appendChild(screenCaptureAudio.current); // MUST be in DOM for iOS
-        }
-        screenCaptureAudio.current.srcObject = mediaStreamDest.current.stream;
-        screenCaptureAudio.current.volume = 0; // Mute to prevent double audio — screen recording still captures it
-        screenCaptureAudio.current.play().catch(() => {});
+        // NOTE: Previously a hidden <audio> element was created and .play()'d here to feed
+        // screen recording capture. This caused echo/chamber effect on iOS Safari because
+        // iOS treats even volume=0 <audio> elements as a second audible output path.
+        // The clip recorder reads from mediaStreamDest.current directly — no <audio> needed.
       } catch (e) {
-        console.warn("[Audio] MediaStreamDest fallback failed (non-fatal):", e);
+        console.warn("[Audio] MediaStreamDest creation failed (non-fatal):", e);
       }
     }
 

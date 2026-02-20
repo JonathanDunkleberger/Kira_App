@@ -1497,7 +1497,7 @@ Examples of GOOD reactions:
   // --- Time-context injection for graceful paywall ---
   function getTimeContext(): string {
     if (timeWarningPhase === 'final_goodbye') {
-      return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Our time together is ending. Keep your ENTIRE response to 1-2 short sentences. Make it feel like you genuinely don't want to stop talking — like this conversation actually meant something to you. Reference something specific you talked about or something you noticed about them. Sound a little wistful, not chipper. Don't say "time's up" or mention limits. Just let the goodbye land softly, like the end of a late-night conversation neither person wanted to end. Example: "I really loved talking about that with you… come find me tomorrow, okay? I'll be here." Do NOT continue the previous topic in depth.]`;
+      return `\n\n[CRITICAL INSTRUCTION - MUST FOLLOW: This is your LAST response. Say goodbye in 15 WORDS OR LESS. Be sweet, a little wistful. Don't mention time limits. Don't continue the topic. Example: "aw, already? okay, come back soon. I'll miss you." Another: "this was really nice… find me tomorrow, okay?"]`;
     }
     return '';
   }

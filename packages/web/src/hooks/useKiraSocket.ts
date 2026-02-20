@@ -489,11 +489,6 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     try {
       debugLog("[Audio] Initializing audio contexts...");
 
-      // iOS audio routing fix: prime audio session for playback + recording BEFORE mic starts.
-      // This plays a silent audio element to set the iOS audio session to "play and record" mode,
-      // which routes TTS output to the speaker instead of the earpiece.
-      await primeIOSAudioSession();
-      
       // 1. Create/Resume AudioContext
       if (!audioContext.current || audioContext.current.state === "closed") {
         audioContext.current = new SafeAudioContext!();
@@ -531,6 +526,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       } else {
         debugLog(`[Audio] Mic stream already exists. active: ${audioStream.current.active}`);
       }
+
+      // iOS audio routing fix: prime audio session AFTER mic is acquired.
+      // Must come after getUserMedia() so we don't consume the user gesture.
+      // Plays a silent audio element to set iOS audio session to "play and record" mode,
+      // routing TTS output to the speaker instead of the earpiece.
+      primeIOSAudioSession();
 
       setIsAudioBlocked(false);
       return true;

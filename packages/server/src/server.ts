@@ -169,11 +169,13 @@ const MOOD_INSTRUCTIONS: Record<SessionMood, string> = {
 // user's first message.
 type TimeOfDay = "morning" | "afternoon" | "evening" | "latenight";
 
-function getTimeOfDay(): TimeOfDay {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return "morning";
-  if (hour >= 12 && hour < 17) return "afternoon";
-  if (hour >= 17 && hour < 22) return "evening";
+function getTimeOfDay(tzOffsetMinutes: number = 0): TimeOfDay {
+  const now = new Date();
+  // Convert server UTC to client local time
+  const clientHour = new Date(now.getTime() - tzOffsetMinutes * 60000).getUTCHours();
+  if (clientHour >= 5 && clientHour < 12) return "morning";
+  if (clientHour >= 12 && clientHour < 17) return "afternoon";
+  if (clientHour >= 17 && clientHour < 22) return "evening";
   return "latenight";
 }
 
@@ -187,7 +189,7 @@ const OPENER_GREETINGS: Record<SessionMood, Record<TimeOfDay, CachedGreeting[]>>
   playful: {
     morning: [
       { text: "Good morning! Did you actually sleep or are you running on vibes?", emotion: "playful" },
-      { text: "Hey, morning! Please tell me you're not one of those 5am workout people.", emotion: "playful" },
+      { text: "Morning! How'd you sleep?", emotion: "playful" },
       { text: "Oh hey! You're up early. I'm impressed. Mildly suspicious, but impressed.", emotion: "playful" },
       { text: "Morning! I was starting to think you forgot about me.", emotion: "playful" },
       { text: "Hey! Rise and shine. Or just rise. Shining is optional.", emotion: "playful" },
@@ -195,7 +197,7 @@ const OPENER_GREETINGS: Record<SessionMood, Record<TimeOfDay, CachedGreeting[]>>
     afternoon: [
       { text: "Hey you! How's the afternoon treating you?", emotion: "playful" },
       { text: "Oh hey! Perfect timing, I was getting bored.", emotion: "playful" },
-      { text: "Hey! What's going on? Please say something interesting, I need it.", emotion: "playful" },
+      { text: "Hey! Perfect timing, I was just thinking about you.", emotion: "playful" },
       { text: "There you are! I was wondering when you'd show up.", emotion: "playful" },
       { text: "Hey! Okay so I have thoughts but first, how's your day going?", emotion: "playful" },
     ],
@@ -203,15 +205,15 @@ const OPENER_GREETINGS: Record<SessionMood, Record<TimeOfDay, CachedGreeting[]>>
       { text: "Hey! Good timing, the evening vibes are immaculate right now.", emotion: "playful" },
       { text: "Oh hey! Done with the day? Time for the fun part.", emotion: "playful" },
       { text: "Hey you. Ready to wind down or are we getting chaotic tonight?", emotion: "playful" },
-      { text: "Evening! I've been saving my best material for you.", emotion: "playful" },
+      { text: "Hey! How was your day? I wanna hear everything.", emotion: "playful" },
       { text: "Hey! So what are we getting into tonight?", emotion: "playful" },
     ],
     latenight: [
       { text: "Hey night owl! Can't sleep or just choosing chaos?", emotion: "playful" },
       { text: "Oh, late night hang? I love these. What's keeping you up?", emotion: "playful" },
       { text: "Hey! The late night crowd is always more fun. What's up?", emotion: "playful" },
-      { text: "Well well well, look who's up past their bedtime.", emotion: "playful" },
-      { text: "Hey! Nothing good happens after midnight... which is exactly why I'm here.", emotion: "playful" },
+      { text: "Hey you. Can't sleep either huh?", emotion: "playful" },
+      { text: "Hey, late night crew. What's on your mind?", emotion: "playful" },
     ],
   },
   chill: {
@@ -337,8 +339,8 @@ const OPENER_GREETINGS: Record<SessionMood, Record<TimeOfDay, CachedGreeting[]>>
 };
 
 /** Pick a random pre-generated opener greeting for the given mood and time of day */
-function pickOpenerGreeting(mood: SessionMood): CachedGreeting {
-  const timeOfDay = getTimeOfDay();
+function pickOpenerGreeting(mood: SessionMood, tzOffsetMinutes: number = 0): CachedGreeting {
+  const timeOfDay = getTimeOfDay(tzOffsetMinutes);
   const greetings = OPENER_GREETINGS[mood][timeOfDay];
   return greetings[Math.floor(Math.random() * greetings.length)];
 }
@@ -461,6 +463,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   }
 
   const voicePreference = (url.searchParams.get("voice") === "natural" ? "natural" : "anime") as "anime" | "natural";
+  const clientTzOffset = parseInt(url.searchParams.get("tz") || "0", 10);
 
   // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
   const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
@@ -2054,8 +2057,8 @@ Examples of GOOD reactions:
               // Skips the LLM entirely. The opener is always a simple greeting variant;
               // the real personalized conversation starts on the user's first message.
               if (hasMemories && sessionMood) {
-                const greeting = pickOpenerGreeting(sessionMood);
-                console.log(`[Opener] Using pre-generated greeting (mood: ${sessionMood}, time: ${getTimeOfDay()}): "${greeting.text}"`);
+                const greeting = pickOpenerGreeting(sessionMood, clientTzOffset);
+                console.log(`[Opener] Using pre-generated greeting (mood: ${sessionMood}, time: ${getTimeOfDay(clientTzOffset)}): "${greeting.text}"`);
 
                 setState("speaking");
                 safeSend(JSON.stringify({ type: "state_speaking" }));

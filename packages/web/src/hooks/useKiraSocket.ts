@@ -1160,13 +1160,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL!;
     const authParam = freshToken ? `token=${freshToken}` : `guestId=${guestId}`;
     const voiceParam = `&voice=${voicePreference}`;
-    debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}`);
+    const tzParam = `&tz=${new Date().getTimezoneOffset()}`;
+    debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}${tzParam}`);
 
     debugLog("[State] socketState → connecting");
     setSocketState("connecting");
     getConnectionStore()!.socketState = "connecting";
     isServerReady.current = false;
-    ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}`);
+    ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}${tzParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     // ─── Store to singleton immediately so remounts can find it ───

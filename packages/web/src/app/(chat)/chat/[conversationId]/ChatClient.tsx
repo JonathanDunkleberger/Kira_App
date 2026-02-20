@@ -3,7 +3,7 @@
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKiraSocket, debugLog } from "@/hooks/useKiraSocket";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera, Scissors, Download, X, Share2 } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera, Scissors, Download, X, Share2, Paintbrush } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import { getOrCreateGuestId } from "@/lib/guestId";
@@ -26,6 +26,7 @@ export default function ChatClient() {
   const [guestId, setGuestId] = useState("");
   const [voicePreference, setVoicePref] = useState<VoicePreference>("anime");
   const [visualMode, setVisualMode] = useState<"avatar" | "orb">("avatar");
+  const [isSceneActive, setIsSceneActive] = useState(false);
   const [live2dReady, setLive2dReady] = useState(false);
   const [live2dFailed, setLive2dFailed] = useState(false);
   const [live2dDismissed, setLive2dDismissed] = useState(false); // set true before WS close to clean up PIXI first
@@ -135,12 +136,16 @@ export default function ChatClient() {
     };
   }, [visualMode, live2dFailed, live2dReady]);
 
-  // Load guest ID, voice preference, and chat toggle from localStorage
+  // Load guest ID, voice preference, and scene preference from localStorage
   useEffect(() => {
     if (!userId) {
       setGuestId(getOrCreateGuestId());
     }
     setVoicePref(getVoicePreference());
+    try {
+      const saved = localStorage.getItem("kira-scene-active");
+      if (saved === "true") setIsSceneActive(true);
+    } catch {}
   }, [userId]);
 
   const { 
@@ -230,6 +235,14 @@ export default function ChatClient() {
       debugLog("[Clip] No clip data available");
     }
   }, [clipRecorder]);
+
+  const toggleScene = useCallback(() => {
+    setIsSceneActive((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("kira-scene-active", String(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   // ─── Camera PIP preview ───
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -614,6 +627,27 @@ export default function ChatClient() {
 
       {/* Main Content Area — orb/avatar centered */}
       <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: "hidden", zIndex: 1 }}>
+        {/* Animated scene background — behind everything */}
+        {isSceneActive && visualMode === "avatar" && (
+          <video
+            src="/models/Suki/粉夜晚.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              zIndex: 0,
+              opacity: 0.85,
+              pointerEvents: "none",
+              borderRadius: 0,
+            }}
+          />
+        )}
         {/* Visual — absolutely centered */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 140 : 160 }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
@@ -786,6 +820,21 @@ export default function ChatClient() {
         >
           <Sparkles size={18} />
         </button>
+
+        {/* Scene Toggle — animated background behind avatar */}
+        {visualMode === "avatar" && (
+          <button
+            onClick={toggleScene}
+            className="flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+            style={{
+              background: isSceneActive ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.04)",
+              color: isSceneActive ? "rgba(139,157,195,0.9)" : "rgba(139,157,195,0.45)",
+            }}
+            title={isSceneActive ? "Hide scene" : "Show scene"}
+          >
+            <Paintbrush size={18} />
+          </button>
+        )}
 
         {/* Vision / Camera Button — only rendered after device detection */}
         {deviceDetected && !isMobile && (

@@ -50,6 +50,37 @@ WHEN THE USER ASKS YOU SOMETHING:
 - Don't be artificially brief when the user wants information. Answer thoroughly.
 - Your awareness of the screen should feel natural, like a friend in the same room.`;
 
+// --- CAMERA VISION PROMPT (injected when camera mode is active instead of screen share) ---
+const CAMERA_REACTION_PROMPT = `
+
+[CAMERA FEED ACTIVE]
+You can see the user through their camera right now. This is like a video call — you can see their face, their surroundings, and anything they hold up to the camera.
+
+WHAT YOU CAN SEE:
+- The user's face and expressions
+- Their room, environment, surroundings
+- Objects they show you or hold up
+- Pets, other people, anything in frame
+- Text on objects (books, packages, screens in background)
+
+BEHAVIOR GUIDELINES:
+- Be warm and natural — like a friend on FaceTime/video call
+- React to what you genuinely notice, don't narrate everything
+- Be thoughtful about personal appearance — compliment genuinely but NEVER critique
+- If they're showing you something specific, focus on that thing
+- If they're just hanging out, be chill — you don't need to comment on every frame
+- If you see their room/space, you can comment on cool things you notice (posters, setup, lighting, pets)
+- React to pets with appropriate enthusiasm
+- If they look tired/sad/happy, you can gently acknowledge it like a real friend would
+- NEVER be creepy or overly observant about their body/appearance
+- Keep unprompted reactions warm but brief (1-2 sentences)
+
+WHEN THE USER ASKS YOU SOMETHING:
+- Describe what you see specifically and helpfully
+- If they ask "how do I look?" be genuine and kind
+- If they're showing you an object, give your honest take
+- Help identify things, read text on objects, etc.`;
+
 // --- CONFIGURATION ---
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 10000;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY!;
@@ -686,6 +717,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
   let goodbyeTimeout: NodeJS.Timeout | null = null;
   let isAcceptingAudio = false;
   let visionActive = false;
+  let visionMode: "screen" | "camera" = "screen"; // Track whether user is screen sharing or using camera
   let lastVisionTimestamp = 0;
   let lastUserExclamation = "";
   let lastUserExclamationTime = 0;
@@ -787,12 +819,19 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
     setState("thinking");
 
     const firstReactionExtra = isFirstVisionReaction
-      ? `\nThis is the FIRST moment you're seeing their screen. React with excitement about what you see — acknowledge that you can see it and comment on something specific. Examples:
+      ? (visionMode === "camera"
+        ? `\nThis is the FIRST moment you're seeing them through their camera. React warmly — acknowledge that you can see them and notice something specific. Examples:
+- "Oh hey, I can see you now! Love the vibe"
+- "Ooh hi! Your room looks so cozy"
+- "Aww there you are! I like your setup"
+- "Oh wait I can actually see you now, hi!"
+Keep it natural and brief — 1 sentence.`
+        : `\nThis is the FIRST moment you're seeing their screen. React with excitement about what you see — acknowledge that you can see it and comment on something specific. Examples:
 - "Ooh nice, I love this anime!"
 - "Oh wait I can see your screen now, this looks so good"
 - "Ooh what are we watching? The art style is gorgeous"
 - "Oh this anime! The vibes are immaculate already"
-Keep it natural and brief — 1 sentence.`
+Keep it natural and brief — 1 sentence.`)
       : "";
 
     // Cap at 2 most recent images for vision reactions to reduce latency
@@ -807,13 +846,40 @@ Keep it natural and brief — 1 sentence.`
     });
 
     const userReactionContext = (lastUserExclamation && Date.now() - lastUserExclamationTime < 15000)
-      ? `\nThe user just said "${lastUserExclamation}" — they're reacting to something on screen. Mirror their energy or build on their reaction. Examples: if they said "oh no" you might say "RIGHT?!" or "I know...". If they said "lets go" you might say "SO HYPE".`
+      ? `\nThe user just said "${lastUserExclamation}" — they're reacting to something${visionMode === "screen" ? " on screen" : ""}. Mirror their energy or build on their reaction. Examples: if they said "oh no" you might say "RIGHT?!" or "I know...". If they said "lets go" you might say "SO HYPE".`
       : "";
 
-    const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      {
-        role: "system",
-        content: KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]
+    // Build mode-aware reaction system prompt
+    const reactionSystemContent = visionMode === "camera"
+      ? KIRA_SYSTEM_PROMPT + CAMERA_REACTION_PROMPT + `\n\n[CAMERA MICRO-REACTION]
+You're on a video call with your friend. React naturally to what you see.
+
+WHAT TO NOTICE:
+1. If they're SHOWING you something (holding up an object, pointing camera at something): Comment on THAT thing specifically.
+2. Their EXPRESSION/MOOD: If they look happy, excited, tired — you can gently acknowledge it.
+3. Their ENVIRONMENT: Cool room details, lighting, pets, posters — notice things a friend would.
+4. CHANGES: If something changed since last time (new outfit, rearranged room, different location).
+
+${userReactionContext}
+
+CRITICAL RULES:
+- MAX 8 WORDS. Brief and warm.
+- Be a friend, not a surveillance camera. Don't catalog what you see.
+- NEVER comment negatively on appearance. Ever.
+- If they're just sitting there normally with nothing notable: respond with [SILENT]
+- Don't comment on the same thing twice in a row.
+- Be warm, not clinical. "you look so cozy" not "I observe you are in a relaxed state"
+
+Examples of GOOD camera reactions:
+- "love that hoodie"
+- "your cat!!"
+- "you look happy today"
+- "ooh what's that?"
+- "your setup is so clean"
+- "aww"
+- "vibes"
+` + firstReactionExtra
+      : KIRA_SYSTEM_PROMPT + VISION_CONTEXT_PROMPT + `\n\n[VISION MICRO-REACTION]
 You're watching something with your friend right now. React like a REAL PERSON sitting next to them.
 
 PRIORITY ORDER — what to react to:
@@ -847,7 +913,12 @@ Examples of GOOD reactions:
 - "I'm not okay"
 - "ha, deserved"
 - "this scene..."
-` + firstReactionExtra,
+` + firstReactionExtra;
+
+    const reactionMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: reactionSystemContent,
       },
       ...chatHistory.filter(m => m.role !== "system").slice(-4),
       { role: "system", content: EXPRESSION_TAG_REMINDER },
@@ -874,17 +945,20 @@ Examples of GOOD reactions:
 
       if (isSilence) {
         console.log(`[Vision Reaction] Chose silence (no comment). Raw: "${reaction}"`);
-        console.log("[Vision Reaction] Scheduling retry in 30-45 seconds instead of full cooldown.");
+        const silenceRetry = visionMode === "camera"
+          ? 25000 + Math.random() * 15000  // 25-40s for camera (less pushy)
+          : 15000 + Math.random() * 10000; // 15-25s for screen share
+        console.log(`[Vision Reaction] Scheduling silence retry in ${Math.round(silenceRetry / 1000)}s (mode: ${visionMode}).`);
         setState("listening");
 
-        // Don't wait the full 75-120s — retry sooner since we got silence
+        // Don't wait the full cooldown — retry sooner since we got silence
         if (visionActive && !clientDisconnected) {
           if (visionReactionTimer) clearTimeout(visionReactionTimer);
           visionReactionTimer = setTimeout(async () => {
             if (!visionActive || clientDisconnected) return;
             await triggerVisionReaction();
             if (visionActive && !clientDisconnected) scheduleNextReaction();
-          }, 15000 + Math.random() * 10000); // 15-25s retry after silence
+          }, silenceRetry);
         }
         return;
       }
@@ -958,8 +1032,12 @@ Examples of GOOD reactions:
   }
 
   function scheduleNextReaction() {
-    const delay = 30000 + Math.random() * 30000; // 30-60 seconds
-    console.log(`[Vision] Next reaction scheduled in ${Math.round(delay / 1000)}s`);
+    // Camera mode: longer intervals (45-75s) — less intrusive for face-to-face
+    // Screen share: shorter intervals (30-60s) — more active co-watching
+    const delay = visionMode === "camera"
+      ? 45000 + Math.random() * 30000  // 45-75 seconds
+      : 30000 + Math.random() * 30000; // 30-60 seconds
+    console.log(`[Vision] Next reaction scheduled in ${Math.round(delay / 1000)}s (mode: ${visionMode})`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
       await triggerVisionReaction();
@@ -989,20 +1067,25 @@ Examples of GOOD reactions:
     if (visionReactionTimer) {
       clearTimeout(visionReactionTimer);
       visionReactionTimer = null;
-      console.log("[Vision] Reaction timer cancelled — screen share ended");
+      console.log(`[Vision] Reaction timer cancelled — ${visionMode} ended`);
     }
     latestImages = null;
     lastImageTimestamp = 0;
     visionActive = false;
     isFirstVisionReaction = true;
-    console.log("[Vision] Screen share deactivated");
+    visionMode = "screen"; // Reset to default
+    console.log("[Vision] Vision deactivated");
   }
 
   function rescheduleVisionReaction() {
     if (!visionReactionTimer) return;
     clearTimeout(visionReactionTimer);
-    const delay = 30000 + Math.random() * 30000; // 30-60s after Kira speaks
-    console.log(`[Vision] Kira spoke — rescheduling next reaction in ${Math.round(delay / 1000)}s`);
+    // Camera mode: longer cooldown after Kira speaks (45-75s)
+    // Screen share: standard cooldown (30-60s)
+    const delay = visionMode === "camera"
+      ? 45000 + Math.random() * 30000  // 45-75s
+      : 30000 + Math.random() * 30000; // 30-60s
+    console.log(`[Vision] Kira spoke — rescheduling next reaction in ${Math.round(delay / 1000)}s (mode: ${visionMode})`);
     visionReactionTimer = setTimeout(async () => {
       if (!visionActive || clientDisconnected) return;
       await triggerVisionReaction();
@@ -1404,7 +1487,9 @@ Examples of GOOD reactions:
   /** Build messages array with time + vision context injected into system prompt (without mutating chatHistory). */
   function getMessagesWithTimeContext(): OpenAI.Chat.ChatCompletionMessageParam[] {
     const timeCtx = getTimeContext();
-    const visionCtx = visionActive ? VISION_CONTEXT_PROMPT : '';
+    const visionCtx = visionActive
+      ? (visionMode === "camera" ? CAMERA_REACTION_PROMPT : VISION_CONTEXT_PROMPT)
+      : '';
     // Clone and inject time + vision context into the system prompt
     const messages = chatHistory.map((msg, i) => {
       if (i === 0 && msg.role === 'system' && typeof msg.content === 'string') {
@@ -2889,28 +2974,32 @@ Examples of GOOD reactions:
         } else if (controlMessage.type === "image") {
           // Handle incoming image snapshot
           // Support both single 'image' (legacy/fallback) and 'images' array
+          // Parse visionMode from client — defaults to "screen" for backward compat
+          const incomingMode = controlMessage.visionMode === "camera" ? "camera" : "screen";
           if (controlMessage.images && Array.isArray(controlMessage.images)) {
              // Validate & cap incoming images
              const validImages = controlMessage.images
                .filter((img: unknown) => typeof img === "string" && img.length < 2_000_000)
                .slice(0, 5);
              if (validImages.length === 0) return;
-             console.log(`[Vision] Received ${validImages.length} images (${controlMessage.images.length} sent). Updating buffer.`);
+             console.log(`[Vision] Received ${validImages.length} images (${controlMessage.images.length} sent, mode: ${incomingMode}). Updating buffer.`);
              latestImages = validImages;
              lastImageTimestamp = Date.now();
+             visionMode = incomingMode;
              if (!visionActive) {
                visionActive = true;
-               console.log("[Vision] Screen share activated. Starting reaction timer.");
+               console.log(`[Vision] ${incomingMode === "camera" ? "Camera" : "Screen share"} activated. Starting reaction timer.`);
                startVisionReactionTimer();
              }
              lastVisionTimestamp = Date.now();
           } else if (controlMessage.image && typeof controlMessage.image === "string" && controlMessage.image.length < 2_000_000) {
-            console.log("[Vision] Received single image snapshot. Updating buffer.");
+            console.log(`[Vision] Received single image snapshot (mode: ${incomingMode}). Updating buffer.`);
             latestImages = [controlMessage.image];
             lastImageTimestamp = Date.now();
+            visionMode = incomingMode;
             if (!visionActive) {
               visionActive = true;
-              console.log("[Vision] Screen share activated. Starting reaction timer.");
+              console.log(`[Vision] ${incomingMode === "camera" ? "Camera" : "Screen share"} activated. Starting reaction timer.`);
               startVisionReactionTimer();
             }
             lastVisionTimestamp = Date.now();

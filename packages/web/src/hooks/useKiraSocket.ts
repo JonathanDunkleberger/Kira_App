@@ -575,6 +575,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
               // Send buffer + current frame
               const payload = {
                   type: "image",
+                  visionMode: "screen",
                   images: [...sceneBufferRef.current, snapshot]
               };
               ws.current.send(JSON.stringify(payload));
@@ -595,6 +596,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
         if (snapshot) {
           ws.current.send(JSON.stringify({
             type: "image",
+            visionMode: "screen",
             images: [snapshot],
           }));
           debugLog("[Vision] Periodic snapshot sent.");
@@ -662,6 +664,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({
         type: "image",
+        visionMode: "camera",
         images: [base64],
       }));
     }
@@ -752,6 +755,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     }
     setIsCameraActive(false);
     isCameraActiveRef.current = false;
+
+    // Tell server to stop vision reactions
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: "vision_stop" }));
+    }
+
     debugLog("[Camera] Camera stopped.");
   }, []);
 

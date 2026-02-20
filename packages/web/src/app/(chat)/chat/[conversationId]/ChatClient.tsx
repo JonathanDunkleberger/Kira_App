@@ -808,9 +808,11 @@ export default function ChatClient() {
               backdropFilter: "blur(8px)",
               WebkitBackdropFilter: "blur(8px)",
               borderRadius: 24,
-              padding: "8px 16px",
               border: "1px solid rgba(255,255,255,0.08)",
             } : {}),
+            padding: "8px 16px",
+            maxWidth: "100vw",
+            boxSizing: "border-box",
             transition: "all 0.3s ease",
           }}
         >

@@ -114,7 +114,7 @@ export default function TermsPage() {
         >
           Terms of Service
         </h1>
-        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 14, 2026</p>
+        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 20, 2026</p>
 
         {/* ── 1. Acceptance of Terms ── */}
         <h2 style={heading2}>1. Acceptance of Terms</h2>
@@ -129,9 +129,9 @@ export default function TermsPage() {
         {/* ── 2. Eligibility ── */}
         <h2 style={heading2}>2. Eligibility</h2>
         <p style={paragraph}>
-          You must be at least <strong style={bold}>18 years of age</strong> to use Kira AI.
+          You must be at least <strong style={bold}>13 years of age</strong> to use Kira AI.
           By using the Service, you represent and warrant that you meet this age requirement.
-          We do not knowingly provide the Service to anyone under 18.
+          We do not knowingly provide the Service to anyone under 13.
         </p>
 
         <Divider />
@@ -370,9 +370,9 @@ export default function TermsPage() {
         <h2 style={heading2}>15. Governing Law</h2>
         <p style={paragraph}>
           These Terms shall be governed by and construed in accordance with the laws of the
-          State of <strong style={bold}>Delaware</strong>, United States, without regard to its
+          State of <strong style={bold}>Arizona</strong>, United States, without regard to its
           conflict of law provisions. Any disputes arising under these Terms shall be resolved
-          in the courts located in Delaware.
+          in the courts located in Arizona.
         </p>
 
         <Divider />

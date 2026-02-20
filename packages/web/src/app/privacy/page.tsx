@@ -79,7 +79,7 @@ export default function PrivacyPage() {
 
       <article style={{ maxWidth: 640, margin: "0 auto", padding: "48px 24px 80px" }}>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 400, color: "#E2E8F0", marginBottom: 8, lineHeight: 1.2 }}>Privacy Policy</h1>
-        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 14, 2026</p>
+        <p style={{ fontSize: 13, color: "rgba(201,209,217,0.3)", marginBottom: 48 }}>Last Updated: February 20, 2026</p>
 
         {/* 1 */}
         <h2 style={h2Style}>1. Introduction</h2>
@@ -189,7 +189,8 @@ export default function PrivacyPage() {
             </thead>
             <tbody>
               {([
-                ["OpenAI", "AI conversation and vision processing", "Conversation text, images (if vision enabled)"],
+                ["Groq", "AI conversation processing (Llama 3.3 70B)", "Conversation text"],
+                ["OpenAI", "Vision processing and memory extraction", "Images (if vision enabled), conversation text for memory facts"],
                 ["Deepgram", "Real-time speech-to-text", "Audio stream"],
                 ["Microsoft Azure", "Text-to-speech (voice generation)", "Kira\u2019s response text"],
                 ["Clerk", "Authentication and account management", "Email, name, login activity"],
@@ -208,6 +209,7 @@ export default function PrivacyPage() {
           </table>
         </div>
         <p style={pStyle}>We require all third-party providers to handle your data securely, but we encourage you to review their individual privacy policies for details on their data practices.</p>
+        <p style={pStyle}><strong style={boldStyle}>Important:</strong> Neither Groq nor OpenAI use your conversations or data submitted through their APIs for model training. Data sent to these services is processed in real-time and not retained beyond the API request. Deepgram and Azure similarly process audio and text in real-time without permanent storage.</p>
 
         <div style={sectionDivider} />
 
@@ -284,7 +286,7 @@ export default function PrivacyPage() {
 
         {/* 9 */}
         <h2 style={h2Style}>9. Children{"\u2019"}s Privacy</h2>
-        <p style={pStyle}>Kira is not intended for use by anyone under the age of <strong style={boldStyle}>18</strong>. We do not knowingly collect personal information from children. If you are a parent or guardian and believe your child has provided personal information to us, please contact us at info@elsaresearch.co and we will promptly delete that information.</p>
+        <p style={pStyle}>Kira is not intended for use by anyone under the age of <strong style={boldStyle}>13</strong>. We do not knowingly collect personal information from children under 13. If you are a parent or guardian and believe your child has provided personal information to us, please contact us at info@elsaresearch.co and we will promptly delete that information.</p>
 
         <div style={sectionDivider} />
 

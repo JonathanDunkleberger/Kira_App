@@ -184,13 +184,21 @@ export default function ChatClient() {
   // ─── Camera PIP preview ───
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const [pipPosition, setPipPosition] = useState({ x: 16, y: 140 }); // offset from bottom-right
+  const [pipSize, setPipSize] = useState({ w: 112, h: 150 }); // 40% larger than original 80x107
+  const [pipMinimized, setPipMinimized] = useState(false);
   const pipDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const pipResizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+  const PIP_ASPECT = 3 / 4; // width / height (3:4 portrait)
+  const PIP_MIN_H = 120;
+  const PIP_MAX_H = 400;
 
   // Attach stream to video element whenever camera becomes active
   useEffect(() => {
     if (!isCameraActive) {
-      // Reset PIP position when camera stops
+      // Reset PIP position and size when camera stops
       setPipPosition({ x: 16, y: 140 });
+      setPipSize({ w: 112, h: 150 });
+      setPipMinimized(false);
       return;
     }
     const vid = previewVideoRef.current;
@@ -226,6 +234,32 @@ export default function ChatClient() {
 
   const handlePipTouchEnd = useCallback(() => {
     pipDragRef.current = null;
+  }, []);
+
+  // ─── PIP resize handlers (bottom-left corner, since PIP is anchored to bottom-right) ───
+  const handleResizeStart = useCallback((e: React.TouchEvent | React.PointerEvent) => {
+    e.stopPropagation();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    pipResizeRef.current = { startX: clientX, startY: clientY, origW: pipSize.w, origH: pipSize.h };
+  }, [pipSize]);
+
+  const handleResizeMove = useCallback((e: React.TouchEvent | React.PointerEvent) => {
+    if (!pipResizeRef.current) return;
+    e.stopPropagation();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    // Resize handle is bottom-left: dragging left/down = bigger, right/up = smaller
+    const dx = pipResizeRef.current.startX - clientX; // left = positive = bigger
+    const dy = clientY - pipResizeRef.current.startY; // down = positive = bigger
+    const delta = Math.max(dx, dy); // Use the larger of the two to maintain feel
+    const newH = Math.min(PIP_MAX_H, Math.max(PIP_MIN_H, pipResizeRef.current.origH + delta));
+    const newW = Math.round(newH * PIP_ASPECT);
+    setPipSize({ w: newW, h: newH });
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    pipResizeRef.current = null;
   }, []);
 
   // ─── start_stream is now sent atomically in the hook's onopen handler ───
@@ -749,7 +783,7 @@ export default function ChatClient() {
       </div>
 
       {/* Camera PIP Preview */}
-      {isCameraActive && (
+      {isCameraActive && !pipMinimized && (
         <div
           onTouchStart={handlePipTouchStart}
           onTouchMove={handlePipTouchMove}
@@ -758,10 +792,10 @@ export default function ChatClient() {
             position: "fixed",
             bottom: pipPosition.y,
             right: pipPosition.x,
-            width: 80,
-            height: 107,
+            width: pipSize.w,
+            height: pipSize.h,
             borderRadius: 12,
-            overflow: "hidden",
+            overflow: "visible",
             border: "1px solid rgba(255, 255, 255, 0.15)",
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
             zIndex: 30,
@@ -774,12 +808,14 @@ export default function ChatClient() {
               width: "100%",
               height: "100%",
               objectFit: "cover",
+              borderRadius: 12,
               transform: facingMode === "user" ? "scaleX(-1)" : "none",
             }}
             playsInline
             muted
             autoPlay
           />
+          {/* Flip camera button */}
           <button
             onClick={() => flipCamera()}
             style={{
@@ -802,7 +838,84 @@ export default function ChatClient() {
           >
             ↻
           </button>
+          {/* Close / minimize button */}
+          <button
+            onClick={() => setPipMinimized(true)}
+            style={{
+              position: "absolute",
+              top: 4,
+              left: 4,
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: "rgba(0, 0, 0, 0.5)",
+              border: "none",
+              color: "white",
+              fontSize: 14,
+              lineHeight: "24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+            title="Minimize preview"
+          >
+            ×
+          </button>
+          {/* Resize handle — bottom-left corner */}
+          <div
+            onTouchStart={handleResizeStart}
+            onTouchMove={handleResizeMove}
+            onTouchEnd={handleResizeEnd}
+            onPointerDown={handleResizeStart}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            style={{
+              position: "absolute",
+              bottom: -2,
+              left: -2,
+              width: 24,
+              height: 24,
+              cursor: "nesw-resize",
+              touchAction: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.5 }}>
+              <line x1="0" y1="10" x2="10" y2="0" stroke="white" strokeWidth="1.5" />
+              <line x1="0" y1="6" x2="6" y2="0" stroke="white" strokeWidth="1.5" />
+            </svg>
+          </div>
         </div>
+      )}
+
+      {/* Minimized PIP — small restore bubble */}
+      {isCameraActive && pipMinimized && (
+        <button
+          onClick={() => setPipMinimized(false)}
+          style={{
+            position: "fixed",
+            bottom: 140,
+            right: 16,
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            background: "rgba(255, 255, 255, 0.08)",
+            border: "1px solid rgba(255, 255, 255, 0.15)",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+            zIndex: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "rgba(139, 157, 195, 0.7)",
+          }}
+          title="Restore camera preview"
+        >
+          <Camera size={18} />
+        </button>
       )}
 
       {/* Rating Modal */}

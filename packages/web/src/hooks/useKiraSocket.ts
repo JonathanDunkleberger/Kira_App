@@ -259,6 +259,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const playbackSource = useRef<AudioBufferSourceNode | null>(null);
   const playbackGain = useRef<GainNode | null>(getConnectionStore()!.playbackGain);
   const playbackAnalyser = useRef<AnalyserNode | null>(getConnectionStore()!.playbackAnalyser);
+  const screenCaptureAudio = useRef<HTMLAudioElement | null>(null); // Hidden <audio> for iOS screen recording capture
+  const mediaStreamDest = useRef<MediaStreamAudioDestinationNode | null>(null);
   const playerVolumeFrame = useRef<number>(0);
   const [playerVolume, setPlayerVolume] = useState(0);
 
@@ -358,12 +360,16 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // Reset persistent audio chain when context is recreated
       playbackGain.current = null;
       playbackAnalyser.current = null;
+      mediaStreamDest.current = null;
     }
     if (playbackContext.current.state === "suspended") {
       await playbackContext.current.resume();
     }
 
-    // Build persistent audio chain once: Source → GainNode → AnalyserNode → Destination
+    // Build persistent audio chain once:
+    // Source → GainNode → AnalyserNode → MediaStreamDest → hidden <audio> element
+    // Routing through a hidden <audio> element ensures iOS screen recording captures
+    // Kira's voice. Raw AudioContext.destination is NOT captured by iOS screen recording.
     if (!playbackGain.current) {
       playbackGain.current = playbackContext.current.createGain();
       playbackAnalyser.current = playbackContext.current.createAnalyser();
@@ -371,8 +377,21 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       playbackAnalyser.current.smoothingTimeConstant = 0.3; // Moderate pre-smoothing — LipSyncEngine handles the rest
       playbackAnalyser.current.minDecibels = -90;
       playbackAnalyser.current.maxDecibels = -10;
+
+      // Create MediaStreamDestination for screen recording capture
+      mediaStreamDest.current = playbackContext.current.createMediaStreamDestination();
+
       playbackGain.current.connect(playbackAnalyser.current);
-      playbackAnalyser.current.connect(playbackContext.current.destination);
+      playbackAnalyser.current.connect(mediaStreamDest.current);
+
+      // Create hidden <audio> element to play the MediaStream
+      // iOS screen recording captures <audio> elements but NOT raw AudioContext output
+      if (!screenCaptureAudio.current) {
+        screenCaptureAudio.current = document.createElement("audio");
+        screenCaptureAudio.current.setAttribute("playsinline", "true");
+      }
+      screenCaptureAudio.current.srcObject = mediaStreamDest.current.stream;
+      screenCaptureAudio.current.play().catch(() => {});
     }
 
     while (audioQueue.current.length > 0) {
@@ -461,6 +480,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     isCameraActiveRef.current = false;
     audioContext.current?.close().catch(console.error);
     playbackContext.current?.close().catch(console.error);
+
+    // Clean up screen recording capture elements
+    if (screenCaptureAudio.current) {
+      screenCaptureAudio.current.pause();
+      screenCaptureAudio.current.srcObject = null;
+    }
+    mediaStreamDest.current = null;
 
     audioWorkletNode.current = null;
     audioSource.current = null;

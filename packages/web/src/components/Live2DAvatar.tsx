@@ -580,6 +580,86 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
             }
           } catch {}
 
+          // ─── DEBUG: Log available motion groups, parameters, and idle/breathing state ───
+          try {
+            // Motion groups
+            const motionManager = internalModel.motionManager as any;
+            console.log("═══════════════════════════════════════════════════════════");
+            console.log("[Live2D DEBUG] MOTION MANAGER:", motionManager);
+            console.log("[Live2D DEBUG] Motion definitions:", motionManager?.definitions);
+            console.log("[Live2D DEBUG] Motion groups available:", motionManager?.definitions ? Object.keys(motionManager.definitions) : "none");
+            
+            // Check each motion group for its motions
+            if (motionManager?.definitions) {
+              for (const [group, motions] of Object.entries(motionManager.definitions)) {
+                console.log(`[Live2D DEBUG] Motion group "${group}":`, motions);
+              }
+            }
+            
+            // Current motion state
+            console.log("[Live2D DEBUG] Current motion state:", motionManager?.state);
+            console.log("[Live2D DEBUG] Is idle motion playing?", motionManager?.state?.currentGroup === "Idle");
+            
+            // Expression manager
+            const exprManager = motionManager?.expressionManager;
+            console.log("[Live2D DEBUG] Expression manager:", exprManager);
+            console.log("[Live2D DEBUG] Available expressions:", exprManager?.definitions?.map((d: any) => d.Name || d.name));
+            
+            // All parameters with min/max/default values
+            const rawModel2 = coreModel._model;
+            if (rawModel2?.parameters) {
+              const params = rawModel2.parameters;
+              console.log(`[Live2D DEBUG] Total parameter count: ${params.count}`);
+              const paramDetails: { id: string; min: number; max: number; default: number; current: number }[] = [];
+              let hasParamBreath = false;
+              for (let i = 0; i < params.count; i++) {
+                const id = params.ids[i];
+                const detail = {
+                  id,
+                  min: params.minimumValues[i],
+                  max: params.maximumValues[i],
+                  default: params.defaultValues[i],
+                  current: params.values[i],
+                };
+                paramDetails.push(detail);
+                if (id === "ParamBreath") hasParamBreath = true;
+              }
+              console.table(paramDetails);
+              console.log(`[Live2D DEBUG] ParamBreath exists: ${hasParamBreath}`);
+              
+              // Log common animation params
+              const interestingParams = ["ParamBreath", "ParamAngle5", "ParamAngle4", "ParamAngle3",
+                "ParamAngle7", "ParamAngle8", "ParamAngle9", "ParamAngle12", "ParamAngle13", "ParamAngle14",
+                "ParamAngle15", "ParamAngle16", "ParamAngle17",
+                "ParamEyeROpen", "ParamEyeLOpen", "ParamEyeBallX", "ParamEyeBallY",
+                "ParamMouthOpenY", "ParamMouthForm", "ParamBrowLY", "ParamBrowRY"];
+              console.log("[Live2D DEBUG] Key animation parameters:");
+              for (const pid of interestingParams) {
+                const found = paramDetails.find(p => p.id === pid);
+                if (found) {
+                  console.log(`  ${pid}: min=${found.min} max=${found.max} default=${found.default} current=${found.current}`);
+                } else {
+                  console.log(`  ${pid}: NOT FOUND`);
+                }
+              }
+            }
+            
+            // Check if idle motion is auto-started by the SDK
+            console.log("[Live2D DEBUG] motionManager.groups:", motionManager?.groups);
+            console.log("[Live2D DEBUG] motionManager.motionGroups:", motionManager?.motionGroups);
+            console.log("[Live2D DEBUG] motionManager._motionGroups:", motionManager?._motionGroups);
+            
+            // Check the settings/model settings for motion groups
+            const settings = internalModel.settings as any;
+            console.log("[Live2D DEBUG] Model settings:", settings);
+            console.log("[Live2D DEBUG] Settings motions:", settings?.motions);
+            console.log("[Live2D DEBUG] Settings groups:", settings?.groups);
+            console.log("═══════════════════════════════════════════════════════════");
+          } catch (debugErr) {
+            console.warn("[Live2D DEBUG] Error logging model info:", debugErr);
+          }
+          // ─── END DEBUG ───
+
           // Patch coreModel.update — called INSIDE internalModel.update,
           // AFTER physics but the original does mesh deformation.
           const origCoreUpdate = coreModel.update.bind(coreModel);

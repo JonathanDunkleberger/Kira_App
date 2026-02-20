@@ -34,6 +34,12 @@
   to { opacity: 1; }
 }
 
+/* Reconnecting indicator pulse */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* ─── Kira Orb Animations ─── */
 @keyframes kira-breathe {
   0%, 100% { transform: scale(1); }

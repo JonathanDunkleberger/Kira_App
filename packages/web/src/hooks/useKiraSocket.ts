@@ -256,6 +256,9 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const reconnectAttempts = useRef(getConnectionStore()!.reconnectAttempts);
   const MAX_RECONNECT_ATTEMPTS = 5;
   const conversationActive = useRef(getConnectionStore()!.conversationActive); // True once start_stream sent — prevents reconnect loops
+  const isReconnecting = useRef(false);
+  const reconnectTimer = useRef<NodeJS.Timeout | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "disconnected">("connected");
 
   // --- Connection Health Check ---
   const lastServerMessage = useRef<number>(0); // Timestamp of last message from server
@@ -1126,16 +1129,88 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     return () => clearInterval(timer);
   }, []);
 
+  // --- Network change detection: proactively reconnect on WiFi→cellular etc. ---
+  useEffect(() => {
+    const handleOnline = () => {
+      debugLog("[Network] Back online — checking connection");
+      if (ws.current?.readyState !== WebSocket.OPEN) {
+        attemptReconnect();
+      }
+    };
+
+    const handleOffline = () => {
+      debugLog("[Network] Went offline");
+      setConnectionStatus("reconnecting");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Attempt to silently reconnect after a network drop or abnormal closure.
+   * Uses exponential backoff with jitter (1s, 2s, 4s, 8s, 8s).
+   * Shows a subtle "reconnecting" indicator instead of the full disconnect banner.
+   */
+  const attemptReconnect = useCallback(() => {
+    if (isReconnecting.current) return;
+    if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
+      // Give up after 5 attempts — show disconnect message with retry option
+      debugLog("[Reconnect] All attempts exhausted — showing disconnect message");
+      setError("connection_lost");
+      setConnectionStatus("disconnected");
+      reconnectAttempts.current = 0;
+      getConnectionStore()!.reconnectAttempts = 0;
+      return;
+    }
+
+    isReconnecting.current = true;
+    reconnectAttempts.current++;
+    getConnectionStore()!.reconnectAttempts = reconnectAttempts.current;
+
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current - 1), 8000);
+    const jitter = Math.random() * 500;
+
+    debugLog(`[Reconnect] Attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay + jitter)}ms`);
+
+    // Show subtle reconnecting indicator (NOT the full disconnect message)
+    setConnectionStatus("reconnecting");
+
+    reconnectTimer.current = setTimeout(async () => {
+      try {
+        await connect({ isReconnect: true });
+        reconnectAttempts.current = 0;
+        getConnectionStore()!.reconnectAttempts = 0;
+        isReconnecting.current = false;
+        setConnectionStatus("connected");
+        setError(null);
+        debugLog("[Reconnect] ✅ Reconnected successfully");
+      } catch (err) {
+        debugLog("[Reconnect] Failed:", err);
+        isReconnecting.current = false;
+        attemptReconnect(); // Try again
+      }
+    }, delay + jitter);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /**
    * Main connection logic
    */
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (options?: { isReconnect?: boolean }) => {
+    const isReconnectAttempt = options?.isReconnect ?? false;
     if (ws.current) {
       debugLog("[Connect] Aborted — WebSocket already exists");
       return;
     }
 
-    debugLog("[Connect] Starting connection attempt...");
+    debugLog(`[Connect] Starting connection attempt... (isReconnect: ${isReconnectAttempt})`);
 
     // Initialize Audio IMMEDIATELY (Synchronously inside gesture if possible)
     const audioOk = await initializeAudio();
@@ -1161,13 +1236,14 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     const authParam = freshToken ? `token=${freshToken}` : `guestId=${guestId}`;
     const voiceParam = `&voice=${voicePreference}`;
     const tzParam = `&tz=${new Date().getTimezoneOffset()}`;
-    debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}${tzParam}`);
+    const reconnectParam = isReconnectAttempt ? "&reconnect=true" : "";
+    debugLog(`[Connect] Opening WS: ${wsUrl}?${authParam}${voiceParam}${tzParam}${reconnectParam}`);
 
     debugLog("[State] socketState → connecting");
     setSocketState("connecting");
     getConnectionStore()!.socketState = "connecting";
     isServerReady.current = false;
-    ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}${tzParam}`);
+    ws.current = new WebSocket(`${wsUrl}?${authParam}${voiceParam}${tzParam}${reconnectParam}`);
     ws.current.binaryType = "arraybuffer"; // We are sending and receiving binary
 
     // ─── Store to singleton immediately so remounts can find it ───
@@ -1180,6 +1256,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       getConnectionStore()!.socketState = "connected";
       reconnectAttempts.current = 0; // Reset on successful connection
       getConnectionStore()!.reconnectAttempts = 0;
+      isReconnecting.current = false;
+      setConnectionStatus("connected");
       setError(null); // Clear any error banner from a previous disconnect
       debugLog("[Connect] ✅ WebSocket connected. Singleton stored immediately.");
       // Store audio refs to singleton now that connection is live
@@ -1192,6 +1270,12 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // This prevents the server from sending audio before the user sees anything.
       // Fallback: 15s timeout so we never hang forever if Live2D fails silently.
       wsOpenRef.current = true;
+
+      // On reconnect, visual is already loaded — reset conversationActive so startConversation works
+      if (isReconnectAttempt) {
+        conversationActive.current = false;
+        getConnectionStore()!.conversationActive = false;
+      }
 
       if (visualReadyRef.current) {
         // Visual is already loaded (orb mode, or Live2D preloaded fast) — start immediately
@@ -1378,8 +1462,8 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       // ─── Clear singleton ───
       getConnectionStore()!.ws = null;
       getConnectionStore()!.isServerReady = false;
-      getConnectionStore()!.conversationActive = false;
 
+      // --- Intentional server kicks — no reconnect ---
       if (event.code === 1008) {
         // Don't overwrite a more specific error (e.g. "limit_reached_pro")
         // If user is Pro, always use "limit_reached_pro" — never show the free-tier paywall
@@ -1387,44 +1471,29 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
           if (prev?.startsWith("limit_reached")) return prev;
           return isProRef.current ? "limit_reached_pro" : "limit_reached";
         });
-      } else if (event.code === 4000) {
-        // Heartbeat timeout — connection went stale (network issue, suspended tab, etc.)
-        debugLog("[WS] Heartbeat timeout — connection went stale");
-        setError("heartbeat_timeout");
-      } else if (event.code === 4001) {
-        // Health check triggered close — server was unresponsive
-        debugLog("[WS] Health check timeout — server unresponsive");
-        setError("heartbeat_timeout"); // Reuse same UI treatment
+        getConnectionStore()!.conversationActive = false;
+        stopAudioPipeline();
+        ws.current = null;
+        isServerReady.current = false;
+        return;
       }
 
+      // --- User-initiated disconnect (code 1000 from disconnect()) ---
+      if (event.code === 1000) {
+        getConnectionStore()!.conversationActive = false;
+        stopAudioPipeline();
+        ws.current = null;
+        isServerReady.current = false;
+        return;
+      }
+
+      // --- Everything else: network drops, heartbeat timeout, abnormal closure ---
+      // Attempt auto-reconnect silently
       stopAudioPipeline();
       ws.current = null;
-      isServerReady.current = false; // Prevent stale audio sends on reconnect
+      isServerReady.current = false;
 
-      // Auto-reconnect logic:
-      // ONLY reconnect if the conversation hasn't started yet (pre-stream connection flakiness).
-      // Once a live voice session is active, reconnecting would create a fresh server session
-      // (new chatHistory, new usage timer, new opener) — causing the "conversation loop" bug
-      // where the same exchange replays and the usage counter goes backwards.
-      if (event.code !== 1000 && event.code !== 1008 && event.code !== 4000 && event.code !== 4001) {
-        if (conversationActive.current) {
-          // Live session was interrupted — don't reconnect, show error
-          debugLog("[WS] Connection lost during active conversation — not reconnecting (would create duplicate session)");
-          setError("connection_lost");
-        } else if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-          // Pre-conversation connection drop — safe to retry
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000);
-          reconnectAttempts.current++;
-          getConnectionStore()!.reconnectAttempts = reconnectAttempts.current;
-          debugLog(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})...`);
-          setTimeout(() => {
-            connect();
-          }, delay);
-        } else {
-          // All reconnect attempts exhausted
-          setError("Connection lost. Please refresh the page.");
-        }
-      }
+      attemptReconnect();
     };
 
     onErrorRef.current = (err: Event) => {
@@ -1444,10 +1513,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const disconnect = useCallback(() => {
     debugLog("[WS] disconnect() called. ws.current exists:", !!ws.current);
     if (eouTimer.current) clearTimeout(eouTimer.current);
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     reconnectAttempts.current = MAX_RECONNECT_ATTEMPTS; // Prevent any reconnection
+    isReconnecting.current = false;
     conversationActive.current = false; // Clean shutdown — not a crash
     visualReadyRef.current = false; // Reset for next session
     wsOpenRef.current = false;
+    setConnectionStatus("disconnected");
     // ─── Clear singleton — this is an intentional disconnect ───
     debugLog("[Singleton] getConnectionStore()!.ws → null (from disconnect)");
     getConnectionStore()!.ws = null;
@@ -1556,5 +1628,6 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
     currentExpression,
     activeAccessories,
     currentAction,
+    connectionStatus,
   };
 };

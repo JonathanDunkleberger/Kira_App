@@ -33,6 +33,9 @@ export default function ChatClient() {
   const [deviceDetected, setDeviceDetected] = useState(false);
   const live2dRetryCount = useRef(0);
   const MAX_LIVE2D_RETRIES = 1;
+  const live2dLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const live2dRetryInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const MODEL_LOAD_TIMEOUT = 8000; // 8 seconds
 
   // --- Debug: track mount/unmount and what triggers remount ---
   useEffect(() => {
@@ -86,6 +89,46 @@ export default function ChatClient() {
     }
   }, [live2dFailed, visualMode]);
 
+  // Live2D loading timeout: if model hasn't loaded in 8s, fall back to orb gracefully
+  useEffect(() => {
+    if (visualMode === "avatar" && !live2dReady && !live2dFailed) {
+      live2dLoadTimer.current = setTimeout(() => {
+        if (!live2dReady) {
+          debugLog("[Live2D] Model load timeout (8s) — using orb fallback");
+          setLive2dFailed(true);
+        }
+      }, MODEL_LOAD_TIMEOUT);
+    }
+    return () => {
+      if (live2dLoadTimer.current) {
+        clearTimeout(live2dLoadTimer.current);
+        live2dLoadTimer.current = null;
+      }
+    };
+  }, [visualMode, live2dReady, live2dFailed]);
+
+  // Background retry: after orb fallback, keep trying to load Live2D every 15s
+  useEffect(() => {
+    if (visualMode === "orb" && live2dFailed && !isDisconnectingRef.current) {
+      live2dRetryInterval.current = setInterval(() => {
+        if (live2dReady) {
+          if (live2dRetryInterval.current) clearInterval(live2dRetryInterval.current);
+          return;
+        }
+        debugLog("[Live2D] Retrying model load...");
+        setLive2dFailed(false);
+        setLive2dReady(false);
+        setVisualMode("avatar");
+      }, 15000);
+    }
+    return () => {
+      if (live2dRetryInterval.current) {
+        clearInterval(live2dRetryInterval.current);
+        live2dRetryInterval.current = null;
+      }
+    };
+  }, [visualMode, live2dFailed, live2dReady]);
+
   // Load guest ID, voice preference, and chat toggle from localStorage
   useEffect(() => {
     if (!userId) {
@@ -123,7 +166,8 @@ export default function ChatClient() {
     playbackAnalyserNode,
     currentExpression,
     activeAccessories,
-    currentAction
+    currentAction,
+    connectionStatus
   } = useKiraSocket(
     userId ? getToken : null,
     guestId,
@@ -532,6 +576,27 @@ export default function ChatClient() {
       >
         {/* Status indicator + errors — sits between avatar and controls */}
         <div style={{ textAlign: "center", minHeight: 28, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", margin: "24px 0 8px 0" }}>
+          {/* Subtle reconnecting indicator — auto-dismisses when connection is restored */}
+          {connectionStatus === "reconnecting" && !error && (
+            <div className="mb-2 px-4 py-2 rounded-full" style={{
+              background: "rgba(255,255,255,0.08)",
+              color: "rgba(200,210,230,0.7)",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}>
+              <span style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "rgba(139,157,195,0.7)",
+                display: "inline-block",
+                animation: "pulse 1.5s ease-in-out infinite",
+              }} />
+              Reconnecting...
+            </div>
+          )}
           {error && error !== "limit_reached" && error !== "limit_reached_pro" && error !== "connection_lost" && error !== "heartbeat_timeout" && (
             <div className="mb-2 p-3 rounded relative" style={{
               background: "rgba(200,55,55,0.15)",
@@ -542,19 +607,23 @@ export default function ChatClient() {
             </div>
           )}
           {error === "heartbeat_timeout" && (
-            <div className="mb-2 p-4 rounded relative text-center" style={{
-              background: "rgba(200,150,55,0.15)",
-              border: "1px solid rgba(200,150,55,0.3)",
-              color: "rgba(255,210,130,0.9)",
+            <div className="mb-2 p-4 rounded-xl relative text-center" style={{
+              background: "rgba(0,0,0,0.85)",
+              border: "1px solid rgba(107,125,179,0.2)",
+              color: "#ffffff",
+              minWidth: 280,
+              padding: "20px 24px",
             }}>
-              <p className="mb-2" style={{ fontSize: 14 }}>Connection timed out. Your conversation ended.</p>
+              <p className="mb-3" style={{ fontSize: 16, fontWeight: 400, lineHeight: 1.5 }}>Connection timed out.</p>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors"
+                className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
                 style={{
-                  background: "rgba(139,157,195,0.2)",
-                  border: "1px solid rgba(139,157,195,0.3)",
-                  color: "rgba(200,210,230,0.9)",
+                  background: "rgba(139,157,195,0.25)",
+                  border: "1px solid rgba(139,157,195,0.4)",
+                  color: "#E2E8F0",
+                  fontSize: 15,
+                  cursor: "pointer",
                 }}
               >
                 Start New Conversation
@@ -562,19 +631,23 @@ export default function ChatClient() {
             </div>
           )}
           {error === "connection_lost" && (
-            <div className="mb-2 p-4 rounded relative text-center" style={{
-              background: "rgba(200,150,55,0.15)",
-              border: "1px solid rgba(200,150,55,0.3)",
-              color: "rgba(255,210,130,0.9)",
+            <div className="mb-2 p-4 rounded-xl relative text-center" style={{
+              background: "rgba(0,0,0,0.85)",
+              border: "1px solid rgba(107,125,179,0.2)",
+              color: "#ffffff",
+              minWidth: 280,
+              padding: "20px 24px",
             }}>
-              <p className="mb-2" style={{ fontSize: 14 }}>Connection lost. Your conversation ended.</p>
+              <p className="mb-3" style={{ fontSize: 16, fontWeight: 400, lineHeight: 1.5 }}>Connection lost. Tap to retry.</p>
               <button
                 onClick={() => window.location.reload()}
-                className="px-4 py-2 rounded text-sm font-medium transition-colors"
+                className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
                 style={{
-                  background: "rgba(139,157,195,0.2)",
-                  border: "1px solid rgba(139,157,195,0.3)",
-                  color: "rgba(200,210,230,0.9)",
+                  background: "rgba(139,157,195,0.25)",
+                  border: "1px solid rgba(139,157,195,0.4)",
+                  color: "#E2E8F0",
+                  fontSize: 15,
+                  cursor: "pointer",
                 }}
               >
                 Start New Conversation

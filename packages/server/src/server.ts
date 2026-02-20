@@ -464,6 +464,7 @@ wss.on("connection", (ws: any, req: IncomingMessage) => {
 
   const voicePreference = (url.searchParams.get("voice") === "natural" ? "natural" : "anime") as "anime" | "natural";
   const clientTzOffset = parseInt(url.searchParams.get("tz") || "0", 10);
+  const isReconnect = url.searchParams.get("reconnect") === "true";
 
   // Dual Azure voice configs — both go through the same AzureTTSStreamer pipeline
   const VOICE_CONFIGS: Record<string, AzureVoiceConfig> = {
@@ -2027,6 +2028,17 @@ Examples of GOOD reactions:
 
           ws.send(JSON.stringify({ type: "stream_ready" }));
 
+          // --- RECONNECT: Skip opener, inject system context ---
+          if (isReconnect) {
+            console.log("[WS] Reconnect session — skipping opener greeting");
+            chatHistory.push({
+              role: "system",
+              content: "[The connection was briefly interrupted due to a network change. The conversation is resuming. Do NOT greet the user again or say welcome back. Just continue naturally from where you left off. If the user speaks, respond as if the conversation never stopped.]"
+            });
+            resetSilenceTimer();
+            startComfortProgression(ws);
+          } else {
+
           // --- KIRA OPENER: She speaks first ---
           setTimeout(async () => {
             if (clientDisconnected || state !== "listening") return;
@@ -2262,6 +2274,7 @@ Examples of GOOD reactions:
               safeSend(JSON.stringify({ type: "state_listening" }));
             }
           }, 500);
+          } // end if (!isReconnect) else block
         } else if (controlMessage.type === "eou") {
           if (timeWarningPhase === 'done') return; // Don't process new utterances after goodbye
 

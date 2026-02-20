@@ -169,6 +169,7 @@ RULES:
 - Mark is_update: true ONLY if this fact directly contradicts or replaces an existing fact (e.g., "I moved to LA" updates a previous city)
 - Do NOT skip facts because they seem minor. "User had tacos for lunch" is worth remembering.
 - Do NOT extract meta-relationship facts about the AI/Kira relationship itself. No facts like "User enjoys talking to Kira" or "User considers Kira a friend" — those are about the relationship with the AI, not about the user.
+- Only extract facts about the USER. Do NOT extract the assistant's opinions, reactions, or commentary as user facts. If Kira said "This clash is wild!" or "Ooh that looks good" that is NOT a user fact — it's the assistant's reaction. Short assistant messages during screen share or camera sessions are vision reactions and must be ignored.
 - The AI's name is Kira. Do NOT include "Kira" as part of the user's name. If the user says "I'm Johnny" their name is "Johnny", not "Johnny Kira".
 - Extract up to 20 facts per conversation. More is better than fewer.
 

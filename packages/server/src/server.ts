@@ -1523,8 +1523,11 @@ Examples of GOOD reactions:
 
   // Proactive goodbye when user doesn't speak during final phase
   async function sendProactiveGoodbye() {
-    if (timeWarningPhase !== 'final_goodbye' || state !== 'listening' || clientDisconnected) return;
+    if (timeWarningPhase !== 'final_goodbye' || clientDisconnected) return;
     if (ws.readyState !== ws.OPEN) return;
+    // Note: we intentionally do NOT check `state !== 'listening'` here.
+    // During vision sessions, state may be 'speaking' from a reaction — the goodbye
+    // must still fire. The goodbye will wait briefly for any in-flight TTS to finish.
 
     timeWarningPhase = 'done';
     isAcceptingAudio = false;
@@ -2000,7 +2003,8 @@ Examples of GOOD reactions:
                 // Fallback: if somehow we got here without entering final_goodbye
                 console.log(`[USAGE] Over limit, no goodbye phase active — forcing final_goodbye`);
                 timeWarningPhase = 'final_goodbye';
-                // The 5-second interval will pick this up and handle the goodbye
+                if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
               }
             } else if (userId) {
               if (isProUser) {
@@ -2017,6 +2021,8 @@ Examples of GOOD reactions:
                   }
                   console.log(`[USAGE] Pro over limit, no goodbye phase active — forcing final_goodbye`);
                   timeWarningPhase = 'final_goodbye';
+                  if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                  goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
                 }
               } else {
                 // Free signed-in users: daily usage tracked in Prisma
@@ -2041,6 +2047,8 @@ Examples of GOOD reactions:
                     }
                     console.log(`[USAGE] Free user over limit — forcing final_goodbye`);
                     timeWarningPhase = 'final_goodbye';
+                    if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
+                    goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
                   }
                 } catch (err) {
                   console.error("[Usage] DB update failed:", (err as Error).message);
@@ -2079,9 +2087,18 @@ Examples of GOOD reactions:
             if (remainingSec <= 15 && timeWarningPhase === 'normal') {
               console.log(`[TIME] ${remainingSec}s left — entering final_goodbye phase`);
               timeWarningPhase = 'final_goodbye';
-              // If user doesn't speak within 3s, Kira says goodbye herself
+
+              // Direct goodbye call — works regardless of vision state or silence timer
               if (goodbyeTimeout) clearTimeout(goodbyeTimeout);
               goodbyeTimeout = setTimeout(() => sendProactiveGoodbye(), 3000);
+
+              // Hard backup: if sendProactiveGoodbye didn't fire (e.g. state race), force disconnect
+              setTimeout(() => {
+                if (timeWarningPhase === 'final_goodbye' && ws.readyState === ws.OPEN) {
+                  console.log('[TIME] 5s backup — goodbye still pending, forcing sendProactiveGoodbye');
+                  sendProactiveGoodbye();
+                }
+              }, 5000);
             }
           }, 5000);
 

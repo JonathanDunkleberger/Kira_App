@@ -21,6 +21,32 @@ export function debugLog(...args: any[]) {
 type SocketState = "idle" | "connecting" | "connected" | "closing" | "closed";
 export type KiraState = "listening" | "thinking" | "speaking";
 
+// --- iOS / Safari AudioContext compatibility ---
+// Older iOS Safari exposes webkitAudioContext instead of AudioContext.
+const SafeAudioContext = (typeof window !== 'undefined'
+  ? (window.AudioContext || (window as any).webkitAudioContext)
+  : undefined) as typeof AudioContext | undefined;
+
+// --- iOS audio session primer ---
+// On iOS, when getUserMedia (mic) is active, the audio session defaults to "voice chat"
+// which routes playback to the earpiece. Playing a silent <audio> element BEFORE starting
+// the mic sets the session to "play and record" mode, routing output to the speaker.
+const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
+async function primeIOSAudioSession(): Promise<void> {
+  try {
+    const silentAudio = new Audio(SILENT_WAV_DATA_URI);
+    silentAudio.setAttribute("playsinline", "true");
+    silentAudio.volume = 0.01; // Near-silent but non-zero to ensure audio session activates
+    await silentAudio.play().catch(() => {});
+    // Clean up after playback finishes
+    silentAudio.onended = () => { silentAudio.remove(); };
+    debugLog("[iOS] Audio session primed for speaker output");
+  } catch {
+    debugLog("[iOS] Audio session priming failed (non-fatal)");
+  }
+}
+
 // ─── Window-level singleton — survives React remounts AND module re-evaluation ───
 // Module-level vars can be re-created if Next.js re-evaluates the module during
 // code splitting or dynamic imports. window is truly global and survives everything.
@@ -328,7 +354,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
       !playbackContext.current ||
       playbackContext.current.state === "closed"
     ) {
-      playbackContext.current = new AudioContext({ sampleRate: 16000 });
+      playbackContext.current = new SafeAudioContext!({ sampleRate: 16000 });
       // Reset persistent audio chain when context is recreated
       playbackGain.current = null;
       playbackAnalyser.current = null;
@@ -462,10 +488,15 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   const initializeAudio = useCallback(async () => {
     try {
       debugLog("[Audio] Initializing audio contexts...");
+
+      // iOS audio routing fix: prime audio session for playback + recording BEFORE mic starts.
+      // This plays a silent audio element to set the iOS audio session to "play and record" mode,
+      // which routes TTS output to the speaker instead of the earpiece.
+      await primeIOSAudioSession();
       
       // 1. Create/Resume AudioContext
       if (!audioContext.current || audioContext.current.state === "closed") {
-        audioContext.current = new AudioContext();
+        audioContext.current = new SafeAudioContext!();
         debugLog(`[Audio] Created capture AudioContext (sampleRate: ${audioContext.current.sampleRate})`);
       }
       if (audioContext.current.state === "suspended") {
@@ -476,7 +507,7 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
 
       // 2. Create/Resume PlaybackContext
       if (!playbackContext.current || playbackContext.current.state === "closed") {
-        playbackContext.current = new AudioContext({ sampleRate: 16000 });
+        playbackContext.current = new SafeAudioContext!({ sampleRate: 16000 });
         debugLog("[Audio] Created playback AudioContext (sampleRate: 16000)");
       }
       if (playbackContext.current.state === "suspended") {
@@ -1105,10 +1136,13 @@ export const useKiraSocket = (getTokenFn: (() => Promise<string | null>) | null,
   }, []);
 
   // ─── Mobile tab-switch recovery: resume AudioContexts when page becomes visible again ───
+  // iOS suspends AudioContext when the app goes to background or during audio route changes.
+  // Re-priming the audio session ensures speaker routing is maintained after interruptions.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible" && conversationActive.current) {
-        debugLog("[Visibility] Page became visible — resuming AudioContexts");
+        debugLog("[Visibility] Page became visible — resuming AudioContexts + re-priming iOS audio session");
+        primeIOSAudioSession(); // Re-prime speaker routing after iOS audio session interruption
         resumeAudioContext();
       }
     };

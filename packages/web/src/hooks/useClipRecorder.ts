@@ -42,8 +42,8 @@ export function useClipRecorder() {
       // Prefer MP4 (plays everywhere, especially iOS). Fall back to WebM for Chrome/Firefox.
       const mimeType = MediaRecorder.isTypeSupported("video/mp4")
         ? "video/mp4"
-        : MediaRecorder.isTypeSupported("video/mp4; codecs=avc1")
-          ? "video/mp4; codecs=avc1"
+        : MediaRecorder.isTypeSupported("video/mp4; codecs=avc3")
+          ? "video/mp4; codecs=avc3"
           : MediaRecorder.isTypeSupported("video/webm; codecs=vp8,opus")
             ? "video/webm; codecs=vp8,opus"
             : "video/webm";

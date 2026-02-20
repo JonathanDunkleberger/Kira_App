@@ -1,7 +1,7 @@
 # Kira
 
 <p align="center">
-  <img src="./packages/web/public/models/Suki/kira2demo69.png" alt="Kira AI" width="100%" />
+  <img src="./packages/web/public/models/Suki/demo69.png" alt="Kira AI" width="100%" />
 </p>
 
 <p align="center">

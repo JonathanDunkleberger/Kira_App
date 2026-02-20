@@ -1283,14 +1283,14 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   }, [zoomLevel]);
 
   return (
-    <div style={{ width: "100%", height: "100%", maxWidth: isSceneActive ? "690px" : "600px", maxHeight: "90vh", margin: "0 auto", position: "relative", overflow: "hidden", transition: "max-width 0.3s ease" }}>
+    <div style={{ width: "100%", height: "100%", maxWidth: isSceneActive ? "780px" : "600px", maxHeight: "90vh", margin: "0 auto", position: "relative", overflow: isSceneActive ? "visible" : "hidden", transition: "max-width 0.3s ease" }}>
       <div
         ref={containerRef}
         style={{
           width: "100%",
           height: "100%",
           pointerEvents: "auto",
-          overflow: "hidden",
+          overflow: isSceneActive ? "visible" : "hidden",
           opacity: modelReady ? 1 : 0,
           transition: "opacity 0.3s ease-in",
         }}

@@ -137,6 +137,7 @@ interface Live2DAvatarProps {
   action?: string | null;
   onModelReady?: () => void;
   onLoadError?: () => void;
+  onCanvasReady?: (canvas: HTMLCanvasElement) => void;
 }
 
 /** Per-accessory auto-remove durations (seconds). Default: 60s for unlisted items. */
@@ -186,7 +187,7 @@ function logMemory(label: string) {
   } catch {}
 }
 
-export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, action, onModelReady, onLoadError }: Live2DAvatarProps) {
+export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, accessories, action, onModelReady, onLoadError, onCanvasReady }: Live2DAvatarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
@@ -218,6 +219,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);
   onLoadErrorRef.current = onLoadError;
+  const onCanvasReadyRef = useRef(onCanvasReady);
+  onCanvasReadyRef.current = onCanvasReady;
   const [modelReady, setModelReady] = useState(false);
 
   // Emotion blending — smoothly interpolate param overrides each frame
@@ -468,6 +471,9 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         pixiCreatedAt.current = Date.now();
         pixiResolutionRef.current = resolution;
         debugLog(`[Live2D] PIXI app created (resolution: ${resolution}, antialias: ${!isMobile})`);
+
+        // Notify parent that the canvas is available (used by clip recorder)
+        onCanvasReadyRef.current?.(canvasRef.current);
 
         // Listen for WebGL context loss (iOS kills GPU context under memory pressure)
         const canvas = canvasRef.current!;

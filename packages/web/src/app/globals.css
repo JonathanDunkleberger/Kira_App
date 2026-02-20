@@ -56,3 +56,29 @@
     opacity: 0;
   }
 }
+
+/* ─── Clip Button ─── */
+.clip-btn {
+  animation: clip-pulse 2.5s ease-in-out infinite;
+}
+.clip-btn:disabled {
+  animation: none;
+}
+
+@keyframes clip-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139,157,195,0); }
+  50% { box-shadow: 0 0 0 6px rgba(139,157,195,0.12); }
+}
+
+.clip-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(139,157,195,0.2);
+  border-top-color: rgba(139,157,195,0.8);
+  border-radius: 50%;
+  animation: clip-spin 0.6s linear infinite;
+}
+
+@keyframes clip-spin {
+  to { transform: rotate(360deg); }
+}

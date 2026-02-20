@@ -3,12 +3,13 @@
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useKiraSocket, debugLog } from "@/hooks/useKiraSocket";
-import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera } from "lucide-react";
+import { PhoneOff, Star, User, Mic, MicOff, Eye, EyeOff, Clock, Sparkles, Camera, Scissors, Download, X, Share2 } from "lucide-react";
 import ProfileModal from "@/components/ProfileModal";
 import KiraOrb from "@/components/KiraOrb";
 import { getOrCreateGuestId } from "@/lib/guestId";
 import { getVoicePreference, setVoicePreference, VoicePreference } from "@/lib/voicePreference";
 import { KiraLogo } from "@/components/KiraLogo";
+import { useClipRecorder } from "@/hooks/useClipRecorder";
 import dynamic from "next/dynamic";
 
 const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: false });
@@ -36,6 +37,11 @@ export default function ChatClient() {
   const live2dLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const live2dRetryInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const MODEL_LOAD_TIMEOUT = 8000; // 8 seconds
+
+  // --- Clip recorder ---
+  const clipRecorder = useClipRecorder();
+  const live2dCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const clipBufferStarted = useRef(false);
 
   // --- Debug: track mount/unmount and what triggers remount ---
   useEffect(() => {
@@ -164,6 +170,7 @@ export default function ChatClient() {
     isAudioPlaying,
     playerVolume,
     playbackAnalyserNode,
+    mediaStreamDestNode,
     currentExpression,
     activeAccessories,
     currentAction,
@@ -180,6 +187,49 @@ export default function ChatClient() {
       signalVisualReady();
     }
   }, [visualMode, signalVisualReady]);
+
+  // ─── Clip recorder: start rolling buffer once canvas + audio are available ───
+  useEffect(() => {
+    if (
+      socketState === "connected" &&
+      live2dCanvasRef.current &&
+      mediaStreamDestNode &&
+      !clipBufferStarted.current
+    ) {
+      clipRecorder.startRollingBuffer(live2dCanvasRef.current, mediaStreamDestNode);
+      clipBufferStarted.current = true;
+      debugLog("[Clip] Rolling buffer started");
+    }
+  }, [socketState, mediaStreamDestNode, clipRecorder]);
+
+  // ─── Clip recorder: stop when conversation ends ───
+  useEffect(() => {
+    if (socketState === "closed" || socketState === "idle") {
+      if (clipBufferStarted.current) {
+        clipRecorder.stopRollingBuffer();
+        clipBufferStarted.current = false;
+        debugLog("[Clip] Rolling buffer stopped");
+      }
+    }
+  }, [socketState, clipRecorder]);
+
+  // ─── Clip share modal auto-dismiss after 30 seconds ───
+  useEffect(() => {
+    if (!clipRecorder.clipUrl) return;
+    const timer = setTimeout(() => {
+      clipRecorder.setClipUrl(null);
+    }, 30_000);
+    return () => clearTimeout(timer);
+  }, [clipRecorder.clipUrl, clipRecorder]);
+
+  const handleClip = useCallback(async () => {
+    const url = await clipRecorder.saveClip();
+    if (url) {
+      debugLog("[Clip] Clip saved:", url);
+    } else {
+      debugLog("[Clip] No clip data available");
+    }
+  }, [clipRecorder]);
 
   // ─── Camera PIP preview ───
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -283,6 +333,9 @@ export default function ChatClient() {
   // --- UI Logic ---
 
   const handleEndCall = async () => {
+    // 0. Stop clip recorder
+    clipRecorder.stopRollingBuffer();
+    clipBufferStarted.current = false;
     // 1. Mark disconnecting to prevent orb fallback flash
     isDisconnectingRef.current = true;
     // 2. Unmount Live2D first so PIXI can destroy its WebGL context cleanly
@@ -579,6 +632,15 @@ export default function ChatClient() {
                         signalVisualReady();
                       }}
                       onLoadError={() => setLive2dFailed(true)}
+                      onCanvasReady={(canvas) => {
+                        live2dCanvasRef.current = canvas;
+                        // Start clip buffer if audio dest is already available
+                        if (mediaStreamDestNode && !clipBufferStarted.current && socketState === "connected") {
+                          clipRecorder.startRollingBuffer(canvas, mediaStreamDestNode);
+                          clipBufferStarted.current = true;
+                          debugLog("[Clip] Rolling buffer started (from canvas ready)");
+                        }
+                      }}
                     />
                 )}
               </>
@@ -767,6 +829,31 @@ export default function ChatClient() {
           {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
         </button>
 
+        {/* Clip Button — save last 30 seconds */}
+        {clipBufferStarted.current && (
+          <button
+            onClick={handleClip}
+            disabled={clipRecorder.isClipSaving}
+            className="clip-btn flex items-center justify-center w-12 h-12 rounded-full border-none transition-all duration-200"
+            style={{
+              background: clipRecorder.isClipSaving
+                ? "rgba(139,157,195,0.25)"
+                : "rgba(255,255,255,0.04)",
+              color: clipRecorder.isClipSaving
+                ? "rgba(139,157,195,1)"
+                : "rgba(139,157,195,0.45)",
+              cursor: clipRecorder.isClipSaving ? "wait" : "pointer",
+            }}
+            title="Save last 30 seconds"
+          >
+            {clipRecorder.isClipSaving ? (
+              <div className="clip-spinner" />
+            ) : (
+              <Scissors size={18} />
+            )}
+          </button>
+        )}
+
         {/* End Call Button */}
         <button
           onClick={handleEndCall}
@@ -916,6 +1003,144 @@ export default function ChatClient() {
         >
           <Camera size={18} />
         </button>
+      )}
+
+      {/* ─── Clip Share Modal ─── */}
+      {clipRecorder.clipUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{
+            background: "rgba(0,0,0,0.7)",
+            backdropFilter: "blur(16px)",
+            animation: "paywallFadeIn 0.3s ease both",
+          }}
+          onClick={() => clipRecorder.setClipUrl(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "linear-gradient(135deg, rgba(20,25,35,0.97), rgba(13,17,23,0.99))",
+              border: "1px solid rgba(107,125,179,0.15)",
+              borderRadius: 20,
+              padding: "24px",
+              maxWidth: 360,
+              width: "calc(100% - 48px)",
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: "0 0 80px rgba(107,125,179,0.06)",
+            }}
+          >
+            {/* Preview */}
+            <div style={{
+              borderRadius: 12,
+              overflow: "hidden",
+              marginBottom: 20,
+              background: "#000",
+              aspectRatio: "16/9",
+            }}>
+              <video
+                src={clipRecorder.clipUrl}
+                controls
+                autoPlay
+                muted
+                playsInline
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            </div>
+
+            {/* Title */}
+            <p style={{
+              fontSize: 16,
+              fontWeight: 500,
+              color: "#E2E8F0",
+              marginBottom: 16,
+              textAlign: "center",
+            }}>
+              Clip saved ✂️
+            </p>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-3">
+              {/* Share / Save to Photos (primary) */}
+              <button
+                onClick={() => clipRecorder.shareClip()}
+                style={{
+                  width: "100%",
+                  padding: "13px 0",
+                  borderRadius: 12,
+                  border: "1px solid rgba(107,125,179,0.3)",
+                  background: "linear-gradient(135deg, rgba(107,125,179,0.3), rgba(107,125,179,0.12))",
+                  color: "#E2E8F0",
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Share2 size={16} />
+                Share / Save to Photos
+              </button>
+
+              {/* Download (secondary) */}
+              <button
+                onClick={() => clipRecorder.downloadClip()}
+                style={{
+                  width: "100%",
+                  padding: "12px 0",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(201,209,217,0.6)",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Download size={15} />
+                Download
+              </button>
+
+              {/* Discard */}
+              <button
+                onClick={() => clipRecorder.setClipUrl(null)}
+                style={{
+                  width: "100%",
+                  padding: "10px 0",
+                  background: "none",
+                  border: "none",
+                  color: "rgba(201,209,217,0.3)",
+                  fontSize: 13,
+                  fontWeight: 400,
+                  cursor: "pointer",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "color 0.2s",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+              >
+                <X size={14} />
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Rating Modal */}

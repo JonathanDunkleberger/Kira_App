@@ -2,6 +2,7 @@ import { WebSocketServer } from "ws";
 import type { IncomingMessage } from "http";
 import { createServer } from "http";
 import { URL } from "url";
+import Stripe from "stripe";
 import prisma from "./prismaClient.js";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import { OpenAI } from "openai";
@@ -88,6 +89,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const GROQ_MODEL = "llama-3.3-70b-versatile";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as any }) : null;
 
 // --- INLINE LLM EMOTION TAGGING ---
 // The LLM prefixes every response with [EMO:emotion] (optionally |ACT:action|ACC:accessory).
@@ -1897,23 +1900,60 @@ Examples of GOOD reactions:
                 select: {
                   dailyUsageSeconds: true,
                   lastUsageDate: true,
+                  stripeCustomerId: true,
                   stripeSubscriptionId: true,
                   stripeCurrentPeriodEnd: true,
                 },
               });
 
               if (dbUser) {
+                // Step 1: Check DB-cached subscription status
                 isProUser = !!(
                   dbUser.stripeSubscriptionId &&
                   dbUser.stripeCurrentPeriodEnd &&
                   dbUser.stripeCurrentPeriodEnd.getTime() > Date.now()
                 );
 
+                console.log(`[USAGE] User ${userId} DB check: stripeSubId=${dbUser.stripeSubscriptionId || 'null'}, periodEnd=${dbUser.stripeCurrentPeriodEnd?.toISOString() || 'null'}, customerId=${dbUser.stripeCustomerId || 'null'}, dbResult=isProUser=${isProUser}`);
+
+                // Step 2: If DB says NOT pro but user has a Stripe customer ID, check Stripe API directly.
+                // This catches resubscriptions where the webhook hasn't fired yet (or was missed).
+                if (!isProUser && dbUser.stripeCustomerId && stripeClient) {
+                  try {
+                    console.log(`[USAGE] DB says not pro but has customerId — checking Stripe API for ${dbUser.stripeCustomerId}...`);
+                    const subscriptions = await stripeClient.subscriptions.list({
+                      customer: dbUser.stripeCustomerId,
+                      status: 'active',
+                      limit: 1,
+                    });
+
+                    const activeSub = subscriptions.data[0];
+                    if (activeSub) {
+                      console.log(`[USAGE] ✅ Stripe API found ACTIVE subscription ${activeSub.id} for ${userId} — self-healing DB`);
+                      isProUser = true;
+
+                      // Self-heal: update DB so future checks don't need Stripe API
+                      await prisma.user.update({
+                        where: { clerkId: userId },
+                        data: {
+                          stripeSubscriptionId: activeSub.id,
+                          stripeCurrentPeriodEnd: new Date(activeSub.current_period_end * 1000),
+                        },
+                      });
+                    } else {
+                      console.log(`[USAGE] Stripe API confirms no active subscription for ${userId}`);
+                    }
+                  } catch (stripeErr) {
+                    console.error(`[USAGE] Stripe API check failed for ${userId}:`, (stripeErr as Error).message);
+                    // Don't block user if Stripe API fails — fall through to DB-based check
+                  }
+                }
+
                 if (isProUser) {
                   // Pro users: monthly usage tracked in Prisma MonthlyUsage (resets per calendar month)
                   const storedSeconds = await getProUsage(userId);
                   if (storedSeconds >= PRO_MONTHLY_SECONDS) {
-                    console.log(`[USAGE] Pro user ${userId} blocked — ${storedSeconds}s >= ${PRO_MONTHLY_SECONDS}s`);
+                    console.log(`[USAGE] Pro user ${userId} BLOCKED — ${storedSeconds}s >= ${PRO_MONTHLY_SECONDS}s monthly limit`);
                     wasBlockedImmediately = true;
                     ws.send(JSON.stringify({ type: "error", code: "limit_reached", tier: "pro" }));
                     ws.close(1008, "Pro usage limit reached");
@@ -1921,7 +1961,7 @@ Examples of GOOD reactions:
                   }
                   proUsageSeconds = storedSeconds;
                   proUsageBase = storedSeconds;
-                  console.log(`[USAGE] Pro user ${userId} allowed — resuming at ${storedSeconds}s / ${PRO_MONTHLY_SECONDS}s`);
+                  console.log(`[USAGE] User ${userId} tier: pro, usage: ${storedSeconds}s / ${PRO_MONTHLY_SECONDS}s — ALLOWED`);
 
                   ws.send(JSON.stringify({
                     type: "session_config",
@@ -1941,7 +1981,10 @@ Examples of GOOD reactions:
                     });
                   }
 
+                  console.log(`[USAGE] User ${userId} tier: free, usage: ${currentUsage}s / ${FREE_LIMIT_SECONDS}s`);
+
                   if (currentUsage >= FREE_LIMIT_SECONDS) {
+                    console.log(`[USAGE] Free user ${userId} BLOCKED — ${currentUsage}s >= ${FREE_LIMIT_SECONDS}s daily limit`);
                     ws.send(JSON.stringify({ type: "error", code: "limit_reached" }));
                     ws.close(1008, "Usage limit reached");
                     return;
@@ -1953,6 +1996,8 @@ Examples of GOOD reactions:
                     remainingSeconds: FREE_LIMIT_SECONDS - currentUsage,
                   }));
                 }
+              } else {
+                console.log(`[USAGE] User ${userId} not found in DB — skipping usage check`);
               }
             } catch (err) {
               console.error(

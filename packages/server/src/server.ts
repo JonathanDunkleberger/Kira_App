@@ -834,11 +834,11 @@ Keep it natural and brief — 1 sentence.`
 Keep it natural and brief — 1 sentence.`)
       : "";
 
-    // Cap at 2 most recent images for vision reactions to reduce latency
-    const reactionImages = latestImages!.slice(-2);
+    // Cap at 3 most recent images for vision reactions — extra frame helps catch subtitles and scene transitions
+    const reactionImages = latestImages!.slice(-3);
     const reactionImageContent: OpenAI.Chat.ChatCompletionContentPart[] = reactionImages.map((img) => ({
       type: "image_url" as const,
-      image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "low" as const },
+      image_url: { url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`, detail: "auto" as const },
     }));
     reactionImageContent.push({
       type: "text" as const,
@@ -2534,7 +2534,7 @@ Examples of GOOD reactions:
                     type: "image_url",
                     image_url: {
                         url: img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`,
-                        detail: "low"
+                        detail: "auto"
                     }
                 });
             });

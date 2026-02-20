@@ -181,22 +181,73 @@ export default function ConversationShowcase() {
         ))}
       </div>
 
-      {/* Pagination dots */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 20 }}>
+      {/* Pagination dots + arrow buttons */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, marginTop: 20 }}>
+        {/* Prev arrow */}
+        <button
+          aria-label="Previous conversation"
+          onClick={() => { goPrev(); resetTimer(); }}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 4,
+            color: "rgba(201,209,217,0.3)",
+            fontSize: 18,
+            lineHeight: 1,
+            transition: "color 0.2s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(201,209,217,0.6)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(201,209,217,0.3)"; }}
+        >
+          ‹
+        </button>
+
+        {/* Dots */}
         {CONVERSATIONS.map((_, i) => (
-          <div
+          <button
             key={i}
+            aria-label={`Go to conversation ${i + 1}`}
+            onClick={() => {
+              if (i !== activeIndex) {
+                go(i, i > activeIndex ? "right" : "left");
+                resetTimer();
+              }
+            }}
             style={{
-              width: 8,
+              width: i === activeIndex ? 20 : 8,
               height: 8,
-              borderRadius: "50%",
+              borderRadius: 4,
               background: i === activeIndex
                 ? "rgba(107,125,179,0.5)"
                 : "rgba(255,255,255,0.08)",
-              transition: "background 0.3s ease",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              transition: "all 0.3s ease",
             }}
           />
         ))}
+
+        {/* Next arrow */}
+        <button
+          aria-label="Next conversation"
+          onClick={() => { goNext(); resetTimer(); }}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 4,
+            color: "rgba(201,209,217,0.3)",
+            fontSize: 18,
+            lineHeight: 1,
+            transition: "color 0.2s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(201,209,217,0.6)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(201,209,217,0.3)"; }}
+        >
+          ›
+        </button>
       </div>
     </section>
   );

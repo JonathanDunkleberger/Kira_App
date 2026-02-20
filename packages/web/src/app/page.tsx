@@ -17,27 +17,33 @@ function Counter({ end, suffix = "", duration = 2000 }: { end: number; suffix?: 
   const ref = useRef<HTMLSpanElement>(null);
   const started = useRef(false);
 
+  const startAnimation = useCallback(() => {
+    if (started.current) return;
+    started.current = true;
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setVal(Math.round(end * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    tick();
+  }, [end, duration]);
+
   useEffect(() => {
     const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting && !started.current) {
-          started.current = true;
-          const start = Date.now();
-          const tick = () => {
-            const elapsed = Date.now() - start;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setVal(Math.round(end * eased));
-            if (progress < 1) requestAnimationFrame(tick);
-          };
-          tick();
-        }
-      },
+      ([e]) => { if (e.isIntersecting) startAnimation(); },
       { threshold: 0.5 }
     );
     if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [end, duration]);
+
+    // Fallback: if IntersectionObserver never fires (hydration race, scroll position),
+    // force-start the animation after 2 seconds so content is never stuck at 0.
+    const fallback = setTimeout(startAnimation, 2000);
+
+    return () => { obs.disconnect(); clearTimeout(fallback); };
+  }, [startAnimation]);
 
   return (
     <span ref={ref}>
@@ -124,8 +130,21 @@ export default function HomePage() {
       },
       { threshold: 0.15 }
     );
-    document.querySelectorAll("[data-animate]").forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
+    const elements = document.querySelectorAll("[data-animate]");
+    elements.forEach((el) => obs.observe(el));
+
+    // Fallback: if IntersectionObserver never fires (hydration race, elements already
+    // in viewport on load, or scroll position issues), force all sections visible
+    // after 2 seconds so content is never stuck at opacity: 0.
+    const fallback = setTimeout(() => {
+      setVisibleSections((prev) => {
+        const next = new Set(prev);
+        elements.forEach((el) => { if (el.id) next.add(el.id); });
+        return next;
+      });
+    }, 2000);
+
+    return () => { obs.disconnect(); clearTimeout(fallback); };
   }, []);
 
   const isVisible = (id: string) => visibleSections.has(id);

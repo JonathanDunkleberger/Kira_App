@@ -1299,12 +1299,24 @@ Examples of GOOD reactions:
 
       console.log(`[Silence] User has been quiet. Checking if Kira has something to say.${visionActive ? ' (vision mode)' : ''}`);
 
+      // Find Kira's last message so we can explicitly prevent repetition
+      let lastKiraMessage = "";
+      for (let i = chatHistory.length - 1; i >= 0; i--) {
+        if (chatHistory[i].role === "assistant" && typeof chatHistory[i].content === "string") {
+          lastKiraMessage = stripEmotionTags(chatHistory[i].content as string).trim();
+          break;
+        }
+      }
+
       // Inject a one-time nudge (removed after the turn)
+      const antiRepeat = lastKiraMessage
+        ? `\n\nCRITICAL: Your last message was "${lastKiraMessage.slice(0, 200)}" — do NOT repeat, rephrase, or echo this. Say something COMPLETELY different. A new topic, a new thought, a new question.`
+        : "";
       const nudge: OpenAI.Chat.ChatCompletionMessageParam = {
         role: "system",
         content: visionActive
-          ? `[You've been watching together quietly. If something interesting is happening on screen right now, give a very brief reaction (1-5 words). If the scene is calm or nothing stands out, respond with exactly "[SILENCE]" and nothing else.]`
-          : `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.]`
+          ? `[You've been watching together quietly. If something interesting is happening on screen right now, give a very brief reaction (1-5 words). If the scene is calm or nothing stands out, respond with exactly "[SILENCE]" and nothing else.]${antiRepeat}`
+          : `[The user has been quiet for a moment. This is a natural pause in conversation. If you have something on your mind — a thought, a follow-up question about something they said earlier, something you've been curious about, a reaction to something from the memory block — now is a natural time to share it. Speak as if you just thought of something. Be genuine. If you truly have nothing to say, respond with exactly "[SILENCE]" and nothing else. Do NOT say "are you still there" or "what are you thinking about" or "is everything okay" — those feel robotic. Only speak if you have something real to say.${antiRepeat}]`
       };
 
       const tagReminder: OpenAI.Chat.ChatCompletionMessageParam = {
@@ -1319,10 +1331,10 @@ Examples of GOOD reactions:
         const checkResponse: any = await callLLMWithRetry(() => groq.chat.completions.create({
           model: GROQ_MODEL,
           messages: chatHistory as any,
-          temperature: 0.75,
+          temperature: 0.85,
           max_tokens: 150,
-          frequency_penalty: 0.3,
-          presence_penalty: 0.3, // Higher to encourage novel topics
+          frequency_penalty: 0.5,
+          presence_penalty: 0.6, // High to strongly discourage repeating previous content
         }), "silence check");
 
         let responseText = checkResponse.choices[0]?.message?.content?.trim() || "";

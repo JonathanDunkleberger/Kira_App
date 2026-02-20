@@ -44,6 +44,7 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
   const animFrameRef = useRef<number>(0);
   const lastRingTime = useRef(0);
   const smoothedVolume = useRef(0);
+  const sonarIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!isActive) {
@@ -54,12 +55,26 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
       }
       smoothedVolume.current = 0;
       cancelAnimationFrame(animFrameRef.current);
+      // Stop sonar pulses
+      if (sonarIntervalRef.current) {
+        clearInterval(sonarIntervalRef.current);
+        sonarIntervalRef.current = null;
+      }
       return;
     }
 
     // Show shadow ring
     if (shadowRef.current) {
       shadowRef.current.style.opacity = '1';
+    }
+
+    // Start continuous sonar pulse: 2-3 staggered rings every 2s
+    if (!sonarIntervalRef.current) {
+      // Fire first pulse immediately
+      spawnSonarPulse();
+      sonarIntervalRef.current = setInterval(() => {
+        spawnSonarPulse();
+      }, 2200);
     }
 
     const animate = () => {
@@ -100,8 +115,22 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
     };
 
     animate();
-    return () => cancelAnimationFrame(animFrameRef.current);
+    return () => {
+      cancelAnimationFrame(animFrameRef.current);
+      if (sonarIntervalRef.current) {
+        clearInterval(sonarIntervalRef.current);
+        sonarIntervalRef.current = null;
+      }
+    };
   }, [isActive, orbSize]);
+
+  /** Spawn 2-3 staggered sonar rings as a pulse burst */
+  const spawnSonarPulse = () => {
+    const ringCount = 2 + Math.round(Math.random()); // 2 or 3 rings
+    for (let i = 0; i < ringCount; i++) {
+      setTimeout(() => spawnSonarRing(), i * 300); // 300ms stagger
+    }
+  };
 
   const spawnSonarRing = () => {
     if (!containerRef.current) return;
@@ -112,8 +141,8 @@ const AudioDrivenRing: React.FC<AudioDrivenRingProps> = ({ isActive, volumeRef, 
       width: ${orbSize}px;
       height: ${orbSize}px;
       border-radius: 50%;
-      border: 2px solid rgba(170, 190, 230, 0.45);
-      box-shadow: 0 0 6px rgba(170, 190, 230, 0.2);
+      border: 2px solid rgba(200, 160, 230, 0.4);
+      box-shadow: 0 0 8px rgba(180, 140, 220, 0.25);
       animation: sonar-expand 1.8s ease-out forwards;
       pointer-events: none;
       top: 50%;

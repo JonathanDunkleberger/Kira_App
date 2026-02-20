@@ -13,22 +13,70 @@ export function useClipRecorder() {
   const canvasStreamRef = useRef<MediaStream | null>(null);
   const combinedStreamRef = useRef<MediaStream | null>(null);
   const restartTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const compositeAnimFrameRef = useRef<number>(0);
 
   /**
    * Start the rolling buffer. Call this when the conversation starts.
    *
    * @param canvasElement - The Live2D canvas element
    * @param audioDestination - A MediaStreamAudioDestinationNode carrying Kira's TTS audio
+   * @param backgroundVideo - Optional background video element to composite behind the Live2D canvas
    */
   const startRollingBuffer = useCallback(
     (
       canvasElement: HTMLCanvasElement,
-      audioDestination: MediaStreamAudioDestinationNode
+      audioDestination: MediaStreamAudioDestinationNode,
+      backgroundVideo?: HTMLVideoElement | null
     ) => {
       if (isRecording.current) return;
 
-      // Capture video from the Live2D canvas at 30fps
-      canvasStreamRef.current = canvasElement.captureStream(30);
+      let captureStream: MediaStream;
+
+      if (backgroundVideo) {
+        // Create a composite canvas that draws the background video + Live2D canvas
+        const compositeCanvas = document.createElement("canvas");
+        compositeCanvas.width = canvasElement.width || 1920;
+        compositeCanvas.height = canvasElement.height || 1080;
+        compositeCanvasRef.current = compositeCanvas;
+        const ctx = compositeCanvas.getContext("2d")!;
+
+        const drawFrame = () => {
+          // Draw background video first (cover the canvas)
+          if (backgroundVideo && !backgroundVideo.paused && backgroundVideo.readyState >= 2) {
+            // Calculate cover-fit dimensions
+            const vw = backgroundVideo.videoWidth || compositeCanvas.width;
+            const vh = backgroundVideo.videoHeight || compositeCanvas.height;
+            const cw = compositeCanvas.width;
+            const ch = compositeCanvas.height;
+            const scale = Math.max(cw / vw, ch / vh);
+            const sw = vw * scale;
+            const sh = vh * scale;
+            const sx = (cw - sw) / 2;
+            const sy = (ch - sh) / 2;
+            ctx.globalAlpha = 0.85; // Match the CSS opacity
+            ctx.drawImage(backgroundVideo, sx, sy, sw, sh);
+            ctx.globalAlpha = 1.0;
+          } else {
+            // No video frame ready — fill with dark background
+            ctx.fillStyle = "#0D1117";
+            ctx.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+          }
+
+          // Draw Live2D canvas on top
+          ctx.drawImage(canvasElement, 0, 0, compositeCanvas.width, compositeCanvas.height);
+
+          compositeAnimFrameRef.current = requestAnimationFrame(drawFrame);
+        };
+        drawFrame();
+
+        captureStream = compositeCanvas.captureStream(30);
+      } else {
+        // No background video — capture Live2D canvas directly (original behavior)
+        captureStream = canvasElement.captureStream(30);
+      }
+
+      canvasStreamRef.current = captureStream;
 
       // Combine canvas video track + TTS audio track into one stream
       const videoTrack = canvasStreamRef.current.getVideoTracks()[0];
@@ -162,9 +210,14 @@ export function useClipRecorder() {
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
+    if (compositeAnimFrameRef.current) {
+      cancelAnimationFrame(compositeAnimFrameRef.current);
+      compositeAnimFrameRef.current = 0;
+    }
     isRecording.current = false;
     canvasStreamRef.current = null;
     combinedStreamRef.current = null;
+    compositeCanvasRef.current = null;
   }, []);
 
   /**

@@ -42,6 +42,7 @@ export default function ChatClient() {
   // --- Clip recorder ---
   const clipRecorder = useClipRecorder();
   const live2dCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
   const clipBufferStarted = useRef(false);
 
   // --- Debug: track mount/unmount and what triggers remount ---
@@ -201,7 +202,7 @@ export default function ChatClient() {
       mediaStreamDestNode &&
       !clipBufferStarted.current
     ) {
-      clipRecorder.startRollingBuffer(live2dCanvasRef.current, mediaStreamDestNode);
+      clipRecorder.startRollingBuffer(live2dCanvasRef.current, mediaStreamDestNode, backgroundVideoRef.current);
       clipBufferStarted.current = true;
       debugLog("[Clip] Rolling buffer started");
     }
@@ -552,13 +553,14 @@ export default function ChatClient() {
         className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center"
         style={{
           zIndex: 20,
-          background: isSceneActive ? "rgba(0,0,0,0.3)" : "transparent",
+          background: isSceneActive ? "rgba(0,0,0,0.3)" : visualMode === "orb" ? "transparent" : "transparent",
           backdropFilter: isSceneActive ? "blur(6px)" : undefined,
           WebkitBackdropFilter: isSceneActive ? "blur(6px)" : undefined,
           transition: "background 0.3s ease",
+          pointerEvents: visualMode === "orb" ? "none" : undefined,
         }}
       >
-        <a href="/">
+        <a href="/" style={{ pointerEvents: "auto" }}>
           <span className="font-medium text-lg flex items-center gap-2" style={{ color: "#C9D1D9" }}>
             <KiraLogo size={24} id="chatXO" />
             Kira
@@ -566,7 +568,7 @@ export default function ChatClient() {
         </a>
         
         {/* Profile Link + Timer */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, pointerEvents: "auto" }}>
           {/* Timer — only shows under 5 min remaining for free users */}
           {!isPro && localRemaining !== null && localRemaining <= 300 && localRemaining > 0 && (
             <span
@@ -637,6 +639,7 @@ export default function ChatClient() {
       {/* Animated scene background — fullscreen behind everything */}
       {isSceneActive && visualMode === "avatar" && (
         <video
+          ref={backgroundVideoRef}
           src="/models/Suki/pink-night.mp4"
           autoPlay
           loop
@@ -657,9 +660,9 @@ export default function ChatClient() {
       )}
 
       {/* Main Content Area — orb/avatar centered */}
-      <div className="flex-grow relative w-full max-w-4xl mx-auto" style={{ minHeight: 0, overflow: isSceneActive ? "visible" : "hidden", zIndex: 1 }}>
+      <div className={`${visualMode === "orb" ? "fixed inset-0" : "flex-grow relative"} w-full max-w-4xl mx-auto`} style={{ minHeight: 0, overflow: isSceneActive ? "visible" : "hidden", zIndex: visualMode === "orb" ? 1 : 1 }}>
         {/* Visual — absolutely centered */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: isMobile ? 140 : 160, overflow: isSceneActive ? "visible" : "hidden" }}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: visualMode === "orb" ? 0 : (isMobile ? 140 : 160), overflow: isSceneActive ? "visible" : "hidden" }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
             {visualMode === "avatar" ? (
               <>
@@ -681,7 +684,7 @@ export default function ChatClient() {
                         live2dCanvasRef.current = canvas;
                         // Start clip buffer if audio dest is already available
                         if (mediaStreamDestNode && !clipBufferStarted.current && socketState === "connected") {
-                          clipRecorder.startRollingBuffer(canvas, mediaStreamDestNode);
+                          clipRecorder.startRollingBuffer(canvas, mediaStreamDestNode, backgroundVideoRef.current);
                           clipBufferStarted.current = true;
                           debugLog("[Clip] Rolling buffer started (from canvas ready)");
                         }

@@ -9,6 +9,7 @@ export function useClipRecorder() {
   const isRecording = useRef(false);
   const [isClipSaving, setIsClipSaving] = useState(false);
   const [clipUrl, setClipUrl] = useState<string | null>(null);
+  const [clipMimeType, setClipMimeType] = useState<string>("video/webm");
   const canvasStreamRef = useRef<MediaStream | null>(null);
   const combinedStreamRef = useRef<MediaStream | null>(null);
   const restartTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -38,11 +39,11 @@ export function useClipRecorder() {
       if (audioTrack) combinedStreamRef.current.addTrack(audioTrack);
 
       // Determine best supported format
-      // iOS Safari supports mp4, Chrome/Firefox support webm
-      const mimeType = MediaRecorder.isTypeSupported("video/mp4; codecs=avc1")
-        ? "video/mp4; codecs=avc1"
-        : MediaRecorder.isTypeSupported("video/webm; codecs=vp9,opus")
-          ? "video/webm; codecs=vp9,opus"
+      // Prefer MP4 (plays everywhere, especially iOS). Fall back to WebM for Chrome/Firefox.
+      const mimeType = MediaRecorder.isTypeSupported("video/mp4")
+        ? "video/mp4"
+        : MediaRecorder.isTypeSupported("video/mp4; codecs=avc1")
+          ? "video/mp4; codecs=avc1"
           : MediaRecorder.isTypeSupported("video/webm; codecs=vp8,opus")
             ? "video/webm; codecs=vp8,opus"
             : "video/webm";
@@ -111,6 +112,7 @@ export function useClipRecorder() {
         const url = URL.createObjectURL(blob);
 
         setClipUrl(url);
+        setClipMimeType(mime);
         setIsClipSaving(false);
 
         // Haptic feedback on mobile
@@ -229,5 +231,6 @@ export function useClipRecorder() {
     isClipSaving,
     clipUrl,
     setClipUrl,
+    clipMimeType,
   };
 }

@@ -1187,6 +1187,19 @@ export default function ChatClient() {
                 <X size={14} />
                 Discard
               </button>
+
+              {/* WebM tip for Chrome/Firefox users */}
+              {!clipRecorder.clipMimeType.includes("mp4") && (
+                <p style={{
+                  fontSize: 11,
+                  color: "rgba(201,209,217,0.25)",
+                  textAlign: "center",
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                }}>
+                  Tip: Upload directly to social media, or open in VLC
+                </p>
+              )}
             </div>
           </div>
         </div>

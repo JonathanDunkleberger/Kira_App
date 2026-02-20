@@ -630,7 +630,7 @@ export default function ChatClient() {
         {/* Animated scene background — time-of-day aware */}
         {isSceneActive && visualMode === "avatar" && (
           <video
-            src={new Date().getHours() >= 6 && new Date().getHours() < 18 ? "/models/Suki/pink-day.mp4" : "/models/Suki/pink-night.mp4"}
+            src="/models/Suki/pink-night.mp4"
             autoPlay
             loop
             muted

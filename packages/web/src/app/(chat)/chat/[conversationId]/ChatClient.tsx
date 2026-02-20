@@ -13,7 +13,7 @@ import { useClipRecorder } from "@/hooks/useClipRecorder";
 import dynamic from "next/dynamic";
 
 const Live2DAvatar = dynamic(() => import("@/components/Live2DAvatar"), { ssr: false });
-const XOLoader = dynamic(() => import("@/components/XOLoader"), { ssr: false });
+const ChibiLoader = dynamic(() => import("@/components/ChibiLoader"), { ssr: false });
 
 export default function ChatClient() {
   const { getToken, userId, isLoaded: clerkLoaded } = useAuth();
@@ -653,7 +653,7 @@ export default function ChatClient() {
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
             {visualMode === "avatar" ? (
               <>
-                {!live2dReady && <XOLoader />}
+                {!live2dReady && <ChibiLoader />}
                 {!live2dDismissed && (
                     <Live2DAvatar
                       isSpeaking={isAudioPlaying}

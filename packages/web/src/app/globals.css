@@ -82,3 +82,14 @@
 @keyframes clip-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Chibi loader — gentle float and text pulse */
+@keyframes chibi-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes chibi-text-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}

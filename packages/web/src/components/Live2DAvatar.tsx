@@ -1225,8 +1225,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     const container = containerRef.current;
     if (!container) return;
 
-    const MIN_ZOOM = 1.0;
-    const MAX_ZOOM = 2.0;
+    const MIN_ZOOM = 1.35;
+    const MAX_ZOOM = 2.5;
     const ZOOM_STEP = 0.1;
 
     const handleWheel = (e: WheelEvent) => {

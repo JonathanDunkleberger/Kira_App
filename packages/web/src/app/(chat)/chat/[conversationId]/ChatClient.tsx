@@ -662,7 +662,7 @@ export default function ChatClient() {
       {/* Main Content Area — orb/avatar centered */}
       <div className={`${visualMode === "orb" ? "fixed inset-0" : "flex-grow relative"} w-full max-w-4xl mx-auto`} style={{ minHeight: 0, overflow: isSceneActive ? "visible" : "hidden", zIndex: visualMode === "orb" ? 1 : 1 }}>
         {/* Visual — absolutely centered */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: visualMode === "orb" ? 0 : (isMobile ? 140 : 160), overflow: isSceneActive ? "visible" : "hidden" }}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: visualMode === "orb" ? 0 : (isMobile ? 70 : 80), overflow: isSceneActive ? "visible" : "hidden" }}>
           <div className="pointer-events-auto" style={{ width: visualMode === "avatar" ? "100%" : undefined, height: visualMode === "avatar" ? "100%" : undefined, position: visualMode === "avatar" ? "relative" : undefined, maxHeight: "100%" }}>
             {visualMode === "avatar" ? (
               <>

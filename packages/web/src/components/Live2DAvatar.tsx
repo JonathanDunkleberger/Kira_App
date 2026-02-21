@@ -214,8 +214,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const baseScaleRef = useRef(0);
   const baseYRef = useRef(0);
   const lastPinchDistance = useRef<number | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(1.65);
-  const zoomLevelRef = useRef(1.65);
+  const [zoomLevel, setZoomLevel] = useState(2.3);
+  const zoomLevelRef = useRef(2.3);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);
@@ -530,8 +530,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
 
         app.stage.addChild(model as any);
 
-        // Framing: show head to mid-thigh, centered with breathing room
-        // Use the actual PIXI resolution (not device DPR) to convert renderer pixels → CSS pixels
+        // Framing: "FaceTime crop" — head in upper third, thigh-level at bottom
+        // Model center is pushed down so lower legs/feet are cropped by overflow:hidden
         const containerWidth = app.renderer.width / resolution;
         const containerHeight = app.renderer.height / resolution;
 
@@ -542,7 +542,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         ) * scaleFactor;
         model.scale.set(scale * zoomLevelRef.current);
         model.x = containerWidth / 2;
-        const yPosition = containerHeight * (isMobile ? 0.59 : 0.56);
+        const yPosition = containerHeight * (isMobile ? 0.73 : 0.70);
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -856,7 +856,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const sf = 0.9;
           const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = h * (mobile ? 0.59 : 0.56);
+          baseYRef.current = h * (mobile ? 0.73 : 0.70);
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);
@@ -1224,8 +1224,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     const container = containerRef.current;
     if (!container) return;
 
-    const MIN_ZOOM = 1.3;   // ~80% of default 1.65 — slight zoom out
-    const MAX_ZOOM = 2.5;   // ~150% of default 1.65 — moderate zoom in
+    const MIN_ZOOM = 1.8;   // ~80% of default 2.3 — slight zoom out
+    const MAX_ZOOM = 3.4;   // ~150% of default 2.3 — moderate zoom in
     const ZOOM_STEP = 0.1;
 
     const handleWheel = (e: WheelEvent) => {

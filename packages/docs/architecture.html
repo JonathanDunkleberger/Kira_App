@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kira — System Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0e0b18;
+    background-image:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(180, 120, 220, 0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 20% 80%, rgba(220, 120, 180, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse 60% 40% at 80% 90%, rgba(120, 140, 220, 0.05) 0%, transparent 50%);
+    color: #ede6f5;
+    font-family: 'Inter', -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 56px 40px 64px;
+  }
+
+  .container {
+    width: 1200px;
+    max-width: 100%;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 10px;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 10px;
+  }
+
+  .logo-icon {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #d4a8f0, #9b6bcf);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 25px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -1px;
+    box-shadow: 0 0 28px rgba(180, 140, 230, 0.4), 0 0 8px rgba(180, 140, 230, 0.2);
+  }
+
+  .logo-text {
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: 8px;
+    background: linear-gradient(135deg, #e8d4f8, #c49ce8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: #a898c0;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .urls {
+    font-size: 12px;
+    color: #7868a0;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Layer Labels ── */
+  .layer {
+    position: relative;
+    margin-top: 38px;
+    margin-bottom: 16px;
+  }
+
+  .layer-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #8878a8;
+  }
+
+  .layer-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, #302548, #1e1830);
+    z-index: 0;
+  }
+
+  .layer-label-wrap {
+    position: relative;
+    z-index: 1;
+    background: #0e0b18;
+    padding-right: 16px;
+  }
+
+  /* ── Grid ── */
+  .card-row {
+    display: grid;
+    gap: 14px;
+  }
+
+  .row-4 { grid-template-columns: repeat(4, 1fr); }
+
+  /* ── Cards ── */
+  .card {
+    border-radius: 14px;
+    padding: 20px;
+    position: relative;
+    border: 1px solid rgba(80, 60, 120, 0.35);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .card-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f0eaf8;
+  }
+
+  .card-desc {
+    font-size: 11px;
+    color: #9888b8;
+    font-weight: 500;
+  }
+
+  .card-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 6px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .card-items {
+    list-style: none;
+    padding: 0;
+  }
+
+  .card-items li {
+    font-size: 12px;
+    color: #b0a0cc;
+    padding: 3px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    line-height: 1.45;
+  }
+
+  .card-items li::before {
+    content: "•";
+    color: #6858a0;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .item-label {
+    color: #d4c8e8;
+    font-weight: 500;
+  }
+
+  .item-sep {
+    color: #6050a0;
+    margin: 0 2px;
+  }
+
+  /* ═══════════════════════════════════════════
+     CARD THEMES — background + border + glow
+     ═══════════════════════════════════════════ */
+
+  /* Experience Layer — warm pink/rose */
+  .theme-voice {
+    background: linear-gradient(135deg, rgba(232, 127, 160, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #e87fa0;
+    box-shadow: 0 4px 24px rgba(232, 127, 160, 0.1), inset 0 1px 0 rgba(232, 127, 160, 0.06);
+  }
+  .theme-voice .card-icon { background: linear-gradient(135deg, #e87fa0, #c94d72); box-shadow: 0 0 12px rgba(232, 127, 160, 0.3); }
+
+  .theme-avatar {
+    background: linear-gradient(135deg, rgba(240, 168, 200, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #f0a8c8;
+    box-shadow: 0 4px 24px rgba(240, 168, 200, 0.1), inset 0 1px 0 rgba(240, 168, 200, 0.06);
+  }
+  .theme-avatar .card-icon { background: linear-gradient(135deg, #f0a8c8, #d87a9e); box-shadow: 0 0 12px rgba(240, 168, 200, 0.3); }
+
+  .theme-auth {
+    background: linear-gradient(135deg, rgba(196, 168, 224, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #c4a8e0;
+    box-shadow: 0 4px 24px rgba(196, 168, 224, 0.1), inset 0 1px 0 rgba(196, 168, 224, 0.06);
+  }
+  .theme-auth .card-icon { background: linear-gradient(135deg, #c4a8e0, #9370b8); box-shadow: 0 0 12px rgba(196, 168, 224, 0.3); }
+
+  .theme-sub {
+    background: linear-gradient(135deg, rgba(168, 208, 232, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #a8d0e8;
+    box-shadow: 0 4px 24px rgba(168, 208, 232, 0.1), inset 0 1px 0 rgba(168, 208, 232, 0.06);
+  }
+  .theme-sub .card-icon { background: linear-gradient(135deg, #a8d0e8, #6ba0c4); box-shadow: 0 0 12px rgba(168, 208, 232, 0.3); }
+
+  /* Frontend Layer — blue/indigo/purple */
+  .theme-nextjs {
+    background: linear-gradient(135deg, rgba(139, 156, 240, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #8b9cf0;
+    box-shadow: 0 4px 24px rgba(139, 156, 240, 0.1), inset 0 1px 0 rgba(139, 156, 240, 0.06);
+  }
+  .theme-nextjs .card-icon { background: linear-gradient(135deg, #8b9cf0, #5b6dd0); box-shadow: 0 0 12px rgba(139, 156, 240, 0.3); }
+
+  .theme-hooks {
+    background: linear-gradient(135deg, rgba(168, 139, 232, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #a88be8;
+    box-shadow: 0 4px 24px rgba(168, 139, 232, 0.1), inset 0 1px 0 rgba(168, 139, 232, 0.06);
+  }
+  .theme-hooks .card-icon { background: linear-gradient(135deg, #a88be8, #7b5ec0); box-shadow: 0 0 12px rgba(168, 139, 232, 0.3); }
+
+  .theme-live2d {
+    background: linear-gradient(135deg, rgba(232, 168, 208, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #e8a8d0;
+    box-shadow: 0 4px 24px rgba(232, 168, 208, 0.1), inset 0 1px 0 rgba(232, 168, 208, 0.06);
+  }
+  .theme-live2d .card-icon { background: linear-gradient(135deg, #e8a8d0, #c87aaa); box-shadow: 0 0 12px rgba(232, 168, 208, 0.3); }
+
+  .theme-pages {
+    background: linear-gradient(135deg, rgba(184, 160, 240, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #b8a0f0;
+    box-shadow: 0 4px 24px rgba(184, 160, 240, 0.1), inset 0 1px 0 rgba(184, 160, 240, 0.06);
+  }
+  .theme-pages .card-icon { background: linear-gradient(135deg, #b8a0f0, #8870c8); box-shadow: 0 0 12px rgba(184, 160, 240, 0.3); }
+
+  /* Backend Layer — purple/violet/teal */
+  .theme-ws {
+    background: linear-gradient(135deg, rgba(208, 144, 232, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #d090e8;
+    box-shadow: 0 4px 24px rgba(208, 144, 232, 0.1), inset 0 1px 0 rgba(208, 144, 232, 0.06);
+  }
+  .theme-ws .card-icon { background: linear-gradient(135deg, #d090e8, #a060c0); box-shadow: 0 0 12px rgba(208, 144, 232, 0.3); }
+
+  .theme-pipeline {
+    background: linear-gradient(135deg, rgba(240, 160, 184, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #f0a0b8;
+    box-shadow: 0 4px 24px rgba(240, 160, 184, 0.1), inset 0 1px 0 rgba(240, 160, 184, 0.06);
+  }
+  .theme-pipeline .card-icon { background: linear-gradient(135deg, #f0a0b8, #d07090); box-shadow: 0 0 12px rgba(240, 160, 184, 0.3); }
+
+  .theme-memory {
+    background: linear-gradient(135deg, rgba(160, 208, 240, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #a0d0f0;
+    box-shadow: 0 4px 24px rgba(160, 208, 240, 0.1), inset 0 1px 0 rgba(160, 208, 240, 0.06);
+  }
+  .theme-memory .card-icon { background: linear-gradient(135deg, #a0d0f0, #70a0d0); box-shadow: 0 0 12px rgba(160, 208, 240, 0.3); }
+
+  .theme-vision {
+    background: linear-gradient(135deg, rgba(160, 220, 180, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #a0dcb4;
+    box-shadow: 0 4px 24px rgba(160, 220, 180, 0.1), inset 0 1px 0 rgba(160, 220, 180, 0.06);
+  }
+  .theme-vision .card-icon { background: linear-gradient(135deg, #a0dcb4, #70b888); box-shadow: 0 0 12px rgba(160, 220, 180, 0.3); }
+
+  /* Services Layer — vibrant accents */
+  .theme-deepgram {
+    background: linear-gradient(135deg, rgba(109, 208, 168, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #6dd0a8;
+    box-shadow: 0 4px 24px rgba(109, 208, 168, 0.1), inset 0 1px 0 rgba(109, 208, 168, 0.06);
+  }
+  .theme-deepgram .card-icon { background: linear-gradient(135deg, #6dd0a8, #40a880); box-shadow: 0 0 12px rgba(109, 208, 168, 0.3); }
+
+  .theme-groq {
+    background: linear-gradient(135deg, rgba(240, 144, 96, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #f09060;
+    box-shadow: 0 4px 24px rgba(240, 144, 96, 0.1), inset 0 1px 0 rgba(240, 144, 96, 0.06);
+  }
+  .theme-groq .card-icon { background: linear-gradient(135deg, #f09060, #d06840); box-shadow: 0 0 12px rgba(240, 144, 96, 0.3); }
+
+  .theme-azure {
+    background: linear-gradient(135deg, rgba(96, 168, 240, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #60a8f0;
+    box-shadow: 0 4px 24px rgba(96, 168, 240, 0.1), inset 0 1px 0 rgba(96, 168, 240, 0.06);
+  }
+  .theme-azure .card-icon { background: linear-gradient(135deg, #60a8f0, #3880d0); box-shadow: 0 0 12px rgba(96, 168, 240, 0.3); }
+
+  .theme-openai {
+    background: linear-gradient(135deg, rgba(200, 200, 220, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #c8c8dc;
+    box-shadow: 0 4px 24px rgba(200, 200, 220, 0.08), inset 0 1px 0 rgba(200, 200, 220, 0.06);
+  }
+  .theme-openai .card-icon { background: linear-gradient(135deg, #c8c8dc, #9898b0); box-shadow: 0 0 12px rgba(200, 200, 220, 0.3); }
+
+  /* Data Layer — deep tones */
+  .theme-postgres {
+    background: linear-gradient(135deg, rgba(112, 144, 208, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #7090d0;
+    box-shadow: 0 4px 24px rgba(112, 144, 208, 0.1), inset 0 1px 0 rgba(112, 144, 208, 0.06);
+  }
+  .theme-postgres .card-icon { background: linear-gradient(135deg, #7090d0, #4868a8); box-shadow: 0 0 12px rgba(112, 144, 208, 0.3); }
+
+  .theme-users {
+    background: linear-gradient(135deg, rgba(208, 160, 232, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #d0a0e8;
+    box-shadow: 0 4px 24px rgba(208, 160, 232, 0.1), inset 0 1px 0 rgba(208, 160, 232, 0.06);
+  }
+  .theme-users .card-icon { background: linear-gradient(135deg, #d0a0e8, #a878c0); box-shadow: 0 0 12px rgba(208, 160, 232, 0.3); }
+
+  .theme-facts {
+    background: linear-gradient(135deg, rgba(232, 192, 112, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #e8c070;
+    box-shadow: 0 4px 24px rgba(232, 192, 112, 0.1), inset 0 1px 0 rgba(232, 192, 112, 0.06);
+  }
+  .theme-facts .card-icon { background: linear-gradient(135deg, #e8c070, #c89840); box-shadow: 0 0 12px rgba(232, 192, 112, 0.3); }
+
+  .theme-convos {
+    background: linear-gradient(135deg, rgba(144, 200, 224, 0.08), rgba(20, 16, 32, 0.95));
+    border-top: 2px solid #90c8e0;
+    box-shadow: 0 4px 24px rgba(144, 200, 224, 0.1), inset 0 1px 0 rgba(144, 200, 224, 0.06);
+  }
+  .theme-convos .card-icon { background: linear-gradient(135deg, #90c8e0, #68a0b8); box-shadow: 0 0 12px rgba(144, 200, 224, 0.3); }
+
+  /* ── Badges ── */
+  .badge-clerk {
+    background: rgba(196, 168, 224, 0.2);
+    color: #d4b8f0;
+    border: 1px solid rgba(196, 168, 224, 0.4);
+  }
+  .badge-live2d {
+    background: rgba(240, 168, 200, 0.2);
+    color: #f4b8d0;
+    border: 1px solid rgba(240, 168, 200, 0.4);
+  }
+  .badge-stripe {
+    background: rgba(168, 208, 232, 0.2);
+    color: #b8daf0;
+    border: 1px solid rgba(168, 208, 232, 0.4);
+  }
+  .badge-vercel {
+    background: rgba(139, 156, 240, 0.2);
+    color: #a0b0f8;
+    border: 1px solid rgba(139, 156, 240, 0.4);
+  }
+  .badge-hooks {
+    background: rgba(168, 139, 232, 0.2);
+    color: #b8a0f0;
+    border: 1px solid rgba(168, 139, 232, 0.4);
+  }
+  .badge-render {
+    background: rgba(208, 144, 232, 0.2);
+    color: #daa8f0;
+    border: 1px solid rgba(208, 144, 232, 0.4);
+  }
+  .badge-streaming {
+    background: rgba(240, 160, 184, 0.2);
+    color: #f4b0c8;
+    border: 1px solid rgba(240, 160, 184, 0.4);
+  }
+  .badge-prisma {
+    background: rgba(160, 208, 240, 0.2);
+    color: #b0d8f8;
+    border: 1px solid rgba(160, 208, 240, 0.4);
+  }
+  .badge-stt {
+    background: rgba(109, 208, 168, 0.2);
+    color: #80e0b8;
+    border: 1px solid rgba(109, 208, 168, 0.4);
+  }
+  .badge-llm {
+    background: rgba(240, 144, 96, 0.2);
+    color: #f8a878;
+    border: 1px solid rgba(240, 144, 96, 0.4);
+  }
+  .badge-tts {
+    background: rgba(96, 168, 240, 0.2);
+    color: #78b8f8;
+    border: 1px solid rgba(96, 168, 240, 0.4);
+  }
+  .badge-vision {
+    background: rgba(200, 200, 220, 0.2);
+    color: #d0d0e0;
+    border: 1px solid rgba(200, 200, 220, 0.4);
+  }
+  .badge-postgres {
+    background: rgba(112, 144, 208, 0.2);
+    color: #88a8e0;
+    border: 1px solid rgba(112, 144, 208, 0.4);
+  }
+  .badge-memory {
+    background: rgba(232, 192, 112, 0.2);
+    color: #f0d088;
+    border: 1px solid rgba(232, 192, 112, 0.4);
+  }
+  .badge-pages {
+    background: rgba(184, 160, 240, 0.2);
+    color: #c8b0f8;
+    border: 1px solid rgba(184, 160, 240, 0.4);
+  }
+
+  /* ── Flow Row between layers ── */
+  .flow-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 8px 60px;
+    margin: 2px 0;
+  }
+
+  .flow-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .flow-tag.ws {
+    color: #daa8f0;
+    background: rgba(208, 144, 232, 0.12);
+    border: 1px solid rgba(208, 144, 232, 0.3);
+  }
+  .flow-tag.api {
+    color: #a0b0f8;
+    background: rgba(139, 156, 240, 0.12);
+    border: 1px solid rgba(139, 156, 240, 0.3);
+  }
+  .flow-tag.stream {
+    color: #f4b0c8;
+    background: rgba(240, 160, 184, 0.12);
+    border: 1px solid rgba(240, 160, 184, 0.3);
+  }
+  .flow-tag.sql {
+    color: #88a8e0;
+    background: rgba(112, 144, 208, 0.12);
+    border: 1px solid rgba(112, 144, 208, 0.3);
+  }
+  .flow-tag.webhook {
+    color: #d4b8f0;
+    background: rgba(196, 168, 224, 0.12);
+    border: 1px solid rgba(196, 168, 224, 0.3);
+  }
+
+  .flow-connector {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(120, 100, 180, 0.3), transparent);
+  }
+
+  .flow-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #5848a0;
+  }
+
+  .arrow-down {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .arrow-stem {
+    width: 1px;
+    height: 14px;
+    background: rgba(120, 100, 180, 0.5);
+  }
+
+  .arrow-head {
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid rgba(120, 100, 180, 0.5);
+  }
+
+  /* ── Tech Stack Footer ── */
+  .tech-footer {
+    margin-top: 44px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .tech-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+    letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .tech-pink { background: rgba(232, 127, 160, 0.18); color: #f08aa8; border: 1px solid rgba(232, 127, 160, 0.35); }
+  .tech-purple { background: rgba(168, 139, 232, 0.18); color: #b8a0f0; border: 1px solid rgba(168, 139, 232, 0.35); }
+  .tech-blue { background: rgba(96, 168, 240, 0.18); color: #78b8f8; border: 1px solid rgba(96, 168, 240, 0.35); }
+  .tech-indigo { background: rgba(139, 156, 240, 0.18); color: #a0b0f8; border: 1px solid rgba(139, 156, 240, 0.35); }
+  .tech-green { background: rgba(109, 208, 168, 0.18); color: #80e0b8; border: 1px solid rgba(109, 208, 168, 0.35); }
+  .tech-orange { background: rgba(240, 144, 96, 0.18); color: #f8a878; border: 1px solid rgba(240, 144, 96, 0.35); }
+  .tech-lavender { background: rgba(196, 168, 224, 0.18); color: #d4b8f0; border: 1px solid rgba(196, 168, 224, 0.35); }
+  .tech-rose { background: rgba(240, 168, 200, 0.18); color: #f4b8d0; border: 1px solid rgba(240, 168, 200, 0.35); }
+  .tech-teal { background: rgba(144, 200, 224, 0.18); color: #a0d8f0; border: 1px solid rgba(144, 200, 224, 0.35); }
+  .tech-gold { background: rgba(232, 192, 112, 0.18); color: #f0d088; border: 1px solid rgba(232, 192, 112, 0.35); }
+  .tech-slate { background: rgba(200, 200, 220, 0.18); color: #d0d0e0; border: 1px solid rgba(200, 200, 220, 0.35); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ══ HEADER ══ -->
+  <div class="header">
+    <div class="logo-row">
+      <div class="logo-icon">K</div>
+      <div class="logo-text">KIRA</div>
+    </div>
+    <div class="subtitle">System Architecture</div>
+    <div class="urls">xoxokira.com</div>
+  </div>
+
+  <!-- ══ EXPERIENCE LAYER ══ -->
+  <div class="layer">
+    <div class="layer-line"></div>
+    <div class="layer-label-wrap">
+      <span class="layer-label">Experience</span>
+    </div>
+  </div>
+
+  <div class="card-row row-4">
+    <div class="card theme-voice">
+      <div class="card-header">
+        <div class="card-icon">V</div>
+        <div>
+          <div class="card-title">Voice Chat</div>
+          <div class="card-desc">Real-time conversation</div>
+        </div>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">Mic capture</span> <span class="item-sep">&rarr;</span> AudioWorklet</li>
+        <li><span class="item-label">Client VAD</span> <span class="item-sep">+</span> adaptive EOU</li>
+        <li><span class="item-label">1.45s</span> avg end-to-end latency</li>
+      </ul>
+    </div>
+
+    <div class="card theme-avatar">
+      <div class="card-header">
+        <div class="card-icon">L</div>
+        <div>
+          <div class="card-title">Live2D Avatar</div>
+          <div class="card-desc">Emotional rendering</div>
+        </div>
+        <span class="card-badge badge-live2d">15 EMO</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">Expression</span> <span class="item-sep">&rarr;</span> inline [EMO:] tags</li>
+        <li><span class="item-label">Comfort arc</span> <span class="item-sep">&mdash;</span> timed accessories</li>
+        <li><span class="item-label">Lip sync</span> <span class="item-sep">&rarr;</span> analyser node</li>
+      </ul>
+    </div>
+
+    <div class="card theme-auth">
+      <div class="card-header">
+        <div class="card-icon">A</div>
+        <div>
+          <div class="card-title">Authentication</div>
+          <div class="card-desc">Clerk</div>
+        </div>
+        <span class="card-badge badge-clerk">CLERK</span>
+      </div>
+      <ul class="card-items">
+        <li>Sign up / Sign in + Google OAuth</li>
+        <li>JWT verification on WebSocket</li>
+        <li>Guest ID <span class="item-sep">&rarr;</span> account migration</li>
+      </ul>
+    </div>
+
+    <div class="card theme-sub">
+      <div class="card-header">
+        <div class="card-icon">$</div>
+        <div>
+          <div class="card-title">Subscription</div>
+          <div class="card-desc">Stripe billing</div>
+        </div>
+        <span class="card-badge badge-stripe">STRIPE</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">Guest</span> <span class="item-sep">&mdash;</span> 15 min/day free</li>
+        <li><span class="item-label">Pro</span> <span class="item-sep">&mdash;</span> $9.99/mo, 40 hrs</li>
+        <li>Self-healing tier checks</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flow-row">
+    <div class="flow-connector"></div>
+    <div class="flow-dot"></div>
+    <div class="flow-tag api">Next.js App</div>
+    <div class="flow-dot"></div>
+    <div class="flow-connector"></div>
+  </div>
+
+  <!-- ══ FRONTEND LAYER ══ -->
+  <div class="layer">
+    <div class="layer-line"></div>
+    <div class="layer-label-wrap">
+      <span class="layer-label">Frontend</span>
+    </div>
+  </div>
+
+  <div class="card-row row-4">
+    <div class="card theme-nextjs">
+      <div class="card-header">
+        <div class="card-icon">N</div>
+        <div>
+          <div class="card-title">Next.js 14</div>
+          <div class="card-desc">TypeScript + Tailwind</div>
+        </div>
+        <span class="card-badge badge-vercel">VERCEL</span>
+      </div>
+      <ul class="card-items">
+        <li>Framer Motion animations</li>
+        <li>Radix UI + shadcn components</li>
+        <li>Security headers + CSP</li>
+      </ul>
+    </div>
+
+    <div class="card theme-hooks">
+      <div class="card-header">
+        <div class="card-icon">H</div>
+        <div>
+          <div class="card-title">React Hooks</div>
+          <div class="card-desc">Custom state logic</div>
+        </div>
+        <span class="card-badge badge-hooks">4 HOOKS</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">useKiraSocket</span> <span class="item-sep">&mdash;</span> voice + WS</li>
+        <li><span class="item-label">useClipRecorder</span> <span class="item-sep">&mdash;</span> 30s buffer</li>
+        <li><span class="item-label">useSceneDetection</span> <span class="item-sep">&mdash;</span> diffing</li>
+      </ul>
+    </div>
+
+    <div class="card theme-live2d">
+      <div class="card-header">
+        <div class="card-icon">P</div>
+        <div>
+          <div class="card-title">PixiJS Renderer</div>
+          <div class="card-desc">pixi-live2d-display</div>
+        </div>
+      </div>
+      <ul class="card-items">
+        <li>PixiJS 7 + Live2D canvas</li>
+        <li>Scroll / pinch zoom (1.0x–2.0x)</li>
+        <li>Fallback audio-reactive orb</li>
+      </ul>
+    </div>
+
+    <div class="card theme-pages">
+      <div class="card-header">
+        <div class="card-icon">R</div>
+        <div>
+          <div class="card-title">Pages</div>
+          <div class="card-desc">App Router</div>
+        </div>
+        <span class="card-badge badge-pages">7 ROUTES</span>
+      </div>
+      <ul class="card-items">
+        <li>Landing + Chat + Auth</li>
+        <li>API: Stripe + Clerk webhooks</li>
+        <li>Conversations + Profile</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flow-row">
+    <div class="flow-tag ws">WebSocket</div>
+    <div class="flow-connector"></div>
+    <div class="arrow-down"><div class="arrow-stem"></div><div class="arrow-head"></div></div>
+    <div class="flow-connector"></div>
+    <div class="flow-tag stream">PCM Audio Stream</div>
+    <div class="flow-connector"></div>
+    <div class="arrow-down"><div class="arrow-stem"></div><div class="arrow-head"></div></div>
+    <div class="flow-connector"></div>
+    <div class="flow-tag webhook">Webhooks</div>
+  </div>
+
+  <!-- ══ BACKEND LAYER ══ -->
+  <div class="layer">
+    <div class="layer-line"></div>
+    <div class="layer-label-wrap">
+      <span class="layer-label">Backend</span>
+    </div>
+  </div>
+
+  <div class="card-row row-4">
+    <div class="card theme-ws">
+      <div class="card-header">
+        <div class="card-icon">W</div>
+        <div>
+          <div class="card-title">WS Server</div>
+          <div class="card-desc">Node.js orchestrator</div>
+        </div>
+        <span class="card-badge badge-render">RENDER</span>
+      </div>
+      <ul class="card-items">
+        <li>Connection auth + rate limiting</li>
+        <li>State machine <span class="item-sep">&mdash;</span> listen/think/speak</li>
+        <li>30s timeout failsafe</li>
+      </ul>
+    </div>
+
+    <div class="card theme-pipeline">
+      <div class="card-header">
+        <div class="card-icon">S</div>
+        <div>
+          <div class="card-title">Voice Pipeline</div>
+          <div class="card-desc">STT &rarr; LLM &rarr; TTS</div>
+        </div>
+        <span class="card-badge badge-streaming">STREAM</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">STT</span> <span class="item-sep">&rarr;</span> Deepgram nova-2</li>
+        <li><span class="item-label">LLM</span> <span class="item-sep">&rarr;</span> Groq Llama 3.3 70B</li>
+        <li><span class="item-label">TTS</span> <span class="item-sep">&rarr;</span> Azure SSML per-sentence</li>
+      </ul>
+    </div>
+
+    <div class="card theme-memory">
+      <div class="card-header">
+        <div class="card-icon">M</div>
+        <div>
+          <div class="card-title">Memory System</div>
+          <div class="card-desc">Two-layer persistence</div>
+        </div>
+        <span class="card-badge badge-prisma">PRISMA</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">L1</span> <span class="item-sep">&mdash;</span> rolling summary (in-session)</li>
+        <li><span class="item-label">L2</span> <span class="item-sep">&mdash;</span> cross-session facts (GPT-4o-mini)</li>
+        <li>Topic-aware deduplication</li>
+      </ul>
+    </div>
+
+    <div class="card theme-vision">
+      <div class="card-header">
+        <div class="card-icon">E</div>
+        <div>
+          <div class="card-title">Vision System</div>
+          <div class="card-desc">Screen + camera</div>
+        </div>
+      </div>
+      <ul class="card-items">
+        <li>Screen share <span class="item-sep">+</span> camera capture</li>
+        <li>Scene diffing <span class="item-sep">&mdash;</span> temporal buffer</li>
+        <li>Unprompted reactions (75–120s)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flow-row">
+    <div class="flow-tag stream">Streaming Audio</div>
+    <div class="flow-connector"></div>
+    <div class="arrow-down"><div class="arrow-stem"></div><div class="arrow-head"></div></div>
+    <div class="flow-connector"></div>
+    <div class="flow-tag api">REST / SDK</div>
+    <div class="flow-connector"></div>
+    <div class="arrow-down"><div class="arrow-stem"></div><div class="arrow-head"></div></div>
+    <div class="flow-connector"></div>
+    <div class="flow-tag ws">WebSocket</div>
+  </div>
+
+  <!-- ══ SERVICES LAYER ══ -->
+  <div class="layer">
+    <div class="layer-line"></div>
+    <div class="layer-label-wrap">
+      <span class="layer-label">Services</span>
+    </div>
+  </div>
+
+  <div class="card-row row-4">
+    <div class="card theme-deepgram">
+      <div class="card-header">
+        <div class="card-icon">D</div>
+        <div>
+          <div class="card-title">Deepgram</div>
+          <div class="card-desc">Speech-to-Text</div>
+        </div>
+        <span class="card-badge badge-stt">STT</span>
+      </div>
+      <ul class="card-items">
+        <li>Model: nova-2 streaming</li>
+        <li>16kHz PCM via WebSocket</li>
+        <li>Self-healing reconnect</li>
+      </ul>
+    </div>
+
+    <div class="card theme-groq">
+      <div class="card-header">
+        <div class="card-icon">G</div>
+        <div>
+          <div class="card-title">Groq</div>
+          <div class="card-desc">Language Model</div>
+        </div>
+        <span class="card-badge badge-llm">LLM</span>
+      </div>
+      <ul class="card-items">
+        <li>Llama 3.3 70B (streaming)</li>
+        <li>300–1,000ms first token</li>
+        <li>Personality + memory context</li>
+      </ul>
+    </div>
+
+    <div class="card theme-azure">
+      <div class="card-header">
+        <div class="card-icon">A</div>
+        <div>
+          <div class="card-title">Azure</div>
+          <div class="card-desc">Text-to-Speech</div>
+        </div>
+        <span class="card-badge badge-tts">TTS</span>
+      </div>
+      <ul class="card-items">
+        <li>SSML with emotion prosody</li>
+        <li>Dual voice: anime / natural</li>
+        <li>~550ms first audio chunk</li>
+      </ul>
+    </div>
+
+    <div class="card theme-openai">
+      <div class="card-header">
+        <div class="card-icon">O</div>
+        <div>
+          <div class="card-title">OpenAI</div>
+          <div class="card-desc">Vision + Memory</div>
+        </div>
+        <span class="card-badge badge-vision">MULTI</span>
+      </div>
+      <ul class="card-items">
+        <li><span class="item-label">GPT-4o</span> <span class="item-sep">&mdash;</span> multimodal vision</li>
+        <li><span class="item-label">GPT-4o-mini</span> <span class="item-sep">&mdash;</span> memory extraction</li>
+        <li>Conversation summarization</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="flow-row">
+    <div class="flow-connector"></div>
+    <div class="flow-dot"></div>
+    <div class="flow-tag sql">Prisma ORM</div>
+    <div class="flow-dot"></div>
+    <div class="flow-connector"></div>
+  </div>
+
+  <!-- ══ DATA LAYER ══ -->
+  <div class="layer">
+    <div class="layer-line"></div>
+    <div class="layer-label-wrap">
+      <span class="layer-label">Data</span>
+    </div>
+  </div>
+
+  <div class="card-row row-4">
+    <div class="card theme-postgres">
+      <div class="card-header">
+        <div class="card-icon">P</div>
+        <div>
+          <div class="card-title">PostgreSQL</div>
+          <div class="card-desc">Primary database</div>
+        </div>
+        <span class="card-badge badge-postgres">POSTGRES</span>
+      </div>
+      <ul class="card-items">
+        <li>7 models via Prisma ORM</li>
+        <li>Indexed by userId + category</li>
+        <li>Render managed instance</li>
+      </ul>
+    </div>
+
+    <div class="card theme-users">
+      <div class="card-header">
+        <div class="card-icon">U</div>
+        <div>
+          <div class="card-title">Users & Auth</div>
+          <div class="card-desc">Identity + subscriptions</div>
+        </div>
+      </div>
+      <ul class="card-items">
+        <li>Clerk IDs + Stripe fields</li>
+        <li>Daily / monthly usage tracking</li>
+        <li>Guest <span class="item-sep">&rarr;</span> account migration</li>
+      </ul>
+    </div>
+
+    <div class="card theme-facts">
+      <div class="card-header">
+        <div class="card-icon">F</div>
+        <div>
+          <div class="card-title">Memory Facts</div>
+          <div class="card-desc">Cross-session knowledge</div>
+        </div>
+        <span class="card-badge badge-memory">7 CATS</span>
+      </div>
+      <ul class="card-items">
+        <li>Identity, preferences, relationships</li>
+        <li>Emotional weight scoring (0.0–1.0)</li>
+        <li>Top 30 loaded per session</li>
+      </ul>
+    </div>
+
+    <div class="card theme-convos">
+      <div class="card-header">
+        <div class="card-icon">C</div>
+        <div>
+          <div class="card-title">Conversations</div>
+          <div class="card-desc">Chat history</div>
+        </div>
+      </div>
+      <ul class="card-items">
+        <li>Messages with role + content</li>
+        <li>Auto-generated summaries</li>
+        <li>Searchable conversation history</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══ TECH STACK FOOTER ══ -->
+  <div class="tech-footer">
+    <span class="tech-pill tech-indigo">Next.js 14</span>
+    <span class="tech-pill tech-purple">TypeScript</span>
+    <span class="tech-pill tech-blue">Tailwind CSS</span>
+    <span class="tech-pill tech-rose">Live2D</span>
+    <span class="tech-pill tech-pink">PixiJS 7</span>
+    <span class="tech-pill tech-green">Deepgram</span>
+    <span class="tech-pill tech-orange">Groq</span>
+    <span class="tech-pill tech-blue">Azure TTS</span>
+    <span class="tech-pill tech-slate">OpenAI</span>
+    <span class="tech-pill tech-lavender">Clerk</span>
+    <span class="tech-pill tech-teal">Stripe</span>
+    <span class="tech-pill tech-indigo">Prisma</span>
+    <span class="tech-pill tech-purple">PostgreSQL</span>
+    <span class="tech-pill tech-green">Zustand</span>
+    <span class="tech-pill tech-rose">Framer Motion</span>
+    <span class="tech-pill tech-gold">pnpm</span>
+  </div>
+
+</div>
+</body>
+</html>

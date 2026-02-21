@@ -31,7 +31,7 @@ Everything is engineered for natural conversation — the first audio plays in u
 
 ### Voice Pipeline
 
-Audio streams from the browser microphone through an AudioWorklet, across a WebSocket to the server, where Deepgram transcribes it in real-time. An adaptive silence detector determines end-of-utterance — short phrases like "yes" get a 500ms cutoff for snappy responses, while long multi-part questions get up to 1500ms of patience. The transcript routes to GPT-4o-mini (streaming), which pipes sentence-by-sentence into Azure TTS. The first sentence of audio arrives at the client while the third sentence is still being written.
+Audio streams from the browser microphone through an AudioWorklet, across a WebSocket to the server, where Deepgram transcribes it in real-time. An adaptive silence detector determines end-of-utterance — short phrases like "yes" get a 500ms cutoff for snappy responses, while long multi-part questions get up to 1500ms of patience. The transcript routes to Groq's Llama 3.3 70B (streaming), which pipes sentence-by-sentence into Azure TTS. The first sentence of audio arrives at the client while the third sentence is still being written. When vision is active (screen share or camera), the pipeline falls back to OpenAI GPT-4o for multimodal support.
 
 **Latency benchmarks (production):**
 
@@ -45,11 +45,19 @@ Audio streams from the browser microphone through an AudioWorklet, across a WebS
 
 ### Live2D Avatar
 
-Kira has a full Live2D model with 12 emotion states detected server-side from her response text via keyword pattern matching: neutral, happy, excited, love, blush, sad, angry, playful, thinking, speechless, eyeroll, and sleepy. Emotions are detected from the first sentence and sent to the client before TTS finishes, so her expression shifts as she starts speaking.
+Kira has a full Live2D model with 15 emotion states driven by inline LLM expression tags: neutral, happy, excited, love, blush, sad, angry, playful, thinking, speechless, eyeroll, sleepy, frustrated, confused, and surprised. The LLM prefixes every response with an `[EMO:emotion]` tag — parsed from the first streamed tokens and sent to the client before TTS finishes, so her expression shifts as she starts speaking. Optional action and accessory tags (`[EMO:emotion|ACT:action|ACC:accessory]`) trigger contextual animations like holding a phone, gaming, or putting on headphones.
 
 A **comfort arc system** drives timed accessory changes as the conversation progresses — jacket comes off at 1 minute, bangs get clipped at 3.5 minutes, earbuds go in at 7.5 minutes. Late night sessions (10pm–4am) start with the jacket already off. Accessories persist through emotion changes and expression resets.
 
 The avatar supports scroll-wheel zoom (desktop) and pinch-to-zoom (mobile) from 1.0x to 2.0x, with automatic Y-offset adjustment to keep the face centered. Falls back to an audio-reactive orb on devices where WebGL fails.
+
+### Scene Background
+
+An animated scene mode renders a looping video background behind the avatar with a frosted glass control bar overlay. The Live2D canvas is fully transparent so the character composites naturally over the scene. Controls and header adapt with backdrop blur and semi-transparent overlays when the scene is active.
+
+### Clip & Share
+
+A rolling 30-second MediaRecorder buffer captures the avatar canvas composited with the scene background video and Kira's audio output. Users can save a clip of the last 30 seconds at any time — download as MP4 or share directly via the Web Share API on mobile. The composite canvas renders both the background video and the Live2D avatar at 30fps using `requestAnimationFrame`.
 
 ### Memory
 
@@ -69,7 +77,7 @@ Kira can see the user's world through two modes:
 
 **Camera (mobile):** Rear or front camera captured via `getUserMedia` with a tap-to-flip control and a draggable PIP preview. Same snapshot pipeline as screen share.
 
-Both modes send periodic captures every 15 seconds plus speech-triggered snapshots when the user starts talking. Images are capped at 2 per LLM call to keep vision latency under 5 seconds. An independent reaction timer fires every 75–120 seconds so Kira comments on what she sees unprompted — short reactions under 15 words, like a friend watching alongside you.
+Both modes send periodic captures every 15 seconds plus speech-triggered snapshots when the user starts talking. Up to 3 frames are sent per LLM call for temporal context. Vision requests fall back from Groq to OpenAI GPT-4o for multimodal support. An independent reaction timer fires every 75–120 seconds so Kira comments on what she sees unprompted — short reactions under 15 words, like a friend watching alongside you.
 
 ### Dual Voice System
 
@@ -100,24 +108,34 @@ Microphone                              WebSocket Handler
   → Client-side VAD                       → Rate Limiting (control + LLM)
   → Adaptive EOU Timer                    → Deepgram STT (streaming)
   → WebSocket ──────────────────────────→ → Transcript Buffer
-                                          → GPT-4o-mini (streaming + tools)
-Live2D Avatar                             → Sentence Splitter
-  → 12 Emotion States                     → Azure TTS (SSML streaming)
-  → Comfort Arc Accessories               → Emotion Detection (regex)
-  → Zoom (scroll / pinch)                 → Expression + Accessory Events
+                                          → Groq Llama 3.3 70B (streaming)
+Live2D Avatar                             → OpenAI GPT-4o (vision fallback)
+  → 15 Emotion States                    → Sentence Splitter
+  → Action + Accessory Tags              → Azure TTS (SSML streaming)
+  → Comfort Arc Accessories               → Inline Emotion Tags ([EMO:...])
+  → Zoom (scroll / pinch)                → Expression + Accessory Events
                                           → State Machine (listening/thinking/speaking)
-Screen Share / Camera
-  → Scene Detection + Diffing           Memory System
-  → Periodic + Speech-triggered          → L1: Rolling in-conversation summary
-  → Image Cap (2 per LLM call)           → L2: Post-disconnect fact extraction
-  ──────────────────────────────────────→ → MemoryFact table (7 categories)
-                                          → Topic-aware deduplication
+Scene Background
+  → Animated video loop                  Memory System
+  → Frosted glass overlay                → L1: Rolling in-conversation summary
+                                          → L2: Post-disconnect fact extraction (GPT-4o-mini)
+Screen Share / Camera                     → MemoryFact table (7 categories)
+  → Scene Detection + Diffing            → Topic-aware deduplication
+  → Periodic + Speech-triggered
+  → 3 frames per LLM call               Subscription Self-Healing
+  ──────────────────────────────────────→ → DB-cached tier check
+                                          → Stripe API fallback on mismatch
   ←──── audio + state + expressions ←──
                                         PostgreSQL (Prisma ORM)
 Audio Playback Queue                      → Users, Conversations, Messages
   → Scheduled back-to-back               → MemoryFacts (weighted)
   → Analyser node → avatar lip sync      → MonthlyUsage, GuestUsage
   → Speaker
+
+Clip Recorder
+  → Rolling 30s MediaRecorder buffer
+  → Composite canvas (avatar + scene)
+  → MP4 download / Web Share API
 ```
 
 ---
@@ -146,9 +164,10 @@ Guest conversations are buffered in-memory for 24 hours. Returning guests get th
 | Avatar | Live2D (pixi-live2d-display + PixiJS 7) |
 | Voice Server | Node.js, ws, custom streaming pipeline |
 | Speech-to-Text | Deepgram (live WebSocket, self-healing reconnect) |
-| Language Model | OpenAI GPT-4o-mini (streaming + vision + tool use) |
+| Language Model | Groq Llama 3.3 70B (conversation), OpenAI GPT-4o (vision), GPT-4o-mini (memory extraction) |
 | Text-to-Speech | Azure Cognitive Services (per-sentence SSML, dual voice) |
 | Vision | getDisplayMedia / getUserMedia → canvas → scene diffing |
+| Clip Recording | MediaRecorder + composite canvas → MP4 / Web Share API |
 | Auth | Clerk (JWT verification, webhooks) |
 | Billing | Stripe (checkout, portal, subscription webhooks) |
 | Database | PostgreSQL + Prisma ORM |
@@ -159,7 +178,7 @@ Guest conversations are buffered in-memory for 24 hours. Returning guests get th
 ## Project Structure
 
 ```
-ai-media-companion/
+Kira_App/
 ├── packages/
 │   ├── web/                              # Next.js frontend (Vercel)
 │   │   ├── src/
@@ -171,13 +190,15 @@ ai-media-companion/
 │   │   │   │   │   └── user/                # Account deletion
 │   │   │   │   └── (chat)/
 │   │   │   │       └── chat/[conversationId]/
-│   │   │   │           └── ChatClient.tsx    # Main chat UI
+│   │   │   │           └── ChatClient.tsx    # Main chat UI + scene + clip controls
 │   │   │   ├── components/
 │   │   │   │   ├── Live2DAvatar.tsx          # Avatar rendering + expressions
+│   │   │   │   ├── ChibiLoader.tsx          # Chibi loading screen
 │   │   │   │   ├── KiraOrb.tsx              # Fallback audio visualizer
 │   │   │   │   └── ProfileModal.tsx
 │   │   │   ├── hooks/
 │   │   │   │   ├── useKiraSocket.ts         # WebSocket + VAD + adaptive EOU
+│   │   │   │   ├── useClipRecorder.ts       # Rolling 30s clip buffer + share
 │   │   │   │   ├── useSceneDetection.ts     # Screen share scene diffing
 │   │   │   │   └── use-subscription.ts      # Stripe subscription check
 │   │   │   └── lib/
@@ -188,7 +209,9 @@ ai-media-companion/
 │   │   ├── public/
 │   │   │   └── worklets/
 │   │   │       ├── AudioWorkletProcessor.js
-│   │   │       └── models/Kira/             # Live2D model assets
+│   │   │       └── models/
+│   │   │           ├── Kira/                # Live2D model assets
+│   │   │           └── Suki/               # Scene videos + chibi art
 │   │   ├── middleware.ts                    # Clerk auth middleware
 │   │   └── next.config.js                   # Security headers
 │   │
@@ -216,8 +239,8 @@ ai-media-companion/
 ## Run Locally
 
 ```bash
-git clone https://github.com/JonathanDunkleberger/Kira_AI_2.git
-cd Kira_AI_2/ai-media-companion
+git clone https://github.com/JonathanDunkleberger/Kira_App.git
+cd Kira_App
 pnpm install
 ```
 
@@ -225,9 +248,9 @@ Copy `.env.example` to `.env` in both `packages/web/` and `packages/server/`. Re
 
 ```
 # Server
-CLERK_SECRET_KEY, OPENAI_API_KEY, DEEPGRAM_API_KEY,
-AZURE_SPEECH_KEY, AZURE_SPEECH_REGION,
-INTERNAL_API_SECRET, DATABASE_URL
+CLERK_SECRET_KEY, OPENAI_API_KEY, GROQ_API_KEY,
+DEEPGRAM_API_KEY, AZURE_SPEECH_KEY, AZURE_SPEECH_REGION,
+STRIPE_SECRET_KEY, INTERNAL_API_SECRET, DATABASE_URL
 
 # Web
 NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_WEBSOCKET_URL,
@@ -240,7 +263,7 @@ pnpm dev:web      # localhost:3000
 pnpm dev:server   # ws://localhost:10000
 ```
 
-See [`DEPLOY.md`](./DEPLOY.md) for Vercel + Render deployment.
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for Vercel + Render deployment.
 
 ---
 

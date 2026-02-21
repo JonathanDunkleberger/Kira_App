@@ -214,8 +214,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const baseScaleRef = useRef(0);
   const baseYRef = useRef(0);
   const lastPinchDistance = useRef<number | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(2.3);
-  const zoomLevelRef = useRef(2.3);
+  const [zoomLevel, setZoomLevel] = useState(1.85);
+  const zoomLevelRef = useRef(1.85);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);
@@ -542,7 +542,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         ) * scaleFactor;
         model.scale.set(scale * zoomLevelRef.current);
         model.x = containerWidth / 2;
-        const yPosition = containerHeight * (isMobile ? 0.73 : 0.70);
+        const yPosition = containerHeight * (isMobile ? 0.68 : 0.65);
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -856,7 +856,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const sf = 0.9;
           const newBaseScale = Math.min(w / rawWidth, h / rawHeight) * sf;
           baseScaleRef.current = newBaseScale;
-          baseYRef.current = h * (mobile ? 0.73 : 0.70);
+          baseYRef.current = h * (mobile ? 0.68 : 0.65);
 
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);
@@ -1224,8 +1224,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     const container = containerRef.current;
     if (!container) return;
 
-    const MIN_ZOOM = 1.8;   // ~80% of default 2.3 — slight zoom out
-    const MAX_ZOOM = 3.4;   // ~150% of default 2.3 — moderate zoom in
+    const MIN_ZOOM = 1.5;   // ~80% of default 1.85 — slight zoom out
+    const MAX_ZOOM = 2.8;   // ~150% of default 1.85 — moderate zoom in
     const ZOOM_STEP = 0.1;
 
     const handleWheel = (e: WheelEvent) => {

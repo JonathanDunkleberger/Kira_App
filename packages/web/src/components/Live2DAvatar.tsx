@@ -214,8 +214,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
   const baseScaleRef = useRef(0);
   const baseYRef = useRef(0);
   const lastPinchDistance = useRef<number | null>(null);
-  const [zoomLevel, setZoomLevel] = useState(1.25);
-  const zoomLevelRef = useRef(1.25);
+  const [zoomLevel, setZoomLevel] = useState(1.65);
+  const zoomLevelRef = useRef(1.65);
   const onModelReadyRef = useRef(onModelReady);
   onModelReadyRef.current = onModelReady;
   const onLoadErrorRef = useRef(onLoadError);

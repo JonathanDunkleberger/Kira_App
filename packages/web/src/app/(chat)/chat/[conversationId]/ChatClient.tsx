@@ -550,7 +550,7 @@ export default function ChatClient() {
     <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif", height: "100dvh" }} className="flex flex-col items-center justify-center w-full">
       {/* Header */}
       <div
-        className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center"
+        className="absolute top-0 left-0 right-0 px-6 py-2.5 flex justify-between items-center"
         style={{
           zIndex: 20,
           background: isSceneActive ? "rgba(0,0,0,0.3)" : visualMode === "orb" ? "transparent" : "transparent",

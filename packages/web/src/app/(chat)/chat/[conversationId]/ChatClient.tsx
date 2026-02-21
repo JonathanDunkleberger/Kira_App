@@ -546,6 +546,10 @@ export default function ChatClient() {
     );
   }
 
+  // Pick day/night scene video based on user's local time
+  const sceneHour = new Date().getHours();
+  const sceneVideo = (sceneHour >= 6 && sceneHour < 19) ? "/models/Suki/pink-day.mp4" : "/models/Suki/pink-night.mp4";
+
   return (
     <div style={{ background: "#0D1117", fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif", height: "100dvh" }} className="flex flex-col items-center justify-center w-full">
       {/* Header */}
@@ -640,7 +644,7 @@ export default function ChatClient() {
       {isSceneActive && visualMode === "avatar" && (
         <video
           ref={backgroundVideoRef}
-          src="/models/Suki/pink-night.mp4"
+          src={sceneVideo}
           autoPlay
           loop
           muted

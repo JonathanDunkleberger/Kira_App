@@ -542,8 +542,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
         ) * scaleFactor;
         model.scale.set(scale * zoomLevelRef.current);
         model.x = containerWidth / 2;
-        const zoomYOffset = (zoomLevelRef.current - 1.0) * model.height * 0.35;
-        const yPosition = containerHeight * (isMobile ? 0.59 : 0.56) + zoomYOffset;
+        const yPosition = containerHeight * (isMobile ? 0.59 : 0.56);
         model.y = yPosition;
         model.anchor.set(0.5, 0.5);
 
@@ -862,7 +861,7 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
           const z = zoomLevelRef.current;
           modelRef.current.scale.set(newBaseScale * z);
           modelRef.current.x = w / 2;
-          modelRef.current.y = baseYRef.current + (z - 1.0) * modelRef.current.height * 0.35;
+          modelRef.current.y = baseYRef.current;
         }
       }
     };
@@ -1225,8 +1224,8 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     const container = containerRef.current;
     if (!container) return;
 
-    const MIN_ZOOM = 1.35;
-    const MAX_ZOOM = 2.5;
+    const MIN_ZOOM = 1.3;   // ~80% of default 1.65 — slight zoom out
+    const MAX_ZOOM = 2.5;   // ~150% of default 1.65 — moderate zoom in
     const ZOOM_STEP = 0.1;
 
     const handleWheel = (e: WheelEvent) => {
@@ -1272,15 +1271,15 @@ export default function Live2DAvatar({ isSpeaking, analyserNode, emotion, access
     };
   }, []);
 
-  // Apply zoom to model — scale up + shift down to keep face centered
+  // Apply zoom to model — anchor(0.5, 0.5) keeps her centered automatically
   useEffect(() => {
     zoomLevelRef.current = zoomLevel;
     const model = modelRef.current;
     if (!model || !baseScaleRef.current) return;
 
     model.scale.set(baseScaleRef.current * zoomLevel);
-    const yOffset = (zoomLevel - 1.0) * model.height * 0.35;
-    model.y = baseYRef.current + yOffset;
+    // No Y-offset needed — center anchor scales from center naturally
+    model.x = modelRef.current.x; // preserve X (already centered)
   }, [zoomLevel]);
 
   return (
